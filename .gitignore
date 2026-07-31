@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 민감정보/로컬 설정 — 절대 커밋 금지
+kubeconfig*
+*.pem
+*.key
+.env
+
+# 모델/결과물 (용량 크거나 재생성 가능)
+*.pkl
+experiments/results/*.csv
+
+# OS
+.DS_Store
+Thumbs.db
