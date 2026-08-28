@@ -63,9 +63,9 @@ capstone-k8s-recovery/
 ## 🚧 진행 상태
 
 - [x] 주제 확정 및 지도교수 승인
-- [x] 실습 서버 확보 진행 중 (2-VM: control-plane + worker)
-- [ ] 클러스터 구축
-- [ ] GitOps 파이프라인
+- [x] 실습 서버 확보 완료 (2-VM: control-plane + worker)
+- [x] 클러스터 구축
+- [x] GitOps 파이프라인
 - [ ] AI 서빙 배포
 - [ ] 관측성 스택
 - [ ] 장애 시나리오
