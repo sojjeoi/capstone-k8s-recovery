@@ -1,0 +1,24 @@
+# Prometheus TSDB용 로컬 저장공간. sj-worker 노드의 /home/ubuntu/prometheus-data에 고정.
+# reclaimPolicy=Retain: PVC가 삭제돼도 디스크의 실제 데이터는 남겨둠 (Phase 6 학습 데이터 보호 목적)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prometheus-data-pv
+spec:
+  capacity:
+    storage: 20Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    path: /home/ubuntu/prometheus-data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - sj-worker

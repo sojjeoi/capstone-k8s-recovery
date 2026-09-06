@@ -1,0 +1,8 @@
+# 클러스터에 동적 프로비저닝이 없어서, local PV를 수동으로 붙이기 위한 최소 StorageClass
+# provisioner가 없으므로 이 자체로는 아무것도 자동 생성하지 않음 — PV/PVC 매칭용 이름표 역할만 함
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer # Pod가 스케줄된 후에 PVC를 바인딩 (local PV는 노드가 고정이라 필수)

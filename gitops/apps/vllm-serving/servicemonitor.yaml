@@ -1,0 +1,16 @@
+# Prometheus한테 "vLLM Service를 주기적으로 스크랩해라"라고 알려주는 설정
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm-serving
+  namespace: vllm-serving
+  labels:
+    release: kube-prom # kube-prometheus-stack의 Prometheus가 이 라벨 붙은 ServiceMonitor를 자동으로 찾아감
+spec:
+  selector:
+    matchLabels:
+      app: vllm-serving # 이 라벨 붙은 Service(vllm-active, vllm-preview 둘 다)를 스크랩 대상으로 삼음
+  endpoints:
+    - port: http # service.yaml에서 정의한 포트 이름
+      path: /metrics
+      interval: 15s

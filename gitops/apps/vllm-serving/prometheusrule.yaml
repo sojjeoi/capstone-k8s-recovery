@@ -1,0 +1,28 @@
+# "이 조건이면 문제다"를 Prometheus한테 등록하는 설정. 조건이 참이 되면 Alertmanager로 알림을 보냄.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vllm-serving-alerts
+  namespace: vllm-serving
+  labels:
+    release: kube-prom # servicemonitor.yaml과 동일한 원리 — 이 라벨이 있어야 Prometheus가 이 룰을 자동으로 읽어감
+spec:
+  groups:
+    - name: vllm-serving
+      rules:
+        - alert: VLLMTargetDown
+          expr: up{namespace="vllm-serving"} == 0
+          for: 30s # 이 상태가 30초 넘게 지속되면 확정 발화(firing) — 짧은 순간 튀는 건 무시
+          labels:
+            severity: critical
+          annotations:
+            summary: "vLLM Serving 타겟 다운: {{ $labels.job }}"
+            description: "{{ $labels.job }}이 30초 이상 스크랩에 응답하지 않습니다."
+        - alert: VLLMTargetMissing
+          expr: absent(up{namespace="vllm-serving", job="vllm-active"}) # 스크랩 실패가 아니라, 타겟 자체가 목록에서 사라진 경우(예: replicas=0)
+          for: 30s
+          labels:
+            severity: critical
+          annotations:
+            summary: "vLLM Serving 타겟이 완전히 사라짐"
+            description: "vllm-active 타겟이 Prometheus 스크랩 대상 목록에서 사라졌습니다 (Pod 0개 가능성)."
