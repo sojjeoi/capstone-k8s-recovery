@@ -1,0 +1,77 @@
+# Phase 2.5 스파이크용 vLLM CPU 서빙 Rollout (BlueGreen)
+# 최종 모델·리소스 값 아님 — 9-8절 리소스 스파이크 측정 후 확정
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: vllm-serving
+  namespace: vllm-serving
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: vllm-serving
+  template:
+    metadata:
+      labels:
+        app: vllm-serving
+      annotations:
+        spike-revision: "2" # 9-8절 확인① — preview 리비전 트리거용 (값만 바꾸면 새 리비전 생성)
+    spec:
+      containers:
+        - name: vllm
+          # capstone-worker 로컬에서 Dockerfile.cpu로 빌드 (레지스트리 미사용, 노드 로컬 이미지)
+          image: vllm-cpu-env:latest
+          imagePullPolicy: Never # 로컬 빌드 이미지 — 레지스트리에서 pull 시도 금지
+          args:
+            - "--model=Qwen/Qwen2.5-0.5B-Instruct" # 1B 이하 스파이크 시작 모델, 최종 확정 아님
+            - "--port=8000"
+            - "--gpu-memory-utilization=0.3" # CPU 백엔드에서도 이 플래그로 메모리 예약 비율 결정 — 기본 0.9는 파드 메모리 한도 초과
+            - "--enforce-eager" # 스파이크 단계라 추론 속도보다 기동 안정성 우선 — torch.compile 생략(컴파일 중 메모리 초과로 OOMKilled 확인됨)
+            - "--max-model-len=2048" # 기본 32768은 KV 캐시가 가용 메모리(0.16GiB)보다 커서 기동 실패 — 스파이크 테스트엔 이 정도로 충분
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "6Gi"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: hf-cache
+              mountPath: /root/.cache/huggingface # 파드 재시작해도 다운로드 이어받기 — 매번 처음부터 재다운로드 방지(네트워크 불안정 대응)
+          startupProbe: # 모델 다운로드(HuggingFace) 시간 확보 — 이게 통과할 때까지 readiness/liveness는 대기
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 90 # 최대 15분까지 시작 허용 — CPU torch.compile이 생각보다 오래 걸림(5분 초과 확인됨)
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi # vLLM 프로세스 간 통신용 공유메모리 — 기본 64Mi로는 부족(160Mi 필요)
+        - name: hf-cache
+          hostPath:
+            path: /home/ubuntu/hf-cache
+            type: DirectoryOrCreate
+  strategy:
+    blueGreen:
+      activeService: vllm-active
+      previewService: vllm-preview
+      autoPromotionEnabled: false # A안 핵심 — 자동 승격 금지, recovery-policy가 명시적으로 promote
+      scaleDownDelaySeconds: 30 # 9-5절: promote 후 구버전 scale-down 유예
