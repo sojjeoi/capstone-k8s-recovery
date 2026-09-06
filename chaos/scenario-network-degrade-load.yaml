@@ -3,7 +3,7 @@
 # 안전한 RPS로 고정 — 지연 시간 증가만 순수하게 관찰하기 위함)
 # 지속시간 390s는 chaos Workflow 총 360s(90s x 4단계, 500ms/1s/2s/4s)보다 여유 있게 잡음.
 target:
-  url: "http://localhost:8000/v1/completions"
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
   model: "Qwen/Qwen2.5-0.5B-Instruct"
   prompt: "Hello"
   max_tokens: 10

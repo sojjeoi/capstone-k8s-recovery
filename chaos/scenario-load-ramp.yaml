@@ -11,7 +11,7 @@
 # 다시 훑어서 그 안의 시간대별 성공률 추이를 확인한다. 6 RPS 이상은 이미 붕괴가
 # 증명됐으므로 재확인용으로 한 단계만 남김.
 target:
-  url: "http://localhost:8000/v1/completions"
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
   model: "Qwen/Qwen2.5-0.5B-Instruct"
   prompt: "Hello"
   max_tokens: 10
