@@ -1,0 +1,11 @@
+# 정상 상태 데이터셋용 — 지속 부하 구간 (ramp.py 재사용, low-load보다 긴 지속시간)
+target:
+  url: "http://localhost:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: normal-sustained-load
+    rps: 1
+    duration_sec: 150

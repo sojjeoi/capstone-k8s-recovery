@@ -1,0 +1,13 @@
+# 정상 상태 데이터셋용 — 정상 burst 구간 (ramp.py 재사용)
+# 2 RPS는 Phase 5 부하 증가 실측(발견 4)에서 100% 성공을 유지한 안전 범위의 상한 —
+# "정상" 라벨이 실제로는 장애 전조 구간과 섞이지 않도록 이 값을 넘기지 않는다.
+target:
+  url: "http://localhost:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: normal-burst
+    rps: 2
+    duration_sec: 30
