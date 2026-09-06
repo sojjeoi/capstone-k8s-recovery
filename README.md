@@ -15,7 +15,7 @@ Chaos Mesh로 점진적 열화(메모리 압력·부하 증가·네트워크 열
 - **AI 서빙 워크로드 배포**: vLLM 기반 경량 모델을 Argo Rollouts BlueGreen으로 배포·서빙
 - **관측성 스택**: Prometheus(K8s+vLLM 지표) + Grafana + Alertmanager, 영구 저장 구성 완료
 - **장애 주입 및 실험 자동화**: Chaos Mesh로 Pod 종료·점진적 메모리 압력·고정 도착률(open-loop) 부하 증가·단계적 네트워크 열화 4종 시나리오 재현 (검증 완료). 3가지 방식(기본 self-healing / 고정 임계치 / 제안 방식) 자동 비교 오케스트레이션은 개발 예정
-- **이상 탐지 기반 위험도 산정**: K8s 지표(CPU·메모리·재시작·OOM) + vLLM 고유 지표(KV Cache 사용률, 요청 수, 토큰 처리량 등)를 Isolation Forest로 분석해 장애 전조 감지 *(개발 예정)*
+- **이상 탐지 기반 위험도 산정**: K8s 지표(CPU·메모리) + vLLM 고유 지표(큐 길이, KV Cache 사용률)를 Isolation Forest로 분석해 장애 전조 감지 *(최소 모델 완료 — 정상 표본 7개뿐이라 정상 데이터 확장 필요)*
 - **선제적 자동 복구**: 위험도가 임계치를 넘으면 장애 발생 전 Kubernetes API(Argo Rollouts promotion)로 트래픽 전환 *(API promotion 방식 실측 검증 완료, 정책 결정 서비스 본 구현은 개발 예정)*
 - **감사 가능한 복구 이력**: 복구 조치의 판단 근거와 실행 결과를 Git에 구조화하여 기록, 사후 추적 가능 *(개발 예정)*
 - **정량적 성능 검증**: 복구 지연시간 단계별 분해, 가용성, 정확성 등 종합 평가 *(개발 예정)*
@@ -44,10 +44,10 @@ capstone-k8s-recovery/
 ├── chaos/                          # Chaos Mesh 장애 시나리오 4종 + 무개입 대조군(예정)
 │   └── loadgen/                    # 고정 도착률(open-loop) 부하 생성기
 │
-├── anomaly-detection/               # 이상 탐지 모델 (Isolation Forest) — 개발 예정
+├── anomaly-detection/               # 이상 탐지 모델 (Isolation Forest) — 최소 버전 완료, 정상 데이터 확장 필요
 ├── recovery-policy/                 # 복구 정책 결정 서비스 — Phase 2.5 API promotion PoC 완료, 본 구현 예정
 │
-└── experiments/                     # 실험 자동화 + 결과 수집 — 개발 예정
+└── experiments/                     # BlueGreen prep·SLO 판정·calibration 오케스트레이션 완료, 3-way 비교는 개발 예정
 ```
 
 ## 🚧 진행 상태
@@ -59,8 +59,8 @@ capstone-k8s-recovery/
 - [x] AI 서빙 배포 (vLLM + Argo Rollouts BlueGreen)
 - [x] 관측성 스택 (Prometheus + Grafana + Alertmanager)
 - [x] 장애 시나리오 4종 검증 (Pod kill / 메모리 압력 / 부하 증가 / 네트워크 열화)
-- [ ] 무개입 대조군 실행 스크립트
-- [ ] 이상 탐지 모델
+- [ ] 무개입 대조군 실행 스크립트 (calibration 오케스트레이션은 완료, 3-way 비교 자동화는 예정)
+- [x] 이상 탐지 모델 (최소 버전 — 정상 표본 7개, 확장 필요)
 - [ ] 복구 정책 결정 서비스 (API promotion PoC 완료, 본 구현 진행 중)
 - [ ] 실험 및 측정
 
