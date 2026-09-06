@@ -1,0 +1,2 @@
+stage,target_rps,actual_rps,sent,success,success_rate,p95,p99
+network-degrade-probe,1,1.0,390,44,0.1128,3.036,3.306

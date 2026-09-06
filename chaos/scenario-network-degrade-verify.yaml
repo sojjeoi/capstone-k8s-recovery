@@ -1,0 +1,20 @@
+# port-forward 터널 자체가 병목인지 확인하기 위한 단발성 검증용 NetworkChaos.
+# 1000ms 지연(부하 테스트에서 성공률이 52%->0%로 무너진 경계값)을 고정해두고,
+# kubectl exec로 클러스터 내부에서 직접 호출해 port-forward를 거치지 않았을 때도
+# 같은 지점(~2.3초)에서 끊기는지 비교한다. 검증 전용이라 Workflow 없이 단일 리소스로 충분.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: vllm-network-degrade-verify
+  namespace: vllm-serving
+spec:
+  action: delay
+  mode: one
+  selector:
+    namespaces: [vllm-serving]
+    labelSelectors:
+      app: vllm-serving
+  delay:
+    latency: "1000ms"
+    jitter: "100ms"
+  duration: "150s"

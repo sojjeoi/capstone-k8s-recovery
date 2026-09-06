@@ -1,0 +1,15 @@
+# 즉시 강제종료 시나리오 — 전조 증상 없이 Pod를 죽여서 반응형 baseline 확인용 (9-1절)
+# 선제탐지 증명용이 아님: 예고 없는 사고라 "미리 알아채는" 시나리오는 아니고, "얼마나 빨리 되살리나"만 측정
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: vllm-pod-kill
+  namespace: vllm-serving
+spec:
+  action: pod-kill
+  mode: one # 대상 중 하나만 골라 종료 (지금은 replica 1개라 사실상 그 Pod)
+  selector:
+    namespaces:
+      - vllm-serving
+    labelSelectors:
+      app: vllm-serving # service.yaml/servicemonitor.yaml과 동일한 라벨 재사용

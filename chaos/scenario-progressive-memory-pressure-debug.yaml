@@ -1,0 +1,18 @@
+# 디버그용 — 다단계 Workflow의 변수(단계 전환)를 제거하고, memStress가 큰 목표치에 실제로 도달하는지만 단독으로 확인
+# 5GB 목표, 10분 지속 — 시간이 문제였는지 크기가 문제였는지 가려내기 위함
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: vllm-memory-pressure-debug
+  namespace: vllm-serving
+spec:
+  mode: one
+  selector:
+    namespaces: [vllm-serving]
+    labelSelectors:
+      app: vllm-serving
+  stressors:
+    memory:
+      workers: 2 # 순환 중 최고점이 6032~6038Mi(한도 6144Mi 대비 -106~112Mi)에서 반복 관측됨 — 워커 2개로 겹침 시도
+      size: "5000MB"
+  duration: 10m

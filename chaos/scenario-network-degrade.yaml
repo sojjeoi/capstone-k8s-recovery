@@ -1,0 +1,75 @@
+# 단계적 네트워크 열화 — 1차 실행(20/50/100ms) 결과: baseline latency가 이미 ~2.6초라
+# 100ms 지연은 4%도 안 돼서 노이즈에 묻힘, client latency 완전히 무반응이었음.
+# 그래서 baseline 대비 유의미한 비중이 되도록 500ms/1s/2s/4s로 크게 올려서 재설계.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: vllm-network-degrade
+  namespace: vllm-serving
+spec:
+  entry: degrade-serial
+  templates:
+    - name: degrade-serial
+      templateType: Serial
+      deadline: 7m
+      children:
+        - stage-1-500ms
+        - stage-2-1000ms
+        - stage-3-2000ms
+        - stage-4-4000ms
+
+    - name: stage-1-500ms
+      templateType: NetworkChaos
+      deadline: 90s
+      networkChaos:
+        action: delay
+        mode: one
+        selector:
+          namespaces: [vllm-serving]
+          labelSelectors:
+            app: vllm-serving
+        delay:
+          latency: "500ms"
+          jitter: "50ms"
+
+    - name: stage-2-1000ms
+      templateType: NetworkChaos
+      deadline: 90s
+      networkChaos:
+        action: delay
+        mode: one
+        selector:
+          namespaces: [vllm-serving]
+          labelSelectors:
+            app: vllm-serving
+        delay:
+          latency: "1000ms"
+          jitter: "100ms"
+
+    - name: stage-3-2000ms
+      templateType: NetworkChaos
+      deadline: 90s
+      networkChaos:
+        action: delay
+        mode: one
+        selector:
+          namespaces: [vllm-serving]
+          labelSelectors:
+            app: vllm-serving
+        delay:
+          latency: "2000ms"
+          jitter: "200ms"
+
+    - name: stage-4-4000ms
+      templateType: NetworkChaos
+      deadline: 90s
+      networkChaos:
+        action: delay
+        mode: one
+        selector:
+          namespaces: [vllm-serving]
+          labelSelectors:
+            app: vllm-serving
+        delay:
+          latency: "4000ms"
+          jitter: "400ms"

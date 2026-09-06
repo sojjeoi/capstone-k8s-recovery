@@ -1,0 +1,14 @@
+# 네트워크 열화 시나리오 전용 — ramp.py 재사용, RPS는 1로 고정한 채 계속 요청만 보냄
+# (부하 자체가 변수가 되면 안 되니까 부하 증가 시나리오에서 검증된 "항상 100% 성공하는"
+# 안전한 RPS로 고정 — 지연 시간 증가만 순수하게 관찰하기 위함)
+# 지속시간 390s는 chaos Workflow 총 360s(90s x 4단계, 500ms/1s/2s/4s)보다 여유 있게 잡음.
+target:
+  url: "http://localhost:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: network-degrade-probe
+    rps: 1
+    duration_sec: 390

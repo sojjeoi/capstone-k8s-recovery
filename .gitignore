@@ -10,9 +10,10 @@ kubeconfig*
 *.key
 .env
 
-# 모델/결과물 (용량 크거나 재생성 가능)
+# 모델/결과물 (용량 크거나 재생성 가능) — 대표성 있는 결과만 git add -f로 예외 추가
 *.pkl
 experiments/results/*.csv
+chaos/loadgen/results/*.csv
 
 # OS
 .DS_Store
