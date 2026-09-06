@@ -2,6 +2,6 @@
 {"regime": "warmup", "start_utc": "2026-09-06T11:03:39.749787+00:00", "end_utc": "2026-09-06T11:05:25.451589+00:00", "notes": "pod 강제 삭제(delete) -> 새 pod 생성 -> Ready, 구 pod 이름과 다름을 확인한 시각까지"}
 {"regime": "post_startup", "start_utc": "2026-09-06T11:05:40.605481+00:00", "end_utc": "2026-09-06T11:06:55.607437+00:00", "notes": "새 pod Ready 직후 안정화 구간, 부하 없음"}
 {"regime": "active_preview_concurrent", "start_utc": "2026-09-06T11:07:21.665651+00:00", "end_utc": "2026-09-06T11:09:24.880081+00:00", "notes": "template bump로 새 preview 생성, active+preview 두 pod 동시 Running 구간(뒤쪽 30초는 둘 다 떠있는 상태 유지)"}
-{"regime": "low_load", "start_utc": "2026-09-06T11:17:46.958588+00:00", "end_utc": "2026-09-06T11:18:49.355110+00:00", "notes": "ramp.py 1 RPS/60s, 정상 저부하 (재실행 - 1차는 promote 직후라 웜업 미완료로 오염돼서 폐기)"}
-{"regime": "sustained_load", "start_utc": "2026-09-06T11:19:05.143574+00:00", "end_utc": "2026-09-06T11:21:37.394060+00:00", "notes": "ramp.py 1 RPS/150s, 정상 지속부하"}
-{"regime": "burst", "start_utc": "2026-09-06T11:21:53.782042+00:00", "end_utc": "2026-09-06T11:22:30.360980+00:00", "notes": "ramp.py 2 RPS/30s, 정상 burst(Phase5 발견4 기준 100% 성공 안전범위 상한)"}
+{"regime": "low_load", "start_utc": "2026-09-06T14:39:35.500905+00:00", "end_utc": "2026-09-06T14:42:09.274321+00:00", "notes": "ramp.py 1 RPS/60s, in-cluster+60s 안정화 대기 후 재측정"}
+{"regime": "sustained_load", "start_utc": "2026-09-06T14:42:53.736469+00:00", "end_utc": "2026-09-06T14:47:05.950101+00:00", "notes": "ramp.py 1 RPS/150s, in-cluster+60s 안정화 대기 후 재측정"}
+{"regime": "burst", "start_utc": "2026-09-06T14:47:26.419776+00:00", "end_utc": "2026-09-06T14:49:41.111924+00:00", "notes": "ramp.py 2 RPS/30s, in-cluster+60s 안정화 대기 후 재측정"}

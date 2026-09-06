@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """ramp.py를 in-cluster에서 실행한다.
 
-실측 확인: kubectl port-forward 터널은 갓 열렸을 때 동시 연결이 몰리면
-(open-loop 특성상 응답을 안 기다리고 계속 새 요청을 쏨) 앞쪽 요청들이
-줄줄이 타임아웃되는 걸로 확인됨(서버/vLLM 웜업 문제가 아니었음 - in-cluster
-직접 호출로는 100% 성공). 그래서 실제로 신뢰할 측정이 필요할 땐(정상
-데이터셋, calibration, Phase 8 실험 전부) 반드시 이 방식을 쓴다.
+실측 확인 (2026-09-06, 두 번 독립 검증): 문제는 port-forward도 vLLM 엔진
+웜업도 아니라 "막 생성된 pod는 네트워크(라우팅/CNI)가 안정화되기까지 짧은
+시간이 걸린다"는 것이었다 - 어느 쪽이 새 pod냐와 무관하게 재현됨.
+  1) 막 promote된 vLLM pod에 바로 부하 -> 실패, 2분 넘게 기다린 뒤 -> 성공
+  2) in-cluster(port-forward 없이)에서도 막 만든 client pod로 바로 부하 ->
+     실패(80%, P95 29s), 같은 pod로 114초 뒤 재시도 -> 성공(100%, P95 3.2s)
+그래서 이 러너는 client pod가 Ready된 뒤 SETTLE_SEC만큼 기다렸다가 부하를
+실행한다. 실제로 신뢰할 측정이 필요할 땐(정상 데이터셋, calibration, Phase 8
+실험 전부) 반드시 이 방식을 쓴다.
 
 임시 pod를 하나 띄우고 ramp.py+config를 그 안에 복사해 실행한 뒤, 결과
 CSV 두 개(summary/raw)를 꺼내온다. config의 target.url은 in-cluster 서비스
@@ -23,6 +27,7 @@ from typing import Optional, Tuple
 NAMESPACE = "vllm-serving"
 IMAGE = "python:3.11-slim"
 RAMP_PY = Path(__file__).parent.parent / "chaos" / "loadgen" / "ramp.py"
+SETTLE_SEC = 60  # pod Ready 이후 네트워크 안정화 대기 (실측 근거: 위 docstring)
 
 
 def _run(cmd, **kw):
@@ -64,11 +69,15 @@ def run_in_cluster(config_path: str, run_id: Optional[str], method: str, rep: st
         config_name = Path(config_path).name
         _run(["kubectl", "cp", os.path.relpath(RAMP_PY), f"{NAMESPACE}/{pod_name}:/ramp.py"])
         _run(["kubectl", "cp", os.path.relpath(config_path), f"{NAMESPACE}/{pod_name}:/{config_name}"])
+        _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "pip", "install", "-q", "aiohttp", "pyyaml"])
 
-        sh_cmd = f"pip install -q aiohttp pyyaml && python /ramp.py --config /{config_name} --method " + method + " --rep " + str(rep)
+        print(f"pod 네트워크 안정화 대기 {SETTLE_SEC}초...")
+        time.sleep(SETTLE_SEC)
+
+        cmd = ["python", "/ramp.py", "--config", f"/{config_name}", "--method", method, "--rep", str(rep)]
         if run_id:
-            sh_cmd += f" --run-id {run_id}"
-        result = _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "sh", "-c", sh_cmd],
+            cmd += ["--run-id", run_id]
+        result = _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--"] + cmd,
                        capture_output=True, text=True, encoding="utf-8")
         print(result.stdout)
 
