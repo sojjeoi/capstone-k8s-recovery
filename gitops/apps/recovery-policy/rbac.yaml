@@ -10,6 +10,13 @@ rules:
   - apiGroups: ["argoproj.io"]
     resources: ["rollouts"]
     verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["argoproj.io"]
+    # 공식 kubectl-argo-rollouts CLI의 promote는 /status 서브리소스를 patch한다
+    # (rollouts_client.py 모듈 doc스트링) - K8s RBAC는 이걸 별도 리소스로 취급해서
+    # 위 rollouts 규칙만으론 안 됨. 실측(7단계 E2E)으로 발견: "forbidden: ...
+    # cannot patch resource 'rollouts/status'".
+    resources: ["rollouts/status"]
+    verbs: ["patch", "update"]
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch"]
