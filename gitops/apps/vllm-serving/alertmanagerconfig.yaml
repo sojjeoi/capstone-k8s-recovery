@@ -1,0 +1,39 @@
+# Alertmanager가 발화한 알림(VLLMTargetDown/VLLMTargetMissing)을
+# recovery-policy로 보내는 라우팅 설정 - 반응 경로(Alertmanager 웹훅)의
+# 실제 배선. AlertmanagerConfig CRD(Prometheus Operator).
+#
+# 실측 확인(kubectl get alertmanager -n monitoring): alertmanagerConfigSelector,
+# alertmanagerConfigNamespaceSelector 둘 다 {}(전체 매칭) - 이 리소스 하나만
+# apply하면 kube-prom Helm values를 안 건드려도 즉시 반영된다.
+#
+# route는 이 리소스의 네임스페이스(vllm-serving)로 Operator가 자동 스코프한다
+# (`kubectl explain alertmanagerconfig.spec.route`: "operator ... adds a
+# `namespace: <object namespace>` matcher"). severity: critical 매처는 두
+# 알림 모두가 실제로 갖는 라벨이라 추가함 - 나중에 이 PrometheusRule에 낮은
+# 심각도 알림이 추가돼도 실수로 같이 recovery-policy로 안 가게.
+#
+# groupWait/groupInterval을 짧게 잡은 이유: 이 경로는 "돌발 장애"에 대한
+# 반응형 fallback이라 지연 자체가 존재 이유를 깎아먹는다. PrometheusRule의
+# `for: 30s`가 이미 탐지 지연의 대부분을 차지하므로 여기서는 최소한만 더한다.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: vllm-serving-to-recovery-policy
+  namespace: vllm-serving
+  labels:
+    release: kube-prom
+spec:
+  route:
+    receiver: recovery-policy-webhook
+    groupBy: ["alertname"]
+    groupWait: 10s
+    groupInterval: 30s
+    matchers:
+      - name: severity
+        value: critical
+        matchType: "="
+  receivers:
+    - name: recovery-policy-webhook
+      webhookConfigs:
+        - url: http://recovery-policy.vllm-serving.svc.cluster.local:8080/webhooks/alertmanager
+          sendResolved: true
