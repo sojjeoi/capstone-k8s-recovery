@@ -15,6 +15,9 @@ kubeconfig*
 experiments/results/*.csv
 chaos/loadgen/results/*.csv
 
+# recovery-policy 런타임 상태 (idempotency/쿨다운) — 감사기록(audit-log/)과 다름, 커밋 안 함
+recovery-policy/state/
+
 # OS
 .DS_Store
 Thumbs.db
