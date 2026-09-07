@@ -1,0 +1,45 @@
+# image는 로컬 빌드 태그 - registry 안 쓰는 로컬 데모라 imagePullPolicy: Never.
+# 워커 노드가 이 이미지를 실제로 갖고 있어야 함(예: 노드에서 직접 build,
+# 또는 build 후 노드의 컨테이너 런타임으로 옮기기 - 방법은 자유).
+#
+# probe timeoutSeconds를 명시하는 이유: 발견 5(K8s 기본값 1초가 네트워크
+# 열화 시 false-positive 재시작을 유발)에서 배운 대로, 여기서도 기본값에
+# 맡기지 않고 명시적으로 값을 정한다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recovery-policy
+  namespace: vllm-serving
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recovery-policy
+  template:
+    metadata:
+      labels:
+        app: recovery-policy
+    spec:
+      serviceAccountName: recovery-policy
+      containers:
+        - name: recovery-policy
+          image: recovery-policy:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            timeoutSeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            timeoutSeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3

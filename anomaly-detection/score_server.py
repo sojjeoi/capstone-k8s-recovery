@@ -21,7 +21,11 @@ from features import extract_features
 sys.stdout.reconfigure(encoding="utf-8")  # Windows 기본 cp949 콘솔 대응
 
 ARTIFACTS_DIR = Path(__file__).parent / "artifacts"
-RECOVERY_POLICY_URL = "http://localhost:8080/signal"
+# recovery-policy가 in-cluster Deployment/Service로 배포되므로(1단계) 그
+# in-cluster DNS를 가리킨다. score_server.py를 로컬 PC에서 돌릴 거면
+# kubectl port-forward -n vllm-serving svc/recovery-policy 8080:8080로
+# 터널을 열고 이 상수를 http://localhost:8080/signal로 바꿀 것.
+RECOVERY_POLICY_URL = "http://recovery-policy.vllm-serving.svc.cluster.local:8080/signal"
 
 EVAL_INTERVAL_SEC = 15  # 평가 주기 (features.py의 Prometheus query step과 동일)
 WINDOW_SEC = 60  # 평가 대상 trailing window (slo-definition.md와 동일 관례)

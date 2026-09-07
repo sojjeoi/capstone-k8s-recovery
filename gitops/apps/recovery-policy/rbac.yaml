@@ -1,0 +1,29 @@
+# 최소권한 — 지금 rollouts_client.py가 실제로 쓰는 권한만(guideline.md
+# Phase 2.5 게이트: "최소권한 ServiceAccount"). safety.py에서 preview Pod
+# Ready 여부까지 확인하게 되면(4단계) pods get/list를 추가할 것.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: recovery-policy
+  namespace: vllm-serving
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["rollouts"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: recovery-policy
+  namespace: vllm-serving
+subjects:
+  - kind: ServiceAccount
+    name: recovery-policy
+    namespace: vllm-serving
+roleRef:
+  kind: Role
+  name: recovery-policy
+  apiGroup: rbac.authorization.k8s.io
