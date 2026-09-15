@@ -145,12 +145,14 @@ def test_unknown_signal_type_via_alertmanager():
 
 
 def test_experiment_run_id_injected_into_alertmanager_path():
-    # Alertmanager alert 자체엔 experiment_run_id를 실을 자리가 없어서(9절
-    # 참고) /admin/experiment-run으로 지정한 ambient 값이 대신 쓰여야 한다.
+    # Alertmanager alert 자체엔 experiment_run_id를 실을 자리가 없어서 ambient
+    # 등록값이 대신 쓰여야 한다 - 등록된 started_at보다 나중 alert만 대상.
     _reset_state()
     mock_enqueue.reset_mock()
-    set_resp = client.post("/admin/experiment-run", params={"run_id": "pilot-run-001"})
-    assert set_resp.json()["current_experiment_run_id"] == "pilot-run-001"
+    ctx = {"run_id": "pilot-run-001", "scenario": "load_ramp", "arm": "proposed",
+           "rep": 1, "started_at": "2026-09-16T00:00:00+00:00"}
+    set_resp = client.post("/admin/experiment-run", json=ctx)
+    assert set_resp.json()["status"] == "active"
 
     payload = {
         "status": "firing",
@@ -158,7 +160,7 @@ def test_experiment_run_id_injected_into_alertmanager_path():
             "status": "firing",
             "labels": {"alertname": "VLLMTargetDown"},
             "annotations": {},
-            "startsAt": "2026-09-16T00:00:00Z",
+            "startsAt": "2026-09-16T00:05:00Z",  # 등록 시각보다 나중
             "fingerprint": "run-id-test-fp",
         }],
     }
@@ -169,9 +171,53 @@ def test_experiment_run_id_injected_into_alertmanager_path():
     assert signal_arg.raw["experiment_run_id"] == "pilot-run-001"
     print("OK - ambient run_id가 Alertmanager 경로 signal.raw에 주입됨")
 
-    clear_resp = client.post("/admin/experiment-run")
-    assert clear_resp.json()["current_experiment_run_id"] is None
-    print("OK - trial 종료 후 run_id 클리어")
+    clear_resp = client.post("/admin/experiment-run/clear", params={"run_id": "pilot-run-001"})
+    assert clear_resp.json()["status"] == "cleared"
+    print("OK - 일치하는 run_id로 clear 성공")
+
+
+def test_experiment_run_idempotent_reregister_and_conflict():
+    ctx1 = {"run_id": "run-a", "scenario": "pod_kill", "arm": "native",
+            "rep": 1, "started_at": "2026-09-16T00:00:00+00:00"}
+    assert client.post("/admin/experiment-run", json=ctx1).status_code == 200
+    assert client.post("/admin/experiment-run", json=ctx1).status_code == 200
+    print("OK - 같은 run_id 재등록은 idempotent(200)")
+
+    ctx2 = {**ctx1, "run_id": "run-b"}
+    assert client.post("/admin/experiment-run", json=ctx2).status_code == 409
+    print("OK - 다른 run_id가 활성 중일 때 새 등록은 409")
+
+    assert client.post("/admin/experiment-run/clear", params={"run_id": "run-b"}).status_code == 409
+    print("OK - 불일치 run_id의 clear는 409(현재 활성값 안 지워짐)")
+
+    assert client.post("/admin/experiment-run/clear", params={"run_id": "run-a"}).json()["status"] == "cleared"
+
+
+def test_stale_alert_not_tagged_with_current_run():
+    _reset_state()
+    mock_enqueue.reset_mock()
+    ctx = {"run_id": "run-c", "scenario": "network_degrade", "arm": "fixed_threshold",
+           "rep": 2, "started_at": "2026-09-16T10:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx)
+
+    payload = {
+        "status": "firing",
+        "alerts": [{
+            "status": "firing",
+            "labels": {"alertname": "VLLMTargetMissing"},
+            "annotations": {},
+            "startsAt": "2026-09-16T09:00:00Z",  # 등록 시각보다 이전 - stale
+            "fingerprint": "stale-fp",
+        }],
+    }
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/webhooks/alertmanager", json=payload)
+
+    signal_arg = mock_enqueue.call_args.args[0]
+    assert signal_arg.raw.get("experiment_run_id") is None
+    print("OK - trial 등록 이전 startsAt을 가진 stale alert는 run_id 태깅 안 됨")
+
+    client.post("/admin/experiment-run/clear", params={"run_id": "run-c"})
 
 
 if __name__ == "__main__":
@@ -184,5 +230,7 @@ if __name__ == "__main__":
     test_alertmanager_webhook_end_to_end()
     test_unknown_signal_type_via_alertmanager()
     test_experiment_run_id_injected_into_alertmanager_path()
+    test_experiment_run_idempotent_reregister_and_conflict()
+    test_stale_alert_not_tagged_with_current_run()
     _reset_state()
     print("모두 통과")

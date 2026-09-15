@@ -16,15 +16,34 @@ JSON payload에 직접 실어 보내므로 schemas.py가 이미 처리한다.
 Phase 8 experiment_run_id 전파(/webhooks/alertmanager 경로): Alertmanager
 alert에는 실험 메타데이터를 실을 자리가 없다(PrometheusRule 라벨은 정적이라
 trial마다 동적으로 못 바꿈). 대신 오케스트레이터가 chaos 주입 직전에
-POST /admin/experiment-run으로 "지금 진행 중인 실험"을 알려주면, 그 사이에
-들어온 Alertmanager 신호는 이 값을 experiment_run_id로 쓴다(trial 종료 시
-오케스트레이터가 다시 null로 지움 - 다음 trial로 새는 것 방지).
+POST /admin/experiment-run으로 "지금 진행 중인 실험"을 등록하면, 그 사이에
+들어온 Alertmanager 신호는 이 값을 experiment_run_id로 쓴다.
+
+이 ambient 방식의 한계(문서화): 이벤트 자체에 correlation ID가 없어서
+프로세스 메모리의 "현재 실험 1개" 상태에 의존한다 - 여러 실험이 동시에
+도는 운영 환경이었다면 이벤트에 직접 correlation ID를 실어야 맞다. Phase 8은
+실험을 순차(한 번에 1개) 실행하므로 이 정도로 충분하다고 판단했다. 대신
+아래 안전장치를 둔다:
+- 동시에 활성 실험은 1개만(등록 중 다른 run_id로 재등록 시도 시 409)
+- 같은 run_id 재등록은 idempotent(그냥 200)
+- clear는 run_id를 받아 현재 값과 일치할 때만 지움(늦게 도착한 이전 trial의
+  clear가 다음 trial의 등록을 실수로 지우는 걸 방지)
+- recovery-policy 재시작으로 컨텍스트가 사라지면 그 trial은 오케스트레이터가
+  invalid_run으로 처리(재시작 = 메모리 상태 소실은 설계상 당연한 결과)
+- Alert의 startsAt이 현재 등록된 실험의 started_at보다 이전이면 태깅 안 함
+  (이전 trial에서 새어든 stale alert 방지)
+- 이 엔드포인트는 ClusterIP로만 노출돼 클러스터 외부에서 접근 불가(service.yaml)
+  - 별도 토큰 인증은 안 둠(단일 신뢰된 오케스트레이터, 외부 노출 없음)
 """
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from fastapi import FastAPI
+from datetime import datetime
+from typing import Optional
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 import git_client
 import policy
@@ -45,7 +64,16 @@ ROLLOUT_NAME = "vllm-serving"
 NAMESPACE = "vllm-serving"
 KNOWN_SIGNAL_TYPES = {"anomaly_risk", "VLLMTargetDown", "VLLMTargetMissing"}
 
-_current_experiment_run_id: str = None
+
+class ExperimentContext(BaseModel):
+    run_id: str
+    scenario: str
+    arm: str
+    rep: int
+    started_at: datetime
+
+
+_current_experiment: Optional[ExperimentContext] = None
 
 
 @app.on_event("startup")
@@ -59,17 +87,40 @@ def healthz():
 
 
 @app.post("/admin/experiment-run")
-def set_experiment_run(run_id: str = None):
-    """Phase 8 오케스트레이터 전용 - chaos 주입 직전에 run_id로, trial 종료 후엔
-    인자 없이(null로) 호출한다. Alertmanager 경로의 run_id 태깅에만 쓰인다."""
-    global _current_experiment_run_id
-    _current_experiment_run_id = run_id
-    return {"current_experiment_run_id": _current_experiment_run_id}
+def start_experiment_run(ctx: ExperimentContext):
+    """run_once()가 chaos 주입 직전에 호출. 이미 다른 run_id가 활성 중이면
+    409(오케스트레이터가 quiescence를 안 지켰다는 뜻 - 버그로 취급해야 함)."""
+    global _current_experiment
+    if _current_experiment is not None and _current_experiment.run_id != ctx.run_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"다른 실험이 이미 활성 중: {_current_experiment.run_id} (요청: {ctx.run_id})",
+        )
+    _current_experiment = ctx
+    return {"status": "active", "current": _current_experiment}
+
+
+@app.post("/admin/experiment-run/clear")
+def clear_experiment_run(run_id: str):
+    """run_once()가 trial 정리 단계에서 호출. run_id가 현재 활성값과 일치할
+    때만 지운다 - 안 그러면 늦게 도착한 이전 trial의 clear가 다음 trial을
+    실수로 지울 수 있다."""
+    global _current_experiment
+    if _current_experiment is None:
+        return {"status": "already_clear"}
+    if _current_experiment.run_id != run_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"현재 활성 run_id({_current_experiment.run_id})와 불일치(요청: {run_id})",
+        )
+    _current_experiment = None
+    return {"status": "cleared"}
 
 
 def process_signal(signal: NormalizedSignal) -> DecisionRecord:
-    if not signal.raw.get("experiment_run_id") and _current_experiment_run_id:
-        signal.raw["experiment_run_id"] = _current_experiment_run_id
+    if not signal.raw.get("experiment_run_id") and _current_experiment is not None:
+        if signal.received_at >= _current_experiment.started_at:
+            signal.raw["experiment_run_id"] = _current_experiment.run_id
 
     if not safety.check_and_reserve(signal.idempotency_key):
         record = build(signal, action=None, outcome=Outcome.SKIPPED_DUPLICATE,

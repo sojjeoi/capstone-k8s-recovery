@@ -13,6 +13,7 @@ kubeconfig*
 # 모델/결과물 (용량 크거나 재생성 가능) — 대표성 있는 결과만 git add -f로 예외 추가
 *.pkl
 experiments/results/*.csv
+experiments/results/*.json
 chaos/loadgen/results/*.csv
 
 # recovery-policy 런타임 상태 (idempotency/쿨다운) — 감사기록(audit-log/)과 다름, 커밋 안 함
