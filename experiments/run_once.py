@@ -101,14 +101,22 @@ class Injector:
     prepare()는 느릴 수 있는 준비(pod 생성, 네트워크 안정화 등)를 t_injection
     이전에 끝내기 위한 것 - inject()는 "지금 당장 주입 시작"만 한다.
     is_started()/is_effective()로 실제 효과가 났는지까지 확인해야
-    injection_valid=True로 인정한다. cleanup()은 prepare()/inject()가 전혀
-    안 불렸어도 안전하게 호출 가능해야 한다(idempotent)."""
+    injection_valid=True로 인정한다. is_done()은 정상 종료뿐 아니라 비정상
+    종료(예: 프로세스 exit code != 0)도 구분해야 하면 TrialInvalid를 직접
+    던져도 된다(run_once()의 OBSERVING 루프가 그대로 상위로 전파해
+    outcome=invalid_run으로 처리한다). cleanup()은 prepare()/inject()가
+    전혀 안 불렸어도 안전하게 호출 가능해야 한다(idempotent).
+    get_actual_injection_time(): 선택 구현 - inject() 호출 시각과 "실제 첫
+    요청이 나간 시각"이 다를 수 있는 어댑터(예: pod 안에서 프로세스를 백그라운드로
+    띄우는 경우)를 위한 것. None이 아닌 값을 반환하면 run_once()가 t_injection을
+    이 값으로 덮어쓴다 - 미구현(None 필드)이면 inject() 호출 시각을 그대로 쓴다."""
     prepare: Callable[[], None]
     inject: Callable[[], None]
     is_started: Callable[[], bool]
     is_effective: Callable[[], bool]
     is_done: Callable[[], bool]
     cleanup: Callable[[], None]
+    get_actual_injection_time: Optional[Callable[[], Optional[str]]] = None
 
 
 @dataclass
@@ -121,12 +129,17 @@ class Prober:
     stop() 이후에도 이 함수가 계속 True를 내면 다음 trial이 오염된다.
     check_slo_violation()/check_recovered(): slo-definition.md 기준 판정을
     어댑터가 직접 구현 - run_once()는 언제 물어볼지, t_slo보다 먼저는 안
-    묻는다는 순서만 안다."""
+    묻는다는 순서만 안다. get_actual_slo_time()/get_actual_recovery_time():
+    선택 구현 - check_*()가 True를 반환한 poll 시각이 아니라, probe 자체가
+    계산한(예: 요청 로그 기반) 더 정밀한 실제 판정 시각을 쓰고 싶을 때.
+    None이면 poll 시각(호출 시점)을 그대로 쓴다."""
     start: Callable[[], None]
     is_alive: Callable[[], bool]
     check_slo_violation: Callable[[], bool]
     check_recovered: Callable[[], bool]
     stop: Callable[[], None]
+    get_actual_slo_time: Optional[Callable[[], Optional[str]]] = None
+    get_actual_recovery_time: Optional[Callable[[], Optional[str]]] = None
 
 
 @dataclass
@@ -289,6 +302,10 @@ def run_once(
         injector.inject()
         started = _wait_for(injector.is_started, injection_started_timeout_sec, poll_interval_sec)
         result.injection_valid = started and injector.is_effective()
+        if result.injection_valid and injector.get_actual_injection_time is not None:
+            precise = injector.get_actual_injection_time()
+            if precise:
+                result.t_injection = precise  # inject() 호출 시각보다 실제 첫 요청 시각이 더 정확함
         _write_result(result)
         if not result.injection_valid:
             raise TrialInvalid("주입이 시작됐는지/효과가 있었는지 확인 안 됨")
@@ -302,11 +319,13 @@ def run_once(
             if injector.is_done() and result.t_injection_end is None:
                 result.t_injection_end = _now()
             if result.t_slo is None and prober.check_slo_violation():
-                result.t_slo = _now()
+                precise = prober.get_actual_slo_time() if prober.get_actual_slo_time else None
+                result.t_slo = precise or _now()
             # t_slo가 찍히기 전에는 check_recovered()를 묻지 않는다 - 주입
             # 직후 아직 멀쩡한 순간을 "회복됨"으로 오판정하는 걸 막기 위함.
             if result.t_slo is not None and result.t_recovery is None and prober.check_recovered():
-                result.t_recovery = _now()
+                precise = prober.get_actual_recovery_time() if prober.get_actual_recovery_time else None
+                result.t_recovery = precise or _now()
             if result.t_injection_end is not None and (
                 result.t_slo is None or result.t_recovery is not None
             ):
