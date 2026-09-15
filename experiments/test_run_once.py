@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """run_once.py의 상태머신을 검증 - 실제 chaos 없이 가짜 Injector/Prober로
-검증한다(experiment-contract.md 3단계 완료기준 + 1차 리뷰에서 지적된 5개
-문제의 회귀 테스트). run_id 등록/quiescence 확인은 arm="native"일 때
-건너뛰므로 대부분은 오프라인으로 돈다 - non-native arm 하나만 실제
+검증한다(experiment-contract.md 3단계 완료기준 + 1·2차 리뷰에서 지적된
+문제들의 회귀 테스트). run_id 등록/quiescence 확인은 arm="native"일 때
+건너뛰므로 대부분은 오프라인으로 돈다 - non-native arm은 실제
 recovery-policy에 HTTP로 붙어서(port-forward 필요) 실제 연동을 확인한다."""
 import json
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from run_once import RESULTS_DIR, HarnessCorrupted, Injector, Prober, run_once
+import requests
+
+from run_once import RECOVERY_POLICY_URL, RESULTS_DIR, HarnessCorrupted, Injector, Prober, run_once
 
 
 def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=True):
@@ -40,19 +42,25 @@ def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=Tr
                      is_effective=is_effective, is_done=is_done, cleanup=cleanup), calls
 
 
-def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1):
+def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1, stops_cleanly=True):
     """violates_after_calls: check_slo_violation() 몇 번째 호출부터 위반으로
     볼지. recovers_after_slo_calls: t_slo가 찍힌 뒤(!) check_recovered() 몇
     번째 호출부터 True를 낼지 - t_slo 이전엔 애초에 안 불리는 걸 run_once()가
-    보장해야 하므로, 이 카운터는 오직 t_slo 이후 호출에만 반응한다."""
+    보장해야 하므로, 이 카운터는 오직 t_slo 이후 호출에만 반응한다.
+    stops_cleanly=True(기본)면 stop() 호출 이후 is_alive()가 False로
+    바뀐다(실제 정상 종료를 흉내) - False로 주면 stop()을 불러도 안 죽는
+    prober를 흉내낼 수 있다(2차 리뷰의 "stop 이후에도 살아있음" 시나리오용)."""
     calls = {"start": 0, "is_alive": 0, "check_slo_violation": 0, "check_recovered": 0, "stop": 0}
     counters = {"slo": 0, "recovered": 0}
+    state = {"stopped": False}
 
     def start():
         calls["start"] += 1
 
     def is_alive():
         calls["is_alive"] += 1
+        if state["stopped"]:
+            return False
         return alive
 
     def check_slo_violation():
@@ -67,6 +75,8 @@ def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1)
 
     def stop():
         calls["stop"] += 1
+        if stops_cleanly:
+            state["stopped"] = True
 
     return Prober(start=start, is_alive=is_alive, check_slo_violation=check_slo_violation,
                    check_recovered=check_recovered, stop=stop), calls
@@ -240,6 +250,30 @@ def test_critical_cleanup_failure_raises_and_still_writes_result():
     print("OK - injector.cleanup() 실패 -> HarnessCorrupted 전파 + 결과 파일은 남음")
 
 
+def test_prober_still_alive_after_stop_raises_harness_corrupted():
+    # 2차 리뷰 지적: stop()이 예외 없이 반환해도 실제로 안 멈췄을 수 있다 -
+    # is_alive()로 재확인해서, 여전히 살아있으면(다음 trial 오염 위험)
+    # HarnessCorrupted여야 한다.
+    injector, _ = _fake_injector()
+    stuck_prober, pcalls = _fake_prober(stops_cleanly=False)  # stop()을 불러도 안 죽음
+
+    raised = False
+    try:
+        run_once(
+            scenario="dry_run", arm="native", rep=14, sequence_index=14, order_seed=1,
+            injector=injector, prober=stuck_prober, timeout_sec=5, poll_interval_sec=0.1,
+        )
+    except HarnessCorrupted as e:
+        raised = True
+        print("  ->", e)
+
+    assert raised, "stop() 이후에도 is_alive()==True면 HarnessCorrupted여야 함"
+    result_files = sorted(RESULTS_DIR.glob("trial-dry_run-native-14-*.json"))
+    written = json.loads(result_files[-1].read_text(encoding="utf-8"))
+    assert "여전히 살아있음" in written["notes"], written["notes"]
+    print("OK - prober.stop() 이후에도 is_alive()==True -> HarnessCorrupted")
+
+
 def test_real_experiment_context_registration_non_native_arm():
     """native가 아닌 arm은 실제 recovery-policy에 quiescence 확인 +
     등록/clear HTTP 호출이 나간다 - 로컬에서
@@ -260,6 +294,31 @@ def test_real_experiment_context_registration_non_native_arm():
     print("OK - non-native arm의 실제 quiescence/experiment-run 등록/clear 성공:", result.run_id)
 
 
+def test_active_context_blocks_new_trial_start():
+    """다른 trial이 미리 컨텍스트를 등록해둔 상태(오케스트레이터가 정리를
+    건너뛴 버그 상황을 흉내)에서 run_once()를 부르면 즉시 invalid_run이어야
+    한다 - 실제 recovery-policy에 직접 등록해두고 확인."""
+    leaked_ctx = {"run_id": "leaked-from-previous-trial", "scenario": "pod_kill",
+                  "arm": "native", "rep": 1, "started_at": "2026-01-01T00:00:00+00:00"}
+    requests.post(f"{RECOVERY_POLICY_URL}/admin/experiment-run", json=leaked_ctx, timeout=10).raise_for_status()
+
+    try:
+        injector, icalls = _fake_injector()
+        prober, _ = _fake_prober()
+
+        result = run_once(
+            scenario="dry_run", arm="fixed_threshold", rep=2, sequence_index=6, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+        )
+        assert result.outcome == "invalid_run", result.outcome
+        assert "활성 실험" in result.invalid_reason, result.invalid_reason
+        assert icalls["prepare"] == 0, "활성 context 감지되면 injector.prepare()까지 가면 안 됨"
+        print("OK - 활성 context 있으면 새 trial은 즉시 invalid_run:", result.invalid_reason)
+    finally:
+        requests.post(f"{RECOVERY_POLICY_URL}/admin/experiment-run/clear",
+                       params={"run_id": "leaked-from-previous-trial"}, timeout=10)
+
+
 def _clean_previous_results():
     for f in RESULTS_DIR.glob("trial-dry_run-*.json"):
         f.unlink()
@@ -275,5 +334,7 @@ if __name__ == "__main__":
     test_exception_still_cleans_up_and_marks_invalid()
     test_probe_never_alive_marks_invalid()
     test_critical_cleanup_failure_raises_and_still_writes_result()
+    test_prober_still_alive_after_stop_raises_harness_corrupted()
     test_real_experiment_context_registration_non_native_arm()
+    test_active_context_blocks_new_trial_start()
     print("모두 통과")

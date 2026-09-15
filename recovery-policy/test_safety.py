@@ -36,9 +36,24 @@ def test_cooldown_not_active_when_stale():
     print("OK - 쿨다운 만료 후 비활성")
 
 
+def test_reset_cooldown_keeps_idempotency_keys():
+    # Phase 8 계약서 §6: cooldown만 지우고 idempotency 기록은 유지해야 함
+    _reset_state()
+    safety.check_and_reserve("keep-me")
+    safety.mark_action_taken()
+    assert safety.in_action_cooldown() is True
+
+    safety.reset_cooldown()
+
+    assert safety.in_action_cooldown() is False
+    assert safety.check_and_reserve("keep-me") is False, "reset_cooldown이 idempotency까지 지우면 안 됨"
+    print("OK - reset_cooldown: cooldown만 초기화, idempotency 기록은 유지")
+
+
 if __name__ == "__main__":
     test_check_and_reserve_blocks_duplicate()
     test_cooldown_active_right_after_action()
     test_cooldown_not_active_when_stale()
+    test_reset_cooldown_keeps_idempotency_keys()
     _reset_state()  # 테스트 흔적 정리
     print("모두 통과")

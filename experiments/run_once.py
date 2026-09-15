@@ -9,34 +9,39 @@
 Prober 어댑터(둘 다 작은 콜백 묶음)를 인자로 받는다. 여기서는 순서·타이밍·
 정리·결과기록만 표준화한다(4단계에서 시나리오별 어댑터를 연결).
 
-1차 구현 리뷰에서 발견된 5개 문제를 반영(2026-09-16):
-1. Prober의 "생존"과 "SLO 위반"을 분리 - 관찰 도중 서비스가 실제로 장애나는
-   건 측정 대상이지 probe 고장이 아니다. is_alive()(probe 프로세스 생존)와
-   check_slo_violation()(서비스가 지금 SLO 위반 중인지)을 나눴다.
-2. t_slo가 찍히기 전에는 check_recovered()를 아예 안 물어본다 - 안 그러면
-   주입 직후 아직 멀쩡한 순간에 "회복됨"으로 오판정될 수 있다. 끝까지
-   t_slo가 안 찍히면 outcome은 recovered가 아니라 prevented 후보(최종 판정은
-   collect_metrics.py가 native 반복과 교차검증 - run_once()는 provisional만).
-3. Injector에 prepare()/is_started()/is_effective()를 추가 - inject()가
-   예외 없이 반환한 것만으로 "주입 성공"을 인정하지 않는다.
-4. finally에서 모든 state를 CLEANING으로 찍은 뒤 recovered만 복원하던 버그
-   수정 - outcome->최종 state 매핑을 명시적으로 둔다.
-5. Injector.prepare()를 t_injection 이전(PREPARING)으로 분리 - load_ramp
-   어댑터(4단계)가 pod 생성·60초 안정화를 prepare()에 넣으면 t_injection이
-   실제 부하 시작 시각과 일치하게 된다(이 파일 자체는 시나리오를 모르므로
-   인터페이스만 제공).
+1차 리뷰(5개)에 이은 2차 리뷰 반영(2026-09-16):
+6. safety.py의 action cooldown을 매 trial 시작 전 초기화한다(idempotency는
+   유지 - run_id가 키에 포함돼 trial마다 자연히 달라짐). 각 trial은 독립
+   표본이어야 하는데, 이전 trial(다른 arm일 수 있음)의 promotion이 남긴
+   cooldown이 이번 trial의 조치를 막으면 비교가 왜곡된다. 순서는
+   quiescence 확인 -> 활성 context 없음 확인 -> cooldown 초기화 -> 준비 ->
+   context 등록 -> 주입(recovery-policy의 /admin/reset-cooldown이 서버
+   쪽에서도 이 순서를 재확인). 초기화 자체가 실패하면 invalid_run이 아니라
+   HarnessCorrupted(다음 trial까지 오염시킬 수 있는 문제라 배치를 멈춰야 함).
+7. prober.stop()을 "실패하면 비치명적"으로 단순 처리하지 않는다 - stop()이
+   예외 없이 반환해도 실제로 안 멈췄을 수 있고, 반대로 예외가 나도 이미
+   죽어있을 수 있다. 그래서 stop() 시도 후 반드시 is_alive()로 실제 상태를
+   재확인한다: 여전히 살아있으면(=다음 trial의 부하·지표를 오염시킬 수 있음)
+   HarnessCorrupted, 죽어있으면(stop()이 예외를 냈어도) notes만 남긴다.
+
+2차 리뷰 테스트 중 직접 발견한 버그: 활성 context가 이미 있어서(다른 trial
+소유) PREPARING에서 TrialInvalid로 일찍 끝난 trial이, cleanup에서 "자기"
+run_id로 clear를 무조건 시도해서 409(그 run_id로 등록한 적이 없으니 당연히
+실패)를 critical_failures로 오인하던 것 - context_registered 플래그로
+"이 trial이 실제로 자기 context를 등록했는가"를 추적해서, 등록 성공한
+경우에만 clear를 시도하도록 수정.
 
 quiescence(이전 trial의 firing 알림이 남아있지 않은지)는 recovery-policy의
 GET /admin/quiescent로 확인한다 - PREPARING 진입 시 한 번, CLEANING에서
 context clear 직전에 한 번(§6).
 
 정리(prober 종료, chaos 리소스 삭제, experiment context clear)는 전부
-finally에서 실행한다. 그 중 injector.cleanup()과 experiment context clear는
-실패하면 클러스터가 다음 trial을 오염시킬 수 있는 치명적 상황이라, notes에만
-남기지 않고 HarnessCorrupted를 던져서 호출자(run_all_scenarios.py, 8단계)가
-전체 배치를 멈출 수 있게 한다. prober.stop() 실패는 상대적으로 덜 위험하다고
-판단해(잔여 load가 측정 노이즈는 될 수 있어도 다음 trial의 주입 자체를
-막지는 않음) notes만 남긴다 - 이 비대칭은 판단이 갈릴 수 있는 지점이라 명시.
+finally에서 실행한다. 치명적 실패(action cooldown 초기화 실패, prober가
+stop() 이후에도 안 죽음, injector.cleanup() 실패, experiment context clear
+실패)는 critical_failures 리스트에 모아뒀다가 함수 끝에서 한 번에
+HarnessCorrupted로 던진다 - 결과 파일은 그 전에 이미 기록돼 있으므로
+호출자(run_all_scenarios.py, 8단계)가 어떤 trial에서 뭐가 문제였는지 알고
+배치를 멈출 수 있다.
 
 결과는 trial 시작 시점부터 매 상태 전이마다 임시파일+rename으로 덮어써서,
 도중에 프로세스가 죽어도 마지막으로 기록된 상태가 파일에 남는다.
@@ -85,10 +90,9 @@ class TrialInvalid(Exception):
 
 
 class HarnessCorrupted(Exception):
-    """정리(특히 chaos 리소스 삭제, experiment context clear)가 실패해서
-    클러스터가 다음 trial을 오염시킬 수 있는 상태로 남았을 가능성 - 이 trial의
-    결과는 이미 파일에 기록됐지만, 호출자는 전체 배치를 멈추고 수동 확인 후
-    재개해야 한다."""
+    """클러스터가 다음 trial을 오염시킬 수 있는 상태로 남았을 가능성 - 이
+    trial의 결과는 이미 파일에 기록됐지만, 호출자는 전체 배치를 멈추고
+    수동 확인 후 재개해야 한다."""
 
 
 @dataclass
@@ -97,8 +101,8 @@ class Injector:
     prepare()는 느릴 수 있는 준비(pod 생성, 네트워크 안정화 등)를 t_injection
     이전에 끝내기 위한 것 - inject()는 "지금 당장 주입 시작"만 한다.
     is_started()/is_effective()로 실제 효과가 났는지까지 확인해야
-    injection_valid=True로 인정한다. cleanup()은 idempotent해야 함(finally에서
-    여러 상황에 호출될 수 있음)."""
+    injection_valid=True로 인정한다. cleanup()은 prepare()/inject()가 전혀
+    안 불렸어도 안전하게 호출 가능해야 한다(idempotent)."""
     prepare: Callable[[], None]
     inject: Callable[[], None]
     is_started: Callable[[], bool]
@@ -109,9 +113,12 @@ class Injector:
 
 @dataclass
 class Prober:
-    """합성 부하/헬스체크 어댑터(4단계에서 실제 구현 연결).
+    """합성 부하/헬스체크 어댑터(4단계에서 실제 구현 연결). load generator와
+    같은 프로세스를 재사용하지 않는다 - arm마다 실제 주입 부하 자체가 다르면
+    SLO 판정 표본이 arm 간에 달라져 비교가 왜곡된다(리뷰 지적).
     is_alive(): probe 프로세스 자체가 정상 실행 중인가(측정 대상 서비스의
     상태와 무관 - 서비스가 장애나는 건 관찰 대상이지 probe 고장이 아니다).
+    stop() 이후에도 이 함수가 계속 True를 내면 다음 trial이 오염된다.
     check_slo_violation()/check_recovered(): slo-definition.md 기준 판정을
     어댑터가 직접 구현 - run_once()는 언제 물어볼지, t_slo보다 먼저는 안
     묻는다는 순서만 안다."""
@@ -193,6 +200,21 @@ def _wait_for_quiescence(arm: str) -> bool:
     return _wait_for(_is_quiescent, QUIESCENCE_TIMEOUT_SEC, QUIESCENCE_POLL_SEC)
 
 
+def _get_active_experiment_context(arm: str) -> Optional[dict]:
+    if arm == "native":
+        return None
+    resp = requests.get(f"{RECOVERY_POLICY_URL}/admin/experiment-run", timeout=ADMIN_TIMEOUT_SEC)
+    resp.raise_for_status()
+    return resp.json().get("current")
+
+
+def _reset_action_cooldown(arm: str) -> None:
+    if arm == "native":
+        return
+    resp = requests.post(f"{RECOVERY_POLICY_URL}/admin/reset-cooldown", timeout=ADMIN_TIMEOUT_SEC)
+    resp.raise_for_status()
+
+
 def _register_experiment_context(run_id: str, scenario: str, arm: str, rep: int, started_at: str) -> None:
     if arm == "native":
         return  # native는 recovery-policy 자체가 안 떠있음(계약서 §1)
@@ -226,13 +248,27 @@ def run_once(
         sequence_index=sequence_index, order_seed=order_seed, t_run_start=_now(),
     )
     _write_result(result)
-    critical_failure: Optional[str] = None
+    critical_failures: list = []
+    context_registered = False  # 이 trial이 실제로 자기 context를 등록했는지 - cleanup에서
+    # 등록도 안 한 context를 clear하려다 409(다른 trial 소유)로 오탐되는 걸 막기 위함
 
     try:
-        # PREPARING - quiescence 확인 + 느릴 수 있는 주입 준비(pod 생성 등)를
-        # t_injection 이전에 끝낸다.
+        # PREPARING - 순서 고정: quiescence -> 활성 context 없음 확인 ->
+        # cooldown 초기화 -> (느릴 수 있는) 주입 준비.
         if not _wait_for_quiescence(arm):
             raise TrialInvalid("trial 시작 전 quiescence(이전 alert 해소) 확인 실패")
+
+        active_ctx = _get_active_experiment_context(arm)
+        if active_ctx is not None:
+            raise TrialInvalid(f"trial 시작 전인데 이미 활성 실험 있음: {active_ctx.get('run_id')}")
+
+        try:
+            _reset_action_cooldown(arm)
+        except Exception as e:
+            msg = f"action cooldown 초기화 실패: {e}"
+            critical_failures.append(msg)
+            raise TrialInvalid(msg)
+
         injector.prepare()
         _write_result(result)
 
@@ -245,6 +281,7 @@ def run_once(
 
         result.state = TrialState.READY.value
         _register_experiment_context(run_id, scenario, arm, rep, result.t_run_start)
+        context_registered = True
         _write_result(result)
 
         result.state = TrialState.INJECTING.value
@@ -297,29 +334,37 @@ def run_once(
         try:
             prober.stop()
         except Exception as e:
-            result.notes += f"prober.stop() 실패(비치명적): {e} | "
+            result.notes += f"prober.stop() 예외(아래 is_alive 재확인으로 최종 판단): {e} | "
+        # stop()이 예외 없이 반환해도 실제로 안 멈췄을 수 있고, 반대로
+        # 예외가 나도 이미 죽어있을 수 있다 - is_alive()로 실측한다.
+        if prober.is_alive():
+            msg = "prober.stop() 이후에도 probe가 여전히 살아있음 - 다음 trial의 부하·지표 오염 위험"
+            critical_failures.append(msg)
+            result.notes += f"CRITICAL: {msg} | "
 
         try:
             injector.cleanup()
         except Exception as e:
-            critical_failure = f"injector.cleanup() 실패: {e}"
-            result.notes += f"{critical_failure} | "
+            msg = f"injector.cleanup() 실패: {e}"
+            critical_failures.append(msg)
+            result.notes += f"{msg} | "
 
-        if critical_failure is None:
+        if context_registered and not critical_failures:
             _wait_for_quiescence(arm)  # 정리 후 잔여 alert도 가능하면 해소되길 기다림(최선 노력)
             try:
                 _clear_experiment_context(run_id, arm)
             except Exception as e:
-                critical_failure = f"experiment-run clear 실패: {e}"
-                result.notes += f"{critical_failure} | "
+                msg = f"experiment-run clear 실패: {e}"
+                critical_failures.append(msg)
+                result.notes += f"{msg} | "
 
         result.t_run_end = _now()
         result.state = _FINAL_STATE_BY_OUTCOME.get(result.outcome, result.state).value
         _write_result(result)
 
-    if critical_failure:
+    if critical_failures:
         raise HarnessCorrupted(
-            f"{run_id}: {critical_failure} - 클러스터가 다음 trial을 오염시켰을 수 있음, "
+            f"{run_id}: {'; '.join(critical_failures)} - 클러스터가 다음 trial을 오염시켰을 수 있음, "
             f"수동 확인 필요. 결과는 {RESULTS_DIR / f'trial-{run_id}.json'}에 기록됨"
         )
     return result

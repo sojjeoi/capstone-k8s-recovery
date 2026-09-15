@@ -117,6 +117,40 @@ def check_quiescent():
         return {"quiescent": False, "active_count": None, "error": str(e)}
 
 
+@app.get("/admin/experiment-run")
+def get_experiment_run():
+    """run_once()가 trial 시작 전 "활성 context 없음"을 명시적으로 확인하는
+    용도(계약서 §6 순서: quiescence -> 활성 context 없음 확인 -> cooldown
+    초기화). current가 null이 아니면 다른 trial이 아직 안 끝났다는 뜻."""
+    return {"current": _current_experiment}
+
+
+@app.post("/admin/reset-cooldown")
+def reset_action_cooldown():
+    """run_once()가 trial 시작 전(주입 전) 호출 - action cooldown만
+    초기화한다(idempotency 기록은 안 건드림, safety.reset_cooldown() 참고).
+    각 trial은 독립 표본이어야 하므로, 이전 trial(다른 arm일 수 있음)의
+    promotion이 남긴 cooldown이 이번 trial의 조치를 막아 비교를 왜곡하면
+    안 된다.
+
+    안전을 위해 quiescent하고 활성 experiment context가 없을 때만 허용한다
+    - 클라이언트(run_once())가 순서를 지켰다고 믿지 않고 서버에서도
+    재확인한다(다른 admin 엔드포인트들과 같은 방어적 패턴)."""
+    if _current_experiment is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"활성 실험 있음: {_current_experiment.run_id} - cooldown 초기화 거부",
+        )
+    quiescence = check_quiescent()
+    if not quiescence["quiescent"]:
+        raise HTTPException(
+            status_code=409,
+            detail=f"quiescent 아님(active_count={quiescence['active_count']}) - cooldown 초기화 거부",
+        )
+    safety.reset_cooldown()
+    return {"status": "cooldown_reset"}
+
+
 @app.post("/admin/experiment-run")
 def start_experiment_run(ctx: ExperimentContext):
     """run_once()가 chaos 주입 직전에 호출. 이미 다른 run_id가 활성 중이면

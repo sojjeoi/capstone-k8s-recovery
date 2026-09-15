@@ -213,6 +213,51 @@ def test_experiment_run_idempotent_reregister_and_conflict():
     assert client.post("/admin/experiment-run/clear", params={"run_id": "run-a"}).json()["status"] == "cleared"
 
 
+def test_reset_cooldown_requires_quiescent_and_no_active_context():
+    _reset_state()
+    quiet = MagicMock()
+    quiet.json.return_value = []
+    quiet.raise_for_status.return_value = None
+
+    ctx = {"run_id": "cooldown-test", "scenario": "pod_kill", "arm": "native",
+           "rep": 1, "started_at": "2026-09-16T00:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx)
+    with patch("main.requests.get", return_value=quiet):
+        resp = client.post("/admin/reset-cooldown")
+    assert resp.status_code == 409
+    print("OK - 활성 context 있으면 cooldown 초기화 거부(409)")
+    client.post("/admin/experiment-run/clear", params={"run_id": "cooldown-test"})
+
+    busy = MagicMock()
+    busy.json.return_value = [{"labels": {"alertname": "VLLMTargetDown"}}]
+    busy.raise_for_status.return_value = None
+    with patch("main.requests.get", return_value=busy):
+        resp = client.post("/admin/reset-cooldown")
+    assert resp.status_code == 409
+    print("OK - quiescent 아니면 cooldown 초기화 거부(409)")
+
+    safety.mark_action_taken()
+    assert safety.in_action_cooldown() is True
+    with patch("main.requests.get", return_value=quiet):
+        resp = client.post("/admin/reset-cooldown")
+    assert resp.json()["status"] == "cooldown_reset"
+    assert safety.in_action_cooldown() is False
+    print("OK - 활성 context 없고 quiescent하면 cooldown 초기화 성공")
+
+
+def test_get_experiment_run_reflects_current_state():
+    _reset_state()
+    assert client.get("/admin/experiment-run").json()["current"] is None
+    ctx = {"run_id": "check-current", "scenario": "load_ramp", "arm": "fixed_threshold",
+           "rep": 1, "started_at": "2026-09-16T00:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx)
+    current = client.get("/admin/experiment-run").json()["current"]
+    assert current["run_id"] == "check-current"
+    client.post("/admin/experiment-run/clear", params={"run_id": "check-current"})
+    assert client.get("/admin/experiment-run").json()["current"] is None
+    print("OK - GET /admin/experiment-run이 현재 상태를 정확히 반영")
+
+
 def test_stale_alert_not_tagged_with_current_run():
     _reset_state()
     mock_enqueue.reset_mock()
@@ -253,6 +298,8 @@ if __name__ == "__main__":
     test_unknown_signal_type_via_alertmanager()
     test_experiment_run_id_injected_into_alertmanager_path()
     test_experiment_run_idempotent_reregister_and_conflict()
+    test_reset_cooldown_requires_quiescent_and_no_active_context()
+    test_get_experiment_run_reflects_current_state()
     test_stale_alert_not_tagged_with_current_run()
     _reset_state()
     print("모두 통과")

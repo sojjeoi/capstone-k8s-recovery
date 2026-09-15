@@ -61,3 +61,16 @@ def mark_action_taken() -> None:
     state = _load_state()
     state["last_action_at"] = time.time()
     _save_state(state)
+
+
+def reset_cooldown() -> None:
+    """Phase 8 오케스트레이터 전용(main.py의 POST /admin/reset-cooldown이
+    호출) - action cooldown만 초기화하고 processed_keys(idempotency)는
+    안 건드린다. idempotency_key엔 experiment_run_id가 들어가 trial마다
+    자연히 달라지므로 지울 필요가 없다 - 반대로 cooldown은 trial 간
+    공유되는 단일 타임스탬프라, 이전 trial의 promotion이 다음 trial(다른
+    arm일 수 있음)의 조치를 막아 비교를 왜곡하지 않게 매 trial 시작 전
+    지워야 한다(experiment-contract.md §6)."""
+    state = _load_state()
+    state["last_action_at"] = None
+    _save_state(state)
