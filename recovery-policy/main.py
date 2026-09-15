@@ -42,6 +42,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 from datetime import datetime
 from typing import Optional
 
+import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -63,6 +64,7 @@ app = FastAPI()
 ROLLOUT_NAME = "vllm-serving"
 NAMESPACE = "vllm-serving"
 KNOWN_SIGNAL_TYPES = {"anomaly_risk", "VLLMTargetDown", "VLLMTargetMissing"}
+ALERTMANAGER_URL = "http://kube-prom-kube-prometheus-alertmanager.monitoring.svc.cluster.local:9093"
 
 
 class ExperimentContext(BaseModel):
@@ -84,6 +86,35 @@ def _on_startup():
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
+
+
+@app.get("/admin/quiescent")
+def check_quiescent():
+    """run_once()가 trial 시작 전/정리 후 호출 - vllm-serving 관련 critical
+    Alert가 하나도 없어야 True. 이전 trial의 알림이 다음 trial로 새는 걸
+    막는 quiescence 확인용(계약서 §6).
+
+    실측(2026-09-16)으로 발견: 필터 없이 전체 active alert를 보면 이
+    클러스터는 처음부터(2026-09-04) etcdInsufficientMembers/KubeProxy
+    InstanceUnreachable/Watchdog 등 control-plane 기본 알림이 계속 떠있어서
+    quiescent가 영원히 False가 됨 - 단일 노드 kubeadm 클러스터의 흔한
+    노이즈고 recovery-policy와 무관함. alertmanagerconfig.yaml이 실제로
+    라우팅하는 조건(severity=critical, namespace=vllm-serving)과 동일한
+    필터를 걸어서 우리 실험과 무관한 알림은 무시한다.
+
+    Alertmanager API 자체가 응답 안 하면 안전 쪽으로 quiescent=False를
+    돌려준다(연결 문제를 "조용하다"로 오판하면 안 됨)."""
+    try:
+        resp = requests.get(
+            f"{ALERTMANAGER_URL}/api/v2/alerts",
+            params={"active": "true", "filter": ["severity=critical", "namespace=vllm-serving"]},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        active_alerts = resp.json()
+        return {"quiescent": len(active_alerts) == 0, "active_count": len(active_alerts)}
+    except Exception as e:
+        return {"quiescent": False, "active_count": None, "error": str(e)}
 
 
 @app.post("/admin/experiment-run")

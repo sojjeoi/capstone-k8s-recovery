@@ -35,6 +35,26 @@ def test_healthz():
     print("OK - /healthz")
 
 
+def test_quiescent_true_when_no_active_alerts():
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = []
+    mock_resp.raise_for_status.return_value = None
+    with patch("main.requests.get", return_value=mock_resp):
+        resp = client.get("/admin/quiescent")
+    assert resp.json() == {"quiescent": True, "active_count": 0}
+    print("OK - 활성 alert 없음 -> quiescent=True")
+
+
+def test_quiescent_false_when_alertmanager_unreachable():
+    # 연결 자체가 안 되면 "조용하다"로 오판하지 않고 안전 쪽(False)으로 응답해야 함
+    with patch("main.requests.get", side_effect=ConnectionError("연결 실패 시뮬레이션")):
+        resp = client.get("/admin/quiescent")
+    body = resp.json()
+    assert body["quiescent"] is False
+    assert body["active_count"] is None
+    print("OK - Alertmanager 연결 실패 -> quiescent=False(안전 쪽)")
+
+
 def test_anomaly_signal_observe_only_when_preview_not_ready():
     _reset_state()
     with patch("main.is_paused_pre_promotion", return_value=False):
@@ -222,6 +242,8 @@ def test_stale_alert_not_tagged_with_current_run():
 
 if __name__ == "__main__":
     test_healthz()
+    test_quiescent_true_when_no_active_alerts()
+    test_quiescent_false_when_alertmanager_unreachable()
     test_anomaly_signal_observe_only_when_preview_not_ready()
     test_anomaly_signal_promotes_when_preview_ready()
     test_promote_unverified_logged_correctly()

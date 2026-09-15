@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
 """run_once.py의 상태머신을 검증 - 실제 chaos 없이 가짜 Injector/Prober로
-정상종료/timeout/예외/probe미준비 네 경로를 확인한다(experiment-contract.md
-3단계 완료기준 1~7). run_id 등록은 arm="native"일 때 건너뛰므로 대부분은
-오프라인으로 돈다 - non-native arm 등록 하나만 실제 recovery-policy에 HTTP로
-붙어서(port-forward 필요) 실제 연동을 확인한다."""
+검증한다(experiment-contract.md 3단계 완료기준 + 1차 리뷰에서 지적된 5개
+문제의 회귀 테스트). run_id 등록/quiescence 확인은 arm="native"일 때
+건너뛰므로 대부분은 오프라인으로 돈다 - non-native arm 하나만 실제
+recovery-policy에 HTTP로 붙어서(port-forward 필요) 실제 연동을 확인한다."""
+import json
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from run_once import Injector, Prober, run_once
+from run_once import RESULTS_DIR, HarnessCorrupted, Injector, Prober, run_once
 
 
-def _fake_injector(is_done_after_calls=1):
-    calls = {"is_done": 0, "cleanup": 0, "inject": 0}
+def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=True):
+    calls = {"prepare": 0, "inject": 0, "is_started": 0, "is_effective": 0, "is_done": 0, "cleanup": 0}
+
+    def prepare():
+        calls["prepare"] += 1
 
     def inject():
         calls["inject"] += 1
+
+    def is_started():
+        calls["is_started"] += 1
+        return calls["is_started"] >= is_started_after_calls
+
+    def is_effective():
+        calls["is_effective"] += 1
+        return effective
 
     def is_done():
         calls["is_done"] += 1
@@ -24,32 +36,45 @@ def _fake_injector(is_done_after_calls=1):
     def cleanup():
         calls["cleanup"] += 1
 
-    return Injector(inject=inject, is_done=is_done, cleanup=cleanup), calls
+    return Injector(prepare=prepare, inject=inject, is_started=is_started,
+                     is_effective=is_effective, is_done=is_done, cleanup=cleanup), calls
 
 
-def _fake_prober(healthy=True, recovers_after_calls=1):
-    calls = {"start": 0, "is_healthy": 0, "check_recovered": 0, "stop": 0}
+def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1):
+    """violates_after_calls: check_slo_violation() 몇 번째 호출부터 위반으로
+    볼지. recovers_after_slo_calls: t_slo가 찍힌 뒤(!) check_recovered() 몇
+    번째 호출부터 True를 낼지 - t_slo 이전엔 애초에 안 불리는 걸 run_once()가
+    보장해야 하므로, 이 카운터는 오직 t_slo 이후 호출에만 반응한다."""
+    calls = {"start": 0, "is_alive": 0, "check_slo_violation": 0, "check_recovered": 0, "stop": 0}
+    counters = {"slo": 0, "recovered": 0}
 
     def start():
         calls["start"] += 1
 
-    def is_healthy():
-        calls["is_healthy"] += 1
-        return healthy
+    def is_alive():
+        calls["is_alive"] += 1
+        return alive
+
+    def check_slo_violation():
+        calls["check_slo_violation"] += 1
+        counters["slo"] += 1
+        return counters["slo"] >= violates_after_calls
 
     def check_recovered():
         calls["check_recovered"] += 1
-        return calls["check_recovered"] >= recovers_after_calls
+        counters["recovered"] += 1
+        return counters["recovered"] >= recovers_after_slo_calls
 
     def stop():
         calls["stop"] += 1
 
-    return Prober(start=start, is_healthy=is_healthy, check_recovered=check_recovered, stop=stop), calls
+    return Prober(start=start, is_alive=is_alive, check_slo_violation=check_slo_violation,
+                   check_recovered=check_recovered, stop=stop), calls
 
 
 def test_normal_completion():
     injector, icalls = _fake_injector(is_done_after_calls=1)
-    prober, pcalls = _fake_prober(recovers_after_calls=1)
+    prober, pcalls = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
 
     result = run_once(
         scenario="dry_run", arm="native", rep=1, sequence_index=1, order_seed=42,
@@ -57,21 +82,62 @@ def test_normal_completion():
     )
 
     assert result.outcome == "recovered", result.outcome
+    assert result.state == "completed"
     assert result.probe_valid is True
     assert result.injection_valid is True
     assert result.t_injection is not None
     assert result.t_injection_end is not None
+    assert result.t_slo is not None
     assert result.t_recovery is not None
     assert result.t_run_end is not None
     assert pcalls["start"] == 1
     assert pcalls["stop"] == 1
+    assert icalls["prepare"] == 1
     assert icalls["cleanup"] == 1
-    print("OK - 정상 완료:", result.run_id, result.outcome)
+    print("OK - 정상 완료:", result.run_id, result.outcome, result.state)
+
+
+def test_slo_violation_gates_recovery_check():
+    # 1차 리뷰 지적 회귀 테스트: 주입 직후 아직 멀쩡한 구간에서
+    # check_recovered()가 호출되면 안 된다(t_slo 찍히기 전엔 아예 안 물어봄).
+    injector, _ = _fake_injector(is_done_after_calls=10)
+    prober, pcalls = _fake_prober(violates_after_calls=3, recovers_after_slo_calls=2)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=10, sequence_index=10, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.02,
+    )
+
+    assert result.outcome == "recovered", result.outcome
+    assert result.t_slo is not None and result.t_recovery is not None
+    assert result.t_slo <= result.t_recovery
+    assert pcalls["check_recovered"] < pcalls["check_slo_violation"], \
+        "check_recovered는 t_slo 찍히기 전엔 호출되면 안 됨"
+    print("OK - t_slo 이전엔 check_recovered() 미호출, t_slo<=t_recovery 순서 보장")
+
+
+def test_prevented_when_never_violates():
+    # 1차 리뷰 지적 회귀 테스트: 끝까지 SLO 위반이 없으면 recovered가 아니라
+    # prevented여야 하고, check_recovered()는 아예 호출되면 안 된다.
+    injector, _ = _fake_injector(is_done_after_calls=2)
+    prober, pcalls = _fake_prober(violates_after_calls=10_000)  # 절대 위반 안 되게
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=11, sequence_index=11, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+    )
+
+    assert result.outcome == "prevented", result.outcome
+    assert result.state == "completed"
+    assert result.t_slo is None
+    assert result.t_recovery is None
+    assert pcalls["check_recovered"] == 0, "위반이 한 번도 없었으면 check_recovered는 호출되면 안 됨"
+    print("OK - 끝까지 위반 없음 -> prevented, check_recovered 미호출")
 
 
 def test_timeout():
     injector, icalls = _fake_injector(is_done_after_calls=1)
-    prober, pcalls = _fake_prober(recovers_after_calls=10_000)  # 절대 회복 안 되게
+    prober, pcalls = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=10_000)  # 절대 회복 안 되게
 
     result = run_once(
         scenario="dry_run", arm="native", rep=2, sequence_index=2, order_seed=42,
@@ -79,10 +145,28 @@ def test_timeout():
     )
 
     assert result.outcome == "timeout", result.outcome
+    assert result.state == "timeout"
+    assert result.t_slo is not None  # 위반은 있었음(그래서 timeout이지 prevented가 아님)
     assert result.t_recovery is None
     assert pcalls["stop"] == 1
     assert icalls["cleanup"] == 1
-    print("OK - timeout:", result.run_id, result.outcome)
+    print("OK - timeout:", result.run_id, result.outcome, result.state)
+
+
+def test_injection_not_effective_marks_invalid():
+    injector, icalls = _fake_injector(effective=False)
+    prober, pcalls = _fake_prober()
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=12, sequence_index=12, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+    )
+
+    assert result.outcome == "invalid_run"
+    assert result.state == "invalid"
+    assert result.injection_valid is False
+    assert "주입" in result.invalid_reason
+    print("OK - 주입 시작됐지만 효과 없음 -> invalid_run:", result.invalid_reason)
 
 
 def test_exception_still_cleans_up_and_marks_invalid():
@@ -94,7 +178,8 @@ def test_exception_still_cleans_up_and_marks_invalid():
     def cleanup():
         icalls["cleanup"] += 1
 
-    injector = Injector(inject=raising_inject, is_done=lambda: True, cleanup=cleanup)
+    injector = Injector(prepare=lambda: None, inject=raising_inject, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True, cleanup=cleanup)
     prober, pcalls = _fake_prober()
 
     result = run_once(
@@ -103,15 +188,16 @@ def test_exception_still_cleans_up_and_marks_invalid():
     )
 
     assert result.outcome == "invalid_run", result.outcome
+    assert result.state == "invalid"
     assert "예외" in result.invalid_reason
     assert pcalls["stop"] == 1, "예외가 나도 prober.stop()은 호출돼야 함"
     assert icalls["cleanup"] == 1, "예외가 나도 injector.cleanup()은 호출돼야 함"
     print("OK - 예외 발생해도 정리 + invalid_run 기록:", result.invalid_reason)
 
 
-def test_probe_never_ready_marks_invalid():
+def test_probe_never_alive_marks_invalid():
     injector, icalls = _fake_injector()
-    prober, pcalls = _fake_prober(healthy=False)
+    prober, pcalls = _fake_prober(alive=False)
 
     result = run_once(
         scenario="dry_run", arm="native", rep=4, sequence_index=4, order_seed=42,
@@ -120,15 +206,45 @@ def test_probe_never_ready_marks_invalid():
     )
 
     assert result.outcome == "invalid_run"
+    assert result.state == "invalid"
     assert result.probe_valid is False
     assert icalls["inject"] == 0, "probe가 준비 안 됐으면 주입 자체를 시도하면 안 됨"
     print("OK - probe 미준비 -> invalid_run, 주입 시도 안 함")
 
 
+def test_critical_cleanup_failure_raises_and_still_writes_result():
+    # 1차 리뷰 지적: chaos 삭제(injector.cleanup) 실패처럼 다음 trial을
+    # 오염시킬 수 있는 정리 실패는 notes로 끝내지 않고 예외로 전파해야 한다.
+    def raising_cleanup():
+        raise RuntimeError("chaos 리소스 삭제 실패 시뮬레이션")
+
+    injector, _ = _fake_injector()
+    injector.cleanup = raising_cleanup
+    prober, _ = _fake_prober()
+
+    raised = False
+    try:
+        run_once(
+            scenario="dry_run", arm="native", rep=13, sequence_index=13, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+        )
+    except HarnessCorrupted as e:
+        raised = True
+        print("  ->", e)
+
+    assert raised, "injector.cleanup() 실패는 HarnessCorrupted로 전파돼야 함"
+    result_files = sorted(RESULTS_DIR.glob("trial-dry_run-native-13-*.json"))
+    assert len(result_files) >= 1, "cleanup 실패해도 결과 파일은 기록돼야 함"
+    written = json.loads(result_files[-1].read_text(encoding="utf-8"))  # 여러 번 실행됐으면 최신 것
+    assert "cleanup" in written["notes"], written["notes"]
+    print("OK - injector.cleanup() 실패 -> HarnessCorrupted 전파 + 결과 파일은 남음")
+
+
 def test_real_experiment_context_registration_non_native_arm():
-    """native가 아닌 arm은 실제 recovery-policy에 등록/clear HTTP 호출이
-    나간다 - 로컬에서 kubectl port-forward -n vllm-serving svc/recovery-policy
-    8080:8080 켜둔 상태에서만 통과."""
+    """native가 아닌 arm은 실제 recovery-policy에 quiescence 확인 +
+    등록/clear HTTP 호출이 나간다 - 로컬에서
+    kubectl port-forward -n vllm-serving svc/recovery-policy 8080:8080
+    켜둔 상태(및 GET /admin/quiescent가 배포된 상태)에서만 통과."""
     injector, _ = _fake_injector()
     prober, _ = _fake_prober()
 
@@ -136,15 +252,28 @@ def test_real_experiment_context_registration_non_native_arm():
         scenario="dry_run", arm="fixed_threshold", rep=1, sequence_index=5, order_seed=42,
         injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
     )
-    assert result.outcome == "recovered"
-    assert "clear 실패" not in result.notes, result.notes
-    print("OK - non-native arm의 실제 experiment-run 등록/clear 성공:", result.run_id)
+    # prober는 가짜라 기본값(즉시 위반->즉시 회복)대로 recovered가 나옴 - 이
+    # 테스트가 실제로 확인하는 건 outcome 값 자체가 아니라 quiescence 확인 +
+    # experiment-run 등록/clear가 실제 recovery-policy에 에러 없이 다녀왔는지.
+    assert result.outcome == "recovered", result.outcome
+    assert "실패" not in result.notes, result.notes
+    print("OK - non-native arm의 실제 quiescence/experiment-run 등록/clear 성공:", result.run_id)
+
+
+def _clean_previous_results():
+    for f in RESULTS_DIR.glob("trial-dry_run-*.json"):
+        f.unlink()
 
 
 if __name__ == "__main__":
+    _clean_previous_results()
     test_normal_completion()
+    test_slo_violation_gates_recovery_check()
+    test_prevented_when_never_violates()
     test_timeout()
+    test_injection_not_effective_marks_invalid()
     test_exception_still_cleans_up_and_marks_invalid()
-    test_probe_never_ready_marks_invalid()
+    test_probe_never_alive_marks_invalid()
+    test_critical_cleanup_failure_raises_and_still_writes_result()
     test_real_experiment_context_registration_non_native_arm()
     print("모두 통과")
