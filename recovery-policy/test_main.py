@@ -8,7 +8,7 @@ git_client.enqueue/start_worker도 전체 모듈 단위로 no-op patch한다 - �
 git clone/PVC 쓰기는 이 파일 책임이 아니라 test_git_client.py 몫(로컬 bare
 저장소로 별도 검증)."""
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -18,7 +18,8 @@ import safety
 from main import app
 
 patch("main.git_client.start_worker", lambda: None).start()
-patch("main.git_client.enqueue", lambda signal, record: None).start()
+mock_enqueue = MagicMock()
+patch("main.git_client.enqueue", mock_enqueue).start()
 
 client = TestClient(app)
 
@@ -143,6 +144,36 @@ def test_unknown_signal_type_via_alertmanager():
     print("OK - 미정의 alert ->", processed[0]["outcome"])
 
 
+def test_experiment_run_id_injected_into_alertmanager_path():
+    # Alertmanager alert 자체엔 experiment_run_id를 실을 자리가 없어서(9절
+    # 참고) /admin/experiment-run으로 지정한 ambient 값이 대신 쓰여야 한다.
+    _reset_state()
+    mock_enqueue.reset_mock()
+    set_resp = client.post("/admin/experiment-run", params={"run_id": "pilot-run-001"})
+    assert set_resp.json()["current_experiment_run_id"] == "pilot-run-001"
+
+    payload = {
+        "status": "firing",
+        "alerts": [{
+            "status": "firing",
+            "labels": {"alertname": "VLLMTargetDown"},
+            "annotations": {},
+            "startsAt": "2026-09-16T00:00:00Z",
+            "fingerprint": "run-id-test-fp",
+        }],
+    }
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/webhooks/alertmanager", json=payload)
+
+    signal_arg = mock_enqueue.call_args.args[0]
+    assert signal_arg.raw["experiment_run_id"] == "pilot-run-001"
+    print("OK - ambient run_id가 Alertmanager 경로 signal.raw에 주입됨")
+
+    clear_resp = client.post("/admin/experiment-run")
+    assert clear_resp.json()["current_experiment_run_id"] is None
+    print("OK - trial 종료 후 run_id 클리어")
+
+
 if __name__ == "__main__":
     test_healthz()
     test_anomaly_signal_observe_only_when_preview_not_ready()
@@ -152,5 +183,6 @@ if __name__ == "__main__":
     test_action_cooldown_blocks_repeat_promotion()
     test_alertmanager_webhook_end_to_end()
     test_unknown_signal_type_via_alertmanager()
+    test_experiment_run_id_injected_into_alertmanager_path()
     _reset_state()
     print("모두 통과")

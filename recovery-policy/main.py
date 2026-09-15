@@ -9,6 +9,16 @@ outbox). git 지연·실패가 이 함수의 반환(=HTTP 응답)을 막지 않�
 rule-out(반대증거) 체크는 아직 실제 근거 수집 로직이 없어 항상 False다 -
 policy.PolicyContext.has_contradicting_evidence를 세팅하는 지점을 남겨는
 뒀지만, 무엇을 반대증거로 볼지(예: 최근 배포 이력)는 이번 5~6단계 범위 밖.
+
+Phase 8 experiment_run_id 전파(/signal 경로): score_server.py/fixed_threshold.py가
+JSON payload에 직접 실어 보내므로 schemas.py가 이미 처리한다.
+
+Phase 8 experiment_run_id 전파(/webhooks/alertmanager 경로): Alertmanager
+alert에는 실험 메타데이터를 실을 자리가 없다(PrometheusRule 라벨은 정적이라
+trial마다 동적으로 못 바꿈). 대신 오케스트레이터가 chaos 주입 직전에
+POST /admin/experiment-run으로 "지금 진행 중인 실험"을 알려주면, 그 사이에
+들어온 Alertmanager 신호는 이 값을 experiment_run_id로 쓴다(trial 종료 시
+오케스트레이터가 다시 null로 지움 - 다음 trial로 새는 것 방지).
 """
 import sys
 
@@ -35,6 +45,8 @@ ROLLOUT_NAME = "vllm-serving"
 NAMESPACE = "vllm-serving"
 KNOWN_SIGNAL_TYPES = {"anomaly_risk", "VLLMTargetDown", "VLLMTargetMissing"}
 
+_current_experiment_run_id: str = None
+
 
 @app.on_event("startup")
 def _on_startup():
@@ -46,7 +58,19 @@ def healthz():
     return {"status": "ok"}
 
 
+@app.post("/admin/experiment-run")
+def set_experiment_run(run_id: str = None):
+    """Phase 8 오케스트레이터 전용 - chaos 주입 직전에 run_id로, trial 종료 후엔
+    인자 없이(null로) 호출한다. Alertmanager 경로의 run_id 태깅에만 쓰인다."""
+    global _current_experiment_run_id
+    _current_experiment_run_id = run_id
+    return {"current_experiment_run_id": _current_experiment_run_id}
+
+
 def process_signal(signal: NormalizedSignal) -> DecisionRecord:
+    if not signal.raw.get("experiment_run_id") and _current_experiment_run_id:
+        signal.raw["experiment_run_id"] = _current_experiment_run_id
+
     if not safety.check_and_reserve(signal.idempotency_key):
         record = build(signal, action=None, outcome=Outcome.SKIPPED_DUPLICATE,
                         reasoning="idempotency_key 중복 - 이미 처리된 신호")

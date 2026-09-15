@@ -47,7 +47,7 @@ def evaluate() -> float:
     return feats[CPU_MEAN_INDEX]
 
 
-def main(once: bool = False):
+def main(once: bool = False, experiment_run_id: str = None):
     consecutive_anomalous = 0
     last_signal_at = None
 
@@ -66,7 +66,7 @@ def main(once: bool = False):
             if in_cooldown:
                 print(f"  -> cooldown 중 (남은 {COOLDOWN_SEC - (now - last_signal_at):.0f}초) - 신호 스킵")
             else:
-                post_to_recovery_policy(cpu_mean)
+                post_to_recovery_policy(cpu_mean, experiment_run_id, detector="fixed_threshold")
                 last_signal_at = now
 
         if once:
@@ -77,5 +77,6 @@ def main(once: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="고정 임계치(CPU) baseline - 주기 평가 후 신호 발행")
     parser.add_argument("--once", action="store_true", help="한 번만 평가하고 종료(테스트용)")
+    parser.add_argument("--run-id", default=None, help="Phase 8 오케스트레이터가 지정 - 미지정 시 감사기록이 adhoc으로 묶임")
     args = parser.parse_args()
-    main(once=args.once)
+    main(once=args.once, experiment_run_id=args.run_id)

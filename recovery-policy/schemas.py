@@ -31,7 +31,8 @@ class AnomalySignalRequest(BaseModel):
     signal_type: str
     score: float
     timestamp: datetime
-    experiment_run_id: Optional[str] = None  # Phase 8 오케스트레이터가 넣어줄 수 있게 옵션 (지금 score_server.py는 안 보냄)
+    experiment_run_id: Optional[str] = None  # Phase 8 오케스트레이터가 채움 - score_server.py/fixed_threshold.py 둘 다 --run-id로 지원
+    detector: Optional[str] = None  # "isolation_forest" | "fixed_threshold" - 결과 스키마의 detection_source 구분용
 
 
 def normalize_anomaly_signal(req: AnomalySignalRequest) -> NormalizedSignal:

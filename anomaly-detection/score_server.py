@@ -51,8 +51,13 @@ def evaluate(model, scaler) -> float:
     return float(model.decision_function(X)[0])
 
 
-def post_to_recovery_policy(score: float) -> None:
-    payload = {"signal_type": "anomaly_risk", "score": score, "timestamp": datetime.now(timezone.utc).isoformat()}
+def post_to_recovery_policy(score: float, experiment_run_id: str = None, detector: str = "isolation_forest") -> None:
+    payload = {
+        "signal_type": "anomaly_risk", "score": score,
+        "timestamp": datetime.now(timezone.utc).isoformat(), "detector": detector,
+    }
+    if experiment_run_id:
+        payload["experiment_run_id"] = experiment_run_id
     try:
         requests.post(RECOVERY_POLICY_URL, json=payload, timeout=5)
         print(f"  -> 신호 발행: {payload}")
@@ -60,7 +65,7 @@ def post_to_recovery_policy(score: float) -> None:
         print(f"  -> recovery-policy 서비스 없음(Phase 7 미구현) - 신호 발행 스킵: {payload}")
 
 
-def main(once: bool = False):
+def main(once: bool = False, experiment_run_id: str = None):
     model, scaler = load_model()
     consecutive_anomalous = 0
     last_signal_at = None
@@ -79,7 +84,7 @@ def main(once: bool = False):
             if in_cooldown:
                 print(f"  -> cooldown 중 (남은 {COOLDOWN_SEC - (now - last_signal_at):.0f}초) - 신호 스킵")
             else:
-                post_to_recovery_policy(score)
+                post_to_recovery_policy(score, experiment_run_id)
                 last_signal_at = now
 
         if once:
@@ -90,5 +95,6 @@ def main(once: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="실시간 위험도 판단 - 주기 평가 후 신호 발행")
     parser.add_argument("--once", action="store_true", help="한 번만 평가하고 종료(테스트용)")
+    parser.add_argument("--run-id", default=None, help="Phase 8 오케스트레이터가 지정 - 미지정 시 감사기록이 adhoc으로 묶임")
     args = parser.parse_args()
-    main(once=args.once)
+    main(once=args.once, experiment_run_id=args.run_id)
