@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import queue
+import shutil
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -99,15 +100,24 @@ def _ensure_repo() -> None:
         AUDIT_LOG_DIR.mkdir(parents=True, exist_ok=True)
         return
 
+    # 실측(2026-09-15): clone 도중 pod가 죽으면(liveness probe 타임아웃 등) .git은
+    # 있지만 커밋·HEAD가 없는 반쯤 된 저장소가 PVC에 남고, 재시작 시 위 분기가
+    # 이를 "이미 clone됨"으로 오인해 pull만 시도하다 고착됨(실제로 겪은 버그).
+    # 임시 디렉터리에 clone한 뒤 성공한 것만 원자적으로 REPO_DIR로 교체해서 방지.
     REPO_DIR.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dir = REPO_DIR.parent / f"{REPO_DIR.name}.tmp"
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
     result = subprocess.run(
-        ["git", "clone", GIT_REMOTE_URL, str(REPO_DIR)],
+        ["git", "clone", GIT_REMOTE_URL, str(tmp_dir)],
         env=_git_env(), capture_output=True, text=True, encoding="utf-8", timeout=CLONE_TIMEOUT_SEC,
     )
     if result.returncode != 0:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError(f"git clone 실패: {result.stderr}")
-    _run_git("config", "user.name", GIT_AUTHOR_NAME)
-    _run_git("config", "user.email", GIT_AUTHOR_EMAIL)
+    subprocess.run(["git", "config", "user.name", GIT_AUTHOR_NAME], cwd=tmp_dir, check=True)
+    subprocess.run(["git", "config", "user.email", GIT_AUTHOR_EMAIL], cwd=tmp_dir, check=True)
+    tmp_dir.replace(REPO_DIR)  # 같은 파일시스템(PVC) 내 rename - 원자적
     AUDIT_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -186,8 +196,13 @@ def _worker_loop() -> None:
             pass
         try:
             _process_batch(batch)
-        except Exception:
-            logger.exception("배치 처리 중 예외 - outbox는 failed로 안 남았을 수 있어 수동 확인 필요")
+        except Exception as e:
+            # git 명령 실패는 _process_batch 내부에서 이미 _fail_batch로 재시도
+            # 예약이 됨 - 여긴 그 바깥(예: outbox 파일 자체의 일시적 잠금/디스크
+            # 오류)에서 터진 경우까지 똑같이 재시도 대상으로 만들기 위한 안전망.
+            # 여기서 안 잡으면 outbox 상태가 애매하게 남아 재시작 전까진 안 풀림.
+            logger.exception("배치 처리 중 예외 - 동일 재시도 경로로 재큐잉")
+            _fail_batch(batch, f"배치 처리 예외: {e}")
 
 
 def _requeue_unsent() -> None:

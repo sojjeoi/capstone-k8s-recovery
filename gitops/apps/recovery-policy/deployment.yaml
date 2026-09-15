@@ -44,19 +44,25 @@ spec:
               mountPath: /data
           ports:
             - containerPort: 8080
+          # initialDelaySeconds를 넉넉히 둔 이유: FastAPI startup 훅에서
+          # git_client.start_worker()가 최초 git clone을 끝낼 때까지 /healthz
+          # 자체가 응답 못 함(실측: 기본값 10s로는 부족해서 clone 도중 liveness에
+          # 죽어 PVC에 반쯤 된 저장소가 남는 걸 실제로 겪음 - git_client.py의
+          # _ensure_repo() 주석 참고, clone 자체도 원자적으로 고쳤지만 probe도
+          # 같이 넉넉하게 둬야 애초에 재시도 루프에 안 빠짐).
           readinessProbe:
             httpGet:
               path: /healthz
               port: 8080
-            initialDelaySeconds: 5
+            initialDelaySeconds: 15
             timeoutSeconds: 3
             periodSeconds: 10
-            failureThreshold: 3
+            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8080
-            initialDelaySeconds: 10
+            initialDelaySeconds: 60
             timeoutSeconds: 3
             periodSeconds: 10
             failureThreshold: 3
