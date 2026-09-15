@@ -19,6 +19,10 @@ chaos/loadgen/results/*.csv
 # recovery-policy 런타임 상태 (idempotency/쿨다운) — 감사기록(audit-log/)과 다름, 커밋 안 함
 recovery-policy/state/
 
+# loadgen-runner 이미지 build 직전에 chaos/loadgen/ramp.py를 여기로 복사해 넣음
+# (단일 출처는 chaos/loadgen/ramp.py — 여기 두면 원본과 어긋날 수 있어 커밋 안 함)
+experiments/loadgen-runner/ramp.py
+
 # OS
 .DS_Store
 Thumbs.db
