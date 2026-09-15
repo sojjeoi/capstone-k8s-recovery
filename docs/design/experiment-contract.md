@@ -1,0 +1,121 @@
+# 실험 계약 (Phase 8 실행 전 확정)
+
+> **이 문서는 파일럿·본 실험 데이터를 보기 전에 확정한다.** 실험을 시작한 뒤 arm
+> 정의·성공조건·timeout·결과 스키마를 바꾸면 제안 방식에 유리하게 기준을 고쳤다는
+> 지적을 받을 수 있다(slo-definition.md와 같은 이유, guideline.md 9-6절). 확정 후
+> 바꿔야 한다면 하단 "변경 이력"에 사유와 함께 남기고, 이미 그 정의로 계산된 결과가
+> 있으면 같이 밝힌다.
+
+## 1. 3개 arm — 정확한 이름과 정의
+
+| arm 이름 | 구성 | 비고 |
+|---|---|---|
+| `native` | K8s 기본 self-healing만. standby(preview) 없음, recovery-policy 미기동 | 탐지·개입 자체가 없는 조건 — Alertmanager가 알림을 보내도 받아줄 서비스가 없음 |
+| `fixed_threshold` | 고정 임계치 예측(`anomaly-detection/fixed_threshold.py`, CPU>90%) + **공통 Alertmanager 반응형 fallback** + standby/promotion | `proposed`와 **예측 모델만** 다르다 |
+| `proposed` | Isolation Forest 예측(`score_server.py`) + **공통 Alertmanager 반응형 fallback** + standby/promotion | `fixed_threshold`와 **예측 모델만** 다르다 |
+
+recovery-policy 서비스(`/signal` + `/webhooks/alertmanager` + Alertmanager 라우팅)는 `fixed_threshold`·`proposed` 두 arm 모두에서 동일하게 기동한다 — 차이는 오직 어떤 스크립트(`fixed_threshold.py` vs `score_server.py`)가 예측 신호를 `/signal`로 보내느냐뿐이다. **"Isolation Forest"라고만 부르지 않는다** — 두 arm 다 Alertmanager 반응 경로를 공유하므로 `proposed`를 "예측+반응 하이브리드"로 표기한다.
+
+## 2. 비교는 두 가지로 나눠서 해석한다
+
+- **`fixed_threshold` vs `proposed`** — recovery-policy·standby·promotion·Alertmanager 반응 경로가 전부 동일하므로 이제 정말로 **예측 모델(고정 임계치 vs Isolation Forest)만의 순수 비교**(guideline.md 9-7절 "순수 탐지방식 비교")다. `pod_kill`처럼 예측 자체가 불가능한 돌발 장애는 두 arm 모두 같은 Alertmanager 반응 경로로 대응하므로, 그 시나리오에서는 두 arm의 차이가 거의 없는 게 정상이다(예측 모델의 차이가 드러나는 건 점진적 열화 시나리오 쪽).
+- **`native` vs `proposed`** — `native`엔 standby도 recovery-policy도 없으므로 이 비교는 "탐지 알고리즘 차이"가 아니라 **standby 유무까지 포함한 시스템 전체 구성 차이**다. 논문에서 이 둘을 같은 성격의 비교로 쓰지 않는다(guideline.md 9-7절 "현실적 운영 비교") — **이 conflation을 명시적으로 문서화한다.**
+
+## 3. SLO·타임스탬프 정의 — 기존 문서를 그대로 참조
+
+- SLO(`t_SLO`/`t_recovery` 판정 기준)는 새로 정의하지 않고 `docs/design/slo-definition.md`를 그대로 쓴다: `L_baseline=2.686s`, Latency SLO=P95>5.372s 30초 연속, Availability SLO=60초 윈도우 성공률<99%(30초 timeout도 실패로 카운트).
+- 9개 타임스탬프(`t_injection`~`t_audit_push`)는 guideline.md 9-2절 정의를 그대로 쓴다.
+
+### `outcome` — 4가지, `prevented`를 조건부로만 인정
+
+```
+prevented       SLO 위반 없이 선제 전환 성공
+recovered       SLO 위반 후 정상화
+timeout         제한시간 내 정상화 실패
+invalid_run     probe·주입·사전조건 문제
+```
+
+`prevented`는 **다음 세 조건을 모두 만족할 때만** 판정한다 — 그냥 "SLO 위반이 안 일어남"만으로는 인정하지 않는다(장애가 애초에 SLO를 못 건드릴 만큼 약했던 것일 수도 있어서, 이 경우는 선제복구 성공이 아니라 무효한 근거다):
+1. probe가 trial 내내 정상 작동함(`probe_valid=true`)
+2. 장애 주입이 실제 대상에 적용됐음(`injection_valid=true`)
+3. 같은 시나리오의 `native` 반복(rep)들에서는 SLO 위반이 재현됨 — 즉 이 시나리오가 무개입 시 진짜로 SLO를 위반할 만큼 강하다는 게 경험적으로 확인됨
+
+`native` 자체는 개입이 없으므로 `prevented`가 나올 수 없다(`recovered` 또는 `timeout`만 가능).
+
+## 4. 시나리오별 timeout·종료 조건
+
+각 trial은 `t_injection`부터 시작해 아래 예산 안에서 관찰한다. **trial은 `t_recovery`가 찍혀도 즉시 끝나지 않는다** — 선제 promotion 이후에도 chaos가 기존 active(또는 원래 대상)에 계속 적용 중일 수 있기 때문이다. trial 종료 조건은 다음 네 가지가 전부 만족된 시점이다:
+
+1. chaos 시나리오 자체가 종료(리소스 정리까지 포함)
+2. 신규 active가 연속 30초 정상(`t_recovery`, 또는 예산 소진 시 timeout)
+3. 잔여 Alert가 전부 `resolved` 상태로 전환(§6 quiescence와 연결)
+4. probe가 깨끗하게 종료
+
+| 시나리오 | chaos 자체 지속시간 | 관찰 여유 | trial 예산(timeout) |
+|---|---|---|---|
+| `pod_kill` | 즉시(지속시간 없음) | — | **5분** |
+| `memory_pressure` | 14분(Workflow, 5단계) | +5분 | **19분** |
+| `load_ramp` | 7.5분(450초, 6단계) | +2.5분 | **10분** |
+| `network_degrade`(순수 열화) | 6분(360초, 4단계) | +5분 | **11분** |
+
+- `memory_pressure`/`load_ramp`는 설계상 마지막 단계에서 SLO 위반이 보장되도록 이미 튜닝돼 있음(9-3절 반사실 요구사항).
+- **이 예산은 "조기 종료 가능한 최악의 경우"가 아니라 거의 기본 실행시간이다** — chaos 자체 종료를 기다려야 하므로 복구가 일찍 됐다고 trial이 일찍 끝나지 않는다. (5+19+10+11)분 × 3 arm × 5회 = **약 675분(11시간 15분)이 기본값**이고, preview 준비·quiescence 대기·`invalid_run` 재실행까지 포함하면 실제 일정은 **약 13~15시간**으로 잡는다.
+
+## 5. 결과 스키마 — trial 1회 = row 1개
+
+`run_once()`가 trial 하나를 마칠 때마다 아래 컬럼을 가진 row 하나를 결과 파일에 남긴다.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `run_id` | str | `{scenario}-{arm}-{rep:02d}-{UTC타임스탬프}` |
+| `scenario` | enum | `pod_kill` \| `memory_pressure` \| `load_ramp` \| `network_degrade` |
+| `arm` | enum | `native` \| `fixed_threshold` \| `proposed` |
+| `rep` | int | 1~5 |
+| `sequence_index` | int | 전체 60회 중 이 trial의 실행 순번(1~60) — 순서 효과 확인용 |
+| `order_seed` | int | 이 시나리오의 arm 셔플에 쓴 난수 시드 — 재현용 |
+| `t_run_start` | ISO8601 UTC | preview 준비 등 trial 준비 시작 시각 |
+| `t_injection` | ISO8601 UTC | chaos 주입 시작 |
+| `t_injection_end` | ISO8601 UTC | chaos 자체가 끝난 시각(§4 종료조건①) |
+| `t_detection` | ISO8601 UTC \| null | 미탐지면 null |
+| `t_decision` | ISO8601 UTC \| null | |
+| `t_api_request` | ISO8601 UTC \| null | |
+| `t_switch` | ISO8601 UTC \| null | |
+| `t_slo` | ISO8601 UTC \| null | `outcome=prevented`면 null |
+| `t_recovery` | ISO8601 UTC \| null | timeout이면 null |
+| `t_audit_write` | ISO8601 UTC \| null | |
+| `t_audit_push` | ISO8601 UTC \| null | **복구시간 계산에 포함 안 함**. 비동기라 trial 종료 시점엔 비어있을 수 있음(§6 reconcile) |
+| `commit_sha` | str \| null | 위와 동일한 이유로 reconcile 단계에서 채워질 수 있음 |
+| `detected` | bool | |
+| `detection_source` | enum \| null | `fixed_threshold` \| `isolation_forest` \| `alertmanager` \| `none` — 실제로 무엇이 먼저 반응했는지 |
+| `action` | enum | `promote_preview` \| `none` |
+| `promotion_verified` | bool \| null | `native`는 항상 null |
+| `outcome` | enum | `prevented` \| `recovered` \| `timeout` \| `invalid_run` |
+| `injection_valid` | bool | 장애가 실제 대상에 적용됐는지 |
+| `probe_valid` | bool | probe가 trial 내내 정상 작동했는지 |
+| `invalid_reason` | str \| null | `outcome=invalid_run`일 때만 채움 |
+| `p95_peak` | float \| null | trial 중 관측된 최고 P95(초) |
+| `availability_min` | float \| null | trial 중 최저 60초-윈도우 성공률 |
+| `t_run_end` | ISO8601 UTC | trial 종료(§4 네 조건 전부 만족) |
+| `notes` | str | 자유 텍스트 |
+
+### 비동기 감사기록 reconcile
+
+`git_client.py`의 push는 비동기라 trial row를 처음 쓰는 시점엔 `t_audit_push`/`commit_sha`가 비어있을 수 있다. 전체 실험(또는 각 시나리오) 종료 후, recovery-policy의 `outbox.json`을 다시 읽어 각 `run_id`에 대응하는 결과 row에 `t_audit_push`/`commit_sha`를 채워 넣는 **reconcile 단계**를 실험 절차에 명시한다(`collect_metrics.py` 실행 전에 반드시 거침).
+
+## 6. 안전장치 — `run_once()`가 매 trial마다 반드시 함
+
+- 이전 trial의 firing 상태 Alertmanager 알림이 다음 `run_id`로 새지 않도록, trial 사이 **quiescence 대기**(모든 알림이 resolved 상태가 될 때까지) — §4 trial 종료조건③과 동일 개념
+- `safety.py`의 idempotency(`state/safety_state.json`)·cooldown을 매 trial 시작 전 명시적으로 초기화
+- trial 시작 전 매번: preview Ready 상태 확인 + active/preview selector가 분리(다름)돼 있는지 확인(`native`는 preview 자체를 안 만듦)
+- probe가 trial 도중 죽거나 비정상 응답을 내면 `probe_valid=false` → `invalid_run` 처리 — arm의 실패로 안 셈
+- 장애 주입이 실제로 대상에 적용됐는지 확인 못 하면 `injection_valid=false` → `invalid_run`
+- `fixed_threshold.py`의 임계치(CPU>90%)와 `anomaly-detection/artifacts/model.pkl`은 파일럿 이후, 본 실험 전에 **동결**한다. 본 실험 결과를 본 뒤에는 절대 재학습·재조정하지 않는다.
+
+## 7. 실행 순서 — arm을 섞어서 수행
+
+60회를 arm별로 몰아서 돌리지 않고 **섞어서(interleaved)** 수행한다 — 특정 arm이 특정 시간대(클러스터 상태 drift, 캐시 워밍 등)에 몰리는 걸 방지. 시나리오별로 5회×3arm=15회 블록 안에서 arm 순서를 `order_seed`로 셔플하고, 그 시드와 결과 순서(`sequence_index`)를 결과 스키마에 남겨 재현 가능하게 한다.
+
+## 변경 이력
+
+- 2026-09-16: 최초 확정.
+- 2026-09-16: 1차 리뷰 반영 — (1) `fixed_threshold`에도 공통 Alertmanager fallback 추가(비교 타당성 문제), (2) `outcome`에 `prevented` 추가하고 3조건 명시, (3) trial 종료조건을 "chaos 종료+안정화 확인"으로 재정의(조기종료 아님, 예산은 기본 실행시간), (4) 스키마에 `t_run_start/end`·`t_injection_end`·`detection_source`·`action`·`injection_valid`·`probe_valid`·`invalid_reason`·`sequence_index`·`order_seed`·`commit_sha` 추가 + 비동기 감사기록 reconcile 단계 명시. 총 예상 소요시간 11시간15분→13~15시간으로 수정.
