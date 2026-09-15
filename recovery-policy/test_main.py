@@ -2,7 +2,11 @@
 """main.py의 두 입력 어댑터 + process_signal() 파이프라인 전체를 확인.
 실제 K8s 클러스터를 쓰지 않도록 is_paused_pre_promotion/promote는
 monkeypatch로 대체한다 - main.py가 `from rollouts_client import ...`로
-가져다 썼으므로 main 모듈 네임스페이스를 patch해야 실제로 먹는다."""
+가져다 썼으므로 main 모듈 네임스페이스를 patch해야 실제로 먹는다.
+
+git_client.enqueue/start_worker도 전체 모듈 단위로 no-op patch한다 - 실제
+git clone/PVC 쓰기는 이 파일 책임이 아니라 test_git_client.py 몫(로컬 bare
+저장소로 별도 검증)."""
 import sys
 from unittest.mock import patch
 
@@ -11,10 +15,12 @@ sys.stdout.reconfigure(encoding="utf-8")
 from fastapi.testclient import TestClient
 
 import safety
-from main import AUDIT_LOG_DIR, app
+from main import app
+
+patch("main.git_client.start_worker", lambda: None).start()
+patch("main.git_client.enqueue", lambda signal, record: None).start()
 
 client = TestClient(app)
-ADHOC_LOG = AUDIT_LOG_DIR / "adhoc.jsonl"
 
 
 def _reset_state():
@@ -130,7 +136,8 @@ def test_unknown_signal_type_via_alertmanager():
             "fingerprint": "unknown-fp",
         }],
     }
-    resp = client.post("/webhooks/alertmanager", json=payload)
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        resp = client.post("/webhooks/alertmanager", json=payload)
     processed = resp.json()["processed"]
     assert processed[0]["outcome"] == "skipped_unknown_signal"
     print("OK - 미정의 alert ->", processed[0]["outcome"])
@@ -146,6 +153,4 @@ if __name__ == "__main__":
     test_alertmanager_webhook_end_to_end()
     test_unknown_signal_type_via_alertmanager()
     _reset_state()
-    if ADHOC_LOG.exists():
-        ADHOC_LOG.unlink()  # 테스트가 남긴 합성 감사기록 정리 - 실제 감사기록과 섞이면 안 됨
     print("모두 통과")

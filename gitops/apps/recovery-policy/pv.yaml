@@ -1,0 +1,26 @@
+# recovery-policy 감사기록(git clone + outbox.json) 영속화용 로컬 저장공간.
+# sj-worker 노드의 /home/ubuntu/recovery-policy-data에 고정 - prometheus-pv.yaml과
+# 동일 패턴(중요 발견 1: 이 클러스터엔 동적 프로비저너가 없어 수동 구성 필요).
+# reclaimPolicy=Retain: PVC가 삭제돼도 미전송 감사기록을 보존.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: recovery-policy-data-pv
+spec:
+  capacity:
+    storage: 1Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    path: /home/ubuntu/recovery-policy-data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - sj-worker

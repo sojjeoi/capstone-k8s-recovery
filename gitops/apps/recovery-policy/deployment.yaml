@@ -25,6 +25,23 @@ spec:
         - name: recovery-policy
           image: recovery-policy:local
           imagePullPolicy: Never
+          env:
+            - name: RECOVERY_POLICY_DATA_DIR
+              value: /data
+            - name: GIT_REMOTE_URL
+              value: https://github.com/sojjeoi/capstone-k8s-recovery.git
+            - name: GIT_AUTHOR_NAME
+              value: recovery-policy-bot
+            - name: GIT_AUTHOR_EMAIL
+              value: recovery-policy-bot@localhost
+            - name: GIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: recovery-policy-git-credentials
+                  key: token
+          volumeMounts:
+            - name: data
+              mountPath: /data
           ports:
             - containerPort: 8080
           readinessProbe:
@@ -43,3 +60,7 @@ spec:
             timeoutSeconds: 3
             periodSeconds: 10
             failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: recovery-policy-data
