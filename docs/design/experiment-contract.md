@@ -1,5 +1,11 @@
 # 실험 계약 (Phase 8 실행 전 확정)
 
+> **3-arm 파일럿 보류 중(2026-09-16)** - Phase 7 BlueGreen promotion 경로
+> 자체는 preflight로 끝까지 검증 완료했으나, 그 과정에서 8코어 노드에
+> vLLM(4코어 limit) 2개가 동시에 뜨면 CPU headroom이 없어지는 문제와
+> NodeNotReady 사건을 발견했다. 재개 전 판단 순서는
+> `docs/design/phase8-blue-green-preflight-incident.md` 참고.
+
 > **이 문서는 파일럿·본 실험 데이터를 보기 전에 확정한다.** 실험을 시작한 뒤 arm
 > 정의·성공조건·timeout·결과 스키마를 바꾸면 제안 방식에 유리하게 기준을 고쳤다는
 > 지적을 받을 수 있다(slo-definition.md와 같은 이유, guideline.md 9-6절). 확정 후
