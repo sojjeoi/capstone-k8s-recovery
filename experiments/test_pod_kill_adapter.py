@@ -36,20 +36,24 @@ def test_normal_completion():
 
     assert injector.is_started() is False, "아직 살아있는데 시작됨으로 판정됨"
     assert injector.get_actual_injection_time() is None
+    assert injector.get_injection_observation_error_sec() is None, "관측 전이라 기준점이 없어야 함"
     assert injector.is_done() is False
 
     pod_state["alive"] = False  # 실제 종료 발생
     assert injector.is_started() is True
     t1 = injector.get_actual_injection_time()
     assert t1 is not None
+    err1 = injector.get_injection_observation_error_sec()
+    assert err1 is not None and err1 >= 0, "마지막 생존 관측 이후 실측 오차가 나와야 함"
     assert injector.is_done() is True
 
-    assert injector.is_started() is True  # 반복 호출해도 최초 시각 유지
+    assert injector.is_started() is True  # 반복 호출해도 최초 시각/오차 유지
     assert injector.get_actual_injection_time() == t1
+    assert injector.get_injection_observation_error_sec() == err1
 
     injector.cleanup()
     assert calls["delete"] == [cr_name]
-    print("OK - 정상 종료: CR 생성→기존 UID 소멸 감지→t_injection 고정→cleanup")
+    print("OK - 정상 종료: CR 생성→기존 UID 소멸 감지→t_injection+관측오차 고정→cleanup")
 
 
 def test_no_target_found():
@@ -86,8 +90,9 @@ def test_injection_never_happens():
     for _ in range(3):
         assert injector.is_started() is False
     assert injector.get_actual_injection_time() is None
+    assert injector.get_injection_observation_error_sec() is None
     assert injector.is_done() is False
-    print("OK - 주입 미발생: 대상이 안 죽으면 is_started/is_done 계속 False")
+    print("OK - 주입 미발생: 대상이 안 죽으면 is_started/is_done/관측오차 계속 None·False")
 
 
 def test_cleanup_idempotent_and_safe_without_injection():

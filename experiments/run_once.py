@@ -110,12 +110,18 @@ class Injector:
     효과가 시작된 시각"이 다를 수 있는 어댑터(예: pod 안에서 프로세스를
     백그라운드로 띄우는 경우, 또는 대상의 소멸을 폴링으로 확인하는 경우)를
     위한 것. 이 값은 어댑터가 실측한 정확한 사건 발생 시각이 아니라,
-    is_started()가 폴링으로 그 변화를 "처음 관측한" 시각이다 - 진짜 사건은
-    그 직전 poll_interval_sec 이내 어딘가에서 이미 일어났을 수 있다. None이
-    아닌 값을 반환하면 run_once()가 t_injection을 이 값으로 덮어쓰고,
-    관측 오차의 상한을 injection_observation_error_sec에 함께 남긴다 -
-    미구현(None 필드)이면 inject() 호출 시각을 그대로 쓰고 오차는 기록하지
-    않는다(폴링 관측이 아니라 상한을 주장할 근거가 없음)."""
+    is_started()가 폴링으로 그 변화를 "처음 관측한" 시각이다. None이 아닌
+    값을 반환하면 run_once()가 t_injection을 이 값으로 덮어쓴다 - 미구현
+    (None 필드)이면 inject() 호출 시각을 그대로 쓴다.
+    get_injection_observation_error_sec(): 선택 구현 - 위 관측 오차의 상한을
+    초 단위로 반환한다. poll_interval_sec 같은 설정값을 그대로 쓰면 안 된다
+    (2026-09-16 정정 - is_started() 호출 자체의 실행시간·스케줄링 지연이
+    설정값을 넘을 수 있어 진짜 상한이 아닐 수 있음). 어댑터가 "대상이
+    살아있음을 마지막으로 관측한 시각"과 "처음 사라졌음을 관측한 시각"의
+    실측 차이로 계산해야 한다(pod_kill_adapter.py/load_ramp_adapter.py 참고).
+    None이면(예: 관측 없이 첫 poll에서 이미 바뀐 상태여서 기준점이 없음)
+    run_once()는 injection_observation_error_sec을 기록하지 않는다 - 근거
+    없는 상한을 만들어내지 않는다."""
     prepare: Callable[[], None]
     inject: Callable[[], None]
     is_started: Callable[[], bool]
@@ -123,6 +129,7 @@ class Injector:
     is_done: Callable[[], bool]
     cleanup: Callable[[], None]
     get_actual_injection_time: Optional[Callable[[], Optional[str]]] = None
+    get_injection_observation_error_sec: Optional[Callable[[], Optional[float]]] = None
 
 
 @dataclass
@@ -166,10 +173,12 @@ class TrialResult:
     latency_slo_sec: Optional[float] = None
     probe_rps: float = 1.0
     t_injection: Optional[str] = None
-    # get_actual_injection_time()으로 t_injection을 덮어쓴 경우에만 채움 -
-    # 그 값은 폴링으로 "처음 관측한" 시각이라, 진짜 사건은 이 값 이전
-    # poll_interval_sec 이내 어딘가에서 일어났을 수 있다(상한, 정확한 오차
-    # 아님). None이면 관측 기반 값이 아니라는 뜻(어댑터 미구현).
+    # get_injection_observation_error_sec()이 구현+계산 가능했을 때만 채움 -
+    # "대상이 살아있음을 마지막으로 관측한 시각"과 "처음 사라졌음을 관측한
+    # 시각"의 실측 차이(상한, 정확한 오차 아님). poll_interval_sec 같은
+    # 설정값이 아니다 - 어댑터의 조회 자체도 시간이 걸려 설정값만으론 상한을
+    # 보장 못 한다(2026-09-16 정정). None이면 관측 기반 값이 아니라는 뜻
+    # (어댑터 미구현이거나 기준점이 없음).
     injection_observation_error_sec: Optional[float] = None
     t_injection_end: Optional[str] = None
     t_detection: Optional[str] = None
@@ -349,7 +358,8 @@ def run_once(
             precise = injector.get_actual_injection_time()
             if precise:
                 result.t_injection = precise  # inject() 호출 시각보다 정확 - 다만 폴링 관측값
-                result.injection_observation_error_sec = poll_interval_sec  # 관측 오차 상한
+                if injector.get_injection_observation_error_sec is not None:
+                    result.injection_observation_error_sec = injector.get_injection_observation_error_sec()
         _write_result(result, results_dir)
         if not result.injection_valid:
             raise TrialInvalid("주입이 시작됐는지/효과가 있었는지 확인 안 됨")

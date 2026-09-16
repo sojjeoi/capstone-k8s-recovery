@@ -16,10 +16,13 @@ Chaos Mesh PodChaos는 순간 액션(pod-kill)이라 CR 자체에 "종료됐는�
 없다 - 그래서 CR 생성 성공(requested)과 기존 UID가 실제로 사라졌는지
 (effective)를 분리해서 확인한다. t_injection은 CR 요청 시각이 아니라
 is_started()가 폴링으로 기존 UID 소멸을 처음 관측한 시각으로 기록한다 -
-실제 삭제 시각 그 자체가 아니라 관측 시각이므로, 오차 상한은
-poll_interval_sec이다(run_once.py가 injection_observation_error_sec으로
-함께 기록 - load_ramp_adapter.py의 get_actual_injection_time()과 같은
-원칙).
+실제 삭제 시각 그 자체가 아니라 관측 시각이다. 오차 상한은 poll_interval_sec
+같은 설정값이 아니라 "마지막으로 대상이 살아있음을 확인한 시각"과
+"처음 대상이 사라졌음을 확인한 시각"의 실측 차이로 계산한다(2026-09-16
+정정 - is_started() 호출 자체의 실행시간·스케줄링 지연이 poll_interval_sec을
+넘을 수 있어 설정값만으로는 상한을 보장 못 함) - get_injection_observation_
+error_sec()으로 노출하고 run_once.py가 injection_observation_error_sec에
+그대로 기록한다.
 """
 import os
 import uuid
@@ -130,7 +133,8 @@ def make_pod_kill_injector(
     있게 하기 위함이다(기본값은 진짜 kubernetes 클라이언트 호출)."""
     cr_name = _sanitize_cr_name(run_id)
     target = {"name": None, "uid": None}
-    injection_started_at = {"t": None}
+    injection_started_at = {"t": None}  # 대상 소멸을 처음 관측한 시각(datetime)
+    last_seen_present_at = {"t": None}  # 대상이 살아있음을 마지막으로 관측한 시각(datetime)
 
     def prepare():
         pods = get_active_pods_fn()
@@ -150,8 +154,12 @@ def make_pod_kill_injector(
         # 고정해둔 이름/UID만 재확인 - 새로 뜬 pod를 다시 대상으로 잡지 않는다.
         current = get_pod_fn(target["name"])
         started = current is None or current["uid"] != target["uid"]
-        if started and injection_started_at["t"] is None:
-            injection_started_at["t"] = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
+        if started:
+            if injection_started_at["t"] is None:
+                injection_started_at["t"] = now
+        else:
+            last_seen_present_at["t"] = now  # 다음 관측 오차 계산의 기준점 갱신
         return started
 
     def is_effective() -> bool:
@@ -161,7 +169,18 @@ def make_pod_kill_injector(
         return is_started()
 
     def get_actual_injection_time() -> Optional[str]:
-        return injection_started_at["t"]
+        t = injection_started_at["t"]
+        return t.isoformat() if t is not None else None
+
+    def get_injection_observation_error_sec() -> Optional[float]:
+        # last_seen_present_at가 없으면(첫 poll에서 바로 사라짐 관측) 실측
+        # 기준점이 없어 상한을 주장할 수 없다 - poll_interval_sec 같은 설정값으로
+        # 대신 채우지 않는다(2026-09-16 정정: 설정값은 실행시간·스케줄링
+        # 지연을 포함 못 해 진짜 상한이 아닐 수 있음).
+        absent_at, present_at = injection_started_at["t"], last_seen_present_at["t"]
+        if absent_at is None or present_at is None:
+            return None
+        return (absent_at - present_at).total_seconds()
 
     def is_done() -> bool:
         # pod-kill은 순간 액션 - 기존 pod가 사라진 게 확인되면(is_started)
@@ -177,4 +196,5 @@ def make_pod_kill_injector(
 
     return Injector(prepare=prepare, inject=inject, is_started=is_started,
                      is_effective=is_effective, is_done=is_done, cleanup=cleanup,
-                     get_actual_injection_time=get_actual_injection_time)
+                     get_actual_injection_time=get_actual_injection_time,
+                     get_injection_observation_error_sec=get_injection_observation_error_sec)

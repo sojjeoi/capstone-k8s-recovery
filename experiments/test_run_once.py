@@ -124,11 +124,15 @@ def test_normal_completion(tmp_path):
 
 def test_precise_injection_time_overrides_and_records_observation_error(tmp_path):
     # get_actual_injection_time()을 구현한 어댑터(pod_kill/load_ramp)는
-    # t_injection이 그 값으로 덮어써지고, 폴링 관측이라 오차 상한
-    # (poll_interval_sec)이 injection_observation_error_sec에 함께 남아야 한다.
+    # t_injection이 그 값으로 덮어써진다. 관측 오차는 어댑터가
+    # get_injection_observation_error_sec()으로 실측해 넘긴 값을 그대로 쓴다 -
+    # poll_interval_sec 같은 설정값을 run_once()가 대신 채우지 않는다
+    # (2026-09-16 정정: 설정값은 조회 자체의 실행시간·스케줄링 지연을 반영
+    # 못 해 진짜 상한이 아닐 수 있음).
     precise_time = "2026-01-01T00:00:00.123456+00:00"
     injector, _ = _fake_injector(is_done_after_calls=1)
     injector.get_actual_injection_time = lambda: precise_time
+    injector.get_injection_observation_error_sec = lambda: 0.37  # 어댑터가 실측한 값(설정 poll_interval_sec=0.1과 다름을 의도적으로 확인)
     prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
 
     result = run_once(
@@ -138,8 +142,28 @@ def test_precise_injection_time_overrides_and_records_observation_error(tmp_path
     )
 
     assert result.t_injection == precise_time
-    assert result.injection_observation_error_sec == 0.1
-    print("OK - get_actual_injection_time() 구현 시 t_injection 덮어쓰기 + 관측 오차 기록")
+    assert result.injection_observation_error_sec == 0.37, \
+        "poll_interval_sec(0.1)이 아니라 어댑터가 실측한 값을 그대로 써야 함"
+    print("OK - t_injection 덮어쓰기 + 어댑터 실측 관측 오차 기록(설정 poll_interval_sec과 무관)")
+
+
+def test_precise_injection_time_without_error_hook_leaves_error_none(tmp_path):
+    # get_actual_injection_time()만 구현하고 get_injection_observation_error_sec()은
+    # 없는 어댑터 - run_once()가 poll_interval_sec으로 대신 채우면 안 된다
+    # (근거 없는 상한을 만들어내지 않는다는 계약, 위 테스트와 상호보완).
+    injector, _ = _fake_injector(is_done_after_calls=1)
+    injector.get_actual_injection_time = lambda: "2026-01-01T00:00:00+00:00"
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=16, sequence_index=16, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+        results_dir=tmp_path,
+    )
+
+    assert result.t_injection == "2026-01-01T00:00:00+00:00"
+    assert result.injection_observation_error_sec is None
+    print("OK - 관측 오차 hook 미구현 시 poll_interval_sec으로 대신 채우지 않음(None 유지)")
 
 
 def test_pilot_result_written_to_pilot_subdir(tmp_path):
@@ -400,6 +424,7 @@ if __name__ == "__main__":
     offline_tests = (
         test_normal_completion,
         test_precise_injection_time_overrides_and_records_observation_error,
+        test_precise_injection_time_without_error_hook_leaves_error_none,
         test_pilot_result_written_to_pilot_subdir,
         test_slo_violation_gates_recovery_check,
         test_prevented_when_never_violates,

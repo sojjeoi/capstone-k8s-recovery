@@ -73,7 +73,8 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
     pod_name = f"ramp-inj-{uuid.uuid4().hex[:8]}"
     config_name = Path(config_path).name
     log, exitfile = "/ramp.log", "/ramp.exit"
-    first_started_at = {"t": None}
+    first_started_at = {"t": None}  # 마커를 처음 관측한 시각(datetime)
+    last_not_started_at = {"t": None}  # 마커가 아직 없음을 마지막으로 관측한 시각(datetime)
 
     def prepare():
         _run(["kubectl", "run", pod_name, "-n", NAMESPACE, f"--image={IMAGE}",
@@ -111,16 +112,30 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
         # 최초로 확인한 시각을 기록해 get_actual_injection_time()으로 넘긴다 -
         # inject() 호출 시각(kubectl exec 왕복+프로세스 기동 전)보다 더 정확함.
         # ramp.py 자체가 요청 단위 정밀 타임스탬프를 실시간 노출하진 않으므로
-        # (raw CSV는 종료 시점에만 쓰임) poll 주기(~1초) 만큼의 오차는 남는다 -
-        # 이 상한은 run_once.py가 결과의 injection_observation_error_sec에 남긴다.
+        # (raw CSV는 종료 시점에만 쓰임) 오차가 남는다 - 이 kubectl exec 자체도
+        # 수백ms 걸릴 수 있어 poll_interval_sec 같은 설정값만으로는 상한을
+        # 보장 못 한다(2026-09-16 정정). 그래서 "마커 없음을 마지막으로 본
+        # 시각"과 "마커를 처음 본 시각"의 실측 차이를 get_injection_observation_
+        # error_sec()으로 넘긴다.
         r = _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "sh", "-c", f"grep -q === {log}"])
         started = r.returncode == 0
-        if started and first_started_at["t"] is None:
-            first_started_at["t"] = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
+        if started:
+            if first_started_at["t"] is None:
+                first_started_at["t"] = now
+        else:
+            last_not_started_at["t"] = now
         return started
 
     def get_actual_injection_time():
-        return first_started_at["t"]
+        t = first_started_at["t"]
+        return t.isoformat() if t is not None else None
+
+    def get_injection_observation_error_sec():
+        started_at, not_started_at = first_started_at["t"], last_not_started_at["t"]
+        if started_at is None or not_started_at is None:
+            return None
+        return (started_at - not_started_at).total_seconds()
 
     def _exit_code_ready():
         return _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "test", "-f", exitfile]).returncode == 0
@@ -148,7 +163,8 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
 
     return Injector(prepare=prepare, inject=inject, is_started=is_started,
                      is_effective=is_effective, is_done=is_done, cleanup=cleanup,
-                     get_actual_injection_time=get_actual_injection_time)
+                     get_actual_injection_time=get_actual_injection_time,
+                     get_injection_observation_error_sec=get_injection_observation_error_sec)
 
 
 def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str, rep: int,
