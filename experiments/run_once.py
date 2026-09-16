@@ -198,13 +198,15 @@ def _wait_for(check: Callable[[], bool], timeout: float, interval: float = 1.0) 
     return False
 
 
-def _write_result(result: TrialResult) -> None:
-    # is_pilot=True는 results/pilot/ 아래 별도 경로에 쓴다 - collect_metrics.py가
+def _write_result(result: TrialResult, results_dir: Path) -> None:
+    # is_pilot=True는 results_dir/pilot/ 아래 별도 경로에 쓴다 - collect_metrics.py가
     # 본 실험 집계에서 파일럿을 note 텍스트 파싱 없이 구조적으로 제외할 수
     # 있게 하기 위함(2026-09-16 지적: 자유 텍스트 notes만으로는 실수로
-    # 포함될 위험). is_pilot=False(기본값)는 기존 그대로 RESULTS_DIR 바로
-    # 아래 - 기존 오프라인 테스트들이 RESULTS_DIR을 직접 glob하므로 유지.
-    out_dir = (RESULTS_DIR / "pilot") if result.is_pilot else RESULTS_DIR
+    # 포함될 위험). results_dir은 run_once() 호출자가 넘긴 값(기본값은
+    # 모듈 상수 RESULTS_DIR) - 테스트가 pytest tmp_path로 격리할 수 있게
+    # 하기 위해 인자로 뺐다(2026-09-16, dry_run 테스트 산출물이 실제
+    # results/에 누적되던 문제 수정).
+    out_dir = (results_dir / "pilot") if result.is_pilot else results_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"trial-{result.run_id}.json"
     tmp = path.with_suffix(".tmp")
@@ -274,7 +276,9 @@ def run_once(
     slo_version: str = "v2",
     latency_slo_sec: Optional[float] = None,
     probe_rps: float = 1.0,
+    results_dir: Optional[Path] = None,
 ) -> TrialResult:
+    results_dir = results_dir or RESULTS_DIR
     # run_id를 밖에서 넘길 수 있게 한 이유: injector/prober는 run_once() 호출
     # *전에* 이미 만들어져 있어야 하는데(인자로 받으므로), 그 어댑터들이
     # ramp.py/probe.py의 raw 로그에 태깅하는 run_id와 여기서 쓰는 run_id가
@@ -288,7 +292,7 @@ def run_once(
         is_pilot=is_pilot, probe_profile=probe_profile, slo_version=slo_version,
         latency_slo_sec=latency_slo_sec, probe_rps=probe_rps,
     )
-    _write_result(result)
+    _write_result(result, results_dir)
     critical_failures: list = []
     context_registered = False  # 이 trial이 실제로 자기 context를 등록했는지 - cleanup에서
     # 등록도 안 한 context를 clear하려다 409(다른 trial 소유)로 오탐되는 걸 막기 위함
@@ -311,19 +315,19 @@ def run_once(
             raise TrialInvalid(msg)
 
         injector.prepare()
-        _write_result(result)
+        _write_result(result, results_dir)
 
         result.state = TrialState.PROBING.value
         prober.start()
         result.probe_valid = _wait_for(prober.is_alive, probe_ready_timeout_sec, poll_interval_sec)
-        _write_result(result)
+        _write_result(result, results_dir)
         if not result.probe_valid:
             raise TrialInvalid("probe가 시작 후 정상 상태에 도달 못 함")
 
         result.state = TrialState.READY.value
         _register_experiment_context(run_id, scenario, arm, rep, result.t_run_start)
         context_registered = True
-        _write_result(result)
+        _write_result(result, results_dir)
 
         result.state = TrialState.INJECTING.value
         result.t_injection = _now()
@@ -334,7 +338,7 @@ def run_once(
             precise = injector.get_actual_injection_time()
             if precise:
                 result.t_injection = precise  # inject() 호출 시각보다 실제 첫 요청 시각이 더 정확함
-        _write_result(result)
+        _write_result(result, results_dir)
         if not result.injection_valid:
             raise TrialInvalid("주입이 시작됐는지/효과가 있었는지 확인 안 됨")
 
@@ -376,7 +380,7 @@ def run_once(
         result.invalid_reason = f"예외: {type(e).__name__}: {e}"
     finally:
         result.state = TrialState.CLEANING.value
-        _write_result(result)
+        _write_result(result, results_dir)
 
         try:
             prober.stop()
@@ -407,11 +411,12 @@ def run_once(
 
         result.t_run_end = _now()
         result.state = _FINAL_STATE_BY_OUTCOME.get(result.outcome, result.state).value
-        _write_result(result)
+        _write_result(result, results_dir)
 
     if critical_failures:
+        result_path = (results_dir / "pilot" if is_pilot else results_dir) / f"trial-{run_id}.json"
         raise HarnessCorrupted(
             f"{run_id}: {'; '.join(critical_failures)} - 클러스터가 다음 trial을 오염시켰을 수 있음, "
-            f"수동 확인 필요. 결과는 {RESULTS_DIR / f'trial-{run_id}.json'}에 기록됨"
+            f"수동 확인 필요. 결과는 {result_path}에 기록됨"
         )
     return result
