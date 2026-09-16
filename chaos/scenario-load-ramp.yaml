@@ -3,13 +3,31 @@
 # 유입 요청률 자체가 줄어들어 장애를 과소측정하므로 사용 금지 — loadgen/ramp.py가
 # 이 파일을 읽어 각 단계를 "초당 N건"으로 서버 응답과 무관하게 순서대로 실행한다.
 #
-# 1차 실행(1/3/6/12/20 RPS) 결과: 1 RPS는 100% 성공, 3 RPS에서 이미 63% 실패로
-# 한계점이 1~3 RPS 사이에 있음을 확인. 6 RPS 이상은 전부 0~4% 성공(추가 정보 없음).
-# 그런데 stage 요약(성공률)만으로는 그 60~90초 안에서 서서히 나빠졌는지(점진적 열화,
-# 선제탐지 가능) 순간적으로 무너졌는지(절벽, 선제탐지 무의미)를 구분할 수 없었음 —
-# ramp.py가 이제 요청 단위 원시 로그(-raw.csv)도 남기므로, 1~3 RPS 구간을 촘촘하게
-# 다시 훑어서 그 안의 시간대별 성공률 추이를 확인한다. 6 RPS 이상은 이미 붕괴가
-# 증명됐으므로 재확인용으로 한 단계만 남김.
+# *** Phase 8 확정 설정(2026-09-16) - 본 실험 시작 후 RPS·payload·threshold
+# 변경 금지. 아래 stages는 SLO v2(threshold=0.512s) + probe(1RPS,
+# max_tokens=1) 상시 동반 조건에서 재보정한 값이며, 3회 독립 반복
+# (experiments/explore_ramp_intensity.py)으로 재현성을 확인한 뒤 조정 없이
+# 그대로 확정했다(사후 편향 방지 - 사전에 고정한 판정 기준을 그대로 통과함).
+#
+# 1차 실행(1/3/6/12/20 RPS, probe 없이 ramp.py 단독)에서는 1 RPS 100% 성공,
+# 3 RPS에서 이미 63% 실패였으나, probe(항상 1RPS로 상시 동반) 포함 조건과
+# SLO v2(0.512s, 기존 5.372s보다 훨씬 타이트)에서는 이 스케일 자체가 안
+# 맞아 stage-1(1RPS)부터 이미 위반이었다(pilot-load_ramp-native-01-
+# 20260916T053600Z 실측). 그래서 훨씬 낮은 RPS 구간(0.1~1.0)을 3회 반복
+# 재탐색했다:
+#   - 낮은 부하 구간(0.10/0.25 RPS)에서는 측정 노이즈에 따른 소폭 역전이
+#     있었으나, 0.50 RPS 이후에는 부하 증가에 따른 지연 상승이 일관되게
+#     나타났다.
+#   - 0.50 RPS까지는 3회 모두 SLO 준수, 0.75 RPS는 2/3회, 1.00 RPS는 3/3회
+#     SLO 위반. 모든 요청 성공(실패율 0%), 부하 종료 후 항상 정상 범위로
+#     회복.
+#   - 0.75 RPS가 매번 위반하지 않는 것은 문제가 아니다 - 경계 구간의
+#     변동성을 보여주는 것이고, 1.00 RPS에서 3/3회 위반했으므로 시나리오의
+#     유효성은 확보됨.
+# "시스템 붕괴 확인용" 6번째 stage는 의도적으로 넣지 않는다 - 이 실험의
+# 목적은 한계까지 무너뜨리는 게 아니라 점진적 열화에서 선제탐지·복구시간을
+# 비교하는 것이라, collapse를 넣으면 실패율 폭증·긴 회복·Alertmanager
+# 개입이 섞여 다른 실험이 된다(계약서 §4 참고).
 target:
   url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
   model: "Qwen/Qwen2.5-0.5B-Instruct"
@@ -17,21 +35,18 @@ target:
   max_tokens: 10
 
 stages:
-  - name: stage-1-baseline    # idle->warmup 구간 데이터로도 재사용 가능 (9-4절)
-    rps: 1
-    duration_sec: 60
-  - name: stage-2-fine-1.5
-    rps: 1.5
+  - name: stage-1-0.10rps
+    rps: 0.10
     duration_sec: 90
-  - name: stage-3-fine-2.0
-    rps: 2
+  - name: stage-2-0.25rps
+    rps: 0.25
     duration_sec: 90
-  - name: stage-4-fine-2.5
-    rps: 2.5
+  - name: stage-3-0.50rps
+    rps: 0.50
     duration_sec: 90
-  - name: stage-5-fine-3.0
-    rps: 3
+  - name: stage-4-0.75rps
+    rps: 0.75
     duration_sec: 90
-  - name: stage-6-confirm-collapse
-    rps: 10
-    duration_sec: 30
+  - name: stage-5-1.00rps
+    rps: 1.00
+    duration_sec: 90

@@ -1,0 +1,16 @@
+# Phase 8 SLO 판정용 probe(experiments/probe.py) 전용 설정 - 모든 시나리오/arm이
+# 공유한다(scenario-*.yaml의 target과는 별개). url/model은 동일 서비스를
+# 봐야 하므로 scenario 설정들과 맞춘다.
+#
+# prompt/max_tokens을 의도적으로 최소화했다(실측, 2026-09-16): probe 1RPS
+# 단독으로도 vLLM pod가 CPU 4코어(≈4000m)에 계속 고정되는 것을 kubectl top으로
+# 확인했다(calibrate_probe_only.py) - probe는 SLO 관찰용 배경 부하일 뿐이므로
+# ramp.py의 부하 스파이크(target.max_tokens=10)와 굳이 같을 필요가 없고,
+# 오히려 최소화해야 probe 자신이 처리용량을 깎아먹는 정도를 줄여
+# ramp 강도 재보정(§5)이 의미 있어진다.
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hi"
+  max_tokens: 1
+rps: 1

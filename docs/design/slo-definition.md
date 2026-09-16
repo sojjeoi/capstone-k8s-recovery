@@ -13,23 +13,40 @@
 실측한 값 대비 상대 배수**로 정의해서, 기준 자체의 출처를 데이터로 추적 가능하게
 한다.
 
-## 2. `L_baseline` (정상 상태 기준 latency)
+## 2. `L_baseline` (정상 상태 기준 latency) — SLO v2 공식, v1은 폐기(이력용 보존)
+
+Phase 8 실험(합성 probe를 별도 프로세스로 분리 - guideline.md/2차 리뷰)에서
+probe 자신의 요청 payload가 SLO 판정 대상 서비스에 유의미한 부하를 주면
+안 된다. **v1은 이 조건을 만족하지 못해 폐기했다** — probe payload를
+바꾸면 SLO 판정 대상 자체(어떤 요청 모양을 "정상"으로 보는지)가 바뀌므로
+baseline·threshold를 반드시 같이 재계산해야 한다.
+
+### SLO v2 — 본 실험 공식 기준 (2026-09-16 확정)
 
 | 항목 | 값 |
 |---|---|
-| `L_baseline` (P95) | **2.686초** |
+| `L_baseline` (P95) | **0.256초** |
+| 출처 | `experiments/calibrate_probe_only.py` 3회 독립 실행(각 300건, 1RPS, 300초), 성공률 100%, 각 회차 P95 [0.2565s, 0.2545s, 0.2586s]의 **중앙값** |
+| 조건 | 장애 미주입, quiescent 상태, 정상 부하(1 RPS), vLLM `Qwen/Qwen2.5-0.5B-Instruct`, `max_tokens=1`, `chaos/probe-config.yaml` |
+| probe profile | `inference-max1-rps1` |
+
+### SLO v1 — 폐기됨, 이력 보존용
+
+| 항목 | 값 |
+|---|---|
+| `L_baseline` (P95) | 2.686초 |
 | 출처 | `chaos/loadgen/results/load-ramp-20260905-022341.csv`, `stage-1-baseline` (1 RPS, 60건, 성공률 100%) |
 | 조건 | 장애 미주입, 정상 부하(1 RPS), vLLM `Qwen/Qwen2.5-0.5B-Instruct`, `max_tokens=10` |
+| 폐기 사유 | probe가 이 payload(`max_tokens=10`)를 그대로 쓰면 vLLM pod CPU를 거의 4코어(≈4000m) 전부 점유하는 것이 실측 확인됨(`calibrate_probe_only.py`) - 측정 도구가 그 자체로 부하 주입기가 되는 observer effect. 본 실험에는 쓰지 않는다. |
 
-Phase 6에서 정상 데이터셋을 별도로 수집하면(idle·warm-up·저부하·burst 등 다양한
-정상 상태 포함) `L_baseline`을 그 데이터의 P95 중앙값으로 다시 계산해 갱신할 수
-있다 — 단, 그 갱신은 Phase 8 평가 데이터를 보기 **전에** 끝내야 하고, 갱신 시점과
-전/후 값을 "변경 이력"에 남긴다.
+향후 baseline을 또 갱신해야 한다면(probe profile 변경 등) 이 파일 하단
+"변경 이력"에 사유·전후 값과 함께 남기고, Phase 8 평가 데이터를 보기 **전에**
+끝낸다 — 지금까지와 같은 원칙.
 
 ## 3. Latency SLO
 
-> `P95 latency > 2 × L_baseline`(= **5.372초**)가 **30초 이상 연속** 지속되면
-> latency SLO 위반.
+> `P95 latency > 2 × L_baseline`(SLO v2 = **0.512초**)가 **30초 이상 연속**
+> 지속되면 latency SLO 위반.
 
 - 순간적으로 튀는 값이 아니라 지속되는 열화만 위반으로 잡기 위해 30초 지속 조건을
   둔다(일반적인 SRE 관행 — 단발 스파이크로 인한 오탐/flapping 방지).
@@ -72,3 +89,10 @@ Phase 6에서 정상 데이터셋을 별도로 수집하면(idle·warm-up·저�
 ## 변경 이력
 
 - 2026-09-06: 최초 확정. `L_baseline = 2.686s`, 위 5개 규칙(§3~§6).
+- 2026-09-16: 파일럿에서 `max_tokens=10` probe가 vLLM CPU limit인 4코어를 거의
+  전부 사용해 측정 도구가 실험 대상에 유의미한 부하를 가하는 observer effect를
+  확인했다. 본 실험에서는 `max_tokens=1` 경량 probe를 사용하고, 요청 특성이
+  변경된 만큼 동일한 산정 원칙(정상 상태 P95, 중앙값)으로 baseline과 latency
+  SLO를 다시 측정해 동결한다. `L_baseline` v1(2.686s) → v2(0.256s), latency
+  SLO v1(5.372s) → v2(0.512s). v1로 이미 계산된 결과는 없음(Phase 8 실제
+  arm 비교 데이터 수집 전 단계였음).

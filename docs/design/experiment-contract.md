@@ -23,7 +23,7 @@ recovery-policy 서비스(`/signal` + `/webhooks/alertmanager` + Alertmanager �
 
 ## 3. SLO·타임스탬프 정의 — 기존 문서를 그대로 참조
 
-- SLO(`t_SLO`/`t_recovery` 판정 기준)는 새로 정의하지 않고 `docs/design/slo-definition.md`를 그대로 쓴다: `L_baseline=2.686s`, Latency SLO=P95>5.372s 30초 연속, Availability SLO=60초 윈도우 성공률<99%(30초 timeout도 실패로 카운트).
+- SLO(`t_SLO`/`t_recovery` 판정 기준)는 새로 정의하지 않고 `docs/design/slo-definition.md`를 그대로 쓴다: **SLO v2**(2026-09-16 확정, probe profile `inference-max1-rps1`) 기준 `L_baseline=0.256s`, Latency SLO=P95>0.512s 30초 연속, Availability SLO=60초 윈도우 성공률<99%(30초 timeout도 실패로 카운트). v1(`L_baseline=2.686s`, max_tokens=10)은 probe observer effect로 폐기됨 - slo-definition.md 변경이력 참고.
 - 9개 타임스탬프(`t_injection`~`t_audit_push`)는 guideline.md 9-2절 정의를 그대로 쓴다.
 
 ### `outcome` — 4가지, `prevented`를 조건부로만 인정
@@ -55,11 +55,26 @@ invalid_run     probe·주입·사전조건 문제
 |---|---|---|---|
 | `pod_kill` | 즉시(지속시간 없음) | — | **5분** |
 | `memory_pressure` | 14분(Workflow, 5단계) | +5분 | **19분** |
-| `load_ramp` | 7.5분(450초, 6단계) | +2.5분 | **10분** |
+| `load_ramp` | 7.5분(450초, 5단계) | +7.5분 | **15분** |
 | `network_degrade`(순수 열화) | 6분(360초, 4단계) | +5분 | **11분** |
 
 - `memory_pressure`/`load_ramp`는 설계상 마지막 단계에서 SLO 위반이 보장되도록 이미 튜닝돼 있음(9-3절 반사실 요구사항).
-- **이 예산은 "조기 종료 가능한 최악의 경우"가 아니라 거의 기본 실행시간이다** — chaos 자체 종료를 기다려야 하므로 복구가 일찍 됐다고 trial이 일찍 끝나지 않는다. (5+19+10+11)분 × 3 arm × 5회 = **약 675분(11시간 15분)이 기본값**이고, preview 준비·quiescence 대기·`invalid_run` 재실행까지 포함하면 실제 일정은 **약 13~15시간**으로 잡는다.
+- **이 예산은 "조기 종료 가능한 최악의 경우"가 아니라 거의 기본 실행시간이다** — chaos 자체 종료를 기다려야 하므로 복구가 일찍 됐다고 trial이 일찍 끝나지 않는다. (5+19+15+11)분 × 3 arm × 5회 = **약 750분(12시간 30분)이 기본값**이고, preview 준비·quiescence 대기·`invalid_run` 재실행까지 포함하면 실제 일정은 **약 14~16시간**으로 잡는다.
+
+### `load_ramp` 확정 설정(2026-09-16 - 본 실험 시작 후 변경 금지)
+
+| 항목 | 값 |
+|---|---|
+| probe | `1 RPS`, `max_tokens=1` (`chaos/probe-config.yaml`, `inference-max1-rps1`) |
+| SLO v2 latency threshold | `0.512초`(slo-definition.md) |
+| ramp 요청 | `max_tokens=10`(`chaos/scenario-load-ramp.yaml` target, probe와 별개) |
+| 단계 | `0.10 → 0.25 → 0.50 → 0.75 → 1.00 RPS` (5단계, 6번째 collapse 단계 의도적으로 없음) |
+| 단계별 지속시간 | `90초` |
+| 총 주입시간 | `450초` |
+| trial timeout | `900초` |
+| `t_injection` 정의 | 첫 ramp 요청이 실제 전송된 시각(`ramp.py` stage 시작 마커를 처음 확인한 시각 - `load_ramp_adapter.py`의 `get_actual_injection_time()`) |
+
+3회 독립 calibration(`explore-20260916T064939Z`/`070319Z`/`071454Z`)은 재보정 근거로만 쓰고 본 실험 5회 반복에서 제외한다. 낮은 부하 구간(0.10/0.25 RPS)에서는 측정 노이즈에 따른 소폭 역전이 있었으나, 0.50 RPS 이후에는 부하 증가에 따른 지연 상승이 일관되게 나타났다. 0.50 RPS까지는 3회 모두 SLO를 준수했고, 0.75 RPS는 2/3회, 1.00 RPS는 3/3회 SLO를 위반했다. 모든 요청은 성공했으며 부하 종료 후 정상 범위로 회복했다. 0.75 RPS가 매번 위반하지 않는 것은 문제가 아니다 - 경계 구간의 변동성을 보여주고, 1.00 RPS에서 3/3회 위반했으므로 시나리오의 유효성은 확보됐다.
 
 ## 5. 결과 스키마 — trial 1회 = row 1개
 
@@ -73,6 +88,11 @@ invalid_run     probe·주입·사전조건 문제
 | `rep` | int | 1~5 |
 | `sequence_index` | int | 전체 60회 중 이 trial의 실행 순번(1~60) — 순서 효과 확인용 |
 | `order_seed` | int | 이 시나리오의 arm 셔플에 쓴 난수 시드 — 재현용 |
+| `is_pilot` | bool | true면 본 실험 5회 반복 집계에서 제외(결과 파일도 `results/pilot/` 아래 별도 경로) |
+| `probe_profile` | str | probe 요청 프로필 식별자(예: `inference-max1-rps1`) — SLO 재현성 메타데이터 |
+| `slo_version` | str | 이 trial 판정에 쓰인 SLO 버전(`v2` 등) — slo-definition.md 버전과 대응 |
+| `latency_slo_sec` | float \| null | 이 trial에 실제 적용된 latency SLO 임계치(초) |
+| `probe_rps` | float | probe의 목표 발사율(RPS) |
 | `t_run_start` | ISO8601 UTC | preview 준비 등 trial 준비 시작 시각 |
 | `t_injection` | ISO8601 UTC | chaos 주입 시작 |
 | `t_injection_end` | ISO8601 UTC | chaos 자체가 끝난 시각(§4 종료조건①) |
@@ -119,3 +139,6 @@ invalid_run     probe·주입·사전조건 문제
 
 - 2026-09-16: 최초 확정.
 - 2026-09-16: 1차 리뷰 반영 — (1) `fixed_threshold`에도 공통 Alertmanager fallback 추가(비교 타당성 문제), (2) `outcome`에 `prevented` 추가하고 3조건 명시, (3) trial 종료조건을 "chaos 종료+안정화 확인"으로 재정의(조기종료 아님, 예산은 기본 실행시간), (4) 스키마에 `t_run_start/end`·`t_injection_end`·`detection_source`·`action`·`injection_valid`·`probe_valid`·`invalid_reason`·`sequence_index`·`order_seed`·`commit_sha` 추가 + 비동기 감사기록 reconcile 단계 명시. 총 예상 소요시간 11시간15분→13~15시간으로 수정.
+- 2026-09-16: load-ramp 파일럿에서 개별 요청 latency는 정상화됐으나, 60초 롤링 P95와 30초 연속 정상 판정에 필요한 관찰시간이 부족해 회복 여부가 우측 검열됨을 확인했다. 본 실험 전 timeout을 600초에서 900초로 조정했다. 탐지 방식에 유리하도록 변경한 것이 아니라 모든 arm의 회복 여부를 동일한 기준으로 끝까지 관찰하기 위한 변경이다. 이 조정 전에 실행된 native 파일럿(run_id=`load_ramp-native-01-20260916T033817Z`)은 파이프라인 검증에는 성공했으나 결과 데이터는 본 실험 5회 반복에서 제외한다. 총 예상 소요시간 13~15시간→14~16시간으로 수정.
+- 2026-09-16: 파일럿에서 `max_tokens=10` probe가 vLLM CPU limit인 4코어를 거의 전부 사용해 측정 도구가 실험 대상에 유의미한 부하를 가하는 observer effect를 확인했다. 본 실험에서는 `max_tokens=1` 경량 probe를 사용하고, 요청 특성이 변경된 만큼 동일한 산정 원칙으로 baseline과 latency SLO를 다시 측정해 동결했다(SLO v2 — slo-definition.md 참고). `is_pilot`/`probe_profile`/`slo_version`/`latency_slo_sec`/`probe_rps`를 §5 스키마에 추가해 재현성을 높였다.
+- 2026-09-16: probe 포함 조건에서 `load_ramp` stage RPS를 재보정했다(기존 1~10RPS는 probe 없이 ramp.py 단독으로 캘리브레이션된 값이라, probe 상시 동반 + SLO v2 하에서는 stage-1부터 이미 위반이었음). 0.10~1.00 RPS 구간을 사전에 고정한 판정 기준으로 3회 독립 반복해 재현성을 확인했다: 낮은 부하 구간(0.10/0.25 RPS)에서는 측정 노이즈에 따른 소폭 역전이 있었으나, 0.50 RPS 이후에는 부하 증가에 따른 지연 상승이 일관되게 나타났다. 0.50 RPS까지는 3회 모두 SLO를 준수했고, 0.75 RPS는 2/3회, 1.00 RPS는 3/3회 SLO를 위반했다. 모든 요청은 성공했으며 부하 종료 후 정상 범위로 회복했다. 사전 기준을 그대로 통과했으므로 추가 조정 없이 확정했다(사후 편향 방지). "시스템 붕괴 확인용" 6번째 stage는 의도적으로 넣지 않았다 - 이 실험은 한계까지 무너뜨리는 게 목적이 아니라 점진적 열화에서 선제탐지·복구시간을 비교하는 것이라, collapse를 넣으면 다른 실험이 된다. `t_injection`을 "inject() 호출 시각"에서 "첫 ramp 요청이 실제 전송된 시각"으로 더 정밀하게 정의하고 `load_ramp_adapter.py`에 반영했다.

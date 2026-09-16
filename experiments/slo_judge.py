@@ -16,7 +16,13 @@ from datetime import datetime, timedelta
 
 sys.stdout.reconfigure(encoding="utf-8")  # Windows 기본 cp949 콘솔 대응
 
-L_BASELINE = 2.686  # docs/design/slo-definition.md §2
+# SLO v2(2026-09-16, docs/design/slo-definition.md §2 변경이력) - max_tokens=1
+# probe 전용 프로필로 재보정한 값. v1(2.686s, max_tokens=10)은 probe 자신이
+# vLLM CPU 4코어를 거의 다 써서 observer effect를 일으키는 게 실측 확인돼
+# 폐기했다(본 실험 미사용, 이력만 slo-definition.md에 보존). experiments/
+# probe.py가 항상 이 프로필로 도므로, 이 상수는 probe raw 로그 판정에만
+# 쓴다 - ramp.py 자체 원시 로그(max_tokens=10)에 이 상수를 적용하면 안 된다.
+L_BASELINE = 0.256  # 3x300건 calibration(calibrate_probe_only.py)의 P95 중앙값
 LATENCY_THRESHOLD = 2 * L_BASELINE  # §3
 LATENCY_PERSIST_SEC = 30  # §3, §6
 AVAILABILITY_THRESHOLD = 0.99  # §4

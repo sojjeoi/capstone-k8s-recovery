@@ -1,0 +1,39 @@
+# *** 이력용(2026-09-16) - 이 파일의 탐색 결과는 3회 반복 재현성 확인 후
+# scenario-load-ramp.yaml 본편에 그대로 확정돼 들어갔다(explore-20260916T
+# 064939Z/070319Z/071454Z, experiment-contract.md §4 "load_ramp 확정 설정"
+# 참고). 본 실험은 scenario-load-ramp.yaml만 쓰고 이 파일은 재보정 근거·
+# 재현 스크립트(experiments/explore_ramp_intensity.py) 기록용으로만 남긴다.
+#
+# SLO v2(threshold=0.512s) + probe(max_tokens=1, 1RPS) 상시 동반 조건에서
+# ramp 강도를 재탐색하기 위한 탐색용 설정 - scenario-load-ramp.yaml 본편과는
+# 별개. native+probe만으로 이미 stage-1(1RPS)부터 P95=0.691s로
+# v2 threshold를 넘는 게 실측 확인돼(pilot-load_ramp-native-01-20260916T053600Z),
+# 훨씬 낮은 RPS 구간에서 "정상 -> 위험 증가 -> 위반" 경계가 어디인지 다시
+# 찾아야 한다.
+#
+# target/max_tokens=10은 본편과 동일하게 유지 - SLO threshold와 ramp 강도를
+# 동시에 바꾸면 무엇 때문에 결과가 달라졌는지 구분할 수 없다는 지적에 따라
+# ramp 강도(RPS)만 바꾼다. 각 stage 90초 - 60초 P95 롤링 윈도우가 이전
+# stage의 표본을 완전히 밀어낼 시간을 확보하기 위함.
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: explore-0.10rps
+    rps: 0.1
+    duration_sec: 90
+  - name: explore-0.25rps
+    rps: 0.25
+    duration_sec: 90
+  - name: explore-0.50rps
+    rps: 0.5
+    duration_sec: 90
+  - name: explore-0.75rps
+    rps: 0.75
+    duration_sec: 90
+  - name: explore-1.00rps
+    rps: 1.0
+    duration_sec: 90
