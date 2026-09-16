@@ -5,8 +5,8 @@
 > preflight 도중 노드 장애가 발생했다. Promotion 자체는 preflight를 통해
 > 끝까지 성공 검증했지만, 그 과정에서 발견한 리소스 문제 때문에 3-arm
 > 파일럿은 보류한다. **후속(2026-09-17 새벽)**: `pod_kill` native E2E 실행
-> 전 preflight에서 같은 사건의 잔존 영향으로 보이는 Service 라우팅 간헐적
-> 이상을 발견해 주입을 다시 보류했다 — §5 참고.
+> 전 preflight에서 같은 사건의 잔존 영향으로 보이는 pod 간 네트워크
+> 간헐적 이상을 발견해 주입을 다시 보류했다 — §5 참고.
 
 ## 1. Preflight 체크리스트 — 전부 통과
 
@@ -136,19 +136,28 @@
 headroom 해결. (둘 다 이후 상황 갱신: `collect_metrics.py`는 완료, `pod_kill`
 어댑터 코드+오프라인 테스트도 완료 — 남은 인프라 작업은 §5 참고.)
 
-## 5. pod_kill 실행 전 진단 — Service 라우팅 간헐적 이상 (2026-09-17 새벽, 읽기 전용)
+## 5. pod_kill 실행 전 진단 — pod 간 네트워크 간헐적 이상 (2026-09-17 새벽, 읽기 전용)
 
 `pod_kill × native × 1회` 실행 전 preflight 중 `recovery-policy → vllm-active`
-Service 경로에서 완전한 요청 실패(8~10초 타임아웃)를 발견해 주입을 보류하고,
+경로에서 완전한 요청 실패(8~10초 타임아웃)를 발견해 주입을 보류하고,
 변경·재시작 없이 증거만 수집했다(2026-09-16 약 23:13 KST(≈14:13 UTC)부터
 2026-09-17 새벽까지, 클러스터 시각 기준).
+
+**용어 정정(2026-09-17)**: 처음엔 "Service 라우팅 문제"로 좁혀 적었으나
+부정확하다 - ClusterIP 직접 요청과 Pod IP 직접 요청을 **같은 실패 순간에**
+같이 측정한 적이 없어서, kube-proxy/Service 경로로 범위를 좁힐 근거가
+아직 없다. Pod IP 요청은 kube-proxy·Service를 우회하므로, 그게 같이
+실패하는지가 원인 범위를 가르는 핵심 관측인데 아직 미확인이다. 그래서
+"Service 경로 문제"가 아니라 더 넓은 **"pod 간 네트워크 간헐적 이상"**으로
+표현을 바꾼다 - §5.3에 세 경로를 같은 시간축에서 동시 측정하는 방법을
+남겨 낮에 이걸로 원인 범위를 실제로 좁힌다.
 
 ### 5.1 결론 요약
 
 | 항목 | 결론 |
 |---|---|
-| `etcdInsufficientMembers`(critical) 등 control-plane alert 5종 | **실제 etcd/control-plane 장애 아님** — API 서버 `/readyz?verbose`의 `etcd ok`/`etcd-readiness ok` 확인, Prometheus가 kube-etcd·kube-proxy·kube-scheduler·kube-controller-manager 스크레이프 타겟을 못 읽는 모니터링 파이프라인 문제로 판단됨 |
-| `recovery-policy → vllm-active` Service 경로 | **간헐적 실패** — 완전히 깨진 것도 완전히 정상인 것도 아님. 같은 요청(Service DNS이름 + POST `/v1/completions`)이 연속 5/5 타임아웃 → 곧바로 연속 13/13 성공. 아래 4가지 분류 중 하나로 깔끔히 안 떨어짐(§5.3) |
+| `etcdInsufficientMembers`(critical) 등 control-plane alert 5종 | **실제 etcd/control-plane 장애 아님** — API 서버 `/readyz?verbose`의 `etcd ok`/`etcd-readiness ok` 확인, Prometheus가 kube-etcd·kube-proxy·kube-scheduler·kube-controller-manager 스크레이프 타겟을 못 읽는 모니터링 파이프라인(관측성 경로) 문제로 판단됨. **단, Phase 8 결과 자체가 Prometheus 데이터를 쓰므로(탐지 arm의 입력 신호, Alertmanager 알림 소스) 이 스크레이프 장애가 `vllm-serving` 타겟에도 번져 있는지는 본 실험 전에 별도 확인 필요(§5.4)** |
+| `recovery-policy → vllm-active`(ClusterIP 경유) | **간헐적 실패** — 완전히 깨진 것도 완전히 정상인 것도 아님. 같은 요청이 연속 5/5 타임아웃 → 곧바로 연속 13/13 성공. 원인 범위(kube-proxy 단독인지, 더 넓은 pod-네트워크 문제인지)는 아직 미확정 — Pod IP 직접 요청을 같은 실패 순간에 비교한 적이 없다(§5.3) |
 | `vllm-serving` pod/vLLM 프로세스 자체 | 정상 — pod 내부 `localhost:8000/health`는 항상 즉시 200 |
 | 12일 된 `PodChaos/vllm-pod-kill` | 무해(one-shot, 이미 발동 완료, 대상 pod도 이미 없음) — YAML·status 보존(§5.2), 정리는 낮에 |
 
@@ -164,7 +173,9 @@ terminating=false`로 정상 등록. `last-change-trigger-time: 2026-09-16T09:14
 `10.101.143.197`(Service ClusterIP와 정확히 일치, 실패 없음).
 
 **recovery-policy에서 ClusterIP/Pod IP 직접 요청**: 두 경로 모두 성공(각각
-`200, ~2ms`) — 다만 이건 특정 시점 1회 관측일 뿐이다(§5.3).
+`200, ~2ms`) — 단, 이 측정은 **성공 구간**에서만 한 것이고 실패가 재현된
+순간에 두 경로를 나란히 찍어본 적은 없다. 그래서 이 결과만으로 "Pod IP는
+항상 되고 ClusterIP만 가끔 실패한다"를 주장할 수 없다(§5.3).
 
 **kube-proxy(sj-worker) 로그**: 2026-09-04 최초 기동 이후 조용하다가, **2026-
 09-16 08:53:19 UTC**부터 `watch of *v1.Service ended ... http2: client
@@ -172,10 +183,14 @@ connection lost`, 이어서 **08:54:39~09:02:39 UTC** 구간에 API 서버
 (`https://192.168.30.4:6443`) 대상 `TLS handshake timeout`으로 Service/
 EndpointSlice list·watch가 반복 실패. **09:02:39 UTC 이후로는 로그가 한
 줄도 없음**(최근 150줄 기준, 지금까지 6시간 이상). 사건 시작(09:11:55Z)
-**직전**부터 실패가 시작돼 사건과 시간적으로 이어져 있다 - 다만 로그가
-멈췄다는 사실과 "그 이후 reconcile을 안 하고 있다"는 것은 다른 주장이라,
-간헐적 성공이 실제로 관측된 이상(§5.3) 현재 kube-proxy가 완전히 죽어
-있다고 단정할 근거는 아니다.
+**직전**부터 실패가 시작돼 사건과 시간적으로 이어져 있다는 점은 사실이다.
+다만 **로그 침묵 자체를 "정지"의 증거로 쓰지 않는다** - kube-proxy는
+Service/Endpoint 설정에 변화가 없으면 원래도 로그를 거의 안 남기므로,
+몇 시간 조용한 게 그 자체로 비정상이라는 근거는 못 된다. 즉 08:53~09:02
+구간의 반복 실패 기록은 사건과의 시간적 연관성을 보여줄 뿐, "그 이후
+계속 멈춰 있다"는 결론까지 로그만으로는 낼 수 없다 - kube-proxy pod
+자체의 Ready·재시작 횟수·health endpoint 확인이 낮에 별도로 필요하다
+(§5.4).
 
 **Calico(sj-worker) 로그**: 최근 로그에 BPF/XDP 상태 초기화 관련 에러
 (`libbpf: Error loading .BTF...`, `failed to wipe the XDP state`)가 반복
@@ -209,38 +224,63 @@ kube-etcd/kube-proxy/kube-scheduler/kube-controller-manager 각각) - **전부
 one-shot CR을 자동 GC하지 않아서 남은 상태 표시일 뿐, 재발동을 의미하지
 않는다.
 
-### 5.3 Service 경로 이상 분류 — 깔끔히 안 떨어짐
+### 5.3 원인 범위를 좁히는 방법 — 세 경로 동시 비교(낮에 실행, 아직 미실행)
 
-말씀하신 4분류(Pod IP만 성공/전부 실패/Ready endpoint 없음/DNS부터 실패)는
-"고정된" 증상을 전제하는데, 실제 관측 순서는:
+어젯밤 관측은 경로를 하나씩, 다른 시점에 찍은 것이라 "어느 구간에서
+실패하는지"를 가르지 못한다. 낮에는 아래 세 경로를 **같은 시간축에서
+동시에**(같은 반복문 안에서 번갈아, 예: 1초 간격으로 ClusterIP→PodIP→
+localhost 순으로 계속 반복) 측정한다:
 
-1. 최초 발견(전날 늦은 밤): DNS이름 경유 `/health`·`/v1/models`·
-   `/v1/completions` 전부 8~10초 타임아웃(→ "전부 실패"로 보임)
-2. 그 직후: DNS 해석 성공, ClusterIP 숫자·Pod IP 숫자 둘 다 `/health` 성공
-3. 곧이어: 정확히 같은 요청(DNS이름+`/v1/completions`)이 **5/5 연속 타임아웃**
-4. 그 직후: 같은 요청이 **13/13 연속 성공**(0.13~0.37초, 정상 지연)
+- `recovery-policy` → ClusterIP(`10.101.143.197:8000`)
+- `recovery-policy` → Pod IP(`10.244.36.2:8000`, kube-proxy·Service 우회)
+- `vllm-serving` pod 내부 → `localhost:8000`
 
-즉 "항상 이 경로만 실패"가 아니라 **버스트성 간헐적 실패**다. kube-proxy
-watch 실패(09:02:39 UTC 이후 로그 없음)가 유력한 용의자이지만, 완전히
-멈춰있다면 간헐적 성공을 설명하기 어렵다 - conntrack 테이블 문제나
-kube-proxy가 실제로는 살아서 반복 재동기화 중일 가능성도 배제 못 한다.
-**이 시점에서 단일 원인으로 단정하지 않는다.**
+실패가 재현되는 순간의 조합으로 분류한다:
+
+| 실패 패턴 | 원인 범위 |
+|---|---|
+| ClusterIP만 실패, Pod IP·localhost 성공 | kube-proxy/iptables(DNAT 규칙) |
+| ClusterIP·Pod IP 동시 실패, localhost는 성공 | Calico·veth·conntrack·노드 네트워크(kube-proxy 단독 아님) |
+| 세 경로 모두 실패 | vLLM 자체 또는 노드 전체 정체 |
+| `recovery-policy`에서 보내는 요청만(대상 무관하게) 실패 | 그 pod의 네트워크 namespace·소켓·클라이언트 쪽 문제 |
+
+이번에 확보한 §5.2 증거는 이 표의 어느 칸에도 아직 확실히 채울 수 없다 -
+그래서 원인을 단정하지 않고 이 비교표를 §5.4의 첫 실행 항목으로 남긴다.
 
 ### 5.4 낮 시간대 작업 순서(말씀하신 우선순위 그대로)
 
 1. `etcdInsufficientMembers` 원인 확인 - **1차 결론은 이미 남(모니터링
    스크레이프 문제, §5.1)**, 낮에 Prometheus target 페이지에서
    kube-etcd/kube-proxy/kube-scheduler/kube-controller-manager 타겟이
-   실제로 어떤 에러로 down 상태인지 확인해 확정
-2. `recovery-policy → vllm-active` Service 경로 복구 - 간헐적이라 "복구"보다
-   "재현 후 원인 특정"이 먼저: kube-proxy 재시작 전후 동일한 반복 요청으로
-   실패율 비교, 가능하면 sj-worker에서 `iptables-save`로 해당 ClusterIP의
-   DNAT 규칙이 현재 pod IP(`10.244.36.2`)를 가리키는지 직접 확인
+   실제로 어떤 에러로 down 상태인지 확인해 확정. **추가로 `vllm-serving`
+   자체의 Prometheus scrape target도 같은 문제(down)인지 확인** - Phase 8
+   결과가 탐지 arm 입력·Alertmanager 알림에 Prometheus를 쓰므로, 이
+   스크레이프 장애가 `vllm-serving` 쪽까지 번져 있다면 pod_kill 검증보다
+   먼저, 본 실험 전에는 반드시 해결하거나 영향 범위를 명확히 해야 한다.
+2. **§5.3의 세 경로 동시 비교부터 실행** - "복구"보다 "재현 후 원인 특정"이
+   먼저다. 실패가 재현되는 순간마다 다음을 같이 기록:
+   - curl `%{time_connect}`(TCP 연결까지)와 `%{time_starttransfer}`/
+     `%{time_total}`(응답까지)을 분리해서 찍는다 - TCP connect 단계에서
+     막히는지, 연결은 되고 응답 대기에서 막히는지에 따라 원인 범위가
+     크게 갈린다.
+   - `recovery-policy` pod 내부 TCP 상태(`ss -tn` 등)로 `TIME_WAIT` 누적
+     여부 확인
+   - conntrack 현재 사용량·최댓값(`conntrack -C`/`-M` 또는
+     `/proc/sys/net/netfilter/nf_conntrack_{count,max}`)과 insert/drop
+     관련 카운터
+   - sj-worker 커널 로그(`dmesg`)에 `nf_conntrack: table full` 여부
+   - kube-proxy pod Ready 상태·재시작 횟수·health endpoint(`/healthz`,
+     보통 10256 포트) 확인 - 로그 침묵만으론 정지 여부를 판단 못 하므로
+     이 확인이 필수(§5.2 정정 참고)
+   - Calico/Felix 상태(`calicoctl node status` 또는 felix 로그의 현재
+     상태 라인)와 veth 인터페이스 drop/error 카운터(`ip -s link`)
+   - `iptables-save`로 해당 ClusterIP의 DNAT 규칙이 현재 pod IP
+     (`10.244.36.2`)를 가리키는지 직접 확인(원래 계획, 위 비교와 병행)
 3. 오래된 `PodChaos/vllm-pod-kill` 정리(`kubectl delete podchaos vllm-pod-kill -n vllm-serving`) - YAML·status는 위 §5.2에 보존됨
-4. 정상 상태 최소 10~15분 유지 확인(반복 요청 실패율 0%, Node Ready 유지)
+4. 정상 상태 최소 10~15분 유지 확인(위 세 경로 반복 요청 실패율 0%, Node Ready 유지)
 5. 그 다음에만 `pod_kill × native × 1회` 재시도(§4의 pass 기준 그대로 적용)
 
 또한 향후 실험 preflight에 `cluster_healthy`(control-plane 전체 alert +
-Service 경로 반복 검증) 검사를 `/admin/quiescent`(vllm 전용)와 별도로
+pod 간 네트워크 반복 검증) 검사를 `/admin/quiescent`(vllm 전용)와 별도로
 추가하는 것을 권장 - `quiescent=true`가 클러스터 전체 정상을 보장하지
 않는다는 점이 이번에 확인됐다.
