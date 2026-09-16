@@ -3,7 +3,9 @@
 검증한다(experiment-contract.md 3단계 완료기준 + 1·2차 리뷰에서 지적된
 문제들의 회귀 테스트). run_id 등록/quiescence 확인은 arm="native"일 때
 건너뛰므로 대부분은 오프라인으로 돈다 - non-native arm은 실제
-recovery-policy에 HTTP로 붙어서(port-forward 필요) 실제 연동을 확인한다.
+recovery-policy에 HTTP로 붙어서(port-forward 필요) 실제 연동을 확인하며,
+`@pytest.mark.live_cluster`로 표시해 기본 `pytest` 실행에서는 건너뛴다
+(conftest.py, RUN_LIVE_TESTS=1로만 실행 - experiments/README.md "테스트" 절).
 
 모든 테스트는 run_once(results_dir=...)로 결과 기록 위치를 격리한다(2026-
 09-16 수정) - 예전엔 run_once.py의 RESULTS_DIR(실제 results/)에 그대로
@@ -18,6 +20,7 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+import pytest
 import requests
 
 from run_once import RECOVERY_POLICY_URL, HarnessCorrupted, Injector, Prober, run_once
@@ -106,6 +109,8 @@ def test_normal_completion(tmp_path):
     assert result.probe_valid is True
     assert result.injection_valid is True
     assert result.t_injection is not None
+    assert result.injection_observation_error_sec is None, \
+        "get_actual_injection_time() 미구현 어댑터는 관측 오차를 주장하면 안 됨"
     assert result.t_injection_end is not None
     assert result.t_slo is not None
     assert result.t_recovery is not None
@@ -115,6 +120,26 @@ def test_normal_completion(tmp_path):
     assert icalls["prepare"] == 1
     assert icalls["cleanup"] == 1
     print("OK - 정상 완료:", result.run_id, result.outcome, result.state)
+
+
+def test_precise_injection_time_overrides_and_records_observation_error(tmp_path):
+    # get_actual_injection_time()을 구현한 어댑터(pod_kill/load_ramp)는
+    # t_injection이 그 값으로 덮어써지고, 폴링 관측이라 오차 상한
+    # (poll_interval_sec)이 injection_observation_error_sec에 함께 남아야 한다.
+    precise_time = "2026-01-01T00:00:00.123456+00:00"
+    injector, _ = _fake_injector(is_done_after_calls=1)
+    injector.get_actual_injection_time = lambda: precise_time
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=15, sequence_index=15, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+        results_dir=tmp_path,
+    )
+
+    assert result.t_injection == precise_time
+    assert result.injection_observation_error_sec == 0.1
+    print("OK - get_actual_injection_time() 구현 시 t_injection 덮어쓰기 + 관측 오차 기록")
 
 
 def test_pilot_result_written_to_pilot_subdir(tmp_path):
@@ -314,6 +339,7 @@ def test_prober_still_alive_after_stop_raises_harness_corrupted(tmp_path):
     print("OK - prober.stop() 이후에도 is_alive()==True -> HarnessCorrupted")
 
 
+@pytest.mark.live_cluster
 def test_real_experiment_context_registration_non_native_arm(tmp_path):
     """native가 아닌 arm은 실제 recovery-policy에 quiescence 확인 +
     등록/clear HTTP 호출이 나간다 - 로컬에서
@@ -335,6 +361,7 @@ def test_real_experiment_context_registration_non_native_arm(tmp_path):
     print("OK - non-native arm의 실제 quiescence/experiment-run 등록/clear 성공:", result.run_id)
 
 
+@pytest.mark.live_cluster
 def test_active_context_blocks_new_trial_start(tmp_path):
     """다른 trial이 미리 컨텍스트를 등록해둔 상태(오케스트레이터가 정리를
     건너뛴 버그 상황을 흉내)에서 run_once()를 부르면 즉시 invalid_run이어야
@@ -362,6 +389,7 @@ def test_active_context_blocks_new_trial_start(tmp_path):
 
 
 if __name__ == "__main__":
+    import os
     import tempfile
     from pathlib import Path
 
@@ -369,8 +397,9 @@ if __name__ == "__main__":
         with tempfile.TemporaryDirectory() as d:
             test_fn(Path(d))
 
-    for test_fn in (
+    offline_tests = (
         test_normal_completion,
+        test_precise_injection_time_overrides_and_records_observation_error,
         test_pilot_result_written_to_pilot_subdir,
         test_slo_violation_gates_recovery_check,
         test_prevented_when_never_violates,
@@ -380,8 +409,18 @@ if __name__ == "__main__":
         test_probe_never_alive_marks_invalid,
         test_critical_cleanup_failure_raises_and_still_writes_result,
         test_prober_still_alive_after_stop_raises_harness_corrupted,
+    )
+    live_cluster_tests = (
         test_real_experiment_context_registration_non_native_arm,
         test_active_context_blocks_new_trial_start,
-    ):
+    )
+
+    for test_fn in offline_tests:
         _run_with_tmp_dir(test_fn)
+
+    if os.environ.get("RUN_LIVE_TESTS") == "1":
+        for test_fn in live_cluster_tests:
+            _run_with_tmp_dir(test_fn)
+    else:
+        print(f"건너뜀({len(live_cluster_tests)}개) - live_cluster 테스트는 RUN_LIVE_TESTS=1로만 실행")
     print("모두 통과")

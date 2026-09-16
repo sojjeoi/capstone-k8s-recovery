@@ -15,8 +15,11 @@ kill.yaml의 정적 labelSelectors: {app: vllm-serving}만 쓰면 preview가
 Chaos Mesh PodChaos는 순간 액션(pod-kill)이라 CR 자체에 "종료됐는지" 상태가
 없다 - 그래서 CR 생성 성공(requested)과 기존 UID가 실제로 사라졌는지
 (effective)를 분리해서 확인한다. t_injection은 CR 요청 시각이 아니라
-UID 소멸을 처음 확인한 시각으로 기록한다(load_ramp의 t_injection 정의와
-같은 원칙 - "실제로 일어난 시각").
+is_started()가 폴링으로 기존 UID 소멸을 처음 관측한 시각으로 기록한다 -
+실제 삭제 시각 그 자체가 아니라 관측 시각이므로, 오차 상한은
+poll_interval_sec이다(run_once.py가 injection_observation_error_sec으로
+함께 기록 - load_ramp_adapter.py의 get_actual_injection_time()과 같은
+원칙).
 """
 import os
 import uuid

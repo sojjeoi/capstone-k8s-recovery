@@ -85,18 +85,30 @@
 **막힌 건 Phase 8 전체가 아니라 preview가 필요한 실클러스터 3-arm 실행뿐이다**
 - 코드·집계기 작업(1~2번)은 노드 문제와 무관하게 바로 진행 가능하다.
 
-1. **`collect_metrics.py` 최소 버전 구현**(파일럿 전 필수)
+1. **`collect_metrics.py` 최소 버전 구현**(파일럿 전 필수) — **완료**(2026-09-16, 커밋 `adcf169`)
    - 스키마 검증, 누락 타임스탬프 처리
    - `is_pilot`/`invalid_run`/`PREFLIGHT-EXCLUDED`를 집계에서 구조적으로 제외
    - arm·scenario·반복 수 검증
    - timing 순서 오류와 "t_SLO 자체가 안 남" 상황을 구분
    - `comparison.csv` 생성
-2. **`pod_kill` adapter 구현**(native dry-run까지만 우선 목표)
-   - Chaos CR 적용 시각과 실제 파드 종료 시각을 분리해서 기록
-   - 대상 active pod의 UID를 주입 **전에** 고정
-   - `is_effective()`: 고정해둔 UID가 사라졌는지로 판정
-   - 회복 판정: 새 파드 Ready + SLO 정상화
-   - `finally`에서 Chaos CR 정리
+2. **`pod_kill` native 경로 E2E 검증** — 코드+오프라인 테스트는 **완료**(2026-09-16,
+   `pod_kill_adapter.py` + `test_pod_kill_adapter.py` 5종, 커밋 `7288eb0`). 이
+   항목까지 통과해야 "pod_kill adapter 완료"가 아니라 **"pod_kill native 경로
+   E2E 완료"**로 표시할 수 있다. 통과 기준:
+   - 단일 active revision, preview 없음
+   - Node가 사전 10~15분 동안 계속 Ready
+   - 기존 pod 이름·UID가 결과에 기록됨
+   - Chaos CR 생성 후 기존 UID 소멸 확인
+   - replacement pod가 새 UID로 생성되고 Ready
+   - `t_injection`(관측 기반, `injection_observation_error_sec` 포함)·`t_SLO`·`t_recovery`가 논리적인 순서로 기록
+   - native arm에서는 promotion·recovery-policy action·감사 commit이 발생하지 않음
+   - Chaos CR과 experiment context가 모두 정리됨
+   - 종료 후 Node Ready, quiescent, completion 요청 정상
+   - 실행은 `is_pilot=true`로 본 실험에서 제외
+
+   실행 중에는 Node Ready 상태, kubelet/containerd 오류, CPU·I/O pressure를
+   별도로 관찰한다(§3.2의 CPU headroom 문제가 이 정도 부하에서도 재현되는지
+   함께 확인하는 목적을 겸함).
 3. `network_degrade` 순수 열화판과 adapter 확정
 4. `memory_pressure` adapter 연결
 5. **노드 CPU headroom 문제 해결** + 콜드스타트 3회 안정성 검증

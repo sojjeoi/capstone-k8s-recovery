@@ -101,7 +101,8 @@ invalid_run     probe·주입·사전조건 문제
 | `latency_slo_sec` | float \| null | 이 trial에 실제 적용된 latency SLO 임계치(초) |
 | `probe_rps` | float | probe의 목표 발사율(RPS) |
 | `t_run_start` | ISO8601 UTC | preview 준비 등 trial 준비 시작 시각 |
-| `t_injection` | ISO8601 UTC | chaos 주입 시작 |
+| `t_injection` | ISO8601 UTC | chaos 주입 시작. 어댑터가 `get_actual_injection_time()`을 구현하면 실제 삭제/시작 시각 그 자체가 아니라 폴링으로 그 변화를 **처음 관측한** 시각(미구현이면 `inject()` 호출 시각) |
+| `injection_observation_error_sec` | float \| null | `t_injection`이 폴링 관측값일 때만 채움 - 관측 오차의 상한(`poll_interval_sec`). null이면 관측 기반 값이 아님(어댑터 미구현) |
 | `t_injection_end` | ISO8601 UTC | chaos 자체가 끝난 시각(§4 종료조건①) |
 | `t_detection` | ISO8601 UTC \| null | 미탐지면 null |
 | `t_decision` | ISO8601 UTC \| null | |
@@ -149,3 +150,4 @@ invalid_run     probe·주입·사전조건 문제
 - 2026-09-16: load-ramp 파일럿에서 개별 요청 latency는 정상화됐으나, 60초 롤링 P95와 30초 연속 정상 판정에 필요한 관찰시간이 부족해 회복 여부가 우측 검열됨을 확인했다. 본 실험 전 timeout을 600초에서 900초로 조정했다. 탐지 방식에 유리하도록 변경한 것이 아니라 모든 arm의 회복 여부를 동일한 기준으로 끝까지 관찰하기 위한 변경이다. 이 조정 전에 실행된 native 파일럿(run_id=`load_ramp-native-01-20260916T033817Z`)은 파이프라인 검증에는 성공했으나 결과 데이터는 본 실험 5회 반복에서 제외한다. 총 예상 소요시간 13~15시간→14~16시간으로 수정.
 - 2026-09-16: 파일럿에서 `max_tokens=10` probe가 vLLM CPU limit인 4코어를 거의 전부 사용해 측정 도구가 실험 대상에 유의미한 부하를 가하는 observer effect를 확인했다. 본 실험에서는 `max_tokens=1` 경량 probe를 사용하고, 요청 특성이 변경된 만큼 동일한 산정 원칙으로 baseline과 latency SLO를 다시 측정해 동결했다(SLO v2 — slo-definition.md 참고). `is_pilot`/`probe_profile`/`slo_version`/`latency_slo_sec`/`probe_rps`를 §5 스키마에 추가해 재현성을 높였다.
 - 2026-09-16: probe 포함 조건에서 `load_ramp` stage RPS를 재보정했다(기존 1~10RPS는 probe 없이 ramp.py 단독으로 캘리브레이션된 값이라, probe 상시 동반 + SLO v2 하에서는 stage-1부터 이미 위반이었음). 0.10~1.00 RPS 구간을 사전에 고정한 판정 기준으로 3회 독립 반복해 재현성을 확인했다: 낮은 부하 구간(0.10/0.25 RPS)에서는 측정 노이즈에 따른 소폭 역전이 있었으나, 0.50 RPS 이후에는 부하 증가에 따른 지연 상승이 일관되게 나타났다. 0.50 RPS까지는 3회 모두 SLO를 준수했고, 0.75 RPS는 2/3회, 1.00 RPS는 3/3회 SLO를 위반했다. 모든 요청은 성공했으며 부하 종료 후 정상 범위로 회복했다. 사전 기준을 그대로 통과했으므로 추가 조정 없이 확정했다(사후 편향 방지). "시스템 붕괴 확인용" 6번째 stage는 의도적으로 넣지 않았다 - 이 실험은 한계까지 무너뜨리는 게 목적이 아니라 점진적 열화에서 선제탐지·복구시간을 비교하는 것이라, collapse를 넣으면 다른 실험이 된다. `t_injection`을 "inject() 호출 시각"에서 "첫 ramp 요청이 실제 전송된 시각"으로 더 정밀하게 정의하고 `load_ramp_adapter.py`에 반영했다.
+- 2026-09-16: `pod_kill` 어댑터의 코드+오프라인 테스트를 완료했다(`pod_kill_adapter.py`, active Service selector 기반 동적 대상 탐지 + fail-closed + idempotent cleanup, 실클러스터 검증은 별도 native E2E 단계로 분리). 테스트 실행 경로를 오프라인/`live_cluster`로 명확히 나눴다 - `recovery-policy` 실제 연동을 확인하는 `test_run_once.py`의 테스트 2개(non-native arm 등록, 활성 context 차단)에 `@pytest.mark.live_cluster`를 부여하고 `conftest.py`가 `RUN_LIVE_TESTS=1`일 때만 실행하도록 기본 skip 처리했다 - 이제 `pytest` 기본 실행은 클러스터 없이 항상 전부 통과한다(실행법은 `experiments/README.md` "테스트" 절). 또한 `t_injection` 정의를 바로잡았다: `get_actual_injection_time()`이 돌려주는 값은 어댑터가 실측한 정확한 사건 발생 시각이 아니라 폴링으로 그 변화를 처음 관측한 시각이며, 관측 오차의 상한(`poll_interval_sec`)을 새 필드 `injection_observation_error_sec`으로 결과에 함께 남기도록 `run_once.py`를 수정했다 - 바로 위 항목의 "실제 전송된 시각"이라는 표현은 이 관측 기반 특성을 충분히 드러내지 못했다.

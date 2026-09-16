@@ -106,10 +106,16 @@ class Injector:
     던져도 된다(run_once()의 OBSERVING 루프가 그대로 상위로 전파해
     outcome=invalid_run으로 처리한다). cleanup()은 prepare()/inject()가
     전혀 안 불렸어도 안전하게 호출 가능해야 한다(idempotent).
-    get_actual_injection_time(): 선택 구현 - inject() 호출 시각과 "실제 첫
-    요청이 나간 시각"이 다를 수 있는 어댑터(예: pod 안에서 프로세스를 백그라운드로
-    띄우는 경우)를 위한 것. None이 아닌 값을 반환하면 run_once()가 t_injection을
-    이 값으로 덮어쓴다 - 미구현(None 필드)이면 inject() 호출 시각을 그대로 쓴다."""
+    get_actual_injection_time(): 선택 구현 - inject() 호출 시각과 "실제 주입
+    효과가 시작된 시각"이 다를 수 있는 어댑터(예: pod 안에서 프로세스를
+    백그라운드로 띄우는 경우, 또는 대상의 소멸을 폴링으로 확인하는 경우)를
+    위한 것. 이 값은 어댑터가 실측한 정확한 사건 발생 시각이 아니라,
+    is_started()가 폴링으로 그 변화를 "처음 관측한" 시각이다 - 진짜 사건은
+    그 직전 poll_interval_sec 이내 어딘가에서 이미 일어났을 수 있다. None이
+    아닌 값을 반환하면 run_once()가 t_injection을 이 값으로 덮어쓰고,
+    관측 오차의 상한을 injection_observation_error_sec에 함께 남긴다 -
+    미구현(None 필드)이면 inject() 호출 시각을 그대로 쓰고 오차는 기록하지
+    않는다(폴링 관측이 아니라 상한을 주장할 근거가 없음)."""
     prepare: Callable[[], None]
     inject: Callable[[], None]
     is_started: Callable[[], bool]
@@ -160,6 +166,11 @@ class TrialResult:
     latency_slo_sec: Optional[float] = None
     probe_rps: float = 1.0
     t_injection: Optional[str] = None
+    # get_actual_injection_time()으로 t_injection을 덮어쓴 경우에만 채움 -
+    # 그 값은 폴링으로 "처음 관측한" 시각이라, 진짜 사건은 이 값 이전
+    # poll_interval_sec 이내 어딘가에서 일어났을 수 있다(상한, 정확한 오차
+    # 아님). None이면 관측 기반 값이 아니라는 뜻(어댑터 미구현).
+    injection_observation_error_sec: Optional[float] = None
     t_injection_end: Optional[str] = None
     t_detection: Optional[str] = None
     t_decision: Optional[str] = None
@@ -337,7 +348,8 @@ def run_once(
         if result.injection_valid and injector.get_actual_injection_time is not None:
             precise = injector.get_actual_injection_time()
             if precise:
-                result.t_injection = precise  # inject() 호출 시각보다 실제 첫 요청 시각이 더 정확함
+                result.t_injection = precise  # inject() 호출 시각보다 정확 - 다만 폴링 관측값
+                result.injection_observation_error_sec = poll_interval_sec  # 관측 오차 상한
         _write_result(result, results_dir)
         if not result.injection_valid:
             raise TrialInvalid("주입이 시작됐는지/효과가 있었는지 확인 안 됨")

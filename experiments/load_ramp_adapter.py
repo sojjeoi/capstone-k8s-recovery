@@ -111,7 +111,8 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
         # 최초로 확인한 시각을 기록해 get_actual_injection_time()으로 넘긴다 -
         # inject() 호출 시각(kubectl exec 왕복+프로세스 기동 전)보다 더 정확함.
         # ramp.py 자체가 요청 단위 정밀 타임스탬프를 실시간 노출하진 않으므로
-        # (raw CSV는 종료 시점에만 쓰임) poll 주기(~1초) 만큼의 오차는 남는다.
+        # (raw CSV는 종료 시점에만 쓰임) poll 주기(~1초) 만큼의 오차는 남는다 -
+        # 이 상한은 run_once.py가 결과의 injection_observation_error_sec에 남긴다.
         r = _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "sh", "-c", f"grep -q === {log}"])
         started = r.returncode == 0
         if started and first_started_at["t"] is None:
