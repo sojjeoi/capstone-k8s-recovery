@@ -73,6 +73,7 @@ invalid_run     probe·주입·사전조건 문제
 | 총 주입시간 | `450초` |
 | trial timeout | `900초` |
 | `t_injection` 정의 | 첫 ramp 요청이 실제 전송된 시각(`ramp.py` stage 시작 마커를 처음 확인한 시각 - `load_ramp_adapter.py`의 `get_actual_injection_time()`) |
+| 확정 커밋 | `83bb61a`(`chaos/scenario-load-ramp.yaml`·`chaos/probe-config.yaml`·`experiments/slo_judge.py` 확정본) |
 
 3회 독립 calibration(`explore-20260916T064939Z`/`070319Z`/`071454Z`)은 재보정 근거로만 쓰고 본 실험 5회 반복에서 제외한다. 낮은 부하 구간(0.10/0.25 RPS)에서는 측정 노이즈에 따른 소폭 역전이 있었으나, 0.50 RPS 이후에는 부하 증가에 따른 지연 상승이 일관되게 나타났다. 0.50 RPS까지는 3회 모두 SLO를 준수했고, 0.75 RPS는 2/3회, 1.00 RPS는 3/3회 SLO를 위반했다. 모든 요청은 성공했으며 부하 종료 후 정상 범위로 회복했다. 0.75 RPS가 매번 위반하지 않는 것은 문제가 아니다 - 경계 구간의 변동성을 보여주고, 1.00 RPS에서 3/3회 위반했으므로 시나리오의 유효성은 확보됐다.
 
