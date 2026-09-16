@@ -107,6 +107,33 @@ def test_normal_completion():
     print("OK - 정상 완료:", result.run_id, result.outcome, result.state)
 
 
+def test_pilot_result_written_to_pilot_subdir():
+    # 2026-09-16 지적: PILOT-EXCLUDED를 notes 자유 텍스트에만 넣으면
+    # collect_metrics.py가 실수로 포함할 수 있다 - is_pilot=True는 results/
+    # 바로 아래가 아니라 results/pilot/ 아래에 쓰여서 구조적으로 분리돼야 한다.
+    injector, _ = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        # test_normal_completion과 rep/sequence_index/order_seed를 다르게 둬야
+        # 초 단위 타임스탬프가 겹쳐도 run_id가 안 겹친다(같은 pytest 프로세스
+        # 안에서 실제로 겹쳐서 main_path.exists()가 남의 파일을 잡아낸 적 있음).
+        scenario="dry_run", arm="native", rep=99, sequence_index=99, order_seed=99,
+        injector=injector, prober=prober, timeout_sec=10, poll_interval_sec=0.1,
+        is_pilot=True,
+    )
+
+    assert result.is_pilot is True
+    pilot_path = RESULTS_DIR / "pilot" / f"trial-{result.run_id}.json"
+    main_path = RESULTS_DIR / f"trial-{result.run_id}.json"
+    assert pilot_path.exists(), f"파일럿 결과가 {pilot_path}에 없음"
+    assert not main_path.exists(), "파일럿 결과가 본 실험 경로에도 써지면 안 됨"
+    written = json.loads(pilot_path.read_text(encoding="utf-8"))
+    assert written["is_pilot"] is True
+    pilot_path.unlink()  # 흔적 정리
+    print("OK - is_pilot=True는 results/pilot/ 아래 구조적으로 분리돼 기록됨")
+
+
 def test_slo_violation_gates_recovery_check():
     # 1차 리뷰 지적 회귀 테스트: 주입 직후 아직 멀쩡한 구간에서
     # check_recovered()가 호출되면 안 된다(t_slo 찍히기 전엔 아예 안 물어봄).
@@ -322,11 +349,14 @@ def test_active_context_blocks_new_trial_start():
 def _clean_previous_results():
     for f in RESULTS_DIR.glob("trial-dry_run-*.json"):
         f.unlink()
+    for f in (RESULTS_DIR / "pilot").glob("trial-dry_run-*.json"):
+        f.unlink()
 
 
 if __name__ == "__main__":
     _clean_previous_results()
     test_normal_completion()
+    test_pilot_result_written_to_pilot_subdir()
     test_slo_violation_gates_recovery_check()
     test_prevented_when_never_violates()
     test_timeout()

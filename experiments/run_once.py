@@ -151,6 +151,14 @@ class TrialResult:
     sequence_index: int
     order_seed: int
     t_run_start: str
+    is_pilot: bool = False
+    # 재현성 메타데이터(2026-09-16, SLO v2 도입) - probe payload/SLO 산정
+    # 기준이 나중에 또 바뀔 수 있으므로 각 trial 결과 JSON 자체에 "이 trial이
+    # 어떤 probe·SLO 조건으로 판정됐는지"를 같이 남긴다.
+    probe_profile: str = "inference-max1-rps1"
+    slo_version: str = "v2"
+    latency_slo_sec: Optional[float] = None
+    probe_rps: float = 1.0
     t_injection: Optional[str] = None
     t_injection_end: Optional[str] = None
     t_detection: Optional[str] = None
@@ -191,8 +199,14 @@ def _wait_for(check: Callable[[], bool], timeout: float, interval: float = 1.0) 
 
 
 def _write_result(result: TrialResult) -> None:
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = RESULTS_DIR / f"trial-{result.run_id}.json"
+    # is_pilot=True는 results/pilot/ 아래 별도 경로에 쓴다 - collect_metrics.py가
+    # 본 실험 집계에서 파일럿을 note 텍스트 파싱 없이 구조적으로 제외할 수
+    # 있게 하기 위함(2026-09-16 지적: 자유 텍스트 notes만으로는 실수로
+    # 포함될 위험). is_pilot=False(기본값)는 기존 그대로 RESULTS_DIR 바로
+    # 아래 - 기존 오프라인 테스트들이 RESULTS_DIR을 직접 glob하므로 유지.
+    out_dir = (RESULTS_DIR / "pilot") if result.is_pilot else RESULTS_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"trial-{result.run_id}.json"
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(asdict(result), ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)  # 원자적 교체
@@ -254,11 +268,25 @@ def run_once(
     injector: Injector, prober: Prober, timeout_sec: float, poll_interval_sec: float = 1.0,
     probe_ready_timeout_sec: float = PROBE_READY_TIMEOUT_SEC,
     injection_started_timeout_sec: float = INJECTION_STARTED_TIMEOUT_SEC,
+    run_id: Optional[str] = None,
+    is_pilot: bool = False,
+    probe_profile: str = "inference-max1-rps1",
+    slo_version: str = "v2",
+    latency_slo_sec: Optional[float] = None,
+    probe_rps: float = 1.0,
 ) -> TrialResult:
-    run_id = f"{scenario}-{arm}-{rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    # run_id를 밖에서 넘길 수 있게 한 이유: injector/prober는 run_once() 호출
+    # *전에* 이미 만들어져 있어야 하는데(인자로 받으므로), 그 어댑터들이
+    # ramp.py/probe.py의 raw 로그에 태깅하는 run_id와 여기서 쓰는 run_id가
+    # 어긋나면 trial 결과 JSON과 raw 로그를 나중에 못 join한다. 호출자가 먼저
+    # run_id를 만들어 어댑터 생성과 이 호출에 동일하게 넘기면 된다. 안 넘기면
+    # (기존 테스트들처럼) 이전과 동일하게 자동 생성.
+    run_id = run_id or f"{scenario}-{arm}-{rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     result = TrialResult(
         run_id=run_id, scenario=scenario, arm=arm, rep=rep,
         sequence_index=sequence_index, order_seed=order_seed, t_run_start=_now(),
+        is_pilot=is_pilot, probe_profile=probe_profile, slo_version=slo_version,
+        latency_slo_sec=latency_slo_sec, probe_rps=probe_rps,
     )
     _write_result(result)
     critical_failures: list = []

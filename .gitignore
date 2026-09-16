@@ -14,6 +14,7 @@ kubeconfig*
 *.pkl
 experiments/results/*.csv
 experiments/results/*.json
+experiments/results/pilot/*.json
 chaos/loadgen/results/*.csv
 
 # recovery-policy 런타임 상태 (idempotency/쿨다운) — 감사기록(audit-log/)과 다름, 커밋 안 함
