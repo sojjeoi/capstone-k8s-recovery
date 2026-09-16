@@ -80,18 +80,43 @@
 - `vllm-serving` 파드 1개만 남음(`Running`)
 - 노드 `Ready`, quiescent(`active_count=0`)
 
-## 4. 다음 세션 판단 순서
+## 4. 다음 세션 재개 순서
 
-3-arm 파일럿 재개 전에 아래 순서로 자원 설계를 먼저 정리한다(SLO v2·ramp
-calibration에도 영향을 주는 별도 결정이라 이번 세션에서는 진행하지 않음):
+**막힌 건 Phase 8 전체가 아니라 preview가 필요한 실클러스터 3-arm 실행뿐이다**
+- 코드·집계기 작업(1~2번)은 노드 문제와 무관하게 바로 진행 가능하다.
 
-1. 콜드스타트 순간 실제 CPU·I/O 사용량과 지속시간을 (node exporter/Prometheus
-   과거 데이터 또는 재현 실험으로) 정밀 확인
-2. vLLM의 CPU request/limit, 노드 allocatable을 다시 대조
-3. 선택지 비교
-   - 노드 CPU 증설 — 기존 SLO·ramp 조건 변경 최소
-   - vLLM CPU 축소 — 비용은 적으나 SLO v2·ramp 재보정 필요
-   - 워커 추가·파드 분산 — 안정성은 높으나 실험 토폴로지 자체가 달라짐
-4. 선택한 구성에서 active+preview 콜드스타트를 **3회** 반복해 안정성 검증
-5. 통과 후 3-arm 파일럿(`native`/`fixed_threshold`/`proposed` × `load_ramp`
-   × 1회씩) 재개
+1. **`collect_metrics.py` 최소 버전 구현**(파일럿 전 필수)
+   - 스키마 검증, 누락 타임스탬프 처리
+   - `is_pilot`/`invalid_run`/`PREFLIGHT-EXCLUDED`를 집계에서 구조적으로 제외
+   - arm·scenario·반복 수 검증
+   - timing 순서 오류와 "t_SLO 자체가 안 남" 상황을 구분
+   - `comparison.csv` 생성
+2. **`pod_kill` adapter 구현**(native dry-run까지만 우선 목표)
+   - Chaos CR 적용 시각과 실제 파드 종료 시각을 분리해서 기록
+   - 대상 active pod의 UID를 주입 **전에** 고정
+   - `is_effective()`: 고정해둔 UID가 사라졌는지로 판정
+   - 회복 판정: 새 파드 Ready + SLO 정상화
+   - `finally`에서 Chaos CR 정리
+3. `network_degrade` 순수 열화판과 adapter 확정
+4. `memory_pressure` adapter 연결
+5. **노드 CPU headroom 문제 해결** + 콜드스타트 3회 안정성 검증
+   - 콜드스타트 순간 실제 CPU·I/O 사용량·지속시간 정밀 확인
+   - vLLM CPU request/limit vs 노드 allocatable 재대조
+   - 선택지: 노드 증설(기존 SLO·ramp 변경 최소) / vLLM CPU 축소(SLO v2·ramp 재보정 필요) / 워커 분산(토폴로지 자체가 달라짐)
+6. **자원 구성이 바뀌었다면 재보정** — CPU limit 변경·노드 증설·워커 분산 전부
+   probe baseline·load-ramp 곡선에 영향을 줄 수 있다. 최소 재검증하고, 차이가
+   크면 SLO v3로 명시하고 다시 동결한다(v1→v2 폐기와 같은 원칙).
+7. **파일럿 실행**(모두 `is_pilot=true`)
+   - `load_ramp × 3 arms × 1` — 예측 경로
+   - `pod_kill × 3 arms × 1` — 반응 경로
+8. 파일럿 통과 후 `run_all_scenarios.py`(interleaved 실행)
+9. 전체 60회 실행 + 최종 집계
+
+**`pod_kill` 파일럿 해석 시 주의**: `proposed`가 `native`보다 반드시 빨라야
+한다고 가정하면 안 된다. 전조 없는 돌발 장애라 K8s 기본 self-healing이
+더 빠르거나 비슷한 게 정상적인 예상 결과다. 이 파일럿의 핵심은 우열이
+아니라 Alertmanager 반응 경로·타임스탬프·cleanup·집계가 정확히 연결되는지
+확인하는 것이다.
+
+다음 세션 첫 구현 작업 = `collect_metrics.py`, 첫 인프라 작업 = 노드
+headroom 해결.
