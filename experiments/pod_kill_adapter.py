@@ -182,6 +182,14 @@ def make_pod_kill_injector(
             return None
         return (absent_at - present_at).total_seconds()
 
+    def get_last_seen_present_time() -> Optional[str]:
+        # run_once.py가 t_injection_last_seen 필드를 채우고, 이 어댑터가
+        # get_injection_observation_error_sec()을 안 줄 때의 대체 계산
+        # 기준점으로도 쓴다(2026-09-18 추가). 없으면(첫 poll에서 바로
+        # 사라짐 관측) None - request~observed 구간이 대신 쓰인다.
+        t = last_seen_present_at["t"]
+        return t.isoformat() if t is not None else None
+
     def is_done() -> bool:
         # pod-kill은 순간 액션 - 기존 pod가 사라진 게 확인되면(is_started)
         # 이 injector가 할 일은 끝난다(새로 뜬 pod의 Ready 여부·SLO 정상화는
@@ -197,4 +205,5 @@ def make_pod_kill_injector(
     return Injector(prepare=prepare, inject=inject, is_started=is_started,
                      is_effective=is_effective, is_done=is_done, cleanup=cleanup,
                      get_actual_injection_time=get_actual_injection_time,
-                     get_injection_observation_error_sec=get_injection_observation_error_sec)
+                     get_injection_observation_error_sec=get_injection_observation_error_sec,
+                     get_last_seen_present_time=get_last_seen_present_time)

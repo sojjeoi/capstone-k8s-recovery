@@ -120,8 +120,14 @@ class Injector:
     살아있음을 마지막으로 관측한 시각"과 "처음 사라졌음을 관측한 시각"의
     실측 차이로 계산해야 한다(pod_kill_adapter.py/load_ramp_adapter.py 참고).
     None이면(예: 관측 없이 첫 poll에서 이미 바뀐 상태여서 기준점이 없음)
-    run_once()는 injection_observation_error_sec을 기록하지 않는다 - 근거
-    없는 상한을 만들어내지 않는다."""
+    run_once()가 t_injection_request~t_injection_observed 구간으로 대신
+    계산한다(2026-09-18 추가 - 이 구간은 항상 실측값이라 임의 설정값을
+    쓰는 것과 다르다).
+    get_last_seen_present_time(): 선택 구현 - "대상이 살아있음을 마지막으로
+    관측한 시각"을 그대로 ISO 문자열로 반환한다(2026-09-18 추가). 위
+    get_injection_observation_error_sec()이 내부적으로 계산에 쓰는 것과
+    같은 값이지만, 결과 스키마의 t_injection_last_seen 필드를 채우려면
+    시각 자체가 필요하다 - 없으면(첫 poll에서 이미 사라짐) None."""
     prepare: Callable[[], None]
     inject: Callable[[], None]
     is_started: Callable[[], bool]
@@ -129,6 +135,7 @@ class Injector:
     is_done: Callable[[], bool]
     cleanup: Callable[[], None]
     get_actual_injection_time: Optional[Callable[[], Optional[str]]] = None
+    get_last_seen_present_time: Optional[Callable[[], Optional[str]]] = None
     get_injection_observation_error_sec: Optional[Callable[[], Optional[float]]] = None
 
 
@@ -196,13 +203,34 @@ class TrialResult:
     # 파라미터 값을 그대로 기록 - 2026-09-17 추가). 이 값이 trial마다
     # 달랐는지 사후에 재현성 검증하려면 결과 자체에 남아야 한다.
     min_observation_sec: float = 0.0
+    # 이 trial이 어떤 타임스탬프 체계로 기록됐는지(2026-09-18 추가) - "v2"는
+    # t_injection_request/last_seen/observed 3분할 + t_slo/t_recovery가
+    # observed_at(완료 시각) 기준인 새 방식. 이 필드가 없거나 "v1"이면 옛
+    # 방식(t_injection 단일 필드, t_slo/t_recovery가 sent_at 기준)으로 기록된
+    # trial이다 - 기존 파일 재수정 없이 구분하기 위한 것.
+    timing_schema_version: str = "v2"
+    # injector.inject() 호출 직전 시각(2026-09-18 추가) - 실제 주입 구간의
+    # 하한. 첫 poll에서 이미 대상이 사라져 t_injection_last_seen이 없을 때
+    # injection_observation_error_sec 계산의 대체 기준점으로도 쓰인다.
+    t_injection_request: Optional[str] = None
+    # 하위 호환을 위해 유지 - t_injection_observed와 같은 값(대표값)이다.
     t_injection: Optional[str] = None
-    # get_injection_observation_error_sec()이 구현+계산 가능했을 때만 채움 -
-    # "대상이 살아있음을 마지막으로 관측한 시각"과 "처음 사라졌음을 관측한
-    # 시각"의 실측 차이(상한, 정확한 오차 아님). poll_interval_sec 같은
-    # 설정값이 아니다 - 어댑터의 조회 자체도 시간이 걸려 설정값만으론 상한을
-    # 보장 못 한다(2026-09-16 정정). None이면 관측 기반 값이 아니라는 뜻
-    # (어댑터 미구현이거나 기준점이 없음).
+    # 기존 대상이 살아있음을 마지막으로 관측한 시각(2026-09-18 추가) -
+    # 없으면(첫 poll에서 이미 사라짐) null. injector.get_last_seen_present_time()
+    # 구현 시에만 채움.
+    t_injection_last_seen: Optional[str] = None
+    # 주입 효과를 처음 관측한 시각(2026-09-18 추가) - t_injection과 항상
+    # 같은 값. get_actual_injection_time() 구현 시 그 정밀값, 미구현이면
+    # inject() 호출 시각.
+    t_injection_observed: Optional[str] = None
+    # 3단계 우선순위로 계산(2026-09-18 정정): 1) 어댑터의
+    # get_injection_observation_error_sec(), 2) 없으면
+    # t_injection_last_seen~observed, 3) last_seen도 없으면(첫 poll에서
+    # 이미 사라짐) t_injection_request~observed. 전부 실측 구간이지
+    # poll_interval_sec 같은 임의값은 없다(이전엔 3번 상황에서 None으로
+    # 남겨 "근거 없음"을 표현했지만, request~observed도 엄연한 실측
+    # 구간이다). injection_valid=True
+    # 인 trial은 이제 이 필드가 항상 채워진다(둘 중 하나는 항상 있으므로).
     injection_observation_error_sec: Optional[float] = None
     t_injection_end: Optional[str] = None
     t_detection: Optional[str] = None
@@ -383,19 +411,48 @@ def run_once(
         _write_result(result, results_dir)
 
         result.state = TrialState.INJECTING.value
-        result.t_injection = _now()
+        result.t_injection_request = _now()  # injector.inject() 호출 직전 - 실제 주입 구간의 하한
+        result.t_injection = result.t_injection_request  # 폴백값(아래서 observed로 덮어씀)
         injector.inject()
         started = _wait_for(injector.is_started, injection_started_timeout_sec, poll_interval_sec)
         result.injection_valid = started and injector.is_effective()
         if result.injection_valid:
+            observed = None
             if injector.get_actual_injection_time is not None:
                 precise = injector.get_actual_injection_time()
                 if precise:
-                    result.t_injection = precise  # inject() 호출 시각보다 정확 - 다만 폴링 관측값
-                    if injector.get_injection_observation_error_sec is not None:
-                        result.injection_observation_error_sec = injector.get_injection_observation_error_sec()
+                    observed = precise
+            result.t_injection_observed = observed or result.t_injection_request
+            result.t_injection = result.t_injection_observed  # 하위 호환 대표값
+
+            if injector.get_last_seen_present_time is not None:
+                result.t_injection_last_seen = injector.get_last_seen_present_time()
+
+            # injection_observation_error_sec: 3단계 우선순위로 계산한다
+            # (2026-09-18 정정). 전부 실측 구간이지 poll_interval_sec 같은
+            # 임의 설정값은 없다.
+            #   1) 어댑터의 get_injection_observation_error_sec() - 어댑터
+            #      내부 상태로 직접 계산한 값이라 가장 정밀할 수 있음(기존
+            #      pod_kill_adapter.py/load_ramp_adapter.py 구현 그대로 유지).
+            #   2) t_injection_last_seen ~ t_injection_observed - 어댑터가
+            #      위 훅은 없어도 get_last_seen_present_time()만 구현했다면
+            #      run_once() 자신이 계산.
+            #   3) t_injection_request ~ t_injection_observed - 살아있음을
+            #      한 번도 못 봤을 때(첫 poll에서 이미 사라짐)의 최후 폴백.
+            # injection_valid=True인 trial은 이제 이 필드가 절대 None으로
+            # 남지 않는다.
+            err = (injector.get_injection_observation_error_sec()
+                   if injector.get_injection_observation_error_sec is not None else None)
+            if err is None:
+                obs_dt = datetime.fromisoformat(result.t_injection_observed)
+                lower_iso = result.t_injection_last_seen or result.t_injection_request
+                lower_dt = datetime.fromisoformat(lower_iso)
+                err = (obs_dt - lower_dt).total_seconds()
+            result.injection_observation_error_sec = err
+
             # min_observation_sec 기준점은 반드시 is_effective() 확인 "직후"부터
-            # 잡는다(2026-09-17 정정) - inject() 호출 전에 잡으면, 실제 효과
+            # 잡는다(2026-09-17 정정, t_injection_request 도입 후에도 유지) -
+            # inject() 호출 전(=t_injection_request)에 잡으면, 실제 효과
             # 확인까지 걸린 대기시간이 최소 관찰시간 바닥을 그만큼 갉아먹는다
             # (효과 확인이 느린 injector일수록 실관찰 시간이 줄어드는 역설).
             injection_monotonic = time.monotonic()

@@ -137,6 +137,14 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
             return None
         return (started_at - not_started_at).total_seconds()
 
+    def get_last_seen_present_time():
+        # run_once.py가 t_injection_last_seen 필드를 채우고, 이 어댑터가
+        # get_injection_observation_error_sec()을 안 줄 때의 대체 계산
+        # 기준점으로도 쓴다(2026-09-18 추가). 없으면(첫 poll에서 이미
+        # 마커가 보임) None - request~observed 구간이 대신 쓰인다.
+        t = last_not_started_at["t"]
+        return t.isoformat() if t is not None else None
+
     def _exit_code_ready():
         return _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "test", "-f", exitfile]).returncode == 0
 
@@ -164,7 +172,8 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
     return Injector(prepare=prepare, inject=inject, is_started=is_started,
                      is_effective=is_effective, is_done=is_done, cleanup=cleanup,
                      get_actual_injection_time=get_actual_injection_time,
-                     get_injection_observation_error_sec=get_injection_observation_error_sec)
+                     get_injection_observation_error_sec=get_injection_observation_error_sec,
+                     get_last_seen_present_time=get_last_seen_present_time)
 
 
 def _is_post_injection_window_evaluable(rows, injection_time, window_sec=None, min_samples=None):

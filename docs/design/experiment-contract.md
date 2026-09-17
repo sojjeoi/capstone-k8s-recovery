@@ -109,15 +109,19 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 | `latency_slo_sec` | float \| null | 이 trial에 실제 적용된 latency SLO 임계치(초) |
 | `probe_rps` | float | probe의 목표 발사율(RPS) |
 | `min_observation_sec` | float | "prevented" 조기 종료를 막는 최소 관찰시간(초) - 주입 효과 확인 직후부터 계산(2026-09-17 추가) |
+| `timing_schema_version` | str | `"v2"` = 아래 3분할 주입 시각 + observed_at 기준 `t_slo`/`t_recovery`. 필드 없음 또는 `"v1"` = 옛 방식(단일 `t_injection`, `t_slo`/`t_recovery`가 `sent_at` 기준)(2026-09-18 추가) |
 | `t_run_start` | ISO8601 UTC | preview 준비 등 trial 준비 시작 시각 |
-| `t_injection` | ISO8601 UTC | chaos 주입 시작. 어댑터가 `get_actual_injection_time()`을 구현하면 실제 삭제/시작 시각 그 자체가 아니라 폴링으로 그 변화를 **처음 관측한** 시각(미구현이면 `inject()` 호출 시각) |
-| `injection_observation_error_sec` | float \| null | `t_injection`이 폴링 관측값일 때만 채움 - "대상이 살아있음을 마지막으로 관측한 시각"과 `t_injection`의 실측 차이(상한, 정확한 오차 아님). `poll_interval_sec` 설정값이 아니다 - 어댑터의 조회 자체(kubectl exec 등)도 시간이 걸려 설정값만으론 상한을 보장 못 한다(2026-09-16 정정). null이면 관측 기반 값이 아니거나(어댑터 미구현) 비교 기준점이 없음(첫 poll에서 이미 상태가 바뀜) |
+| `t_injection_request` | ISO8601 UTC | `injector.inject()` 호출 직전 시각 - 실제 주입 구간의 하한(2026-09-18 추가) |
+| `t_injection` | ISO8601 UTC | **하위 호환용 대표값** - `t_injection_observed`와 항상 같다(2026-09-18부터. 그 전에는 이 필드 하나만 있었음) |
+| `t_injection_last_seen` | ISO8601 UTC \| null | 기존 대상이 살아있음을 마지막으로 관측한 시각 - `injector.get_last_seen_present_time()` 미구현이거나 첫 poll에서 이미 사라졌으면 null(2026-09-18 추가) |
+| `t_injection_observed` | ISO8601 UTC | 주입 효과를 처음 관측한 시각. 어댑터가 `get_actual_injection_time()`을 구현하면 실제 삭제/시작 시각 그 자체가 아니라 폴링으로 그 변화를 **처음 관측한** 시각(미구현이면 `t_injection_request`와 동일)(2026-09-18 추가, 이전엔 `t_injection`이 이 역할) |
+| `injection_observation_error_sec` | float \| null | 3단계 우선순위로 계산(2026-09-18 정정): 1) 어댑터의 `get_injection_observation_error_sec()`, 2) 없으면 `t_injection_last_seen`~`t_injection_observed`, 3) `t_injection_last_seen`도 없으면(첫 poll에서 이미 사라짐) `t_injection_request`~`t_injection_observed`. 전부 실측 구간이지 `poll_interval_sec` 같은 임의 설정값은 없다(2026-09-16 정정) - `injection_valid=true`인 trial은 이제 이 필드가 절대 null로 남지 않는다 |
 | `t_injection_end` | ISO8601 UTC | chaos 자체가 끝난 시각(§4 종료조건①) |
 | `t_detection` | ISO8601 UTC \| null | 미탐지면 null |
 | `t_decision` | ISO8601 UTC \| null | |
 | `t_api_request` | ISO8601 UTC \| null | |
 | `t_switch` | ISO8601 UTC \| null | |
-| `t_slo` | ISO8601 UTC \| null | `outcome=prevented`면 null |
+| `t_slo` | ISO8601 UTC \| null | `outcome=prevented`면 null. `timing_schema_version=v2`부터는 실패가 확정된 **완료 시각**(`sent_at+latency`) 기준 - 요청을 보낸 시각(`sent_at`)이 아니다(2026-09-18 정정 - pod_kill 파일럿에서 `t_slo`가 `t_injection`보다 앞서는 사례 발견, 원인은 전송 시각을 판정 시각으로 오용한 것). |
 | `t_recovery` | ISO8601 UTC \| null | timeout이면 null |
 | `t_audit_write` | ISO8601 UTC \| null | |
 | `t_audit_push` | ISO8601 UTC \| null | **복구시간 계산에 포함 안 함**. 비동기라 trial 종료 시점엔 비어있을 수 있음(§6 reconcile) |
@@ -176,3 +180,4 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
   `docs/design/phase8-blue-green-preflight-incident.md` §6 참고.
 - 2026-09-16: 바로 위 항목의 `injection_observation_error_sec` 계산 방식을 정정했다. `poll_interval_sec`(설정값)을 그대로 오차 상한으로 쓰는 건 부정확하다는 지적을 받았다 - `is_started()` 호출 자체(pod_kill의 K8s API 조회, load_ramp의 `kubectl exec`)의 실행시간과 스케줄링 지연이 `poll_interval_sec`을 넘을 수 있어 설정값만으로는 진짜 상한을 보장하지 못한다. `pod_kill_adapter.py`/`load_ramp_adapter.py`가 각각 "대상이 살아있음(또는 마커 없음)을 마지막으로 관측한 시각"과 "처음 사라짐(또는 마커 확인)을 관측한 시각"을 직접 실측해 그 차이를 `get_injection_observation_error_sec()`으로 넘기도록 `Injector` 계약에 새 선택 필드를 추가하고, `run_once.py`는 이 값을 그대로 기록하도록(더 이상 `poll_interval_sec`으로 대신 채우지 않도록) 수정했다. 두 비교 기준점이 모두 있어야만 값을 채우고, 없으면(예: 첫 poll에서 이미 상태가 바뀐 경우) `injection_observation_error_sec`은 null로 남긴다.
 - 2026-09-17: `pod_kill × native` 파일럿(`run_id=pilot-pod_kill-native-01-20260917T145337Z`)으로 **`pod_kill native 경로 E2E 완료`** - 기존 Pod 소멸→SLO 위반→replacement Pod Ready→SLO 회복 전 흐름과 Node·kubelet/containerd 정상 동작을 실측 확인했다. 다만 `t_slo`(실패 확정 요청의 **전송** 시각 기준)가 `t_injection`(Pod 소멸 **관측** 시각)보다 0.5초 앞서는 사례를 발견했다 - 기능 실패는 아니지만(raw probe 로그로 원인 확인: 전송 뒤 2.54초 만에 실패 확정된 요청), 본 실험에서 `t_detection`↔`t_SLO` 비교 의미가 모호해질 수 있어 **본 실험 전 보완 필요** 항목으로 남긴다: (1) `t_injection`을 `t_injection_request`/`t_injection_last_seen`/`t_injection_observed` 구간으로 분리, (2) `t_slo`를 요청 전송(`sent_at`)이 아니라 완료(`sent_at + latency`) 시각 기준으로 재계산, (3) `collect_metrics.py`에 `temporally_ambiguous` 등 판정 로직 추가. 이번 파일럿의 `outcome=recovered`는 그대로 유효(기능 검증 통과), 정량 timing 값만 보완 전까지 참고용. 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §7 참고.
+- 2026-09-18: 바로 위 항목의 타임스탬프 재설계를 구현했다(실클러스터 작업 없음, 코드·테스트·문서만). §5 스키마에 `timing_schema_version`(`v2`=새 방식, 필드 없음/`v1`=옛 방식)·`t_injection_request`·`t_injection_last_seen`·`t_injection_observed` 추가, `t_injection`은 `t_injection_observed`의 하위호환 대표값으로 유지. `injection_observation_error_sec`은 3단계 우선순위(어댑터 직접 계산 > last_seen~observed > request~observed)로 계산해 `injection_valid=true`인 trial에서 더 이상 null로 남지 않는다. `slo_judge.py`의 `find_t_slo()`/`find_t_recovery()`는 이제 `sent_at`이 아니라 `observed_at`(=`sent_at+latency`)을 반환한다 - 윈도우 구성·P95·성공률·위반 여부 계산 자체는 그대로라 이미 확정된 load_ramp 5-stage 재현성 결론(위반 회수 등)에는 영향 없다. `collect_metrics.py`에 `temporal_relation`(`pre_injection`/`temporally_ambiguous`/`post_injection`/`unknown`) 판정과 주입 3시각 순서 모순 검증을 추가했다. `run_once.py`/`pod_kill_adapter.py`/`load_ramp_adapter.py`/`slo_judge.py`/`collect_metrics.py` 전부 오프라인 테스트 통과(신규 `test_slo_judge.py` 포함), v1 결과(신규 필드 없음)도 오류 없이 읽힘을 확인. 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §7.4 참고.

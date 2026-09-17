@@ -27,6 +27,10 @@ def _base_row(**overrides) -> dict:
         "latency_slo_sec": 0.512,
         "probe_rps": 1.0,
         "min_observation_sec": 60.0,
+        "timing_schema_version": "v2",
+        "t_injection_request": "2026-01-01T00:00:58+00:00",
+        "t_injection_last_seen": "2026-01-01T00:00:59+00:00",
+        "t_injection_observed": "2026-01-01T00:01:00+00:00",
         "t_injection": "2026-01-01T00:01:00+00:00",
         "t_injection_end": "2026-01-01T00:08:00+00:00",
         "t_detection": "2026-01-01T00:01:30+00:00",
@@ -73,7 +77,77 @@ def test_normal_recovered_row_included_with_derived_values():
     # (그 자체는 test_missing_rep_detected가 따로 검증) - 여기서는 이 row
     # 자체에 timing/schema 이슈가 없는지만 확인한다.
     assert not any(i.run_id == r["run_id"] for i in issues)
+    assert r["temporal_relation"] == "post_injection"
     print("OK - 정상 recovered row: 포함, 파생값 정확, row 자체 이상 없음")
+
+
+def test_temporal_relation_post_injection():
+    # t_slo(observed_at 기준)가 t_injection_observed 이후 -> post_injection
+    # (기본 fixture와 동일 - 명시적으로 하나 더 확인).
+    rows = [_base_row(t_slo="2026-01-01T00:02:00+00:00")]
+    out_rows, _ = build_comparison(rows)
+    assert out_rows[0]["temporal_relation"] == "post_injection"
+    print("OK - t_slo >= t_injection_observed -> post_injection")
+
+
+def test_temporal_relation_pre_injection():
+    # t_slo가 주입 구간 하한(t_injection_last_seen)보다도 이르면 -> pre_injection.
+    rows = [_base_row(t_slo="2026-01-01T00:00:00+00:00")]  # last_seen(00:00:59)보다 이름
+    out_rows, _ = build_comparison(rows)
+    assert out_rows[0]["temporal_relation"] == "pre_injection"
+    print("OK - t_slo < 주입 구간 하한 -> pre_injection")
+
+
+def test_temporal_relation_temporally_ambiguous():
+    # t_slo가 주입 구간(하한~상한) 안에 있으면 -> temporally_ambiguous.
+    rows = [_base_row(t_slo="2026-01-01T00:00:59.500000+00:00")]  # last_seen(00:00:59)~observed(00:01:00) 사이
+    out_rows, _ = build_comparison(rows)
+    assert out_rows[0]["temporal_relation"] == "temporally_ambiguous"
+    print("OK - t_slo가 주입 구간 안 -> temporally_ambiguous")
+
+
+def test_temporal_relation_unknown_when_injection_span_missing():
+    # t_injection_last_seen/request/observed가 전부 없으면(v1 결과 등)
+    # 판정 근거가 없어 unknown.
+    rows = [_base_row(t_injection_request=None, t_injection_last_seen=None, t_injection_observed=None)]
+    out_rows, _ = build_comparison(rows)
+    assert out_rows[0]["temporal_relation"] == "unknown"
+    print("OK - 주입 구간 정보가 없으면 temporal_relation=unknown")
+
+
+def test_temporal_relation_uses_request_when_last_seen_missing():
+    # last_seen이 없으면(첫 poll에서 이미 사라짐) request를 하한으로 쓴다.
+    rows = [_base_row(t_injection_last_seen=None,
+                       t_slo="2026-01-01T00:00:58.500000+00:00")]  # request(00:00:58)~observed(00:01:00) 사이
+    out_rows, _ = build_comparison(rows)
+    assert out_rows[0]["temporal_relation"] == "temporally_ambiguous"
+    print("OK - last_seen 없으면 request를 하한으로 사용")
+
+
+def test_injection_timestamps_consistency_violation_detected():
+    # t_injection_last_seen이 t_injection_request보다 이르면(모순) issue로 남는다.
+    rows = [_base_row(t_injection_request="2026-01-01T00:01:00+00:00",
+                       t_injection_last_seen="2026-01-01T00:00:00+00:00",  # request보다 이름 - 모순
+                       t_injection_observed="2026-01-01T00:01:05+00:00")]
+    _, issues = build_comparison(rows)
+    assert any("t_injection_last_seen" in i.field and "t_injection_request" in i.field for i in issues)
+    print("OK - 주입 3시각의 순서 모순이 issue로 검출됨")
+
+
+def test_v1_result_without_new_timing_fields_reads_without_error():
+    # 새 필드(t_injection_request/last_seen/observed, timing_schema_version)가
+    # 아예 없는 v1 결과도 오류 없이 읽혀야 한다(2026-09-18 요건).
+    row = _base_row()
+    for f in ("t_injection_request", "t_injection_last_seen", "t_injection_observed",
+              "timing_schema_version"):
+        del row[f]
+    out_rows, issues = build_comparison([row])
+    assert len(out_rows) == 1
+    r = out_rows[0]
+    assert r["timing_schema_version"] is None
+    assert r["temporal_relation"] == "unknown"  # 주입 구간 정보가 없어 판정 불가
+    assert not any("t_injection_request" in i.field or "t_injection_last_seen" in i.field for i in issues)
+    print("OK - 신규 타임스탬프 필드 없는 v1 결과도 오류 없이 읽힘(timing_schema_version=None, temporal_relation=unknown)")
 
 
 def test_prevented_missing_t_slo_is_not_an_anomaly():
@@ -249,6 +323,13 @@ if __name__ == "__main__":
     from pathlib import Path
 
     test_normal_recovered_row_included_with_derived_values()
+    test_temporal_relation_post_injection()
+    test_temporal_relation_pre_injection()
+    test_temporal_relation_temporally_ambiguous()
+    test_temporal_relation_unknown_when_injection_span_missing()
+    test_temporal_relation_uses_request_when_last_seen_missing()
+    test_injection_timestamps_consistency_violation_detected()
+    test_v1_result_without_new_timing_fields_reads_without_error()
     test_prevented_missing_t_slo_is_not_an_anomaly()
     test_native_arm_prevented_is_flagged_as_anomaly()
     test_main_experiment_prevented_without_evaluable_true_is_validation_error()

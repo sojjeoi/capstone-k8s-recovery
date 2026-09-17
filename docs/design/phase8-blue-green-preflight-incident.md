@@ -482,7 +482,7 @@ Node Ready·MemoryPressure 정상 유지.
   `notes`에 동일 내용 기록)
 - 재실행: 이 문제만을 이유로 즉시 다시 할 필요 없음
 
-### 7.4 본 실험 전 보완 사항 — 타임스탬프 의미 분리(미구현, 다음 세션)
+### 7.4 본 실험 전 보완 사항 — 타임스탬프 의미 분리(요구사항, §7.5에서 구현 완료)
 
 1. **주입 시각을 구간으로 기록**
    - `t_injection_request`: Chaos CR 요청 직전 시각
@@ -513,3 +513,68 @@ SLO 위반, replacement Pod Ready 및 SLO 회복까지 E2E 흐름을 확인했�
 기준에서 생긴 시간적 모호성이며, 본 실험 전 요청 완료 시각과 주입 관측
 구간을 별도 기록하도록 보완한다. 즉, E2E 완료 표시는 가능하지만 정량
 타이밍 정의는 본 실험 전에 한 번 더 고정해야 한다.
+
+### 7.5 §7.4 구현 완료 (2026-09-18, 로컬 코드·테스트·문서만 - 실클러스터 작업 없음)
+
+**1. 주입 시각 3분할**: `run_once.py`에 `t_injection_request`(`inject()`
+호출 직전)·`t_injection_last_seen`·`t_injection_observed` 필드 추가.
+`t_injection`은 하위 호환용으로 유지하되 `t_injection_observed`와 항상
+같은 대표값으로 명시. `Injector` 계약에 `get_last_seen_present_time()`
+선택 필드를 추가해 `pod_kill_adapter.py`/`load_ramp_adapter.py`가 이미
+내부적으로 추적하던 "마지막 생존 관측" 시각을 그대로 노출하도록 구현.
+
+`injection_observation_error_sec`는 3단계 우선순위로 계산(전부 실측값,
+임의 설정값 없음): (1) 어댑터의 `get_injection_observation_error_sec()`
+(있으면 최우선), (2) 없으면 `t_injection_last_seen`~`t_injection_observed`,
+(3) last_seen도 없으면(첫 poll에서 이미 사라짐) `t_injection_request`~
+`t_injection_observed`. `injection_valid=true`인 trial은 이제 이 필드가
+절대 null로 남지 않는다. `min_observation_sec`의 monotonic 기준점은
+그대로 `is_effective()` 확인 직후 유지(§6.2에서 이미 고정한 것 - 이번에
+`t_injection_request` 도입으로 흔들리지 않게 재확인).
+
+**2. `t_slo`/`t_recovery`를 `observed_at` 기준으로 전환**: `slo_judge.py`의
+`evaluate()`가 각 point에 `sent_at`(기존 `"t"`와 동일)과
+`observed_at`(=`sent_at+latency`)을 함께 남기고, `find_t_slo()`/
+`find_t_recovery()`는 이제 `observed_at`을 반환한다. **윈도우 구성·P95·
+성공률·위반 여부 판정 로직 자체는 전부 `sent_at` 기준 그대로**(계산값이
+바뀌면 안 된다는 요구사항) - 바뀐 건 "판정에 쓰인 사건이 언제
+일어났다고 보는가"가 아니라 "그 사실을 언제 알 수 있었는가"를
+반환한다는 점뿐이다. `find_t_recovery()`의 "t_slo 이후" 필터도 두 값이
+같은 도메인(observed_at)이어야 앞뒤가 안 섞이므로 함께 맞췄다.
+
+이 변경은 이미 확정된 `load_ramp` 5-stage 재현성 결론(0.50 RPS까지 3회
+모두 준수, 0.75 RPS 2/3회·1.00 RPS 3/3회 위반 등 - §4 "위반 여부"의
+COUNT)에 영향을 주지 않는다 - 그 결론은 `t_slo is not None` 여부(위반
+있었는지)에만 의존하고, 그건 여전히 sent_at 기준 스트릭 판정 그대로다.
+바뀌는 건 "위반이 있었다고 판정된 정확한 순간"의 타임스탬프뿐이다.
+
+**3. `timing_schema_version` 필드**: 새로 기록되는 trial은 전부 `"v2"`.
+기존(이번 정정 이전) trial JSON은 이 필드가 아예 없거나 `"v1"` - 재수정
+안 함(원본 보존 원칙).
+
+**4. `collect_metrics.py`**: `t_injection_request`/`t_injection_last_seen`/
+`t_injection_observed`/`timing_schema_version`을 스키마·`comparison.csv`에
+반영. `temporal_relation` 판정 추가 - 하한(`t_injection_last_seen` 있으면
+그 값, 없으면 `t_injection_request`)과 상한(`t_injection_observed`) 대비
+`t_slo` 위치로 `pre_injection`/`temporally_ambiguous`/`post_injection`/
+`unknown`(필요한 시각 없음) 분류. 주입 3시각의 순서가 서로 모순되면(예:
+`last_seen`이 `request`보다 이름) validation issue로 남김.
+
+**5. 회귀 테스트**: `test_slo_judge.py`(신규, kubectl 의존 없는 순수 함수
+테스트) - 실패 요청의 `t_slo`가 `sent_at+latency`임을 확인, 같은 fixture로
+P95·위반 여부·SLO calibration 상수가 안 바뀜을 확인. `test_run_once.py` -
+효과 확인 지연 시 `min_observation_sec` 60초 전 조기 종료 안 됨(기존
+§6.5 테스트), 첫 poll에 이미 사라진 경우 request~observed 구간 기록,
+last_seen 있으면 더 좁은 구간 사용. `test_collect_metrics.py` - pre/
+ambiguous/post/unknown 4가지 분류, 주입 3시각 모순 검출, v1 결과(신규
+필드 없음)도 오류 없이 읽힘. 오프라인 스위트 전체 59 passed, 2 skipped
+(live_cluster).
+
+**6. 1차 파일럿 결과 처리**: `trial-pilot-pod_kill-native-01-
+20260917T145337Z.json`(gitignore 대상)의 원본 측정값은 재수정하지
+않았다 - 이 trial은 §7.4 구현 이전에 실행돼 `timing_schema_version`이
+없는(v1 성격) 기록으로 남는다. `notes`에 이미 남긴 캐비어트가 여전히
+정확하다.
+
+**실클러스터 재실행은 하지 않았다** - 다음 pod_kill/load_ramp 실행부터
+자동으로 v2 스키마로 기록된다.

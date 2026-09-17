@@ -41,7 +41,8 @@ REQUIRED_STR_FIELDS = ["run_id", "scenario", "arm", "t_run_start", "state"]
 REQUIRED_INT_FIELDS = ["rep", "sequence_index", "order_seed"]
 REQUIRED_BOOL_FIELDS = ["is_pilot", "detected", "injection_valid", "probe_valid"]
 OPTIONAL_TS_FIELDS = [
-    "t_injection", "t_injection_end", "t_detection", "t_decision", "t_api_request",
+    "t_injection", "t_injection_request", "t_injection_last_seen", "t_injection_observed",
+    "t_injection_end", "t_detection", "t_decision", "t_api_request",
     "t_switch", "t_slo", "t_recovery", "t_audit_write", "t_audit_push", "t_run_end",
 ]
 # t_slo는 의도적으로 제외 - t_detection과의 선후관계가 arm/outcome에 따라
@@ -152,6 +153,46 @@ def _check_prevented_validity(row: dict, issues: list) -> None:
             f"(True 아님) - probe가 실제로 판정 가능한 데이터를 확보했는지 검증 안 됨"))
 
 
+def _check_injection_timestamps_consistency(row: dict, ts: dict, issues: list) -> None:
+    """t_injection_request <= t_injection_last_seen <= t_injection_observed
+    순서가 깨지면(2026-09-18 타임스탬프 재설계 - v2 스키마에만 해당) issue로
+    남긴다. 세 필드 다 없는 v1 결과는 조용히 통과(계산할 게 없음)."""
+    run_id = row.get("run_id", "?")
+    req, last_seen, obs = (ts.get("t_injection_request"), ts.get("t_injection_last_seen"),
+                            ts.get("t_injection_observed"))
+    if req is not None and obs is not None and req > obs:
+        issues.append(ValidationIssue(
+            run_id, "t_injection_request/t_injection_observed",
+            f"순서 위반: t_injection_request={req.isoformat()} > t_injection_observed={obs.isoformat()}"))
+    if last_seen is not None:
+        if req is not None and last_seen < req:
+            issues.append(ValidationIssue(
+                run_id, "t_injection_request/t_injection_last_seen",
+                f"순서 위반: t_injection_last_seen={last_seen.isoformat()} < t_injection_request={req.isoformat()}"))
+        if obs is not None and last_seen > obs:
+            issues.append(ValidationIssue(
+                run_id, "t_injection_last_seen/t_injection_observed",
+                f"순서 위반: t_injection_last_seen={last_seen.isoformat()} > t_injection_observed={obs.isoformat()}"))
+
+
+def _compute_temporal_relation(ts: dict) -> str:
+    """t_slo가 실제 주입 구간에 비해 언제 일어났다고 볼 수 있는지 분류한다
+    (2026-09-18 추가 - t_slo가 이제 observed_at 기준이라도, 주입 구간 자체가
+    폭을 가지므로 "주입 전/중/후"를 명확히 나누는 게 좋다). 하한은
+    t_injection_last_seen이 있으면 그 값, 없으면 t_injection_request -
+    t_injection_observed는 상한. 필요한 시각이 하나라도 없으면 unknown."""
+    t_slo = ts.get("t_slo")
+    upper = ts.get("t_injection_observed")
+    lower = ts.get("t_injection_last_seen") or ts.get("t_injection_request")
+    if t_slo is None or upper is None or lower is None:
+        return "unknown"
+    if t_slo < lower:
+        return "pre_injection"
+    if t_slo < upper:
+        return "temporally_ambiguous"
+    return "post_injection"
+
+
 def _seconds_between(ts: dict, start: str, end: str) -> Optional[float]:
     if ts.get(start) is None or ts.get(end) is None:
         return None
@@ -184,6 +225,8 @@ def build_comparison(rows: list) -> tuple:
         included = exclusion_reason is None
         timing_anomaly = _check_timing(row, ts, issues)
         _check_prevented_validity(row, issues)
+        _check_injection_timestamps_consistency(row, ts, issues)
+        temporal_relation = _compute_temporal_relation(ts)
 
         if included:
             key = (row.get("scenario"), row.get("arm"), row.get("rep"))
@@ -212,6 +255,11 @@ def build_comparison(rows: list) -> tuple:
             "p95_peak": row.get("p95_peak"),
             "availability_min": row.get("availability_min"),
             "t_injection": row.get("t_injection"),
+            "t_injection_request": row.get("t_injection_request"),
+            "t_injection_last_seen": row.get("t_injection_last_seen"),
+            "t_injection_observed": row.get("t_injection_observed"),
+            "timing_schema_version": row.get("timing_schema_version"),
+            "temporal_relation": temporal_relation,
             "t_detection": row.get("t_detection"),
             "t_slo": row.get("t_slo"),
             "t_recovery": row.get("t_recovery"),

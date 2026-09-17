@@ -55,7 +55,12 @@ def _window(rows, t, seconds=WINDOW_SEC):
 
 def evaluate(rows):
     """각 요청 시각을 평가 시점으로 삼아 그 시점의 직전 60초 P95/성공률과
-    SLO 위반 여부를 계산한다."""
+    SLO 위반 여부를 계산한다. 윈도우 구성·P95·성공률·위반 여부는 모두 기존과
+    동일하게 sent_at(`"t"`) 기준으로 계산한다(2026-09-18: 값 자체는 바꾸지
+    않는다는 제약) - 각 point에 observed_at(=sent_at+latency, 이 요청의
+    결과가 실제로 확정된 시각)도 함께 남겨서 find_t_slo()/find_t_recovery()가
+    "판정에 쓰인 사건이 언제 일어났는가"가 아니라 "언제 그 사실을 알 수
+    있었는가"를 반환하게 한다."""
     points = []
     for r in rows:
         w = _window(rows, r["sent_at"])
@@ -65,6 +70,8 @@ def evaluate(rows):
         success_rate = sum(x["success"] for x in w) / len(w)
         points.append({
             "t": r["sent_at"],
+            "sent_at": r["sent_at"],
+            "observed_at": r["sent_at"] + timedelta(seconds=r["latency"]),
             "p95": p95,
             "success_rate": success_rate,
             "latency_violating": p95 > LATENCY_THRESHOLD,
@@ -75,37 +82,49 @@ def evaluate(rows):
 
 def find_t_slo(points):
     """latency 위반은 30초 연속 지속돼야 인정(§3), availability 위반은 즉시(§4).
-    둘 중 먼저 만족되는 시각을 반환한다."""
+    둘 중 먼저 만족되는 시각을 반환한다. 위반 여부·30초 지속 판정 자체는
+    기존과 동일하게 sent_at(`p["t"]`) 기준으로 계산하지만(값 안 바뀜),
+    반환값은 그 판정을 확정지은 표본의 observed_at이다(2026-09-18 정정 -
+    실패가 아직 확정되지도 않은 전송 시각을 SLO 위반 시각으로 쓰면 안 됨)."""
     latency_t_slo = None
     streak_start = None
     for p in points:
         if p["latency_violating"]:
             streak_start = streak_start or p["t"]
             if (p["t"] - streak_start).total_seconds() >= LATENCY_PERSIST_SEC:
-                latency_t_slo = streak_start + timedelta(seconds=LATENCY_PERSIST_SEC)
+                latency_t_slo = p["observed_at"]
                 break
         else:
             streak_start = None
 
-    availability_t_slo = next((p["t"] for p in points if p["availability_violating"]), None)
+    availability_t_slo = next((p["observed_at"] for p in points if p["availability_violating"]), None)
 
     candidates = [t for t in (latency_t_slo, availability_t_slo) if t is not None]
     return min(candidates) if candidates else None
 
 
 def find_t_recovery(points, t_slo):
-    """t_SLO 이후 두 조건 모두 해소된 상태가 30초 유지된 구간의 시작 시각(§6)."""
+    """t_SLO 이후 두 조건 모두 해소된 상태가 30초 유지된 구간의 시작 시각(§6).
+    t_slo가 이제 observed_at 도메인이므로 "t_slo 이후" 필터도 observed_at
+    기준으로 맞춘다(sent_at과 섞어 비교하면 늦게 보냈지만 빨리 실패한 요청과
+    일찍 보냈지만 오래 걸린 요청의 순서가 뒤섞인다). 지속시간 판정 자체는
+    기존과 동일하게 sent_at 기준, 반환값은 스트릭이 시작된 표본의
+    observed_at이다(2026-09-18 정정)."""
     if t_slo is None:
         return None
-    after = [p for p in points if p["t"] >= t_slo]
+    after = [p for p in points if p["observed_at"] >= t_slo]
     streak_start = None
+    streak_start_point = None
     for p in after:
         if not p["latency_violating"] and not p["availability_violating"]:
-            streak_start = streak_start or p["t"]
+            if streak_start is None:
+                streak_start = p["t"]
+                streak_start_point = p
             if (p["t"] - streak_start).total_seconds() >= LATENCY_PERSIST_SEC:
-                return streak_start
+                return streak_start_point["observed_at"]
         else:
             streak_start = None
+            streak_start_point = None
     return None
 
 

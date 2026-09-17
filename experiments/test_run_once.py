@@ -18,6 +18,7 @@ tempfile.TemporaryDirectory()로 새로 만들어 넘긴다 - 어느 경로로 �
 import json
 import sys
 import time
+from datetime import datetime, timezone
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -110,8 +111,16 @@ def test_normal_completion(tmp_path):
     assert result.probe_valid is True
     assert result.injection_valid is True
     assert result.t_injection is not None
-    assert result.injection_observation_error_sec is None, \
-        "get_actual_injection_time() 미구현 어댑터는 관측 오차를 주장하면 안 됨"
+    assert result.t_injection_request is not None
+    assert result.t_injection_observed == result.t_injection
+    assert result.t_injection_last_seen is None, "get_last_seen_present_time() 미구현 어댑터는 None"
+    # get_actual_injection_time() 미구현이어도 이제 injection_observation_error_sec은
+    # None으로 남지 않는다 - t_injection_request~observed 구간으로 항상 대체
+    # 계산되기 때문(2026-09-18 정정, request/observed가 거의 동시에 찍히는
+    # 가짜 injector라 0에 가까운 작은 값).
+    assert result.injection_observation_error_sec is not None
+    assert 0 <= result.injection_observation_error_sec < 1.0
+    assert result.timing_schema_version == "v2"
     assert result.t_injection_end is not None
     assert result.t_slo is not None
     assert result.t_recovery is not None
@@ -148,12 +157,20 @@ def test_precise_injection_time_overrides_and_records_observation_error(tmp_path
     print("OK - t_injection 덮어쓰기 + 어댑터 실측 관측 오차 기록(설정 poll_interval_sec과 무관)")
 
 
-def test_precise_injection_time_without_error_hook_leaves_error_none(tmp_path):
+def test_precise_injection_time_without_error_hook_falls_back_to_request_span(tmp_path):
     # get_actual_injection_time()만 구현하고 get_injection_observation_error_sec()은
-    # 없는 어댑터 - run_once()가 poll_interval_sec으로 대신 채우면 안 된다
-    # (근거 없는 상한을 만들어내지 않는다는 계약, 위 테스트와 상호보완).
+    # 없는 어댑터 - run_once()는 이제 poll_interval_sec(임의 설정값)이 아니라
+    # t_injection_request~observed 실측 구간으로 대체 계산한다(2026-09-18
+    # 정정 - 이전엔 이 경우 None으로 남겼지만, request~observed도 엄연한
+    # 실측값이라 "근거 없는 값"이 아니다). precise_time은 실제 시계와
+    # 무관한 값을 쓰면 t_injection_request(run_once() 자신의 실제 현재
+    # 시각)와의 차가 무의미해지므로, 실제 injector처럼 "지금"에 가까운
+    # 값을 흉내낸다.
     injector, _ = _fake_injector(is_done_after_calls=1)
-    injector.get_actual_injection_time = lambda: "2026-01-01T00:00:00+00:00"
+    # 실제 injector처럼 "호출되는 시점"의 현재 시각을 반환해야 한다 - 미리
+    # 계산해두면 PREPARING/PROBING/READY를 거치는 동안 시간이 흘러
+    # t_injection_request(더 나중에 찍힘)보다 앞선 값이 돼버린다.
+    injector.get_actual_injection_time = lambda: datetime.now(timezone.utc).isoformat()
     prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
 
     result = run_once(
@@ -162,9 +179,61 @@ def test_precise_injection_time_without_error_hook_leaves_error_none(tmp_path):
         results_dir=tmp_path,
     )
 
-    assert result.t_injection == "2026-01-01T00:00:00+00:00"
-    assert result.injection_observation_error_sec is None
-    print("OK - 관측 오차 hook 미구현 시 poll_interval_sec으로 대신 채우지 않음(None 유지)")
+    assert result.t_injection is not None
+    assert result.t_injection_last_seen is None, "get_last_seen_present_time() 미구현이면 None"
+    assert result.injection_observation_error_sec is not None
+    assert 0 <= result.injection_observation_error_sec < 1.0, \
+        f"request~observed 구간이 비정상적으로 큼: {result.injection_observation_error_sec}"
+    print("OK - 관측 오차 hook 미구현 시 t_injection_request~observed 구간으로 대체 계산")
+
+
+def test_first_poll_already_gone_records_request_to_observed_span(tmp_path):
+    # 즉발 injector(pod_kill 등)에서 첫 poll에 이미 대상이 사라진 경우 -
+    # get_last_seen_present_time()도 None을 반환한다(관측 기준점 자체가
+    # 없음). t_injection_last_seen은 null로 남고, 실제 주입 구간은
+    # t_injection_request~t_injection_observed로 기록돼야 한다.
+    injector, _ = _fake_injector(is_done_after_calls=1)
+    injector.get_actual_injection_time = lambda: datetime.now(timezone.utc).isoformat()
+    injector.get_last_seen_present_time = lambda: None  # 첫 poll에 이미 사라짐
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=17, sequence_index=17, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+        results_dir=tmp_path,
+    )
+
+    assert result.t_injection_request is not None
+    assert result.t_injection_last_seen is None
+    assert result.t_injection_observed is not None
+    req_dt = datetime.fromisoformat(result.t_injection_request)
+    obs_dt = datetime.fromisoformat(result.t_injection_observed)
+    assert abs(result.injection_observation_error_sec - (obs_dt - req_dt).total_seconds()) < 1e-6
+    print("OK - last_seen 없으면 request~observed 구간이 injection_observation_error_sec으로 기록됨")
+
+
+def test_last_seen_present_uses_tighter_span_than_request(tmp_path):
+    # get_last_seen_present_time()이 구현돼 있으면 t_injection_last_seen이
+    # 채워지고, injection_observation_error_sec은(어댑터가 직접
+    # get_injection_observation_error_sec()을 안 줘도) request~observed가
+    # 아니라 더 좁은 last_seen~observed 구간을 사용해야 한다.
+    injector, _ = _fake_injector(is_done_after_calls=1)
+    last_seen_iso = "2026-01-01T00:00:00.500000+00:00"
+    observed_iso = "2026-01-01T00:00:00.900000+00:00"
+    injector.get_actual_injection_time = lambda: observed_iso
+    injector.get_last_seen_present_time = lambda: last_seen_iso
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=18, sequence_index=18, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+        results_dir=tmp_path,
+    )
+
+    assert result.t_injection_last_seen == last_seen_iso
+    assert result.t_injection_observed == observed_iso
+    assert result.injection_observation_error_sec == pytest.approx(0.4)  # 0.9-0.5, request(현재 시각) 기준 아님
+    print("OK - last_seen 있으면 request~observed 대신 last_seen~observed(더 좁은 구간) 사용")
 
 
 def test_not_evaluable_blocks_premature_prevented(tmp_path):
@@ -545,7 +614,9 @@ if __name__ == "__main__":
     offline_tests = (
         test_normal_completion,
         test_precise_injection_time_overrides_and_records_observation_error,
-        test_precise_injection_time_without_error_hook_leaves_error_none,
+        test_precise_injection_time_without_error_hook_falls_back_to_request_span,
+        test_first_poll_already_gone_records_request_to_observed_span,
+        test_last_seen_present_uses_tighter_span_than_request,
         test_not_evaluable_blocks_premature_prevented,
         test_min_observation_sec_blocks_premature_prevented,
         test_min_observation_sec_anchored_after_effectiveness_confirmed,
