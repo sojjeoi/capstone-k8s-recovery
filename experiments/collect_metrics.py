@@ -193,7 +193,11 @@ def _compute_profile_interpretation(row: dict) -> tuple:
       장애 자체가 관찰됐는지).
     - network_tolerant profile: target_replaced의 반대가 probe_isolation_held
       (그 설정이 열화로부터 probe를 실제로 격리했는지).
-    - profile이 둘 중 하나가 아니면(다른 시나리오, 미적용) 둘 다 None."""
+    - profile이 둘 중 하나가 아니면(다른 시나리오, 미적용) 둘 다 None.
+    restart_chain_observed=True는 이 통제된 실험(네트워크 열화 주입과 같은
+    trial 안에서의 시간적 연관) 안에서의 관찰을 뜻할 뿐이다 - 단일 실행
+    하나로 인과관계를 확정한다는 뜻이 아니다(반복·통계적 근거는 여러 rep을
+    모은 뒤 별도로 봐야 한다)."""
     profile = row.get("readiness_probe_profile")
     replaced = bool(row.get("target_replaced"))
     restart_chain_observed = replaced if profile == "default" else None

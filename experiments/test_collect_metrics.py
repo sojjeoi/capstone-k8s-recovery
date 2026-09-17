@@ -311,13 +311,23 @@ def test_tolerant_profile_not_replaced_is_probe_isolation_held():
 
 def test_tolerant_profile_replaced_prevented_flagged_as_misleading():
     # probe_isolation_held=false인데 outcome=prevented로만 남으면 "설정이
-    # 열화를 견뎠다"로 오해할 위험 - 별도 issue로 남아야 한다.
+    # 열화를 견뎠다"로 오해할 위험 - 별도 issue로 남아야 한다. 이 issue는
+    # 순수 분석·해석용 표시일 뿐이다 - 하네스 오류가 아니라 tolerant probe
+    # 설정이 재시작을 막지 못한 유효한 실험 결과이므로, outcome을 바꾸거나
+    # 본 분석에서 제외하면 안 된다(2026-09-18 재확인 - issues 리스트는
+    # build_comparison() 안에서 included_in_main_analysis/exclusion_reason/
+    # outcome 계산에 전혀 쓰이지 않는다는 걸 이 테스트로 고정한다).
     rows = [_base_row(arm="fixed_threshold", readiness_probe_profile="network_tolerant",
                        target_replaced=True, outcome="prevented", t_slo=None, t_recovery=None,
                        slo_evaluable_at_exit=True)]
-    _, issues = build_comparison(rows)
+    out_rows, issues = build_comparison(rows)
     assert any("probe_isolation_held" in i.problem for i in issues)
-    print("OK - tolerant profile + 교체 + prevented가 오해 소지 issue로 검출됨")
+    r = out_rows[0]
+    assert r["outcome"] == "prevented", "경고가 outcome을 바꾸면 안 됨"
+    assert r["exclusion_reason"] is None, "경고가 이 trial을 제외 사유로 만들면 안 됨"
+    assert r["included_in_main_analysis"] is True, "유효한 실험 결과이므로 본 분석에 포함돼야 함"
+    print("OK - tolerant profile + 교체 + prevented가 오해 소지 issue로 검출되지만 "
+          "outcome/포함 여부는 그대로(단순 분석용 표시)")
 
 
 def test_missing_target_replacement_fields_read_without_error():
