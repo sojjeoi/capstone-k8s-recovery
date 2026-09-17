@@ -52,6 +52,10 @@ def main():
             injector=injector, prober=prober, timeout_sec=args.timeout_sec,
             run_id=run_id, is_pilot=args.pilot,
             latency_slo_sec=slo_judge.LATENCY_THRESHOLD,
+            # 2026-09-17 추가 - pod_kill 회귀와 동일 기준으로 명시적 통일.
+            # load_ramp는 injector.is_done()이 450초 램프 완료 후에만 True가
+            # 되므로 이 값(60초)은 이미 한참 지나 있어 실제 동작은 그대로다.
+            min_observation_sec=slo_judge.WINDOW_SEC,
         )
     except HarnessCorrupted as e:
         print(f"HARNESS CORRUPTED: {e}")

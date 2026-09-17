@@ -183,7 +183,7 @@ def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str
     raw_remote = "/probe-raw.csv"
     local_raw = RESULTS_DIR / f"probe-{run_id}-{arm}-{rep}-raw.csv"
     probe_duration = duration_sec + PROBE_DURATION_MARGIN_SEC
-    cache = {"points": [], "fetched_at": 0.0}
+    cache = {"points": [], "fetched_at": 0.0, "sample_count": 0}
     warmup = {"started_at": None}
 
     def start():
@@ -243,9 +243,19 @@ def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str
             local_raw.write_text(r.stdout, encoding="utf-8")
             rows = slo_judge.load_raw(local_raw)
             cache["points"] = slo_judge.evaluate(rows) if rows else []
+            cache["sample_count"] = len(rows)
         except Exception:
             pass  # 아직 헤더뿐이거나 읽는 순간 걸린 미완성 마지막 줄 - 다음 refresh에서 재시도(fetch 자체는 성공이라 실패 카운트 안 함)
         return cache["points"]
+
+    def is_slo_evaluable():
+        # run_once.py의 NOT_EVALUABLE 게이트(2026-09-17)가 참조하는 함수 -
+        # "여태 위반이 안 보였다"를 진짜 COMPLIANT로 믿으려면 slo_judge의
+        # P95가 max() 근사가 아니라 실제 백분위수로 계산될 만큼 표본이 쌓여야
+        # 한다(slo_judge.MIN_SAMPLES_FOR_RELIABLE_P95와 동일 기준 - 상수
+        # 중복 정의 안 함). _refresh()가 아직 한 번도 성공 못 했으면
+        # sample_count=0이라 자연히 False.
+        return cache["sample_count"] >= slo_judge.MIN_SAMPLES_FOR_RELIABLE_P95
 
     def _warmed_up():
         # WINDOW_SEC(60초)만큼 표본이 쌓이기 전엔 find_t_slo() 결과를 안 믿는다
@@ -279,4 +289,5 @@ def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str
 
     return Prober(start=start, is_alive=is_alive, check_slo_violation=check_slo_violation,
                   check_recovered=check_recovered, stop=stop,
-                  get_actual_slo_time=get_actual_slo_time, get_actual_recovery_time=get_actual_recovery_time)
+                  get_actual_slo_time=get_actual_slo_time, get_actual_recovery_time=get_actual_recovery_time,
+                  is_slo_evaluable=is_slo_evaluable)

@@ -27,6 +27,12 @@ LATENCY_THRESHOLD = 2 * L_BASELINE  # §3
 LATENCY_PERSIST_SEC = 30  # §3, §6
 AVAILABILITY_THRESHOLD = 0.99  # §4
 WINDOW_SEC = 60  # §3, §4
+# evaluate()가 실제 백분위수 대신 max()로 근사하는 표본 수 경계 - 이 밑에서는
+# P95가 "지금까지 제일 느린 요청 1개"와 같아서 노이즈가 크다. run_once.py의
+# NOT_EVALUABLE 판정(Prober.is_slo_evaluable)도 이 상수를 그대로 참조한다 -
+# "위반 없음"을 신뢰하려면 최소 이만큼의 실측 표본이 있어야 한다는 기준을
+# 중복 정의하지 않기 위함(2026-09-17).
+MIN_SAMPLES_FOR_RELIABLE_P95 = 20
 
 
 def load_raw(path):
@@ -54,7 +60,8 @@ def evaluate(rows):
     for r in rows:
         w = _window(rows, r["sent_at"])
         latencies = [x["latency"] for x in w]
-        p95 = statistics.quantiles(latencies, n=100)[94] if len(latencies) >= 20 else max(latencies)
+        p95 = (statistics.quantiles(latencies, n=100)[94]
+               if len(latencies) >= MIN_SAMPLES_FOR_RELIABLE_P95 else max(latencies))
         success_rate = sum(x["success"] for x in w) / len(w)
         points.append({
             "t": r["sent_at"],

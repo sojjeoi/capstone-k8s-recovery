@@ -17,6 +17,7 @@ tempfile.TemporaryDirectory()로 새로 만들어 넘긴다 - 어느 경로로 �
 실제 results/를 건드리지 않고, 정리도 OS가 보장한다."""
 import json
 import sys
+import time
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -164,6 +165,76 @@ def test_precise_injection_time_without_error_hook_leaves_error_none(tmp_path):
     assert result.t_injection == "2026-01-01T00:00:00+00:00"
     assert result.injection_observation_error_sec is None
     print("OK - 관측 오차 hook 미구현 시 poll_interval_sec으로 대신 채우지 않음(None 유지)")
+
+
+def test_not_evaluable_blocks_premature_prevented(tmp_path):
+    # 실측 버그 회귀 테스트(2026-09-17): pod_kill native 파일럿에서 즉발
+    # injector(injector.is_done()이 주입 직후 바로 True)가 t_injection_end를
+    # 곧장 찍는 바람에, probe가 표본을 하나도 못 읽은 채 prevented로
+    # 오판정됐다. prober.is_slo_evaluable()이 False(NOT_EVALUABLE)인 동안은
+    # t_slo가 계속 None이어도 즉시 prevented로 끝나면 안 된다.
+    injector, _ = _fake_injector(is_done_after_calls=1)  # 즉발 injector 흉내
+    evaluable_after_calls = 3
+    calls = {"is_slo_evaluable": 0}
+
+    def is_slo_evaluable():
+        calls["is_slo_evaluable"] += 1
+        return calls["is_slo_evaluable"] >= evaluable_after_calls
+
+    prober, _ = _fake_prober(violates_after_calls=10_000)  # 절대 위반 안 함
+    prober.is_slo_evaluable = is_slo_evaluable
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=20, sequence_index=20, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+        results_dir=tmp_path,
+    )
+
+    assert result.outcome == "prevented", result.outcome
+    assert result.slo_evaluable_at_exit is True
+    assert calls["is_slo_evaluable"] >= evaluable_after_calls, \
+        "evaluable=False인 동안은 prevented로 조기 종료되면 안 됨(반복 확인돼야 함)"
+    print("OK - NOT_EVALUABLE인 동안은 prevented 조기 종료 차단, evaluable된 뒤에만 확정")
+
+
+def test_min_observation_sec_blocks_premature_prevented(tmp_path):
+    # min_observation_sec은 is_slo_evaluable 미구현(None) 어댑터에도 최소
+    # 관측시간 바닥을 강제한다 - 즉발 injector가 곧장 t_injection_end를 찍어도
+    # min_observation_sec이 지나기 전에는 prevented로 끝나면 안 된다.
+    injector, _ = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=10_000)  # is_slo_evaluable 미구현
+
+    start = time.monotonic()
+    result = run_once(
+        scenario="dry_run", arm="native", rep=21, sequence_index=21, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+        min_observation_sec=0.3, results_dir=tmp_path,
+    )
+    elapsed = time.monotonic() - start
+
+    assert result.outcome == "prevented", result.outcome
+    assert elapsed >= 0.3, f"min_observation_sec(0.3s) 전에 끝남: {elapsed:.3f}s"
+    assert result.slo_evaluable_at_exit is True  # is_slo_evaluable 미구현(None)은 항상 evaluable로 간주
+    print(f"OK - min_observation_sec 바닥 적용 확인({elapsed:.3f}s >= 0.3s)")
+
+
+def test_violation_detected_even_while_not_evaluable(tmp_path):
+    # NOT_EVALUABLE 게이트는 "위반 없음을 믿어도 되는가"만 막는다 - 실제
+    # 위반(t_slo)은 evaluable 여부와 무관하게 항상 그대로 신뢰해야 한다.
+    injector, _ = _fake_injector(is_done_after_calls=5)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+    prober.is_slo_evaluable = lambda: False  # 절대 evaluable 안 됨
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=22, sequence_index=22, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+        results_dir=tmp_path,
+    )
+
+    assert result.t_slo is not None, "evaluable=False여도 실제 위반은 감지돼야 함"
+    assert result.outcome == "recovered", result.outcome
+    assert result.slo_evaluable_at_exit is None, "recovered는 prevented가 아니므로 채우지 않음"
+    print("OK - NOT_EVALUABLE 상태에서도 실제 SLO 위반 감지는 그대로 신뢰됨")
 
 
 def test_pilot_result_written_to_pilot_subdir(tmp_path):
@@ -425,6 +496,9 @@ if __name__ == "__main__":
         test_normal_completion,
         test_precise_injection_time_overrides_and_records_observation_error,
         test_precise_injection_time_without_error_hook_leaves_error_none,
+        test_not_evaluable_blocks_premature_prevented,
+        test_min_observation_sec_blocks_premature_prevented,
+        test_violation_detected_even_while_not_evaluable,
         test_pilot_result_written_to_pilot_subdir,
         test_slo_violation_gates_recovery_check,
         test_prevented_when_never_violates,

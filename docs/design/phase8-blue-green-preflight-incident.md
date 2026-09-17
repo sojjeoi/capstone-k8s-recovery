@@ -156,7 +156,7 @@ headroom 해결. (둘 다 이후 상황 갱신: `collect_metrics.py`는 완료, 
 
 | 항목 | 결론 |
 |---|---|
-| `etcdInsufficientMembers`(critical) 등 control-plane alert 5종 | **실제 etcd/control-plane 장애 아님** — API 서버 `/readyz?verbose`의 `etcd ok`/`etcd-readiness ok` 확인, Prometheus가 kube-etcd·kube-proxy·kube-scheduler·kube-controller-manager 스크레이프 타겟을 못 읽는 모니터링 파이프라인(관측성 경로) 문제로 판단됨. **단, Phase 8 결과 자체가 Prometheus 데이터를 쓰므로(탐지 arm의 입력 신호, Alertmanager 알림 소스) 이 스크레이프 장애가 `vllm-serving` 타겟에도 번져 있는지는 본 실험 전에 별도 확인 필요(§5.4)** |
+| `etcdInsufficientMembers`(critical) 등 control-plane alert 5종 | **실제 etcd/control-plane 장애 아님 - 원인 확정(2026-09-17)**: `kube-scheduler`/`kube-controller-manager` 커맨드에서 `--bind-address=127.0.0.1` 직접 확인(etcd는 어제 `--listen-metrics-urls=http://127.0.0.1:2381`로 이미 확인) - kubeadm 기본 하드닝으로 애초에 다른 pod(Prometheus)에서 못 읽는 구조. `lastError`도 전부 `connection refused`(타임아웃 아님 - 포트 자체가 그 주소에 안 열려 있다는 뜻)로 일치. **어제 사건과 무관** - `startsAt`이 사건 구간과 겹쳐 보인 건 Prometheus 자신도 그때 재생성된 pod라 재기동 후 처음 평가한 시점이 우연히 겹친 것. `vllm-serving` 자체 타겟(`vllm-active`/`vllm-preview`)은 별개로 계속 `up`(§5.4에서 재확인, 아래) |
 | `recovery-policy → vllm-active`(ClusterIP 경유) | **간헐적 실패** — 완전히 깨진 것도 완전히 정상인 것도 아님. 같은 요청이 연속 5/5 타임아웃 → 곧바로 연속 13/13 성공. 원인 범위(kube-proxy 단독인지, 더 넓은 pod-네트워크 문제인지)는 아직 미확정 — Pod IP 직접 요청을 같은 실패 순간에 비교한 적이 없다(§5.3) |
 | `vllm-serving` pod/vLLM 프로세스 자체 | 정상 — pod 내부 `localhost:8000/health`는 항상 즉시 200 |
 | 12일 된 `PodChaos/vllm-pod-kill` | 무해(one-shot, 이미 발동 완료, 대상 pod도 이미 없음) — YAML·status 보존(§5.2), 정리는 낮에 |
@@ -249,14 +249,15 @@ localhost 순으로 계속 반복) 측정한다:
 
 ### 5.4 낮 시간대 작업 순서(말씀하신 우선순위 그대로)
 
-1. `etcdInsufficientMembers` 원인 확인 - **1차 결론은 이미 남(모니터링
-   스크레이프 문제, §5.1)**, 낮에 Prometheus target 페이지에서
-   kube-etcd/kube-proxy/kube-scheduler/kube-controller-manager 타겟이
-   실제로 어떤 에러로 down 상태인지 확인해 확정. **추가로 `vllm-serving`
-   자체의 Prometheus scrape target도 같은 문제(down)인지 확인** - Phase 8
-   결과가 탐지 arm 입력·Alertmanager 알림에 Prometheus를 쓰므로, 이
-   스크레이프 장애가 `vllm-serving` 쪽까지 번져 있다면 pod_kill 검증보다
-   먼저, 본 실험 전에는 반드시 해결하거나 영향 범위를 명확히 해야 한다.
+1. ~~`etcdInsufficientMembers` 원인 확인~~ **완료(2026-09-17)**: `kube-scheduler`/
+   `kube-controller-manager`/etcd 전부 `--bind-address`·`--listen-metrics-urls`가
+   `127.0.0.1`로 확인 - kubeadm 기본값, 어제 사건과 무관한 구조적 조건(§5.1).
+   `vllm-serving` 자체 타겟(`vllm-active`/`vllm-preview`)은 Prometheus API로
+   직접 확인 결과 `health=up`, `lastError` 없음, 최근 스크레이프 성공 -
+   Phase 8이 쓰는 metrics 경로는 영향 없음. **해결 불필요(원래도 정상)**,
+   control-plane 4종 타겟은 원하면 별도로 kube-prometheus-stack의
+   `--bind-address`를 열거나 관련 alert를 무시 처리하면 되지만 Phase 8
+   진행에는 영향 없다.
 2. **§5.3의 세 경로 동시 비교부터 실행** - "복구"보다 "재현 후 원인 특정"이
    먼저다. 실패가 재현되는 순간마다 다음을 같이 기록:
    - curl `%{time_connect}`(TCP 연결까지)와 `%{time_starttransfer}`/
@@ -284,3 +285,91 @@ localhost 순으로 계속 반복) 측정한다:
 pod 간 네트워크 반복 검증) 검사를 `/admin/quiescent`(vllm 전용)와 별도로
 추가하는 것을 권장 - `quiescent=true`가 클러스터 전체 정상을 보장하지
 않는다는 점이 이번에 확인됐다.
+
+**§5.4 진행 결과(2026-09-17 저녁)**: 정리 전/후 각 15분(총 30분, 1,173회)
+ClusterIP·Pod IP·localhost 요청 전부 성공, 실패 0건. `etcdInsufficientMembers`
+원인도 확정(§5.1 갱신 - `kube-scheduler`/`kube-controller-manager`
+`--bind-address=127.0.0.1` 직접 확인, `vllm-serving` 자체 Prometheus 타겟은
+`up`). `PodChaos/vllm-pod-kill` 삭제 완료. Node Ready·pressure 정상. 8개
+실행 허용 기준 전부 통과해 `pod_kill × native × 1회`를 실행했다 - 결과는
+§6.
+
+## 6. pod_kill native 1차 실행 — 하니스 버그 발견 및 수정 (2026-09-17 저녁)
+
+### 6.1 1차 실행 결과가 잘못됐음을 발견
+
+`pilot-pod_kill-native-01-20260917T104638Z` 실행 결과 `outcome=prevented`
+(SLO 위반 없이 예방됨)로 기록됐으나, 다음 근거로 **오판정임을 확인**:
+
+- 관측 구간(`t_injection_end` → `t_run_end`)이 **37초**에 불과 - `slo_judge`의
+  `WINDOW_SEC`(60초) warmup보다 짧다.
+- `load_ramp_adapter.make_load_ramp_prober().check_slo_violation()`은
+  warmup 전엔 probe raw CSV를 아예 읽지 않고(`_refresh()` 미호출) `False`만
+  반환 - 즉 이번 trial은 probe 데이터를 **단 한 번도 평가하지 않은 채**
+  "위반 없음"으로 종료됐다.
+- 클러스터에서 직접 확인: 당시 replacement pod(`vllm-serving-7b98b55c65-
+  k9xzz`)는 trial 종료 시점 기준 **여전히 `0/1 Not Ready`**(트라이얼 종료
+  약 3분 후에도 미기동) - 서비스가 실제로 다운된 상태에서 "prevented"가
+  선언됐다.
+- Node·kubelet/containerd는 병행 감시 15초 간격 14회 전부 정상(`Ready=True`,
+  `MemoryPressure=False`) - 인프라 문제가 아니라 순수 하니스 타이밍 버그.
+
+**근본 원인**: `pod_kill_adapter.py`의 `is_done()`은 대상 소멸이 확인되는
+즉시 `True`가 된다(pod-kill은 순간 액션이므로 그 자체로는 맞는 설계). 하지만
+`run_once()`의 OBSERVING 루프는 `t_injection_end`가 찍히면 `t_slo is None`인
+것만으로 곧장 "prevented"로 조기 종료했다 - 이 전제는 `load_ramp`(주입
+지속시간 자체가 450초라 `t_injection_end` 시점엔 이미 관측이 충분함)에는
+맞지만, 즉발 주입인 `pod_kill`에는 정반대로 작동한다(위험 구간이 주입
+"이후"의 회복 과정인데, `t_injection_end`가 그 위험 구간이 "시작"하는
+순간에 찍힘).
+
+### 6.2 지적받은 추가 결함과 수정 범위
+
+최초 제안한 수정(`min_observation_sec` 시간 바닥 하나만 추가)은 불충분하다는
+지적을 받았다 - `check_slo_violation()`의 `False`가 "정상"과 "아직 판정
+불가"를 구분 못 하는 게 본질적 문제이므로, 시간만 늦춘다고 데이터가 실제로
+확보됐다는 보장은 안 된다. 최종 수정:
+
+- **`slo_judge.py`**: 매직넘버 `20`(P95를 실제 백분위수 대신 `max()`로
+  근사하는 표본 수 경계)을 `MIN_SAMPLES_FOR_RELIABLE_P95` 명명 상수로
+  추출.
+- **`run_once.py`**: `Prober`에 선택 필드 `is_slo_evaluable()` 추가 -
+  `check_slo_violation()`의 `False`가 COMPLIANT(정말 위반 없음)인지
+  NOT_EVALUABLE(판정 근거 부족)인지 구분. `run_once()`에
+  `min_observation_sec: float = 0.0`(기본값 - 기존 호출자는 동작 불변)
+  파라미터를 추가해 "prevented" 조기 종료를 `t_slo is None and evaluable
+  and (경과시간 >= min_observation_sec)`로 게이트. **POSITIVE 위반 감지는
+  evaluable 여부와 무관하게 항상 그대로 신뢰**(이 게이트는 "위반 없음"
+  결론에만 적용). 결과에 `slo_evaluable_at_exit: Optional[bool]` 필드 추가
+  - prevented 확정 시에만 채워짐, 이 필드가 없는(과거) 기록과 새로 검증된
+    기록을 구분하는 용도.
+- **`load_ramp_adapter.py`**: `make_load_ramp_prober()`에 `is_slo_evaluable()`
+  구현 - `_refresh()`가 실제로 읽은 원시 표본 수(`cache["sample_count"]`)가
+  `slo_judge.MIN_SAMPLES_FOR_RELIABLE_P95` 이상인지로 판정(단순 경과시간이
+  아니라 **실제 확보된 유효 데이터**를 기준으로 함 - probe fetch가 간헐적으로
+  실패해 표본이 적으면 시간이 지나도 NOT_EVALUABLE 유지). `check_slo_
+  violation()`의 기존 내부 warmup 게이트(`_warmed_up()`)는 그대로 둬서
+  `load_ramp`의 이미 확정·재현성 검증된 동작을 전혀 건드리지 않았다.
+- **`run_pod_kill_trial.py`/`run_load_ramp_trial.py`**: `min_observation_sec=
+  slo_judge.WINDOW_SEC`를 명시적으로 전달(상수 중복 정의 안 함). load_ramp는
+  이미 자연 발생하는 여유(450초)가 60초보다 훨씬 커서 실질적 동작 변화
+  없음.
+- 회귀 테스트 3개 추가(`test_run_once.py`): NOT_EVALUABLE인 동안 prevented
+  조기 종료 차단, `min_observation_sec` 시간 바닥 적용, NOT_EVALUABLE
+  상태에서도 실제 위반은 그대로 감지. 기존 29개 전부 그대로 통과(32 passed,
+  2 skipped) - `load_ramp`/기존 시나리오 동작 불변 확인.
+
+### 6.3 1차 실행 결과 사후 재분류
+
+`trial-pilot-pod_kill-native-01-20260917T104638Z.json`(gitignore 대상,
+로컬 파일)을 원본 타임스탬프는 그대로 두고 다음만 정정:
+`outcome: prevented → invalid_run`, `state: completed → invalid`,
+`invalid_reason: null → "observation_ended_before_slo_window_became_
+evaluable"`, `slo_evaluable_at_exit: false` 추가, `notes`에 재분류 사유 기록.
+`is_pilot=true`는 원래도 유지돼 있어 본 분석에서는 어차피 제외 대상이었다.
+
+### 6.4 재실행 전 남은 것
+
+코드 수정·테스트는 완료했으나 **재실행은 아직 하지 않았다** - §5.4의
+재확인 요건(세 경로 10~15분 재검증, replacement vLLM Ready, Node 상태 등)을
+다시 통과해야 한다.

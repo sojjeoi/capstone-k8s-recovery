@@ -145,7 +145,18 @@ class Prober:
     묻는다는 순서만 안다. get_actual_slo_time()/get_actual_recovery_time():
     선택 구현 - check_*()가 True를 반환한 poll 시각이 아니라, probe 자체가
     계산한(예: 요청 로그 기반) 더 정밀한 실제 판정 시각을 쓰고 싶을 때.
-    None이면 poll 시각(호출 시점)을 그대로 쓴다."""
+    None이면 poll 시각(호출 시점)을 그대로 쓴다.
+    is_slo_evaluable(): 선택 구현 - check_slo_violation()의 False가 "정말
+    위반이 없다"(COMPLIANT)인지 "아직 판정할 표본이 부족하다"(NOT_EVALUABLE)
+    인지 run_once()가 구분하게 해준다(2026-09-17 정정 - pod_kill native
+    파일럿에서 관측 창이 warmup보다 먼저 끝나 probe 데이터를 한 번도 못
+    읽은 채 "prevented"로 오판정된 사례 발견). True를 반환해야만 "여태
+    위반이 안 보였다"를 진짜 COMPLIANT로 인정한다 - False를 반환하면
+    check_slo_violation()이 계속 False였어도 run_once()는 "prevented"로
+    조기 종료하지 않는다(POSITIVE 위반 감지 자체는 evaluable 여부와 무관하게
+    항상 신뢰한다 - 이건 "위반 없음을 믿어도 되는가"만 게이트한다). None
+    필드(미구현)는 항상 evaluable로 간주해 기존 어댑터의 동작을 그대로
+    유지한다(하위호환)."""
     start: Callable[[], None]
     is_alive: Callable[[], bool]
     check_slo_violation: Callable[[], bool]
@@ -153,6 +164,7 @@ class Prober:
     stop: Callable[[], None]
     get_actual_slo_time: Optional[Callable[[], Optional[str]]] = None
     get_actual_recovery_time: Optional[Callable[[], Optional[str]]] = None
+    is_slo_evaluable: Optional[Callable[[], bool]] = None
 
 
 @dataclass
@@ -186,6 +198,13 @@ class TrialResult:
     t_api_request: Optional[str] = None
     t_switch: Optional[str] = None
     t_slo: Optional[str] = None
+    # outcome=prevented로 결론 낸 시점에 prober.is_slo_evaluable()이 True였는지
+    # (2026-09-17 추가 - pod_kill native 파일럿에서 warmup 전에 관측이 끝나
+    # probe 데이터를 한 번도 못 읽은 채 prevented로 오판정된 사례를 계기로,
+    # 이후 이 필드 없이 기록된(또는 어댑터가 is_slo_evaluable 미구현인) 과거
+    # prevented 결과와 새로 검증된 결과를 구분하기 위함). prevented가 아닌
+    # outcome이거나 어댑터가 is_slo_evaluable을 구현 안 했으면 None.
+    slo_evaluable_at_exit: Optional[bool] = None
     t_recovery: Optional[str] = None
     t_audit_write: Optional[str] = None
     t_audit_push: Optional[str] = None
@@ -297,6 +316,7 @@ def run_once(
     latency_slo_sec: Optional[float] = None,
     probe_rps: float = 1.0,
     results_dir: Optional[Path] = None,
+    min_observation_sec: float = 0.0,
 ) -> TrialResult:
     results_dir = results_dir or RESULTS_DIR
     # run_id를 밖에서 넘길 수 있게 한 이유: injector/prober는 run_once() 호출
@@ -351,6 +371,7 @@ def run_once(
 
         result.state = TrialState.INJECTING.value
         result.t_injection = _now()
+        injection_monotonic = time.monotonic()  # min_observation_sec 계산용 기준점(정밀할 필요 없음 - 초 단위 여유 판단용)
         injector.inject()
         started = _wait_for(injector.is_started, injection_started_timeout_sec, poll_interval_sec)
         result.injection_valid = started and injector.is_effective()
@@ -380,9 +401,19 @@ def run_once(
             if result.t_slo is not None and result.t_recovery is None and prober.check_recovered():
                 precise = prober.get_actual_recovery_time() if prober.get_actual_recovery_time else None
                 result.t_recovery = precise or _now()
-            if result.t_injection_end is not None and (
-                result.t_slo is None or result.t_recovery is not None
-            ):
+            # "위반 없음"(t_slo is None)을 prevented로 조기 종료해도 되는지는
+            # evaluable(NOT_EVALUABLE이 아님) + 최소 관측시간 둘 다 필요하다
+            # (2026-09-17 정정). 즉발 injector(pod_kill)는 t_injection_end가
+            # 주입 직후 바로 찍혀서, 이 게이트가 없으면 probe가 표본을 하나도
+            # 못 읽은 채로 prevented가 확정돼버린다 - load_ramp처럼 injector
+            # 자체 지속시간이 긴 시나리오는 원래도 이 시점엔 이미 두 조건이
+            # 자연히 만족돼 있어 동작이 바뀌지 않는다. POSITIVE 위반 감지
+            # (t_slo가 실제로 찍히는 것)는 evaluable 여부와 무관하게 항상
+            # 그대로 신뢰한다 - 이 게이트는 "위반이 없었다"는 결론에만 적용.
+            evaluable = prober.is_slo_evaluable() if prober.is_slo_evaluable is not None else True
+            observed_long_enough = (time.monotonic() - injection_monotonic) >= min_observation_sec
+            prevented_confirmed = result.t_slo is None and evaluable and observed_long_enough
+            if result.t_injection_end is not None and (prevented_confirmed or result.t_recovery is not None):
                 break
             time.sleep(poll_interval_sec)
         else:
@@ -391,8 +422,15 @@ def run_once(
         if result.outcome is None:
             # t_slo가 끝까지 안 찍혔으면 prevented 후보(최종 판정은
             # collect_metrics.py가 같은 시나리오 native 반복과 교차검증해서
-            # 확정 - 계약서 §3의 3조건 중 하나는 여기서 알 수 없음).
-            result.outcome = "prevented" if result.t_slo is None else "recovered"
+            # 확정 - 계약서 §3의 3조건 중 하나는 여기서 알 수 없음). evaluable은
+            # 루프의 마지막 iteration에서 계산된 값 그대로 - t_slo가 None이면
+            # (=이 분기로 들어왔으면) 위 루프가 최소 한 번은 돌았으므로 항상
+            # 정의돼 있다.
+            if result.t_slo is None:
+                result.outcome = "prevented"
+                result.slo_evaluable_at_exit = evaluable
+            else:
+                result.outcome = "recovered"
 
     except TrialInvalid as e:
         result.outcome = "invalid_run"
