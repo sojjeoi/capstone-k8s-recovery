@@ -10,7 +10,10 @@
 > 밤)**: 진단 통과 후 pod_kill native 하니스 버그(§6) 발견·수정을 거쳐
 > `pod_kill native 경로 E2E 완료`(§7) - 단, 본 실험 전 타임스탬프 의미
 > 보완이 남아 있다(§7.4). 3-arm 파일럿은 여전히 노드 CPU headroom 문제
-> (§3.2) 해결 전까지 보류.
+> (§3.2) 해결 전까지 보류. **후속3(2026-09-18)**: §7.4/§7.5 타임스탬프
+> v2를 구현한 뒤, 완성도 점검에서 나온 문서 불일치·`network_degrade`
+> 어댑터 설계 요청에 대응했다 — §8 참고. 실클러스터 작업은 여전히 없음
+> (v2 실측 재검증·network_degrade 실제 실행 모두 다음 세션 이후로 보류).
 
 ## 1. Preflight 체크리스트 — 전부 통과
 
@@ -578,3 +581,86 @@ ambiguous/post/unknown 4가지 분류, 주입 3시각 모순 검출, v1 결과(�
 
 **실클러스터 재실행은 하지 않았다** - 다음 pod_kill/load_ramp 실행부터
 자동으로 v2 스키마로 기록된다.
+
+## 8. 완성도 점검 대응 — 문서 정합성 + network_degrade 어댑터 (2026-09-18)
+
+§7.4/§7.5 구현 완료 뒤 진행한 완성도 점검에서 나온 항목들에 대응했다.
+전부 오프라인(코드·문서·YAML 저작만) - 실클러스터 작업 없음.
+
+**1. 문서/설정 정합성**: 루트 `README.md`가 recovery-policy(구현·E2E 검증
+완료 - 실제로는 "본 구현 예정"이 아님)·감사 이력(`git_client.py`/
+`outbox.json` 실동작 중 - "개발 예정"이 아님)·Isolation Forest 정상 표본
+수(실제 `anomaly-detection/data/regimes.jsonl` 19줄 확인 - "7개"는 stale)를
+전부 낡은 상태로 기술하고 있었다. `experiments/README.md`의 "3종 시나리오
+×10회+"도 확정 계약(4종×3arm×5회=60)과 안 맞았다. 전부 실제 코드/데이터
+상태와 대조해 고쳤고, 새 "⚠️ 알려진 제한사항" 절을 추가해 이상탐지 검증
+깊이·rule-out 미구현·본 실험 미실행을 명시적으로 남겼다.
+`chaos/scenario-progressive-memory-pressure.yaml`의 헤더 주석도 실제 stage-5
+설정(5000MB, ~8407Mi)과 다른 "3.5GB/6871Mi"(3차 시도 실패 후 5000MB로
+올린 이력 - `docs/design/phase5-memory-pressure-investigation.md` §1 참고)를
+그대로 남기고 있어 실제 값으로 고쳤다.
+
+**2. `rule-out`(반대증거) 미구현**: `recovery-policy/policy.py`의
+`PolicyContext.has_contradicting_evidence`는 `main.py`의 유일한 실제
+호출부(`policy.PolicyContext(preview_ready=preview_ready)`)가 세팅하지
+않아 항상 `False`다. `main.py`(8-12행)에 이미 "무엇을 반대증거로 볼지는
+5~6단계 범위 밖"이라고 의도적 범위 제외가 기록돼 있었다 - 근거 없는
+가짜 구현을 새로 만드는 대신, 이 사실을 README "알려진 제한사항"에
+노출하는 쪽을 선택했다.
+
+**3. `network_degrade_adapter.py`**: `pod_kill_adapter.py`와 같은 이유로
+`vllm-active` Service 기반 동적 active pod 고정이 필요해, 그 로직을
+`active_pod_resolver.py`로 추출해 `pod_kill_adapter.py`도 이걸 쓰도록
+리팩터했다(기존 5개 테스트 그대로 통과 확인). `chaos/scenario-network-
+degrade.yaml`과 같은 4단계(500/1000/2000/4000ms, 90초씩)를 Workflow CRD
+대신 NetworkChaos 4개의 직접 순차 생성/삭제(백그라운드 스레드 + `threading.
+Event`로 조기 cleanup 가능)로 재현했다 - Workflow의 하위 단계별 status
+스키마를 문서로 확인 못 했고, 단일 NetworkChaos의 `status.conditions`
+(`AllInjected` 등)는 Chaos Mesh 공식 문서로 확인했기 때문이다(검증
+가능한 메커니즘만 채택). 이 상태 필드 경로는 문서 기반이지 실클러스터
+`kubectl get networkchaos -o yaml`로 직접 대조한 적은 없다 - 첫 실클러스터
+trial 전 반드시 확인 필요. 오프라인 테스트 5개(정상 완료/대상없음/
+다중대상/효과 미관측/cleanup 중도중단) 작성, 자체 버그 1건 발견·수정
+(getter를 직접 poll하는 테스트가 `is_started()`의 부수효과를 안 거쳐
+영원히 조건이 안 참이 됨 - poll 대상을 getter에서 `is_started()` 자체로
+수정).
+
+**4. "발견 5" 재발견과 Kustomize overlay**: `network_degrade`의 "기본
+probe로 재시작이 발생하는 연쇄장애 실험 vs probe timeout을 조정한 순수
+열화 실험" 분리 요청을 조사하다, `gitops/apps/vllm-serving/rollout.yaml`의
+readinessProbe/livenessProbe에 `timeoutSeconds`가 아예 없어(K8s 기본값
+1초 그대로) 여전히 발견 5(`anomaly-detection/test_model.py`의 known-
+anomaly 구간, 2026-09-05 성공률 11% - NetworkChaos 지연이 probe 자체를
+실패시켜 kubelet이 재시작하는 false-positive)를 그대로 재현하는 상태임을
+확인했다. `gitops/apps/recovery-policy/deployment.yaml`은 이미 이 교훈으로
+`timeoutSeconds: 3`을 명시해뒀지만 vLLM 자신의 Rollout엔 반영 안 돼 있었다.
+Rollout을 영구 변경하거나 복제하는 대신, `gitops/apps/vllm-serving/
+overlays/network-tolerant/`에 probe 필드만 patch하는 Kustomize overlay를
+새로 만들었다(base는 그대로 유지 - "기본 probe" 실험이 계속 재현
+가능해야 하므로). 오버레이 위치는 처음 `gitops/overlays/`에 뒀다가
+Kustomize의 root 보안 제약("overlay 자기 디렉터리 밖 파일 참조 금지")에
+막혀(`kubectl kustomize`로 로컬 실측 확인) `gitops/apps/vllm-serving/
+overlays/network-tolerant/`로 옮겼고, 그래도 `--load-restrictor=
+LoadRestrictionsNone` 플래그가 필요함을 확인해 overlay 주석에 남겼다.
+patch 값(10초)은 **미검증 후보**로 명시했다 - 임의로 정하지 말라는
+지시에 따라 확정은 하지 않았다.
+
+**5. 실클러스터 calibration 스크립트**: `calibrate_network_tolerant_probe.py`
+(신규) - NetworkChaos 최악조건(4000ms/400ms, stage-4와 동일)을 주입하는
+동안 restartCount·`vllm-active` endpoint 소속 여부를 끝에서 한 번이 아니라
+계속 폴링해서 false-positive 재시작/제외를 직접 관측한다. `run_network_
+degrade_trial.py`(신규, `run_pod_kill_trial.py`와 같은 패턴)는 `--probe-
+profile {default,network_tolerant}`를 받아 TrialResult에 기록하고,
+실행 직전 active pod의 실제 probe timeoutSeconds를 읽어 요청한 profile과
+다르면 `ProbeProfileMismatch`로 즉시 중단한다(라벨과 실제 설정 불일치
+방지, fail-closed). `run_once.py`에 `readiness_probe_profile`/
+`readiness_probe_timeout_sec` 필드 2개를 추가했다(기존 `probe_profile`은
+SLO 측정용 HTTP probe 설정을 가리키는 다른 축이라 이름 충돌 피함) -
+기존 19개 테스트 그대로 통과 확인.
+
+**아직 안 한 것(다음 세션, 별도 명시적 승인 필요)**: overlay 실제
+적용·promote·calibration 스크립트 실행·10초 후보값 확정, `network_degrade`
+실클러스터 첫 trial, `memory_pressure_adapter.py`, Isolation Forest 검증
+강화, CPU headroom 해결, 3-arm 파일럿. 오프라인 스위트 전체 64 passed,
+2 skipped(live_cluster) - `test_pod_kill_adapter.py`(리팩터 후 재확인)
+5개, `test_network_degrade_adapter.py`(신규) 5개 포함.

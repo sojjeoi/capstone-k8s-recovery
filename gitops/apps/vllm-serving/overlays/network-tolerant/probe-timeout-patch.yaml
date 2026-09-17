@@ -1,0 +1,14 @@
+# TODO(calibration): 10은 미검증 후보값이다 - 최대 NetworkChaos 지연(4초,
+# chaos/scenario-network-degrade.yaml stage-4)과 정상 응답시간을 기준으로
+# 실클러스터 calibration 후 확정할 것(임의로 고르지 말라는 지시,
+# docs/design/phase8-blue-green-preflight-incident.md 해당 절 참고).
+# 확정 전까지 이 값으로 network_tolerant profile trial을 "본 실험"으로
+# 채택하지 않는다 - run_network_degrade_trial.py --readiness-probe-timeout-sec
+# 인자로 실측 확정값을 명시적으로 넘겨야 하고, 그 스크립트가 실행 직전에
+# active pod의 실제 값과 대조 검증한다.
+- op: add
+  path: /spec/template/spec/containers/0/readinessProbe/timeoutSeconds
+  value: 10
+- op: add
+  path: /spec/template/spec/containers/0/livenessProbe/timeoutSeconds
+  value: 10

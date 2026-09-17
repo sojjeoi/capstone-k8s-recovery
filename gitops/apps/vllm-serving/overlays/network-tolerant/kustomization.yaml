@@ -1,0 +1,51 @@
+# network_degrade 실험의 "순수 열화" 변형(probe_profile=network_tolerant) 전용
+# overlay - 기본 gitops/apps/vllm-serving/*.yaml(base)은 이 디렉터리가
+# 존재해도 절대 건드리지 않는다(개별 파일을 resources로 나열하지, base
+# 디렉터리 자체를 참조하지 않음 - Kustomize의 root 보안 제약 때문에도
+# overlays/는 base인 vllm-serving/ 하위에 중첩돼야 한다, 최초엔 gitops/
+# overlays/ 최상위에 뒀다가 'not in or below' 에러로 이 위치로 옮김).
+# overlay 미적용 시에는 "기본 probe로 재시작이 발생하는 연쇄장애"
+# 실험(probe_profile=default)이 그대로 재현돼야 하기 때문이다(발견 5 -
+# anomaly-detection/test_model.py의 known-anomaly 구간과 동일 사건).
+#
+# readinessProbe/livenessProbe.timeoutSeconds만 패치한다(probe-timeout-patch.yaml).
+# K8s 기본값 1초로는 NetworkChaos 최대 지연(4초, ../../rollout.yaml이
+# chaos/scenario-network-degrade.yaml stage-4와 대응)이 probe 자체를
+# 실패시켜 kubelet이 컨테이너를 재시작하는 false-positive가 발생한다
+# (gitops/apps/recovery-policy/deployment.yaml:5-6에 이미 기록된 동일 교훈이
+# vllm-serving Rollout엔 아직 반영 안 됨).
+#
+# 적용 방법(수동, 이 kustomization이 자동으로 하지 않음):
+#   1. kubectl apply -k gitops/apps/vllm-serving/overlays/network-tolerant/ \
+#        --load-restrictor=LoadRestrictionsNone
+#      (이 플래그 필수 - Kustomize 기본 root 제약이 overlay 자기 디렉터리
+#      밖의 base 파일 참조를 막는다, 로컬에서 kubectl kustomize로 직접
+#      실측 확인함. base+overlay가 서로 다른 디렉터리인 이 구조에서는
+#      흔한 요구사항이지, 이 저장소만의 특이 위험이 아니다.)
+#      -> BlueGreen이라 새 preview 리비전이 뜬다(템플릿 변경이므로).
+#   2. experiments/blue_green_prep.py의 wait_until_paused()로 preview Ready
+#      확인 (기존 함수 재사용 - 이 overlay 전용 로직 새로 안 만듦).
+#   3. kubectl argo rollouts promote vllm-serving -n vllm-serving
+#      (또는 recovery-policy의 promote 경로) - active로 전환.
+#   4. run_network_degrade_trial.py --probe-profile network_tolerant
+#      --readiness-probe-timeout-sec <calibration으로 확정한 값>
+#      실행 전 이 스크립트 자체가 active pod의 실제 timeoutSeconds를 다시
+#      읽어 이 값과 일치하는지 검증한다(_verify_probe_profile).
+#   5. 실험 종료 후 원복: kubectl apply -f gitops/apps/vllm-serving/rollout.yaml
+#      (base 원본을 그대로 재적용 - 이 overlay를 "되돌리는" 별도 리소스 불필요).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../rollout.yaml
+  - ../../service.yaml
+  - ../../rbac.yaml
+  - ../../servicemonitor.yaml
+  - ../../prometheusrule.yaml
+  - ../../alertmanagerconfig.yaml
+
+patches:
+  - target:
+      kind: Rollout
+      name: vllm-serving
+    path: probe-timeout-patch.yaml
