@@ -127,7 +127,16 @@ class Injector:
     관측한 시각"을 그대로 ISO 문자열로 반환한다(2026-09-18 추가). 위
     get_injection_observation_error_sec()이 내부적으로 계산에 쓰는 것과
     같은 값이지만, 결과 스키마의 t_injection_last_seen 필드를 채우려면
-    시각 자체가 필요하다 - 없으면(첫 poll에서 이미 사라짐) None."""
+    시각 자체가 필요하다 - 없으면(첫 poll에서 이미 사라짐) None.
+    get_target_replacement(): 선택 구현 - 주입이 실제 효과를 낸 뒤(is_effective
+    확인 후) 대상 자체가 바뀐 것을 어댑터가 관측했으면 {"replaced_at": ISO
+    문자열, "replacement_pod": {"name":..., "uid":...} | None}을 반환한다
+    (2026-09-18 추가 - network_degrade 리뷰). 이건 invalid_run이 아니다 -
+    주입이 이미 효과를 낸 뒤의 대상 교체는 그 자체로 실험 결과일 수 있다
+    (예: 네트워크 열화가 probe를 실패시켜 재시작을 유발하는 연쇄장애 자체가
+    관찰 대상). 반대로 주입이 아직 한 번도 효과를 내기 전의 대상 교체는
+    여전히 어댑터가 TrialInvalid로 직접 처리해야 한다(외부 오염과 실험
+    결과를 구분하는 경계가 "효과를 낸 적이 있는가"). None이면 교체 없음."""
     prepare: Callable[[], None]
     inject: Callable[[], None]
     is_started: Callable[[], bool]
@@ -137,6 +146,7 @@ class Injector:
     get_actual_injection_time: Optional[Callable[[], Optional[str]]] = None
     get_last_seen_present_time: Optional[Callable[[], Optional[str]]] = None
     get_injection_observation_error_sec: Optional[Callable[[], Optional[float]]] = None
+    get_target_replacement: Optional[Callable[[], Optional[dict]]] = None
 
 
 @dataclass
@@ -208,6 +218,17 @@ class TrialResult:
     # network_degrade 외 시나리오·미적용 trial은 None.
     readiness_probe_profile: Optional[str] = None
     readiness_probe_timeout_sec: Optional[float] = None
+    # 주입이 실제 효과를 낸 뒤 대상 자체가 바뀐 것을 어댑터가 관측했는지
+    # (2026-09-18 추가, network_degrade 리뷰 - UID 재확인을 모든 경우에
+    # TrialInvalid로 처리하면 안 된다는 지적에 따른 정정). True면 invalid_run
+    # 이 아니라 정상 실험 결과다 - default profile에서는 연쇄장애(재시작)
+    # 자체가 예상 가능한 결과, network_tolerant profile에서는 calibration
+    # 실패 또는 예상 밖 재시작을 뜻할 수 있다(해석은 readiness_probe_profile과
+    # 함께 봐야 함, 이 필드 자체는 profile을 모른 채 사실만 기록).
+    target_replaced: bool = False
+    t_target_replaced: Optional[str] = None
+    target_replacement_pod_name: Optional[str] = None
+    target_replacement_pod_uid: Optional[str] = None
     # "prevented" 조기 종료를 막는 최소 관찰시간(초, run_once()의 동명
     # 파라미터 값을 그대로 기록 - 2026-09-17 추가). 이 값이 trial마다
     # 달랐는지 사후에 재현성 검증하려면 결과 자체에 남아야 한다.
@@ -483,6 +504,15 @@ def run_once(
                 raise TrialInvalid("probe가 관찰 도중 비정상 종료")
             if injector.is_done() and result.t_injection_end is None:
                 result.t_injection_end = _now()
+            if not result.target_replaced and injector.get_target_replacement is not None:
+                replacement = injector.get_target_replacement()
+                if replacement is not None:
+                    result.target_replaced = True
+                    result.t_target_replaced = replacement.get("replaced_at")
+                    pod = replacement.get("replacement_pod")
+                    if pod is not None:
+                        result.target_replacement_pod_name = pod.get("name")
+                        result.target_replacement_pod_uid = pod.get("uid")
             if result.t_slo is None and prober.check_slo_violation():
                 precise = prober.get_actual_slo_time() if prober.get_actual_slo_time else None
                 result.t_slo = precise or _now()

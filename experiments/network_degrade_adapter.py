@@ -22,9 +22,20 @@ kubectl get networkchaos -o yaml로 직접 본 적은 없다 - 첫 실클러스�
 
 "연쇄장애 실험(default) vs 순수 열화 실험(network_tolerant)" 분리는 이
 어댑터의 책임이 아니다 - readinessProbe/livenessProbe.timeoutSeconds를 K8s
-기본값(1초)에서 올리는 건 Rollout 자체의 설정이고(gitops/overlays/
-vllm-serving-network-tolerant/), 그걸 언제 적용할지는 run_network_degrade_
+기본값(1초)에서 올리는 건 Rollout 자체의 설정이고(gitops/apps/vllm-serving/
+overlays/network-tolerant/), 그걸 언제 적용할지는 run_network_degrade_
 trial.py가 --probe-profile로 받아 TrialResult에 기록만 한다(9-x절, 발견 5).
+
+3. 대상 pod 재확인(매 단계 전환 직전)에서 UID가 바뀐 걸 발견하면 무조건
+   TrialInvalid로 처리하지 않는다(2026-09-18 2차 정정 - 리뷰 지적). "주입이
+   한 번도 효과를 내기 전"과 "이미 효과를 낸 뒤"를 구분한다 - 전자는 실험이
+   시작되기도 전에 대상이 바뀐 것이므로 외부 오염 가능성이 높아 여전히
+   TrialInvalid(invalid_run)다. 후자는 네트워크 열화 자체가 probe 실패->
+   재시작(발견 5)이나 tolerant profile의 calibration 실패로 이어진 것일 수
+   있는 정상적인 실험 결과이므로, invalid로 버리지 않고 target_replaced
+   계열 필드로 기록만 하고 더 이상 새 단계를 만들지 않는다(injector 입장의
+   "주입은 끝났다"로 취급 - 이후 outcome은 평소대로 prober의 SLO 판정만으로
+   결정된다).
 """
 import threading
 import time
@@ -35,7 +46,7 @@ from typing import Callable, Optional
 from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 
-from active_pod_resolver import NAMESPACE, get_active_pods, get_pod, load_kube_config
+from active_pod_resolver import NAMESPACE, get_active_pods, load_kube_config
 from run_once import Injector, TrialInvalid
 
 CHAOS_GROUP = "chaos-mesh.org"
@@ -134,7 +145,6 @@ def _sanitize_cr_name(run_id: str, stage_index: int) -> str:
 def make_network_degrade_injector(
     run_id: str, arm: str, rep: int,
     get_active_pods_fn: Callable[[], list] = get_active_pods,
-    get_pod_fn: Callable[[str], Optional[dict]] = get_pod,
     is_stage_injected_fn: Callable[[str], bool] = is_stage_injected,
     does_chaos_exist_fn: Callable[[str], bool] = does_chaos_exist,
     create_chaos_fn: Callable[[str, str, str, str, dict], None] = create_network_chaos,
@@ -145,11 +155,11 @@ def make_network_degrade_injector(
     cleanup_verify_timeout_sec: float = CLEANUP_VERIFY_TIMEOUT_SEC,
 ) -> Injector:
     """*_fn 파라미터는 pod_kill_adapter.py와 같은 이유의 오프라인 테스트용
-    의존성 주입 지점. get_pod_fn은 매 단계 전환 직전 target 이 여전히
-    prepare()에서 고정한 그 pod(UID로 확인)인지 재확인하는 용도 - 대상
-    pod이 "사라지는" 게 아니라 계속 살아있는 채로 네트워크만 열화되므로
-    이름이 같아도 다른 pod일 수 있다(예: 주입 도중 BlueGreen 전환으로
-    active가 바뀜 - 처음 review에서 놓친 부분, 2026-09-18 정정)."""
+    의존성 주입 지점. get_active_pods_fn을 prepare() 때뿐 아니라 매 단계
+    전환 직전에도 다시 불러 target이 여전히 그 pod인지 재확인한다(이름
+    하나만으로는 "이름은 같지만 다른 pod"를 구분 못 하고, vllm-active
+    Service가 지금 실제로 가리키는 pod을 다시 물어봐야 교체 시 새 pod의
+    이름/UID도 자연히 얻을 수 있다 - prepare()와 같은 메커니즘 재사용)."""
     cr_names = [_sanitize_cr_name(run_id, i) for i in range(len(stages))]
     target = {"name": None, "uid": None}
     injection_started_at = {"t": None}  # 첫 단계가 실제 적용됐음을 처음 관측한 시각
@@ -159,6 +169,7 @@ def make_network_degrade_injector(
     stop_event = threading.Event()
     thread_ref = {"t": None}
     thread_exception = {"e": None}  # 백그라운드 스레드 예외를 메인 스레드(is_done 폴링)로 전달
+    target_replacement = {"v": None}  # None 또는 {"replaced_at": iso, "pod": {"name","uid"}|None}
 
     def prepare():
         pods = get_active_pods_fn()
@@ -171,13 +182,33 @@ def make_network_degrade_injector(
         target["name"] = pods[0]["name"]
         target["uid"] = pods[0]["uid"]
 
-    def _assert_target_unchanged():
-        current = get_pod_fn(target["name"])
-        if current is None or current["uid"] != target["uid"]:
+    def _check_target():
+        # 매 단계 전환 직전 active pod을 다시 조회한다. 한 개가 매칭되고
+        # UID가 그대로면 아무 일도 안 한다.
+        pods = get_active_pods_fn()
+        if len(pods) == 1 and pods[0]["uid"] == target["uid"]:
+            return
+        # 여기 도달하면 뭔가 달라졌다 - active로 잡히는 pod이 0개/2개 이상
+        # 이거나(전환 중 등), 1개지만 UID가 다르다(교체됨).
+        if injection_started_at["t"] is None:
+            # 주입이 아직 한 번도 효과를 내기 전 - 실험 자체의 결과일 수
+            # 없다(아직 아무 효과도 없었으므로). 외부 오염 가능성이 높다고
+            # 보고 invalid_run으로 처리한다.
             raise TrialInvalid(
-                f"주입 도중 active pod이 바뀜(원래 uid={target['uid']}, 지금 "
-                f"{current['uid'] if current else '없음'}) - BlueGreen 전환 등으로 "
-                f"대상이 더 이상 prepare() 시점의 그 pod이 아님, invalid_run 처리")
+                f"주입이 효과를 내기 전에 active pod 구성이 바뀜(원래 uid="
+                f"{target['uid']}, 지금 {len(pods)}개: {[p['uid'] for p in pods]}) - "
+                f"외부 오염 가능성, invalid_run 처리")
+        # 이미 최소 한 번 효과가 확인된 뒤의 변화 - 네트워크 열화가 probe를
+        # 실패시켜 재시작/교체로 이어진 것일 수 있는 정상적인 실험 결과다
+        # (발견 5류 연쇄장애, 또는 tolerant profile의 calibration 실패).
+        # invalid로 버리지 않고 사실만 기록한다 - 최초 1회만(이후 poll에서
+        # 또 바뀌어도 "최초 교체 시각"을 덮어쓰지 않음).
+        if target_replacement["v"] is None:
+            replacement_pod = pods[0] if len(pods) == 1 else None
+            target_replacement["v"] = {
+                "replaced_at": datetime.now(timezone.utc).isoformat(),
+                "pod": replacement_pod,
+            }
 
     def _wait_for_stage_gone(cr_name: str):
         deadline = time.monotonic() + stage_recovery_timeout_sec
@@ -194,7 +225,12 @@ def make_network_degrade_injector(
             for i, stage in enumerate(stages):
                 if stop_event.is_set():
                     return
-                _assert_target_unchanged()
+                _check_target()
+                if target_replacement["v"] is not None:
+                    # 이미 효과를 낸 뒤 대상이 바뀜 - 더 새 단계를 만들지
+                    # 않는다(새 pod은 애초에 이 trial이 주입해온 대상이
+                    # 아니다). is_done()이 이 상태를 "주입 끝남"으로 본다.
+                    return
                 create_chaos_fn(cr_names[i], run_id, arm, target["name"], stage)
                 current_stage_index["i"] = i
                 interrupted = stop_event.wait(stage["duration_sec"])
@@ -259,15 +295,25 @@ def make_network_degrade_injector(
         t = last_seen_not_injected_at["t"]
         return t.isoformat() if t is not None else None
 
+    def get_target_replacement() -> Optional[dict]:
+        v = target_replacement["v"]
+        if v is None:
+            return None
+        return {"replaced_at": v["replaced_at"], "replacement_pod": v["pod"]}
+
     def is_done() -> bool:
-        # 백그라운드 스레드에서 난 예외(UID 변경 감지, 단계 소멸 확인 시간초과
-        # 등)를 여기서 다시 던져 run_once.py의 OBSERVING 루프가 catch하게
-        # 한다 - is_done()은 그 루프가 매 poll_interval_sec마다 부르는
-        # 유일한 injector 메서드라 예외 전달의 자연스러운 지점이다(스레드
-        # 자체 예외는 Python이 메인 스레드로 자동 전파해주지 않는다).
+        # 백그라운드 스레드에서 난 예외(단계 소멸 확인 시간초과, 효과를 내기
+        # 전 대상 교체 등)를 여기서 다시 던져 run_once.py의 OBSERVING 루프가
+        # catch하게 한다 - is_done()은 그 루프가 매 poll_interval_sec마다
+        # 부르는 유일한 injector 메서드라 예외 전달의 자연스러운 지점이다
+        # (스레드 자체 예외는 Python이 메인 스레드로 자동 전파해주지 않는다).
         if thread_exception["e"] is not None:
             raise thread_exception["e"]
-        return all_stages_done["v"]
+        # 4단계를 다 돌았거나, 효과를 낸 뒤 대상이 바뀌어 더 진행하지 않기로
+        # 했거나 - 어느 쪽이든 이 injector가 할 일은 끝났다(target_replacement가
+        # 있으면 invalid가 아니라 정상 결과이므로 예외를 던지지 않는다 -
+        # run_once.py는 이후 평소대로 prober의 SLO 판정으로 outcome을 정한다).
+        return all_stages_done["v"] or target_replacement["v"] is not None
 
     def cleanup():
         stop_event.set()
@@ -296,4 +342,5 @@ def make_network_degrade_injector(
                      is_effective=is_effective, is_done=is_done, cleanup=cleanup,
                      get_actual_injection_time=get_actual_injection_time,
                      get_injection_observation_error_sec=get_injection_observation_error_sec,
-                     get_last_seen_present_time=get_last_seen_present_time)
+                     get_last_seen_present_time=get_last_seen_present_time,
+                     get_target_replacement=get_target_replacement)

@@ -658,6 +658,34 @@ profile {default,network_tolerant}`를 받아 TrialResult에 기록하고,
 SLO 측정용 HTTP probe 설정을 가리키는 다른 축이라 이름 충돌 피함) -
 기존 19개 테스트 그대로 통과 확인.
 
+**§8.6 방법론 정정 - UID 변경을 무조건 invalid로 처리하면 안 됨(2026-09-18,
+커밋 리뷰)**: 위 3번(network_degrade_adapter.py)의 대상 pod UID 재확인
+로직이 "매 단계 전환마다 UID가 바뀌면 무조건 TrialInvalid"였는데, 이건
+틀렸다 - 기본(default) probe 실험에서는 네트워크 열화로 인한 probe 실패·
+재시작 자체가 측정 대상이고, tolerant profile에서도 재시작은 "그 설정이
+열화를 견디지 못했다"는 유효한 결과일 수 있다. 이걸 전부 invalid_run으로
+버리면 정작 관찰하려던 연쇄장애 현상 자체를 데이터에서 지워버리는 셈이다.
+
+"주입이 한 번도 효과를 내기 전"(아직 아무 일도 안 일어났으므로 대상이
+바뀌면 외부 오염 가능성이 높음 - 여전히 invalid_run)과 "이미 효과를 낸
+뒤"(네트워크 열화 자체의 결과일 수 있음 - invalid로 버리지 않고 기록)를
+`injection_started_at`(is_started()가 처음 True를 준 시각) 기준으로
+구분하도록 고쳤다. 후자는 TrialResult에 `target_replaced`/
+`t_target_replaced`/`target_replacement_pod_name`/`target_replacement_pod_uid`
+로 기록하고, injector는 "주입 끝남"(is_done=True)으로만 취급해 이후
+outcome은 평소대로 prober의 SLO 판정에 맡긴다 - target_replaced 자체가
+outcome을 결정하지 않는다. 대상 재확인 방식도 `get_pod_fn(고정된 이름)`
+에서 `get_active_pods_fn()` 재호출(prepare()와 같은 메커니즘)로 바꿨다 -
+이름 하나만 다시 조회해서는 "이름은 같지만 다른 pod"를 구분 못 하고,
+교체된 새 pod의 이름/UID를 얻으려면 vllm-active selector를 다시 물어야
+하기 때문이다(그래서 더 안 쓰는 get_pod_fn 파라미터는 제거).
+
+회귀 테스트 3개 추가(효과 전 변경=invalid_run, 효과 후 단일 교체=
+target_replaced로 기록·default profile 연쇄장애 맥락, 효과 후 2개 동시
+매칭되는 모호한 전환=역시 기록하되 교체 pod은 특정 안 함·tolerant
+profile calibration 맥락). 오프라인 스위트 69 passed, 2 skipped
+(live_cluster). 실클러스터 작업 없음 - 이 커밋도 별도 fix 커밋으로 분리.
+
 **아직 안 한 것(다음 세션, 별도 명시적 승인 필요)**: overlay 실제
 적용·promote·calibration 스크립트 실행·10초 후보값 확정, `network_degrade`
 실클러스터 첫 trial, `memory_pressure_adapter.py`, Isolation Forest 검증

@@ -129,6 +129,10 @@ def main():
     print(f"t_injection={result.t_injection} "
           f"injection_observation_error_sec={result.injection_observation_error_sec}")
     print(f"t_slo={result.t_slo} t_recovery={result.t_recovery}")
+    if result.target_replaced:
+        print(f"target_replaced=True at {result.t_target_replaced} "
+              f"(replacement={result.target_replacement_pod_name}/{result.target_replacement_pod_uid}) - "
+              f"invalid_run 아님, {args.probe_profile} profile 맥락에서 해석할 것")
     result_dir = "results/pilot" if args.pilot else "results"
     print(f"결과 파일: {result_dir}/trial-{run_id}.json")
 
