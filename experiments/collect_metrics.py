@@ -25,6 +25,14 @@ outcome=prevented는 그 자체로 신뢰하지 않는다(2026-09-17 pod_kill �
 본 실험(is_pilot=False)의 prevented는 slo_evaluable_at_exit=True(probe가
 실제로 판정 가능한 데이터를 확보했다는 run_once.py의 확인)가 아니면
 검증 오류로 취급한다.
+
+network_degrade의 target_replaced(2026-09-18 추가)도 같은 이유로 outcome만
+보면 안 된다 - readiness_probe_profile과 묶어 restart_chain_observed
+(default profile)/probe_isolation_held(network_tolerant profile) 두 분석
+필드로 해석해 CSV에 같이 남긴다. tolerant profile에서 대상이 교체됐는데
+outcome=prevented로만 남으면 "설정이 열화를 견뎠다"로 오해할 위험이 있어
+_check_tolerant_profile_prevented_misleading()으로 별도 issue도 남긴다 -
+어느 쪽도 outcome 자체를 바꾸지는 않는다(SLO 판정과 별개의 분석 필드).
 """
 import argparse
 import csv
@@ -175,6 +183,40 @@ def _check_injection_timestamps_consistency(row: dict, ts: dict, issues: list) -
                 f"순서 위반: t_injection_last_seen={last_seen.isoformat()} > t_injection_observed={obs.isoformat()}"))
 
 
+def _compute_profile_interpretation(row: dict) -> tuple:
+    """network_degrade의 readiness_probe_profile + target_replaced 조합을
+    해석한다(2026-09-18 추가 - 리뷰: tolerant profile에서 파드가 교체됐는데
+    SLO 위반이 안 잡혀 outcome=prevented만 남으면 "설정이 열화를 견뎠다"로
+    오해할 수 있다는 지적). outcome은 절대 바꾸지 않는다 - SLO 판정과
+    별개의 분석 필드다.
+    - default profile: target_replaced 그대로가 restart_chain_observed(연쇄
+      장애 자체가 관찰됐는지).
+    - network_tolerant profile: target_replaced의 반대가 probe_isolation_held
+      (그 설정이 열화로부터 probe를 실제로 격리했는지).
+    - profile이 둘 중 하나가 아니면(다른 시나리오, 미적용) 둘 다 None."""
+    profile = row.get("readiness_probe_profile")
+    replaced = bool(row.get("target_replaced"))
+    restart_chain_observed = replaced if profile == "default" else None
+    probe_isolation_held = (not replaced) if profile == "network_tolerant" else None
+    return restart_chain_observed, probe_isolation_held
+
+
+def _check_tolerant_profile_prevented_misleading(row: dict, issues: list) -> None:
+    """network_tolerant profile에서 대상이 교체됐는데(probe_isolation_held=
+    False) outcome=prevented로만 남으면, "위반이 안 잡혔다"만 보고 그 설정이
+    열화를 견뎠다고 오해할 위험이 있다(2026-09-18 추가, 리뷰 지적) -
+    _check_prevented_validity와 같은 이유로 별도 issue를 남긴다(단독 CSV
+    컬럼만으로는 놓치기 쉬움)."""
+    if row.get("readiness_probe_profile") != "network_tolerant":
+        return
+    if row.get("target_replaced") and row.get("outcome") == "prevented":
+        issues.append(ValidationIssue(
+            row.get("run_id", "?"), "outcome",
+            "network_tolerant profile에서 대상 교체(target_replaced=true)가 있었는데 "
+            "outcome=prevented - probe_isolation_held=false를 함께 보지 않으면 "
+            "설정이 열화를 견딘 것으로 오해할 수 있음"))
+
+
 def _compute_temporal_relation(ts: dict) -> str:
     """t_slo가 실제 주입 구간에 비해 언제 일어났다고 볼 수 있는지 분류한다
     (2026-09-18 추가 - t_slo가 이제 observed_at 기준이라도, 주입 구간 자체가
@@ -226,7 +268,9 @@ def build_comparison(rows: list) -> tuple:
         timing_anomaly = _check_timing(row, ts, issues)
         _check_prevented_validity(row, issues)
         _check_injection_timestamps_consistency(row, ts, issues)
+        _check_tolerant_profile_prevented_misleading(row, issues)
         temporal_relation = _compute_temporal_relation(ts)
+        restart_chain_observed, probe_isolation_held = _compute_profile_interpretation(row)
 
         if included:
             key = (row.get("scenario"), row.get("arm"), row.get("rep"))
@@ -242,6 +286,14 @@ def build_comparison(rows: list) -> tuple:
             "outcome": row.get("outcome"),
             "slo_evaluable_at_exit": row.get("slo_evaluable_at_exit"),
             "min_observation_sec": row.get("min_observation_sec"),
+            "readiness_probe_profile": row.get("readiness_probe_profile"),
+            "readiness_probe_timeout_sec": row.get("readiness_probe_timeout_sec"),
+            "target_replaced": row.get("target_replaced"),
+            "t_target_replaced": row.get("t_target_replaced"),
+            "target_replacement_pod_name": row.get("target_replacement_pod_name"),
+            "target_replacement_pod_uid": row.get("target_replacement_pod_uid"),
+            "restart_chain_observed": restart_chain_observed,
+            "probe_isolation_held": probe_isolation_held,
             "state": row.get("state"),
             "detected": row.get("detected"),
             "detection_source": row.get("detection_source"),

@@ -686,6 +686,37 @@ target_replaced로 기록·default profile 연쇄장애 맥락, 효과 후 2개 
 profile calibration 맥락). 오프라인 스위트 69 passed, 2 skipped
 (live_cluster). 실클러스터 작업 없음 - 이 커밋도 별도 fix 커밋으로 분리.
 
+**§8.7 target_replaced가 실제로 comparison.csv까지 남는지 확인(2026-09-18)**:
+바로 위에서 추가한 6개 필드(`readiness_probe_profile`/
+`readiness_probe_timeout_sec`/`target_replaced`/`t_target_replaced`/
+`target_replacement_pod_name`/`target_replacement_pod_uid`)가 adapter
+내부 상태·raw trial JSON에만 있고 `collect_metrics.py`의 `comparison.csv`
+에는 안 남는 게 아니냐는 질문을 받았다. `build_comparison()`을 직접 읽어
+확인한 결과 - 맞는 지적이었다. `TrialResult`에 필드를 추가하면
+`asdict()`로 raw JSON에는 자동으로 실리지만, `comparison.csv`는
+`build_comparison()` 안의 명시적 화이트리스트 dict 리터럴이라 거기 안
+넣으면 절대 안 나온다. 6개 필드 전부 빠져 있었다 - 추가했다.
+
+동시에 `readiness_probe_profile`+`target_replaced` 조합을 해석하는 분석
+전용 필드 2개(`restart_chain_observed`, `probe_isolation_held`)를
+`collect_metrics.py`에 새로 추가했다 - default profile에서는
+target_replaced 그대로가 연쇄장애 관찰 여부, network_tolerant profile
+에서는 그 반대가 "그 설정이 열화로부터 probe를 실제로 격리했는지"다.
+outcome은 절대 안 바꾼다(SLO 판정과 별개 필드). tolerant profile에서
+교체가 있었는데 `outcome=prevented`만 남으면 "설정이 열화를 견뎠다"로
+오해할 위험이 있어(실은 pod이 바뀌어 측정 자체가 무의미해진 것일 수
+있음) `_check_tolerant_profile_prevented_misleading()`으로 별도 issue도
+남기게 했다(기존 native+prevented 검증과 같은 패턴 재사용).
+
+회귀 테스트 6개 추가 - default/tolerant profile 조합 3가지(default+교체
+->restart_chain_observed=true, tolerant+교체->probe_isolation_held=false,
+tolerant+무교체->probe_isolation_held=true), 오해소지 issue 검출,
+신규 필드가 아예 없는 기존 결과의 하위호환(전부 None으로 읽힘, 오류
+없음), 그리고 trial JSON 파일을 실제로 써서 `comparison.csv` 파일까지
+왕복시켜 6개 필드+2개 해석 필드가 실제 CSV 컬럼으로 나오는지 파일
+단위로 직접 확인하는 테스트. 오프라인 스위트 75 passed, 2 skipped
+(live_cluster). 실클러스터 작업 없음 - 이 커밋도 별도 fix 커밋으로 분리.
+
 **아직 안 한 것(다음 세션, 별도 명시적 승인 필요)**: overlay 실제
 적용·promote·calibration 스크립트 실행·10초 후보값 확정, `network_degrade`
 실클러스터 첫 trial, `memory_pressure_adapter.py`, Isolation Forest 검증

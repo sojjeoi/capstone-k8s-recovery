@@ -278,6 +278,66 @@ def test_missing_rep_detected():
     print("OK - 누락된 rep(3, 5)이 issue로 잡힘")
 
 
+def test_default_profile_replaced_is_restart_chain_observed():
+    rows = [_base_row(readiness_probe_profile="default", readiness_probe_timeout_sec=1.0,
+                       target_replaced=True, t_target_replaced="2026-01-01T00:01:10+00:00",
+                       target_replacement_pod_name="vllm-def456", target_replacement_pod_uid="uid-2")]
+    out_rows, _ = build_comparison(rows)
+    r = out_rows[0]
+    assert r["restart_chain_observed"] is True
+    assert r["probe_isolation_held"] is None, "default profile에서는 해당 없음(None)이어야 함"
+    assert r["outcome"] == "recovered", "target_replaced가 outcome을 바꾸면 안 됨"
+    print("OK - default profile + target_replaced=true -> restart_chain_observed=true, outcome 불변")
+
+
+def test_tolerant_profile_replaced_is_probe_isolation_not_held():
+    rows = [_base_row(readiness_probe_profile="network_tolerant", readiness_probe_timeout_sec=10.0,
+                       target_replaced=True, t_target_replaced="2026-01-01T00:01:10+00:00",
+                       target_replacement_pod_name="vllm-def456", target_replacement_pod_uid="uid-2")]
+    out_rows, _ = build_comparison(rows)
+    r = out_rows[0]
+    assert r["probe_isolation_held"] is False
+    assert r["restart_chain_observed"] is None, "network_tolerant profile에서는 해당 없음(None)이어야 함"
+    print("OK - network_tolerant profile + target_replaced=true -> probe_isolation_held=false")
+
+
+def test_tolerant_profile_not_replaced_is_probe_isolation_held():
+    rows = [_base_row(readiness_probe_profile="network_tolerant", readiness_probe_timeout_sec=10.0,
+                       target_replaced=False)]
+    out_rows, _ = build_comparison(rows)
+    assert out_rows[0]["probe_isolation_held"] is True
+    print("OK - network_tolerant profile + target_replaced=false -> probe_isolation_held=true")
+
+
+def test_tolerant_profile_replaced_prevented_flagged_as_misleading():
+    # probe_isolation_held=false인데 outcome=prevented로만 남으면 "설정이
+    # 열화를 견뎠다"로 오해할 위험 - 별도 issue로 남아야 한다.
+    rows = [_base_row(arm="fixed_threshold", readiness_probe_profile="network_tolerant",
+                       target_replaced=True, outcome="prevented", t_slo=None, t_recovery=None,
+                       slo_evaluable_at_exit=True)]
+    _, issues = build_comparison(rows)
+    assert any("probe_isolation_held" in i.problem for i in issues)
+    print("OK - tolerant profile + 교체 + prevented가 오해 소지 issue로 검출됨")
+
+
+def test_missing_target_replacement_fields_read_without_error():
+    # target_replaced 계열 필드(그리고 readiness_probe_profile)가 아예 없는
+    # 기존 결과(pod_kill/load_ramp 등 network_degrade 이전 trial)도 오류
+    # 없이 읽혀야 한다.
+    row = _base_row()
+    for f in ("readiness_probe_profile", "readiness_probe_timeout_sec", "target_replaced",
+              "t_target_replaced", "target_replacement_pod_name", "target_replacement_pod_uid"):
+        assert f not in row  # _base_row 자체가 이미 이 필드들 없이 v1 성격 fixture임을 확인
+    out_rows, issues = build_comparison([row])
+    r = out_rows[0]
+    assert r["readiness_probe_profile"] is None
+    assert r["target_replaced"] is None
+    assert r["restart_chain_observed"] is None
+    assert r["probe_isolation_held"] is None
+    assert not any("probe_isolation_held" in i.problem for i in issues)
+    print("OK - target_replaced 계열 필드 없는 기존 결과도 오류 없이 읽힘(전부 None)")
+
+
 def test_original_json_files_not_modified(tmp_path):
     results_dir = tmp_path / "results"
     results_dir.mkdir()
@@ -318,6 +378,36 @@ def test_comparison_csv_written_correctly(tmp_path):
     print("OK - comparison.csv에 본 실험+파일럿 모두 기록, included 플래그 정확")
 
 
+def test_network_degrade_fields_survive_json_to_csv_round_trip(tmp_path):
+    # 2026-09-18 리뷰 질문에 대한 직접 증거 - adapter 내부 상태가 아니라
+    # 실제 trial JSON 파일 -> comparison.csv까지 필드가 남는지 파일
+    # 단위로 확인한다(다른 테스트들은 build_comparison()의 반환값만 봄).
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+    row = _base_row(run_id="network_degrade-native-01-20260101T000000Z", scenario="network_degrade",
+                     readiness_probe_profile="default", readiness_probe_timeout_sec=1.0,
+                     target_replaced=True, t_target_replaced="2026-01-01T00:01:10+00:00",
+                     target_replacement_pod_name="vllm-def456", target_replacement_pod_uid="uid-2")
+    (results_dir / "trial-a.json").write_text(json.dumps(row, ensure_ascii=False), encoding="utf-8")
+
+    rows = load_all_results(results_dir)
+    out_rows, _ = build_comparison(rows)
+    out_path = results_dir / "comparison.csv"
+    write_comparison_csv(out_rows, out_path)
+
+    with out_path.open(encoding="utf-8") as f:
+        csv_row = next(csv.DictReader(f))
+    assert csv_row["readiness_probe_profile"] == "default"
+    assert csv_row["readiness_probe_timeout_sec"] == "1.0"
+    assert csv_row["target_replaced"] == "True"
+    assert csv_row["t_target_replaced"] == "2026-01-01T00:01:10+00:00"
+    assert csv_row["target_replacement_pod_name"] == "vllm-def456"
+    assert csv_row["target_replacement_pod_uid"] == "uid-2"
+    assert csv_row["restart_chain_observed"] == "True"
+    assert csv_row["probe_isolation_held"] == ""  # None -> csv 모듈이 빈 문자열로 씀
+    print("OK - trial JSON -> comparison.csv 파일까지 6개 원본 필드 + 2개 해석 필드 모두 남음")
+
+
 if __name__ == "__main__":
     import tempfile
     from pathlib import Path
@@ -342,8 +432,15 @@ if __name__ == "__main__":
     test_timing_order_violation_detected()
     test_duplicate_rep_detected()
     test_missing_rep_detected()
+    test_default_profile_replaced_is_restart_chain_observed()
+    test_tolerant_profile_replaced_is_probe_isolation_not_held()
+    test_tolerant_profile_not_replaced_is_probe_isolation_held()
+    test_tolerant_profile_replaced_prevented_flagged_as_misleading()
+    test_missing_target_replacement_fields_read_without_error()
     with tempfile.TemporaryDirectory() as d:
         test_original_json_files_not_modified(Path(d))
     with tempfile.TemporaryDirectory() as d:
         test_comparison_csv_written_correctly(Path(d))
+    with tempfile.TemporaryDirectory() as d:
+        test_network_degrade_fields_survive_json_to_csv_round_trip(Path(d))
     print("\n모두 통과")
