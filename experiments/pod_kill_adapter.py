@@ -24,61 +24,23 @@ is_started()가 폴링으로 기존 UID 소멸을 처음 관측한 시각으로 
 error_sec()으로 노출하고 run_once.py가 injection_observation_error_sec에
 그대로 기록한다.
 """
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-from kubernetes import client, config
+from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 
+from active_pod_resolver import NAMESPACE, get_active_pods, get_pod, load_kube_config
 from run_once import Injector, TrialInvalid
 
-NAMESPACE = "vllm-serving"
-ACTIVE_SERVICE = "vllm-active"
 CHAOS_GROUP = "chaos-mesh.org"
 CHAOS_VERSION = "v1alpha1"
 CHAOS_PLURAL = "podchaos"
 
 
-def _load_kube_config() -> None:
-    if os.environ.get("KUBERNETES_SERVICE_HOST"):
-        config.load_incluster_config()
-    else:
-        config.load_kube_config()
-
-
-def get_active_pods() -> list:
-    """vllm-active Service의 selector로 실제 매칭되는 pod들을 (name, uid)
-    리스트로 돌려준다 - 정적 라벨(app=vllm-serving)만 쓰면 preview가 같이
-    떠있을 때 여러 개 걸릴 수 있어서, Service selector(rollouts-pod-
-    template-hash 포함)로 정확히 좁힌다."""
-    _load_kube_config()
-    core = client.CoreV1Api()
-    svc = core.read_namespaced_service(ACTIVE_SERVICE, NAMESPACE)
-    selector = svc.spec.selector or {}
-    label_selector = ",".join(f"{k}={v}" for k, v in selector.items())
-    pods = core.list_namespaced_pod(NAMESPACE, label_selector=label_selector)
-    return [{"name": p.metadata.name, "uid": p.metadata.uid} for p in pods.items]
-
-
-def get_pod(name: str) -> Optional[dict]:
-    """이름으로 pod 하나를 조회 - 없으면(404) None. is_started()가 "고정해둔
-    이름의 pod가 사라졌는지"를 반복 확인하는 용도라, 삭제된 상태(None)와
-    다른 API 에러를 구분해야 한다(그 외 에러는 그대로 전파)."""
-    _load_kube_config()
-    core = client.CoreV1Api()
-    try:
-        p = core.read_namespaced_pod(name, NAMESPACE)
-        return {"name": p.metadata.name, "uid": p.metadata.uid}
-    except ApiException as e:
-        if e.status == 404:
-            return None
-        raise
-
-
 def create_pod_chaos(cr_name: str, run_id: str, arm: str, target_pod_name: str) -> None:
-    _load_kube_config()
+    load_kube_config()
     body = {
         "apiVersion": f"{CHAOS_GROUP}/{CHAOS_VERSION}",
         "kind": "PodChaos",
@@ -104,7 +66,7 @@ def delete_pod_chaos(cr_name: str) -> None:
     """몇 번을 불러도 안전(idempotent) - CR이 이미 없으면(404) 조용히
     넘어간다. prepare()/inject()가 전혀 안 불려 CR을 만든 적이 없어도(이름은
     이미 정해져 있으므로) 안전하게 호출 가능."""
-    _load_kube_config()
+    load_kube_config()
     try:
         client.CustomObjectsApi().delete_namespaced_custom_object(
             CHAOS_GROUP, CHAOS_VERSION, NAMESPACE, CHAOS_PLURAL, cr_name)
