@@ -214,8 +214,58 @@ def test_min_observation_sec_blocks_premature_prevented(tmp_path):
 
     assert result.outcome == "prevented", result.outcome
     assert elapsed >= 0.3, f"min_observation_sec(0.3s) 전에 끝남: {elapsed:.3f}s"
-    assert result.slo_evaluable_at_exit is True  # is_slo_evaluable 미구현(None)은 항상 evaluable로 간주
-    print(f"OK - min_observation_sec 바닥 적용 확인({elapsed:.3f}s >= 0.3s)")
+    assert result.min_observation_sec == 0.3, "전달한 min_observation_sec이 결과에 그대로 기록돼야 함"
+    # is_slo_evaluable 미구현(None)이면 게이트는 통과해도(하위호환) 기록은
+    # "검증됨"이 아니라 "검증 안 함"을 뜻하는 None이어야 한다(2026-09-17 정정).
+    assert result.slo_evaluable_at_exit is None
+    print(f"OK - min_observation_sec 바닥 적용 확인({elapsed:.3f}s >= 0.3s), 미구현 hook은 None 기록")
+
+
+def test_min_observation_sec_anchored_after_effectiveness_confirmed(tmp_path):
+    # 실측 지적 회귀 테스트(2026-09-17): min_observation_sec의 기준점이
+    # injector.inject() 호출 "전"으로 잡혀 있으면, 실제 효과 확인
+    # (is_effective())까지 걸린 대기시간이 최소 관찰시간 바닥을 그만큼
+    # 갉아먹는다. is_started_after_calls로 효과 확인 지연을 흉내낸다 -
+    # poll_interval_sec=0.05 * 10회 ≈ 0.45초 지연. min_observation_sec=0.2초를
+    # 그 "이후"부터 다시 세면 총 최소 0.65초, 기준점이 inject() 전이면
+    # 지연 자체(0.45초)만으로 이미 바닥을 넘겨 거의 즉시 끝난다.
+    injector, _ = _fake_injector(is_started_after_calls=10, is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=10_000)
+
+    start = time.monotonic()
+    result = run_once(
+        scenario="dry_run", arm="native", rep=23, sequence_index=23, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+        min_observation_sec=0.2, results_dir=tmp_path,
+    )
+    elapsed = time.monotonic() - start
+
+    assert result.outcome == "prevented", result.outcome
+    assert elapsed >= 0.6, (
+        f"효과 확인 지연(~0.45s)이 min_observation_sec(0.2s)에 흡수됨: {elapsed:.3f}s "
+        f"(기준점이 is_effective() 확인 이후가 아니라 inject() 호출 전으로 잡혔을 가능성)"
+    )
+    print(f"OK - min_observation_sec은 is_effective() 확인 이후부터 계산됨({elapsed:.3f}s >= 0.6s)")
+
+
+def test_slo_evaluable_at_exit_none_when_hook_unimplemented(tmp_path):
+    # hook 미구현(None)이면 게이트는 기존처럼 evaluable=True로 간주해 동작은
+    # 그대로지만, 기록되는 slo_evaluable_at_exit은 "검증됨"이 아니라 "검증
+    # 안 함"을 뜻하는 None이어야 한다(2026-09-17 정정) - min_observation_sec
+    # 관련 테스트와 별개로, 이 필드 하나만 단독으로 확인.
+    injector, _ = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=10_000)  # is_slo_evaluable 미구현
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=24, sequence_index=24, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+        results_dir=tmp_path,
+    )
+
+    assert result.outcome == "prevented", result.outcome
+    assert result.slo_evaluable_at_exit is None, \
+        "hook 미구현이면 게이트는 통과해도 기록은 None(검증 안 함)이어야 함"
+    print("OK - evaluability hook 미구현 시 slo_evaluable_at_exit=None 기록")
 
 
 def test_violation_detected_even_while_not_evaluable(tmp_path):
@@ -498,6 +548,8 @@ if __name__ == "__main__":
         test_precise_injection_time_without_error_hook_leaves_error_none,
         test_not_evaluable_blocks_premature_prevented,
         test_min_observation_sec_blocks_premature_prevented,
+        test_min_observation_sec_anchored_after_effectiveness_confirmed,
+        test_slo_evaluable_at_exit_none_when_hook_unimplemented,
         test_violation_detected_even_while_not_evaluable,
         test_pilot_result_written_to_pilot_subdir,
         test_slo_violation_gates_recovery_check,

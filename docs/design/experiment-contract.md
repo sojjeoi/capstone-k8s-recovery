@@ -46,7 +46,15 @@ invalid_run     probe·주입·사전조건 문제
 2. 장애 주입이 실제 대상에 적용됐음(`injection_valid=true`)
 3. 같은 시나리오의 `native` 반복(rep)들에서는 SLO 위반이 재현됨 — 즉 이 시나리오가 무개입 시 진짜로 SLO를 위반할 만큼 강하다는 게 경험적으로 확인됨
 
-`native` 자체는 개입이 없으므로 `prevented`가 나올 수 없다(`recovered` 또는 `timeout`만 가능).
+`native` 자체는 개입이 없으므로 `prevented`가 나올 수 없다(`recovered` 또는 `timeout`만 가능) -
+`collect_metrics.py`가 `arm=native AND outcome=prevented`를 이상으로 검출한다.
+
+위 3조건과 별개로, `run_once()`는 **관측 자체가 신뢰할 만했는지**를 기계적으로
+확인한다(2026-09-17 추가 - pod_kill native 파일럿에서 관측 창이 열리기도
+전에 probe 데이터를 한 번도 못 읽은 채 `prevented`로 오판정된 사건 이후):
+probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`slo_evaluable_at_exit`)
+확인하지 못하면 조기 종료하지 않는다. 본 실험의 `prevented`는 이 값이
+`true`가 아니면 검증 오류로 취급한다(§5 참고).
 
 ## 4. 시나리오별 timeout·종료 조건
 
@@ -100,6 +108,7 @@ invalid_run     probe·주입·사전조건 문제
 | `slo_version` | str | 이 trial 판정에 쓰인 SLO 버전(`v2` 등) — slo-definition.md 버전과 대응 |
 | `latency_slo_sec` | float \| null | 이 trial에 실제 적용된 latency SLO 임계치(초) |
 | `probe_rps` | float | probe의 목표 발사율(RPS) |
+| `min_observation_sec` | float | "prevented" 조기 종료를 막는 최소 관찰시간(초) - 주입 효과 확인 직후부터 계산(2026-09-17 추가) |
 | `t_run_start` | ISO8601 UTC | preview 준비 등 trial 준비 시작 시각 |
 | `t_injection` | ISO8601 UTC | chaos 주입 시작. 어댑터가 `get_actual_injection_time()`을 구현하면 실제 삭제/시작 시각 그 자체가 아니라 폴링으로 그 변화를 **처음 관측한** 시각(미구현이면 `inject()` 호출 시각) |
 | `injection_observation_error_sec` | float \| null | `t_injection`이 폴링 관측값일 때만 채움 - "대상이 살아있음을 마지막으로 관측한 시각"과 `t_injection`의 실측 차이(상한, 정확한 오차 아님). `poll_interval_sec` 설정값이 아니다 - 어댑터의 조회 자체(kubectl exec 등)도 시간이 걸려 설정값만으론 상한을 보장 못 한다(2026-09-16 정정). null이면 관측 기반 값이 아니거나(어댑터 미구현) 비교 기준점이 없음(첫 poll에서 이미 상태가 바뀜) |
@@ -117,7 +126,8 @@ invalid_run     probe·주입·사전조건 문제
 | `detection_source` | enum \| null | `fixed_threshold` \| `isolation_forest` \| `alertmanager` \| `none` — 실제로 무엇이 먼저 반응했는지 |
 | `action` | enum | `promote_preview` \| `none` |
 | `promotion_verified` | bool \| null | `native`는 항상 null |
-| `outcome` | enum | `prevented` \| `recovered` \| `timeout` \| `invalid_run` |
+| `outcome` | enum | `prevented` \| `recovered` \| `timeout` \| `invalid_run`. `arm=native`에서 `prevented`가 나오면 그 자체로 이상(§3 마지막 줄) - `collect_metrics.py`가 검출 |
+| `slo_evaluable_at_exit` | bool \| null | `outcome=prevented`로 종료한 시점에 probe가 "위반 없음"을 신뢰할 만큼 유효한 표본을 확보했었는지(2026-09-17 추가). `prevented`가 아니거나 어댑터가 `is_slo_evaluable()`을 구현 안 했으면 null - null은 "검증 안 함"이지 "위반 없음이 확인됨"이 아니다. 본 실험(`is_pilot=false`)의 `prevented`는 이 값이 `true`가 아니면 `collect_metrics.py`가 검증 오류로 취급 |
 | `injection_valid` | bool | 장애가 실제 대상에 적용됐는지 |
 | `probe_valid` | bool | probe가 trial 내내 정상 작동했는지 |
 | `invalid_reason` | str \| null | `outcome=invalid_run`일 때만 채움 |
@@ -151,4 +161,17 @@ invalid_run     probe·주입·사전조건 문제
 - 2026-09-16: 파일럿에서 `max_tokens=10` probe가 vLLM CPU limit인 4코어를 거의 전부 사용해 측정 도구가 실험 대상에 유의미한 부하를 가하는 observer effect를 확인했다. 본 실험에서는 `max_tokens=1` 경량 probe를 사용하고, 요청 특성이 변경된 만큼 동일한 산정 원칙으로 baseline과 latency SLO를 다시 측정해 동결했다(SLO v2 — slo-definition.md 참고). `is_pilot`/`probe_profile`/`slo_version`/`latency_slo_sec`/`probe_rps`를 §5 스키마에 추가해 재현성을 높였다.
 - 2026-09-16: probe 포함 조건에서 `load_ramp` stage RPS를 재보정했다(기존 1~10RPS는 probe 없이 ramp.py 단독으로 캘리브레이션된 값이라, probe 상시 동반 + SLO v2 하에서는 stage-1부터 이미 위반이었음). 0.10~1.00 RPS 구간을 사전에 고정한 판정 기준으로 3회 독립 반복해 재현성을 확인했다: 낮은 부하 구간(0.10/0.25 RPS)에서는 측정 노이즈에 따른 소폭 역전이 있었으나, 0.50 RPS 이후에는 부하 증가에 따른 지연 상승이 일관되게 나타났다. 0.50 RPS까지는 3회 모두 SLO를 준수했고, 0.75 RPS는 2/3회, 1.00 RPS는 3/3회 SLO를 위반했다. 모든 요청은 성공했으며 부하 종료 후 정상 범위로 회복했다. 사전 기준을 그대로 통과했으므로 추가 조정 없이 확정했다(사후 편향 방지). "시스템 붕괴 확인용" 6번째 stage는 의도적으로 넣지 않았다 - 이 실험은 한계까지 무너뜨리는 게 목적이 아니라 점진적 열화에서 선제탐지·복구시간을 비교하는 것이라, collapse를 넣으면 다른 실험이 된다. `t_injection`을 "inject() 호출 시각"에서 "첫 ramp 요청이 실제 전송된 시각"으로 더 정밀하게 정의하고 `load_ramp_adapter.py`에 반영했다.
 - 2026-09-16: `pod_kill` 어댑터의 코드+오프라인 테스트를 완료했다(`pod_kill_adapter.py`, active Service selector 기반 동적 대상 탐지 + fail-closed + idempotent cleanup, 실클러스터 검증은 별도 native E2E 단계로 분리). 테스트 실행 경로를 오프라인/`live_cluster`로 명확히 나눴다 - `recovery-policy` 실제 연동을 확인하는 `test_run_once.py`의 테스트 2개(non-native arm 등록, 활성 context 차단)에 `@pytest.mark.live_cluster`를 부여하고 `conftest.py`가 `RUN_LIVE_TESTS=1`일 때만 실행하도록 기본 skip 처리했다 - 이제 `pytest` 기본 실행은 클러스터 없이 항상 전부 통과한다(실행법은 `experiments/README.md` "테스트" 절). 또한 `t_injection` 정의를 바로잡았다: `get_actual_injection_time()`이 돌려주는 값은 어댑터가 실측한 정확한 사건 발생 시각이 아니라 폴링으로 그 변화를 처음 관측한 시각이며, 관측 오차의 상한(`poll_interval_sec`)을 새 필드 `injection_observation_error_sec`으로 결과에 함께 남기도록 `run_once.py`를 수정했다 - 바로 위 항목의 "실제 전송된 시각"이라는 표현은 이 관측 기반 특성을 충분히 드러내지 못했다.
+- 2026-09-17: `pod_kill` native 첫 파일럿 실행에서 `outcome=prevented`
+  오판정을 발견했다 - 즉발 injector가 주입 직후 바로 `t_injection_end`를
+  찍어, probe가 `slo_judge`의 60초 warmup을 넘기지 못한 채(표본 0개) "위반
+  없음"으로 조기 종료됐다(그 시점 replacement pod는 실제로 Not Ready였음).
+  `run_once()`에 `min_observation_sec`(주입 효과 확인 직후부터 계산)과
+  `Prober.is_slo_evaluable()`(NOT_EVALUABLE/COMPLIANT 구분) 게이트를
+  추가했고, `load_ramp_adapter.py`의 `is_slo_evaluable()`은 전체 누적
+  표본이 아니라 **주입 이후** 표본만으로 유효한 관측 창이 쌓였는지
+  판정하도록 구현했다(`Prober.notify_injected()` 계약 추가). 결과 스키마에
+  `min_observation_sec`·`slo_evaluable_at_exit` 추가, `collect_metrics.py`에
+  "`arm=native`인데 `prevented`"·"본 실험 `prevented`인데
+  `slo_evaluable_at_exit!=true`" 두 검증을 추가했다. 상세 경과는
+  `docs/design/phase8-blue-green-preflight-incident.md` §6 참고.
 - 2026-09-16: 바로 위 항목의 `injection_observation_error_sec` 계산 방식을 정정했다. `poll_interval_sec`(설정값)을 그대로 오차 상한으로 쓰는 건 부정확하다는 지적을 받았다 - `is_started()` 호출 자체(pod_kill의 K8s API 조회, load_ramp의 `kubectl exec`)의 실행시간과 스케줄링 지연이 `poll_interval_sec`을 넘을 수 있어 설정값만으로는 진짜 상한을 보장하지 못한다. `pod_kill_adapter.py`/`load_ramp_adapter.py`가 각각 "대상이 살아있음(또는 마커 없음)을 마지막으로 관측한 시각"과 "처음 사라짐(또는 마커 확인)을 관측한 시각"을 직접 실측해 그 차이를 `get_injection_observation_error_sec()`으로 넘기도록 `Injector` 계약에 새 선택 필드를 추가하고, `run_once.py`는 이 값을 그대로 기록하도록(더 이상 `poll_interval_sec`으로 대신 채우지 않도록) 수정했다. 두 비교 기준점이 모두 있어야만 값을 채우고, 없으면(예: 첫 poll에서 이미 상태가 바뀐 경우) `injection_observation_error_sec`은 null로 남긴다.

@@ -155,8 +155,15 @@ class Prober:
     check_slo_violation()이 계속 False였어도 run_once()는 "prevented"로
     조기 종료하지 않는다(POSITIVE 위반 감지 자체는 evaluable 여부와 무관하게
     항상 신뢰한다 - 이건 "위반 없음을 믿어도 되는가"만 게이트한다). None
-    필드(미구현)는 항상 evaluable로 간주해 기존 어댑터의 동작을 그대로
-    유지한다(하위호환)."""
+    필드(미구현)는 게이트 통과 여부는 기존처럼 항상 evaluable로 간주해
+    동작은 그대로 유지하지만(하위호환), 결과에 남는 slo_evaluable_at_exit은
+    "검증됨(True/False)"이 아니라 "검증 안 함"을 뜻하는 None으로 기록된다.
+    notify_injected(t_injection): 선택 구현 - is_effective()로 주입이 실제
+    적용됐음을 확인한 직후 run_once()가 정확히 한 번 호출한다(2026-09-17
+    추가). is_slo_evaluable()이 "주입 이후" 표본만으로 유효한 관측 창이
+    쌓였는지 판단하려면 주입 기준 시각을 알아야 하는데, Prober는 자기가
+    언제 시작됐는지만 알고 주입이 언제 일어났는지는 모른다 - 이 훅이 그
+    기준점을 넘겨준다. 미구현이면 안 불린다(무해)."""
     start: Callable[[], None]
     is_alive: Callable[[], bool]
     check_slo_violation: Callable[[], bool]
@@ -165,6 +172,7 @@ class Prober:
     get_actual_slo_time: Optional[Callable[[], Optional[str]]] = None
     get_actual_recovery_time: Optional[Callable[[], Optional[str]]] = None
     is_slo_evaluable: Optional[Callable[[], bool]] = None
+    notify_injected: Optional[Callable[[str], None]] = None
 
 
 @dataclass
@@ -184,6 +192,10 @@ class TrialResult:
     slo_version: str = "v2"
     latency_slo_sec: Optional[float] = None
     probe_rps: float = 1.0
+    # "prevented" 조기 종료를 막는 최소 관찰시간(초, run_once()의 동명
+    # 파라미터 값을 그대로 기록 - 2026-09-17 추가). 이 값이 trial마다
+    # 달랐는지 사후에 재현성 검증하려면 결과 자체에 남아야 한다.
+    min_observation_sec: float = 0.0
     t_injection: Optional[str] = None
     # get_injection_observation_error_sec()이 구현+계산 가능했을 때만 채움 -
     # "대상이 살아있음을 마지막으로 관측한 시각"과 "처음 사라졌음을 관측한
@@ -331,6 +343,7 @@ def run_once(
         sequence_index=sequence_index, order_seed=order_seed, t_run_start=_now(),
         is_pilot=is_pilot, probe_profile=probe_profile, slo_version=slo_version,
         latency_slo_sec=latency_slo_sec, probe_rps=probe_rps,
+        min_observation_sec=min_observation_sec,
     )
     _write_result(result, results_dir)
     critical_failures: list = []
@@ -371,16 +384,23 @@ def run_once(
 
         result.state = TrialState.INJECTING.value
         result.t_injection = _now()
-        injection_monotonic = time.monotonic()  # min_observation_sec 계산용 기준점(정밀할 필요 없음 - 초 단위 여유 판단용)
         injector.inject()
         started = _wait_for(injector.is_started, injection_started_timeout_sec, poll_interval_sec)
         result.injection_valid = started and injector.is_effective()
-        if result.injection_valid and injector.get_actual_injection_time is not None:
-            precise = injector.get_actual_injection_time()
-            if precise:
-                result.t_injection = precise  # inject() 호출 시각보다 정확 - 다만 폴링 관측값
-                if injector.get_injection_observation_error_sec is not None:
-                    result.injection_observation_error_sec = injector.get_injection_observation_error_sec()
+        if result.injection_valid:
+            if injector.get_actual_injection_time is not None:
+                precise = injector.get_actual_injection_time()
+                if precise:
+                    result.t_injection = precise  # inject() 호출 시각보다 정확 - 다만 폴링 관측값
+                    if injector.get_injection_observation_error_sec is not None:
+                        result.injection_observation_error_sec = injector.get_injection_observation_error_sec()
+            # min_observation_sec 기준점은 반드시 is_effective() 확인 "직후"부터
+            # 잡는다(2026-09-17 정정) - inject() 호출 전에 잡으면, 실제 효과
+            # 확인까지 걸린 대기시간이 최소 관찰시간 바닥을 그만큼 갉아먹는다
+            # (효과 확인이 느린 injector일수록 실관찰 시간이 줄어드는 역설).
+            injection_monotonic = time.monotonic()
+            if prober.notify_injected is not None:
+                prober.notify_injected(result.t_injection)
         _write_result(result, results_dir)
         if not result.injection_valid:
             raise TrialInvalid("주입이 시작됐는지/효과가 있었는지 확인 안 됨")
@@ -410,7 +430,8 @@ def run_once(
             # 자연히 만족돼 있어 동작이 바뀌지 않는다. POSITIVE 위반 감지
             # (t_slo가 실제로 찍히는 것)는 evaluable 여부와 무관하게 항상
             # 그대로 신뢰한다 - 이 게이트는 "위반이 없었다"는 결론에만 적용.
-            evaluable = prober.is_slo_evaluable() if prober.is_slo_evaluable is not None else True
+            evaluable_hook_present = prober.is_slo_evaluable is not None
+            evaluable = prober.is_slo_evaluable() if evaluable_hook_present else True
             observed_long_enough = (time.monotonic() - injection_monotonic) >= min_observation_sec
             prevented_confirmed = result.t_slo is None and evaluable and observed_long_enough
             if result.t_injection_end is not None and (prevented_confirmed or result.t_recovery is not None):
@@ -422,13 +443,16 @@ def run_once(
         if result.outcome is None:
             # t_slo가 끝까지 안 찍혔으면 prevented 후보(최종 판정은
             # collect_metrics.py가 같은 시나리오 native 반복과 교차검증해서
-            # 확정 - 계약서 §3의 3조건 중 하나는 여기서 알 수 없음). evaluable은
-            # 루프의 마지막 iteration에서 계산된 값 그대로 - t_slo가 None이면
-            # (=이 분기로 들어왔으면) 위 루프가 최소 한 번은 돌았으므로 항상
-            # 정의돼 있다.
+            # 확정 - 계약서 §3의 3조건 중 하나는 여기서 알 수 없음). evaluable/
+            # evaluable_hook_present는 루프의 마지막 iteration에서 계산된 값
+            # 그대로 - t_slo가 None이면(=이 분기로 들어왔으면) 위 루프가 최소
+            # 한 번은 돌았으므로 항상 정의돼 있다.
             if result.t_slo is None:
                 result.outcome = "prevented"
-                result.slo_evaluable_at_exit = evaluable
+                # hook 미구현이면 게이트는 통과했어도(하위호환) "검증됨"이
+                # 아니라 "검증 안 함"이므로 None - True/False는 어댑터가
+                # 실제로 판정한 경우에만 기록한다(2026-09-17 정정).
+                result.slo_evaluable_at_exit = evaluable if evaluable_hook_present else None
             else:
                 result.outcome = "recovered"
 

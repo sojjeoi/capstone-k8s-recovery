@@ -368,7 +368,52 @@ ClusterIP·Pod IP·localhost 요청 전부 성공, 실패 0건. `etcdInsufficien
 evaluable"`, `slo_evaluable_at_exit: false` 추가, `notes`에 재분류 사유 기록.
 `is_pilot=true`는 원래도 유지돼 있어 본 분석에서는 어차피 제외 대상이었다.
 
-### 6.4 재실행 전 남은 것
+**(6.3은 §6.5에서 더 정밀화됨 - `outcome`/`state`를 직접 덮어쓰는 대신
+원본과 판정을 분리하는 방식으로 바뀌었다. 이 절은 최초 접근을 기록으로
+남긴다.)**
+
+### 6.5 2차 정밀화 — 추가 리뷰 반영(2026-09-17)
+
+1차 수정이 맞는 방향이었지만 다음이 불충분하다는 지적을 받아 추가로
+고쳤다:
+
+- **`min_observation_sec` 기준점 오류**: `injector.inject()` 호출 "전"에
+  잡혀 있었다 - `t_injection`은 이후 `is_effective()` 확인 시점의 더 정밀한
+  값으로 덮어써지는데, 기준점은 그 이전 채로 남아 있어 둘이 어긋났다.
+  효과 확인이 느린 injector일수록 최소 관찰시간이 그만큼 줄어드는 역설이
+  있었다. `is_effective()` 확인 직후로 기준점을 옮겼다.
+- **`is_slo_evaluable()`이 전체 누적 표본만 봄**: probe가 주입 "전"에 이미
+  20개 이상을 모았거나, 주입 "후" 갱신이 멈춰도 evaluable=True가 나올 수
+  있었다. `Prober`에 `notify_injected(t_injection)` 계약을 추가해
+  `run_once()`가 실제 주입 기준 시각을 넘겨주고, `load_ramp_adapter.py`는
+  이제 **주입 이후** 표본만으로(최신 표본이 주입 후 `WINDOW_SEC` 이상
+  지났고, 그 구간 표본 수가 `MIN_SAMPLES_FOR_RELIABLE_P95` 이상) 판정한다.
+  순수 함수 `_is_post_injection_window_evaluable()`로 분리해 kubectl 없이
+  단위 테스트 가능(`test_load_ramp_adapter.py`, 신규 6개).
+- **`slo_evaluable_at_exit`의 None/True 혼동**: hook 미구현이어도 게이트는
+  하위호환으로 통과시키지만(기존 동작 유지), 기록값은 "검증됨"이 아니라
+  "검증 안 함"을 뜻하는 `None`이어야 한다 - hook이 실제로 판정한 경우에만
+  `True`/`False`를 기록하도록 수정.
+- **스키마·집계기 반영**: `min_observation_sec`/`slo_evaluable_at_exit`을
+  결과 스키마(`experiment-contract.md` §5)와 `collect_metrics.py`의
+  `comparison.csv`에 추가. `collect_metrics.py`에 두 검증 추가 - (1)
+  `arm=native`인데 `outcome=prevented`면 이상(계약서 §3, pilot 무관하게
+  항상 검출), (2) 본 실험(`is_pilot=false`)의 `prevented`는
+  `slo_evaluable_at_exit=true`가 아니면 검증 오류(파일럿은 옛 하니스로
+  실행됐을 수 있어 제외).
+- **1차 재분류 방식 교체**: `outcome`/`state`를 직접 덮어쓰지 않는다 -
+  원본 필드(`outcome=prevented`, `state=completed`,
+  `slo_evaluable_at_exit=null`, 당시 하니스가 실제로 기록한 그대로)는
+  손대지 않고, 별도 필드 `adjudicated_outcome`(`invalid_run`)·
+  `adjudication_reason`·`adjudication_detail`·`adjudicated_at`으로 사후
+  판정을 분리했다. 이제 이 trial은 `collect_metrics.py`의 새
+  native+prevented 검증에 실제로 걸리는 것으로 확인됨(위 §6.3의
+  `invalid_run` 직접 기록 방식은 그 검증을 우회했었음).
+- 회귀 테스트 5개 추가(anchor 타이밍, hook 미구현 None 기록,
+  `test_load_ramp_adapter.py` 6개 중 이번에 추가된 것, `collect_metrics.py`
+  검증 2종). 오프라인 스위트 전체 43 passed, 2 skipped(live_cluster).
+
+### 6.6 재실행 전 남은 것
 
 코드 수정·테스트는 완료했으나 **재실행은 아직 하지 않았다** - §5.4의
 재확인 요건(세 경로 10~15분 재검증, replacement vLLM Ready, Node 상태 등)을

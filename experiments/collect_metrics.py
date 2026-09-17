@@ -19,6 +19,12 @@ t_detection -> t_decision -> t_api_request -> t_switch, t_slo -> t_recovery는
 
 원본 JSON은 절대 수정하지 않는다(읽기 전용) - trial 결과는 실험의 1차
 증거라 사후 수정 흔적이 남으면 안 된다.
+
+outcome=prevented는 그 자체로 신뢰하지 않는다(2026-09-17 pod_kill 오판정
+사건 이후 추가) - native arm은 계약서 §3상 애초에 prevented가 나올 수 없고,
+본 실험(is_pilot=False)의 prevented는 slo_evaluable_at_exit=True(probe가
+실제로 판정 가능한 데이터를 확보했다는 run_once.py의 확인)가 아니면
+검증 오류로 취급한다.
 """
 import argparse
 import csv
@@ -123,6 +129,29 @@ def _check_timing(row: dict, ts: dict, issues: list) -> bool:
     return anomaly
 
 
+def _check_prevented_validity(row: dict, issues: list) -> None:
+    """계약서 §3: `prevented`는 조건부로만 인정된다(2026-09-17 pod_kill
+    오판정 사건 재발 방지 - run_once.py의 NOT_EVALUABLE 게이트 추가와 짝).
+    (1) native arm은 개입이 없어 원천적으로 prevented가 나올 수 없다
+    (계약서 §3 마지막 줄) - pilot 여부와 무관하게 항상 이상. (2) 본 실험
+    (is_pilot=False)의 prevented는 slo_evaluable_at_exit=True가 아니면
+    "probe가 실제로 판정 가능한 데이터를 확보했는지"를 검증 못 한 것이므로
+    검증 오류로 처리한다 - 파일럿은 옛 하니스로 실행됐을 수 있어(hook
+    미구현=None) 제외."""
+    if row.get("outcome") != "prevented":
+        return
+    run_id = row.get("run_id", "?")
+    if row.get("arm") == "native":
+        issues.append(ValidationIssue(
+            run_id, "outcome",
+            "arm=native인데 outcome=prevented - 계약서 §3상 native는 prevented가 나올 수 없음"))
+    if not row.get("is_pilot") and row.get("slo_evaluable_at_exit") is not True:
+        issues.append(ValidationIssue(
+            run_id, "slo_evaluable_at_exit",
+            f"outcome=prevented인데 slo_evaluable_at_exit={row.get('slo_evaluable_at_exit')!r}"
+            f"(True 아님) - probe가 실제로 판정 가능한 데이터를 확보했는지 검증 안 됨"))
+
+
 def _seconds_between(ts: dict, start: str, end: str) -> Optional[float]:
     if ts.get(start) is None or ts.get(end) is None:
         return None
@@ -154,6 +183,7 @@ def build_comparison(rows: list) -> tuple:
         exclusion_reason = _classify_exclusion(row)
         included = exclusion_reason is None
         timing_anomaly = _check_timing(row, ts, issues)
+        _check_prevented_validity(row, issues)
 
         if included:
             key = (row.get("scenario"), row.get("arm"), row.get("rep"))
@@ -167,6 +197,8 @@ def build_comparison(rows: list) -> tuple:
             "sequence_index": row.get("sequence_index"),
             "order_seed": row.get("order_seed"),
             "outcome": row.get("outcome"),
+            "slo_evaluable_at_exit": row.get("slo_evaluable_at_exit"),
+            "min_observation_sec": row.get("min_observation_sec"),
             "state": row.get("state"),
             "detected": row.get("detected"),
             "detection_source": row.get("detection_source"),

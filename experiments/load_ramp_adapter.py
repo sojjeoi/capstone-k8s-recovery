@@ -167,6 +167,25 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
                      get_injection_observation_error_sec=get_injection_observation_error_sec)
 
 
+def _is_post_injection_window_evaluable(rows, injection_time, window_sec=None, min_samples=None):
+    """주입 이후 유효한 관측 창이 확보됐는지 순수 판정 - kubectl 의존이 없어
+    test_load_ramp_adapter.py에서 실클러스터 없이 검증 가능하다(2026-09-17
+    정정). 이전 버전은 전체 누적 표본 수(sample_count)만 봐서, probe가 주입
+    "전"에 이미 20개 이상을 모았거나 주입 "후" 표본 갱신이 멈춰도 잘못
+    evaluable=True가 나올 수 있었다 - 반드시 주입 시각 이후 표본만, 그리고
+    최신 표본이 주입 후 한 창(window_sec) 분량 이상 지난 시점의 것이어야
+    한다."""
+    window_sec = slo_judge.WINDOW_SEC if window_sec is None else window_sec
+    min_samples = slo_judge.MIN_SAMPLES_FOR_RELIABLE_P95 if min_samples is None else min_samples
+    if injection_time is None or not rows:
+        return False
+    latest = rows[-1]["sent_at"]  # load_raw()가 sent_at 기준 정렬해서 반환
+    if (latest - injection_time).total_seconds() < window_sec:
+        return False  # 최신 표본이 주입 후 한 창 분량만큼 아직 안 지남
+    post_injection_count = sum(1 for r in rows if r["sent_at"] >= injection_time)
+    return post_injection_count >= min_samples
+
+
 def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str, rep: int,
                            duration_sec: float) -> Prober:
     """config_path는 injector(ramp.py)의 scenario yaml이 아니라 전용
@@ -183,8 +202,9 @@ def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str
     raw_remote = "/probe-raw.csv"
     local_raw = RESULTS_DIR / f"probe-{run_id}-{arm}-{rep}-raw.csv"
     probe_duration = duration_sec + PROBE_DURATION_MARGIN_SEC
-    cache = {"points": [], "fetched_at": 0.0, "sample_count": 0}
+    cache = {"points": [], "rows": [], "fetched_at": 0.0}
     warmup = {"started_at": None}
+    injection_ref = {"t": None}  # notify_injected()로 run_once()가 채워줌
 
     def start():
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -243,19 +263,22 @@ def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str
             local_raw.write_text(r.stdout, encoding="utf-8")
             rows = slo_judge.load_raw(local_raw)
             cache["points"] = slo_judge.evaluate(rows) if rows else []
-            cache["sample_count"] = len(rows)
+            cache["rows"] = rows
         except Exception:
             pass  # 아직 헤더뿐이거나 읽는 순간 걸린 미완성 마지막 줄 - 다음 refresh에서 재시도(fetch 자체는 성공이라 실패 카운트 안 함)
         return cache["points"]
 
+    def notify_injected(t_injection: str):
+        injection_ref["t"] = datetime.fromisoformat(t_injection)
+
     def is_slo_evaluable():
-        # run_once.py의 NOT_EVALUABLE 게이트(2026-09-17)가 참조하는 함수 -
-        # "여태 위반이 안 보였다"를 진짜 COMPLIANT로 믿으려면 slo_judge의
-        # P95가 max() 근사가 아니라 실제 백분위수로 계산될 만큼 표본이 쌓여야
-        # 한다(slo_judge.MIN_SAMPLES_FOR_RELIABLE_P95와 동일 기준 - 상수
-        # 중복 정의 안 함). _refresh()가 아직 한 번도 성공 못 했으면
-        # sample_count=0이라 자연히 False.
-        return cache["sample_count"] >= slo_judge.MIN_SAMPLES_FOR_RELIABLE_P95
+        # run_once.py의 NOT_EVALUABLE 게이트(2026-09-17)가 참조 - "여태
+        # 위반이 안 보였다"를 COMPLIANT로 믿으려면 "주입 이후" 표본만으로
+        # 유효한 관측 창이 쌓여야 한다(2026-09-17 재정정: 전체 누적 표본 수만
+        # 보면 주입 전 표본이 섞이거나 주입 후 갱신이 멈춰도 잘못 True가 나올
+        # 수 있었음). 순수 판정 로직은 _is_post_injection_window_evaluable()
+        # 참고.
+        return _is_post_injection_window_evaluable(cache["rows"], injection_ref["t"])
 
     def _warmed_up():
         # WINDOW_SEC(60초)만큼 표본이 쌓이기 전엔 find_t_slo() 결과를 안 믿는다
@@ -290,4 +313,4 @@ def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str
     return Prober(start=start, is_alive=is_alive, check_slo_violation=check_slo_violation,
                   check_recovered=check_recovered, stop=stop,
                   get_actual_slo_time=get_actual_slo_time, get_actual_recovery_time=get_actual_recovery_time,
-                  is_slo_evaluable=is_slo_evaluable)
+                  is_slo_evaluable=is_slo_evaluable, notify_injected=notify_injected)
