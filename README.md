@@ -15,10 +15,10 @@ Chaos Mesh로 점진적 열화(메모리 압력·부하 증가·네트워크 열
 - **AI 서빙 워크로드 배포**: vLLM 기반 경량 모델을 Argo Rollouts BlueGreen으로 배포·서빙
 - **관측성 스택**: Prometheus(K8s+vLLM 지표) + Grafana + Alertmanager, 영구 저장 구성 완료
 - **장애 주입 및 실험 자동화**: Chaos Mesh로 Pod 종료·점진적 메모리 압력·고정 도착률(open-loop) 부하 증가·단계적 네트워크 열화 4종 시나리오 재현 (검증 완료). 3가지 방식(기본 self-healing / 고정 임계치 / 제안 방식) 자동 비교 오케스트레이션은 개발 예정
-- **이상 탐지 기반 위험도 산정**: K8s 지표(CPU·메모리) + vLLM 고유 지표(큐 길이, KV Cache 사용률)를 Isolation Forest로 분석해 장애 전조 감지 *(최소 모델 완료 — 정상 표본 7개뿐이라 정상 데이터 확장 필요)*
-- **선제적 자동 복구**: 위험도가 임계치를 넘으면 장애 발생 전 Kubernetes API(Argo Rollouts promotion)로 트래픽 전환 *(API promotion 방식 실측 검증 완료, 정책 결정 서비스 본 구현은 개발 예정)*
-- **감사 가능한 복구 이력**: 복구 조치의 판단 근거와 실행 결과를 Git에 구조화하여 기록, 사후 추적 가능 *(개발 예정)*
-- **정량적 성능 검증**: 복구 지연시간 단계별 분해, 가용성, 정확성 등 종합 평가 *(개발 예정)*
+- **이상 탐지 기반 위험도 산정**: K8s 지표(CPU·메모리) + vLLM 고유 지표(큐 길이, KV Cache 사용률)를 Isolation Forest로 분석해 장애 전조 감지 *(최소 모델 완료 — 정상 표본 19개, 허위양성률·시나리오별 탐지 검증은 진행 필요)*
+- **선제적 자동 복구**: 위험도가 임계치를 넘으면 장애 발생 전 Kubernetes API(Argo Rollouts promotion)로 트래픽 전환 *(정책 결정 서비스 구현·API promotion 실측 E2E 검증 완료 — rule-out 반대증거 체크는 항상 False로 현재 범위 제외, [recovery-policy/main.py](recovery-policy/main.py) 참고)*
+- **감사 가능한 복구 이력**: 복구 조치의 판단 근거와 실행 결과를 Git에 구조화하여 기록, 사후 추적 가능 *(구현 완료)*
+- **정량적 성능 검증**: 복구 지연시간 단계별 분해, 가용성, 정확성 등 종합 평가 *(측정 하네스·집계기 구현 완료, 본 실험(4종×3arm×5회) 실행은 예정)*
 
 ## 🛠️ 기술 스택
 
@@ -44,10 +44,10 @@ capstone-k8s-recovery/
 ├── chaos/                          # Chaos Mesh 장애 시나리오 4종 + 무개입 대조군(예정)
 │   └── loadgen/                    # 고정 도착률(open-loop) 부하 생성기
 │
-├── anomaly-detection/               # 이상 탐지 모델 (Isolation Forest) — 최소 버전 완료, 정상 데이터 확장 필요
-├── recovery-policy/                 # 복구 정책 결정 서비스 — Phase 2.5 API promotion PoC 완료, 본 구현 예정
+├── anomaly-detection/               # 이상 탐지 모델 (Isolation Forest) — 최소 버전 완료(정상 표본 19개), 검증 강화 필요
+├── recovery-policy/                 # 복구 정책 결정 서비스 — 구현·E2E 검증 완료 (rule-out 반대증거 체크는 범위 제외)
 │
-└── experiments/                     # BlueGreen prep·SLO 판정·calibration 오케스트레이션 완료, 3-way 비교는 개발 예정
+└── experiments/                     # BlueGreen prep·SLO 판정·calibration 오케스트레이션 완료, 전체 60회 실행 스크립트(run_all_scenarios.py)는 예정
 ```
 
 ## 🚧 진행 상태
@@ -60,8 +60,14 @@ capstone-k8s-recovery/
 - [x] 관측성 스택 (Prometheus + Grafana + Alertmanager)
 - [x] 장애 시나리오 4종 검증 (Pod kill / 메모리 압력 / 부하 증가 / 네트워크 열화)
 - [ ] 무개입 대조군 실행 스크립트 (calibration 오케스트레이션은 완료, 3-way 비교 자동화는 예정)
-- [x] 이상 탐지 모델 (최소 버전 — 정상 표본 7개, 확장 필요)
-- [ ] 복구 정책 결정 서비스 (API promotion PoC 완료, 본 구현 진행 중)
+- [x] 이상 탐지 모델 (최소 버전 — 정상 표본 19개, 검증 강화 필요)
+- [x] 복구 정책 결정 서비스 (구현·E2E 검증 완료 — rule-out 반대증거 체크는 범위 제외)
 - [ ] 실험 및 측정
 
 > 진행 상태는 위 체크리스트로 갱신됩니다. 시나리오별 실측 결과와 트러블슈팅 상세는 `docs/design/`를 참고하세요.
+
+## ⚠️ 알려진 제한사항
+
+- **이상 탐지 검증 깊이**: 정상 표본 19개로 정상/이상 점수가 갈리는 것은 확인했으나, 학습에 쓰지 않은 데이터 기준 허위양성률, 시나리오별(부하·메모리·네트워크) 탐지 확인, 탐지 리드타임 측정은 아직 없음.
+- **rule-out(반대증거) 체크 미구현**: `recovery-policy`의 `PolicyContext.has_contradicting_evidence`는 항상 `False`로 고정되어 있음 — 무엇을 반대증거(예: 최근 배포 이력)로 볼지는 의도적으로 범위 밖([recovery-policy/main.py](recovery-policy/main.py) 참고).
+- **본 실험 미실행**: 하네스(`run_once.py`, `slo_judge.py`, `collect_metrics.py`)와 개별 시나리오 어댑터는 검증 완료 상태지만, 4종×3arm×5회(총 60회) 본 실험은 아직 실행 전.

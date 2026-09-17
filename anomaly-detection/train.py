@@ -2,9 +2,11 @@
 """정상 상태 구간(data/regimes.jsonl)의 특성 벡터로 Isolation Forest를
 학습한다. scaler는 이 학습 데이터에만 fit한다(평가 데이터 유출 방지 -
 guideline.md Phase 6 원칙).
-# ponytail: 정상 구간 표본이 7개뿐 - Phase 6 본 구현에서 정상 데이터
-# 다양성/개수를 늘려야 한다(guideline.md 9-4절). 지금은 "정상/이상 점수가
-# 갈리는지" 최소 확인이 목적.
+# ponytail: 정상 구간 표본이 19개(idle/warmup/post_startup/
+# active_preview_concurrent/low_load/sustained_load/burst 7종 regime) -
+# 다양성을 더 늘리기보다 현재 특성(평균·기울기)의 허위양성률과 시나리오별
+# 탐지 여부부터 검증하는 게 먼저다(Phase 6 본 구현 대기, guideline.md 9-4절).
+# 지금은 "정상/이상 점수가 갈리는지" 최소 확인이 목적.
 """
 import json
 import pickle
