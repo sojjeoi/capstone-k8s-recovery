@@ -14,6 +14,12 @@
 > v2를 구현한 뒤, 완성도 점검에서 나온 문서 불일치·`network_degrade`
 > 어댑터 설계 요청에 대응했다 — §8 참고. 실클러스터 작업은 여전히 없음
 > (v2 실측 재검증·network_degrade 실제 실행 모두 다음 세션 이후로 보류).
+> `network_degrade` 오프라인 구현·집계 경로(comparison.csv 연동 포함)는
+> §8.7에서 완료됐다 — §8.8에서 다음 세션 순서를 확정: tolerant probe
+> calibration은 overlay가 새 preview vLLM을 띄워 CPU headroom 문제(§3.2)를
+> 재발시킬 수 있어, AllInjected 최소강도 파일럿(overlay 미적용, 지금도
+> 가능) → CPU headroom 해결·콜드스타트 3회 확인 → tolerant calibration
+> 순서로 미룬다.
 
 ## 1. Preflight 체크리스트 — 전부 통과
 
@@ -717,9 +723,26 @@ tolerant+무교체->probe_isolation_held=true), 오해소지 issue 검출,
 단위로 직접 확인하는 테스트. 오프라인 스위트 75 passed, 2 skipped
 (live_cluster). 실클러스터 작업 없음 - 이 커밋도 별도 fix 커밋으로 분리.
 
-**아직 안 한 것(다음 세션, 별도 명시적 승인 필요)**: overlay 실제
-적용·promote·calibration 스크립트 실행·10초 후보값 확정, `network_degrade`
-실클러스터 첫 trial, `memory_pressure_adapter.py`, Isolation Forest 검증
-강화, CPU headroom 해결, 3-arm 파일럿. 오프라인 스위트 전체 64 passed,
-2 skipped(live_cluster) - `test_pod_kill_adapter.py`(리팩터 후 재확인)
-5개, `test_network_degrade_adapter.py`(신규) 5개 포함.
+**§8.8 다음 세션 순서 확정(2026-09-18) - tolerant calibration은 CPU
+headroom 해결 전까지 보류**: overlay 적용은 Rollout의 Pod template을
+바꾸는 것이라 BlueGreen 특성상 새 preview vLLM이 뜬다 - 이게 아직 해결
+안 된 8코어 노드의 CPU headroom 문제(§3.2)를 다시 일으킬 위험이 있다.
+그래서 tolerant probe calibration을 AllInjected 실측 확인보다 먼저 하면
+안 된다(지적받음) - 안전한 순서는 다음과 같다.
+
+1. 노드·네트워크 preflight
+2. 현재 기본(default) probe에서 최소 강도로 AllInjected -> 삭제 ->
+   AllRecovered/잔존물 없음 경로만 파일럿 검증 - 단일 active pod 그대로,
+   overlay 미적용이라 2번째 vLLM을 안 띄우므로 CPU headroom과 무관하게
+   지금도 가능
+3. CPU headroom 해결 + vLLM 콜드스타트 3회 안정성 확인
+4. 그 다음에야 `gitops/apps/vllm-serving/overlays/network-tolerant/`
+   적용 + `calibrate_network_tolerant_probe.py`로 실제 timeout calibration
+5. 확정된 값으로 NetworkChaos 전체 파일럿
+
+**아직 안 한 것(다음 세션, 위 순서대로·각 단계 별도 명시적 승인 필요)**:
+위 1~5단계 전부, `memory_pressure_adapter.py`, Isolation Forest 검증
+강화. 오프라인 스위트 전체 75 passed, 2 skipped(live_cluster) -
+`test_pod_kill_adapter.py`(리팩터 후 재확인) 5개, `test_network_degrade_
+adapter.py`(신규) 8개, `test_collect_metrics.py`(target_replaced 연동)
+28개 포함.
