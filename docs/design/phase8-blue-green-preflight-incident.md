@@ -6,7 +6,11 @@
 > 끝까지 성공 검증했지만, 그 과정에서 발견한 리소스 문제 때문에 3-arm
 > 파일럿은 보류한다. **후속(2026-09-17 새벽)**: `pod_kill` native E2E 실행
 > 전 preflight에서 같은 사건의 잔존 영향으로 보이는 pod 간 네트워크
-> 간헐적 이상을 발견해 주입을 다시 보류했다 — §5 참고.
+> 간헐적 이상을 발견해 주입을 다시 보류했다 — §5 참고. **후속2(2026-09-17
+> 밤)**: 진단 통과 후 pod_kill native 하니스 버그(§6) 발견·수정을 거쳐
+> `pod_kill native 경로 E2E 완료`(§7) - 단, 본 실험 전 타임스탬프 의미
+> 보완이 남아 있다(§7.4). 3-arm 파일럿은 여전히 노드 CPU headroom 문제
+> (§3.2) 해결 전까지 보류.
 
 ## 1. Preflight 체크리스트 — 전부 통과
 
@@ -418,3 +422,94 @@ evaluable"`, `slo_evaluable_at_exit: false` 추가, `notes`에 재분류 사유 
 코드 수정·테스트는 완료했으나 **재실행은 아직 하지 않았다** - §5.4의
 재확인 요건(세 경로 10~15분 재검증, replacement vLLM Ready, Node 상태 등)을
 다시 통과해야 한다.
+
+**(2026-09-17 밤 재실행 완료 - §7 참고.)**
+
+## 7. pod_kill native 경로 E2E 완료 (2026-09-17 밤)
+
+§5.4 게이트(코드 43 passed·2 skipped, Node·pod·CR·quiescent 정상, 3경로
+10분 351/351 성공 - 단, 첫 10분 검증은 pod_kill로 이미 죽은 옛 pod를 스크립트가
+계속 찌른 자체 버그였고 원인 확인 후 스크립트를 현재 active pod를 동적으로
+조회하도록 고쳐 재검증함)를 전부 통과한 뒤 재실행했다.
+
+### 7.1 결과 요약
+
+`pod_kill × native`(`run_id=pilot-pod_kill-native-01-20260917T145337Z`,
+기존 오판정 실행 `...20260917T104638Z`와 명확히 구분되는 새 run_id,
+`is_pilot=true`)에서 기존 Pod 소멸, SLO 위반, replacement Pod Ready 및
+SLO 회복까지 E2E 흐름을 확인했다. Node와 하니스는 전 구간(Node·kubelet/
+containerd 감시, 주입 전부터 시작 + 실행 중 localhost 감시를 replacement
+pod로 동적 전환) 정상적으로 동작했다 - kubelet/containerd 경고 0건,
+Node Ready·MemoryPressure 정상 유지.
+
+| 항목 | 값 |
+|---|---|
+| `injection_valid` | `true` |
+| `t_injection` | `14:54:47.378`(폴링 확인 시각) |
+| `injection_observation_error_sec` | `null`(첫 poll에서 이미 죽어있어 기준점 없음) |
+| `t_slo` | `14:54:46.879` |
+| `t_recovery` | `14:57:52.880` |
+| `outcome` | `recovered` |
+| `action`/`promotion_verified`/`commit_sha`/`detected` | `none`/`null`/`null`/`false`(native라 전부 무개입 - 정상) |
+| replacement pod | `vllm-serving-7b98b55c65-gm5bm`, 1/1 Ready |
+| Chaos CR·experiment context | 정리 확인(`podchaos` 없음, `experiment-run=null`) |
+
+**기능 검증: 통과. `pod_kill native 경로 E2E 완료`로 기록한다.**
+
+### 7.2 발견 — `t_slo`가 `t_injection`보다 0.5초 빠름(기능 실패 아님)
+
+다만 `t_slo < t_injection`은 "문제없음"으로 넘기지 않고 타임스탬프 의미
+차이로 인한 측정 설계 보완 사항으로 남긴다. 현재 두 값의 의미:
+
+- `t_injection`: 기존 Pod 소멸을 **처음 관측한** 시각 - 실제 장애 시각의
+  상한일 뿐, 정확한 시각이 아니다.
+- `t_slo`: 나중에 실패로 확정된 요청을 **처음 전송한**(`sent_at`) 시각 -
+  완료(실패 확정) 시각이 아니다.
+
+요청 전송 후 Pod가 죽어 그 요청이 실패했다면 `t_slo`가 `t_injection`보다
+앞서는 것 자체는 가능하다(이번 사례: `sent_at=14:54:46.879`에 보낸 요청이
+2.54초 뒤 실패로 확정됨 - raw probe CSV로 직접 확인). 하지만 **아직
+실패하지도 않은 전송 시각**을 SLO 위반 시각으로 쓰는 것은, 본 실험에서
+`t_detection`과 `t_SLO`를 비교할 때(탐지가 SLO 위반보다 먼저 오는지 확인)
+의미가 모호해진다.
+
+### 7.3 이번 파일럿 처리
+
+- 기능 검증: 통과
+- `outcome`: `recovered`(그대로)
+- 본 분석: `is_pilot=true`로 제외(원래도 제외 대상)
+- 정량 timing 검증: **타임스탬프 의미 보완 전까지 참고값**(trial JSON
+  `notes`에 동일 내용 기록)
+- 재실행: 이 문제만을 이유로 즉시 다시 할 필요 없음
+
+### 7.4 본 실험 전 보완 사항 — 타임스탬프 의미 분리(미구현, 다음 세션)
+
+1. **주입 시각을 구간으로 기록**
+   - `t_injection_request`: Chaos CR 요청 직전 시각
+   - `t_injection_last_seen`: 기존 Pod를 마지막으로 확인한 시각
+   - `t_injection_observed`: 기존 Pod 소멸을 처음 확인한 시각(현재의
+     `t_injection`)
+   - 첫 poll에서 이미 사라졌다면(`injection_observation_error_sec=null`인
+     경우) 실제 장애는 최소한 `t_injection_request ~ t_injection_observed`
+     구간에 있었다고 표현한다.
+2. **SLO 시각 의미 분리**
+   - `t_request_sent`: 요청 전송 시각(현재 raw CSV의 `sent_at`)
+   - `t_request_completed`: 실패·timeout이 확정된 시각(`sent_at + latency`)
+   - `t_slo`: 해당 샘플까지 포함해 SLO 위반을 판정할 수 있게 된 시각 -
+     **현재처럼 실패 요청의 `sent_at`을 그대로 쓰지 말고, 최소한
+     `sent_at + latency`로 계산한 완료 시각을 쓰는 것이 더 방어적이다**
+     (롤링 P95·실패율도 요청이 완료돼야 계산 가능하므로).
+3. **`collect_metrics.py` 판단 로직 추가**
+   - `t_slo < t_injection_request` → "주입 전 위반 의심"
+   - `t_slo`가 주입 관측 구간(`t_injection_request`~`t_injection_observed`)
+     안에 있음 → `temporally_ambiguous`
+   - `t_slo >= t_injection_observed` → 정상적인 사후 위반
+
+**요약(기록용 확정 문구)**: `pod_kill × native` 파일럿에서 기존 Pod 소멸,
+SLO 위반, replacement Pod Ready 및 SLO 회복까지 E2E 흐름을 확인했다. Node와
+하니스는 전 구간 정상적으로 동작했다. 다만 현재 `t_slo`는 실패 요청의
+전송 시각, `t_injection`은 Pod 소멸의 최초 관측 시각이어서 `t_slo`가
+0.5초 앞서는 결과가 발생했다. 이는 기능 실패가 아니라 서로 다른 관측
+기준에서 생긴 시간적 모호성이며, 본 실험 전 요청 완료 시각과 주입 관측
+구간을 별도 기록하도록 보완한다. 즉, E2E 완료 표시는 가능하지만 정량
+타이밍 정의는 본 실험 전에 한 번 더 고정해야 한다.
