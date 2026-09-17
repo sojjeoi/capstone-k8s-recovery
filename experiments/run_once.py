@@ -199,6 +199,15 @@ class TrialResult:
     slo_version: str = "v2"
     latency_slo_sec: Optional[float] = None
     probe_rps: float = 1.0
+    # network_degrade 전용(2026-09-18 추가) - "default"/"network_tolerant" 중
+    # 실제로 어떤 K8s readiness/livenessProbe.timeoutSeconds 설정으로 돌았는지
+    # 기록한다. 위 probe_profile(SLO 측정용 HTTP probe 설정)과는 다른 축이다 -
+    # 이건 K8s 자체 헬스체크 probe를 가리킨다. "default"는 K8s 기본값(1초,
+    # 발견 5의 재시작 연쇄장애를 그대로 재현), "network_tolerant"는
+    # gitops/overlays/vllm-serving-network-tolerant/ overlay 적용 상태.
+    # network_degrade 외 시나리오·미적용 trial은 None.
+    readiness_probe_profile: Optional[str] = None
+    readiness_probe_timeout_sec: Optional[float] = None
     # "prevented" 조기 종료를 막는 최소 관찰시간(초, run_once()의 동명
     # 파라미터 값을 그대로 기록 - 2026-09-17 추가). 이 값이 trial마다
     # 달랐는지 사후에 재현성 검증하려면 결과 자체에 남아야 한다.
@@ -357,6 +366,8 @@ def run_once(
     probe_rps: float = 1.0,
     results_dir: Optional[Path] = None,
     min_observation_sec: float = 0.0,
+    readiness_probe_profile: Optional[str] = None,
+    readiness_probe_timeout_sec: Optional[float] = None,
 ) -> TrialResult:
     results_dir = results_dir or RESULTS_DIR
     # run_id를 밖에서 넘길 수 있게 한 이유: injector/prober는 run_once() 호출
@@ -372,6 +383,8 @@ def run_once(
         is_pilot=is_pilot, probe_profile=probe_profile, slo_version=slo_version,
         latency_slo_sec=latency_slo_sec, probe_rps=probe_rps,
         min_observation_sec=min_observation_sec,
+        readiness_probe_profile=readiness_probe_profile,
+        readiness_probe_timeout_sec=readiness_probe_timeout_sec,
     )
     _write_result(result, results_dir)
     critical_failures: list = []
