@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from blue_green_prep import prepare_preview_with_rollback, wait_until_rolled_back
+from blue_green_prep import cleanup_unpromoted_preview, prepare_preview_with_rollback, wait_until_rolled_back
 
 
 def test_ready_within_timeout_no_rollback():
@@ -105,6 +105,54 @@ def test_wait_until_rolled_back_gives_up_after_timeout():
     print("OK - timeout 내내 수렴 안 되면 False(호출자가 HarnessCorrupted로 승격)")
 
 
+def test_cleanup_unpromoted_preview_aborts_when_not_promoted():
+    # 2026-09-19 추가 - fixed_threshold pilot 재실행에서 실측 발견: preview
+    # 준비는 성공했는데 detector가 promote를 안 하면 아무도 안 치워서
+    # Rollout이 2-revision으로 방치됐다. activeSelector가 여전히 준비 전
+    # 값이면(=promote 안 됨) 우리가 만든 pod_hash만 abort 대상으로 삼는다.
+    prep_info = {"ready": True, "pre_prepare_active_selector": "stableA", "created_pod_hash": "previewB"}
+    with patch("blue_green_prep.get_blue_green_status", return_value={"active_selector": "stableA", "current_pod_hash": "previewB"}), \
+         patch("blue_green_prep.abort_preview") as mock_abort, \
+         patch("blue_green_prep.wait_until_rolled_back", return_value=True) as mock_verify:
+        result = cleanup_unpromoted_preview(prep_info, "vllm-serving", "vllm-serving")
+    assert result is True
+    mock_abort.assert_called_once_with("vllm-serving", "vllm-serving")
+    mock_verify.assert_called_once_with("vllm-serving", "vllm-serving", "stableA", "previewB")
+    print("OK - promote 안 된 preview는 trial 종료 시 자동 abort됨")
+
+
+def test_cleanup_unpromoted_preview_skips_when_promoted():
+    # activeSelector가 우리 pod_hash로 바뀌어 있으면(=실제로 promote됨)
+    # 그건 이제 active이므로 절대 건드리면 안 된다.
+    prep_info = {"ready": True, "pre_prepare_active_selector": "stableA", "created_pod_hash": "previewB"}
+    with patch("blue_green_prep.get_blue_green_status", return_value={"active_selector": "previewB", "current_pod_hash": "previewB"}), \
+         patch("blue_green_prep.abort_preview") as mock_abort:
+        result = cleanup_unpromoted_preview(prep_info, "vllm-serving", "vllm-serving")
+    assert result is None
+    mock_abort.assert_not_called()
+    print("OK - promote된 preview(이제 active)는 손대지 않음")
+
+
+def test_cleanup_unpromoted_preview_noop_when_prep_none_or_not_ready():
+    with patch("blue_green_prep.abort_preview") as mock_abort:
+        assert cleanup_unpromoted_preview(None, "vllm-serving", "vllm-serving") is None
+        assert cleanup_unpromoted_preview({"ready": False}, "vllm-serving", "vllm-serving") is None
+    mock_abort.assert_not_called()
+    print("OK - preview 자체가 없거나(native) 준비 실패였으면(이미 timeout-rollback이 처리) 정리 스킵")
+
+
+def test_cleanup_unpromoted_preview_fail_closed_on_unexpected_pod_hash():
+    # 우리가 만든 pod_hash와 현재 currentPodHash가 다르면(우리 이후 다른
+    # 변경이 있었을 가능성) 무엇을 지울지 확신할 수 없으므로 건드리지 않는다.
+    prep_info = {"ready": True, "pre_prepare_active_selector": "stableA", "created_pod_hash": "previewB"}
+    with patch("blue_green_prep.get_blue_green_status", return_value={"active_selector": "stableA", "current_pod_hash": "someoneElse"}), \
+         patch("blue_green_prep.abort_preview") as mock_abort:
+        result = cleanup_unpromoted_preview(prep_info, "vllm-serving", "vllm-serving")
+    assert result is None
+    mock_abort.assert_not_called()
+    print("OK - currentPodHash가 예상과 다르면 fail-closed로 정리 스킵")
+
+
 if __name__ == "__main__":
     test_ready_within_timeout_no_rollback()
     test_timeout_triggers_rollback_and_succeeds()
@@ -112,4 +160,8 @@ if __name__ == "__main__":
     test_external_interference_skips_rollback_fail_closed()
     test_wait_until_rolled_back_polls_until_converged()
     test_wait_until_rolled_back_gives_up_after_timeout()
+    test_cleanup_unpromoted_preview_aborts_when_not_promoted()
+    test_cleanup_unpromoted_preview_skips_when_promoted()
+    test_cleanup_unpromoted_preview_noop_when_prep_none_or_not_ready()
+    test_cleanup_unpromoted_preview_fail_closed_on_unexpected_pod_hash()
     print("전체 통과")

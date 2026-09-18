@@ -3291,3 +3291,53 @@ invalid_run 결과)은 `outcome`/`invalid_reason`/타임스탬프 등 핵심
 이미 참이었고, `included_in_main_analysis: false`만 새로 추가해 향후
 60회 본 실험 집계에서 이 실행이 제외 대상임을 명시했다(이유:
 preview 준비 timeout - 위 §35.1/35.2 참고).
+
+### 35.8 재실행 결과 + 두 번째 gap(성공했지만 promote 안 된 preview 방치)
+
+`load_ramp × fixed_threshold` 01회를 새 run_id(`pilot-load_ramp-
+fixed_threshold-01-20260918T174240Z`)로 재실행 - `outcome=recovered`,
+`state=completed`. preview는 203.2초 만에 Ready(480초 이내, rollback
+불필요 - `preview_rollback_attempted=false`/`rollback_ok=null`로
+정확히 기록됨). `t_slo`(17:55:01.230)~`t_recovery`(17:55:06.276) 5초
+차이가 비정상으로 보여 원본 raw CSV에 **미수정** `slo_judge.py`를
+독립 재실행해 검증 - 기록값과 정확히 일치, 짧고 국소적인 지연
+스파이크가 30초 지속 조건을 막 채운 뒤 곧바로 회복한 정상 판정임을
+확인했다(버그 아님). `detected=false`/`action=none`(fixed_threshold
+미탐지, 시스템 자연 회복) - `outcome`이 탐지·조치와 독립적으로 SLO
+궤적만으로 판정되는 기존 스키마상 유효한 결과.
+
+트라이얼 종료 후 클러스터를 재확인하는 과정에서 **오늘 고친 것과는
+다른 gap**을 실측으로 발견했다: preview(`vllm-serving-7547d884-tmcsp`)가
+정상적으로 Ready됐지만 detector가 끝내 promote를 안 했고, trial이
+끝난 뒤에도 그대로 남아 Rollout이 2-revision 상태로 방치됐다.
+`prepare_preview_with_rollback()`의 rollback은 "timeout일 때"만
+동작하므로, "성공했지만 안 쓰인" preview는 애초에 그 경로를 안 탄다 -
+`wrap_injector_with_preview_prep()`이 `injector.prepare`만 감싸고
+`injector.cleanup`은 그대로 둬서, promote 없이 끝나는 모든 trial(미탐지·
+`prevented`·`timeout` 등 - 오히려 흔한 케이스)에서 재발할 수 있는
+구조적 gap이었다.
+
+승인받은 대로 두 가지를 했다: (1) 방치된 preview를 `cleanup_
+unpromoted_preview()`(신규)로 즉시 정리 - activeSelector가 여전히
+준비 전 값(=promote 안 됨)임을 확인한 뒤 해당 pod_hash만 abort하고
+단일 revision 복원을 실측 재확인(`cleanup result: True`, active pod
+`85c55758c6-ljc6n`는 무변경 유지). (2) 재발 방지 코드 - `blue_green_
+prep.prepare_preview_with_rollback()`의 반환 dict에 `pre_prepare_
+active_selector`/`created_pod_hash`를 추가하고, 신규 `cleanup_
+unpromoted_preview(prep_info, name, namespace)`가 activeSelector
+불변(=미promote)이면 우리가 만든 pod_hash만 abort+복원 재확인,
+이미 promote됐으면(activeSelector가 우리 pod_hash로 전환) 손대지
+않는다(그건 이제 진짜 active - 옛 stable은 Rollout 컨트롤러 자신의
+`scaleDownDelaySeconds`가 정리). `arm_controller.wrap_injector_
+with_preview_prep()`이 `injector.cleanup`도 감싸 원본 cleanup() 실행
+후(원본이 실패해도 독립적으로) 이 정리를 시도하고, 정리 자체가
+실패하면 예외를 던져 `run_once.py`의 기존 `injector.cleanup()` 실패
+처리(critical_failures -> 배치 끝에서 HarnessCorrupted)를 그대로
+재사용한다(새 심각도 체계를 따로 안 만듦).
+
+회귀 테스트 8개 추가(`test_blue_green_prep.py` 4개 - 미promote시
+abort/promote됐으면 스킵/preview 자체가 없으면 스킵/pod_hash 불일치
+시 fail-closed, `test_arm_controller.py` 4개 - 원본 cleanup 후 이어서
+실행되는 순서 확인/prepare 안 됐으면 스킵/정리 실패 시 예외 전파/원본
+cleanup이 실패해도 독립적으로 실행). 오프라인 스위트 226 passed, 2
+deselected(live_cluster). `proposed`는 아직 실행하지 않음.

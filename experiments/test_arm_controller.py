@@ -204,6 +204,106 @@ def test_wrap_injector_with_preview_prep_external_interference_raises_harness_co
     print("OK - 외부 개입 감지 시 rollback 시도 없이 HarnessCorrupted(fail-closed)")
 
 
+def test_wrap_injector_cleanup_aborts_unpromoted_preview_after_original_cleanup():
+    # 2026-09-19 추가 - fixed_threshold pilot 재실행에서 실측 발견한 gap:
+    # preview 준비는 성공했는데 detector가 promote를 안 하면 trial 종료
+    # 시 아무도 그 preview를 안 치웠다. 원본 cleanup()이 먼저 실행되고,
+    # 그 다음 미promote preview 정리가 시도돼야 한다(순서 확인).
+    calls = {"order": []}
+
+    def fake_prepare_preview(name, namespace, timeout):
+        return {"ready": True, "t_prep_start": "t0", "t_preview_ready": "t1", "prep_duration_sec": 200.0,
+                "external_interference": False, "rollback_attempted": False, "rollback_ok": None,
+                "aborted_pod_hash": None, "pre_prepare_active_selector": "stableA", "created_pod_hash": "previewB"}
+
+    def fake_cleanup_preview(prep_info, name, namespace):
+        calls["order"].append("cleanup_preview")
+        assert prep_info["created_pod_hash"] == "previewB"
+        return True
+
+    injector = Injector(prepare=lambda: None, inject=lambda: None, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True,
+                         cleanup=lambda: calls["order"].append("original_cleanup"))
+    wrapped = wrap_injector_with_preview_prep(
+        injector, "fixed_threshold", prepare_preview_fn=fake_prepare_preview, cleanup_preview_fn=fake_cleanup_preview,
+    )
+    wrapped.prepare()
+    wrapped.cleanup()
+    assert calls["order"] == ["original_cleanup", "cleanup_preview"], calls["order"]
+    print("OK - trial 종료 시 원본 cleanup() 후 미promote preview 정리가 이어서 실행됨(순서 확인)")
+
+
+def test_wrap_injector_cleanup_skips_preview_check_when_no_prep_happened():
+    # prepare()가 아직 호출 안 됐으면(예: prepare() 자체가 실패해서 quiescence
+    # 단계에서 일찍 끝난 경우) prep_state가 비어있다 - cleanup_preview_fn에
+    # None이 그대로 전달돼 정리할 게 없음을 스스로 판단하게 한다.
+    calls = {"prep_info_seen": "not-called"}
+
+    def fake_cleanup_preview(prep_info, name, namespace):
+        calls["prep_info_seen"] = prep_info
+        return None
+
+    injector = Injector(prepare=lambda: None, inject=lambda: None, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True, cleanup=lambda: None)
+    wrapped = wrap_injector_with_preview_prep(injector, "proposed", cleanup_preview_fn=fake_cleanup_preview)
+    wrapped.cleanup()  # prepare() 없이 바로 cleanup()만 호출
+    assert calls["prep_info_seen"] is None
+    print("OK - prepare()가 실행된 적 없으면 cleanup_preview_fn에 None이 전달됨")
+
+
+def test_wrap_injector_cleanup_raises_when_preview_cleanup_fails():
+    # 미promote preview 정리 자체가 실패하면(activeSelector 복원 또는
+    # scale-down 확인 안 됨) run_once()의 기존 injector.cleanup() 실패
+    # 처리(critical_failures -> HarnessCorrupted)를 타도록 예외를 던져야 한다.
+    def fake_prepare_preview(name, namespace, timeout):
+        return {"ready": True, "t_prep_start": "t0", "t_preview_ready": "t1", "prep_duration_sec": 200.0,
+                "external_interference": False, "rollback_attempted": False, "rollback_ok": None,
+                "aborted_pod_hash": None, "pre_prepare_active_selector": "stableA", "created_pod_hash": "previewB"}
+
+    injector = Injector(prepare=lambda: None, inject=lambda: None, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True, cleanup=lambda: None)
+    wrapped = wrap_injector_with_preview_prep(
+        injector, "fixed_threshold", prepare_preview_fn=fake_prepare_preview,
+        cleanup_preview_fn=lambda prep_info, name, namespace: False,  # 정리 실패 시뮬레이션
+    )
+    wrapped.prepare()
+    raised = False
+    try:
+        wrapped.cleanup()
+    except RuntimeError as e:
+        raised = True
+        assert "previewB" in str(e)
+    assert raised, "미promote preview 정리 실패는 예외로 전파돼야 함(run_once가 HarnessCorrupted로 승격)"
+    print("OK - 미promote preview 정리 실패 시 예외 전파(기존 injector.cleanup() 실패 경로 재사용)")
+
+
+def test_wrap_injector_cleanup_runs_preview_check_even_if_original_cleanup_raises():
+    # 시나리오 자체 cleanup()이 실패해도 preview 정리는 독립적으로 시도돼야
+    # 한다(run_once.py의 기존 "각 정리 단계는 서로 독립" 원칙과 동일).
+    calls = {"cleanup_preview_called": False}
+
+    def raising_original_cleanup():
+        raise RuntimeError("시나리오 자체 cleanup 실패 시뮬레이션")
+
+    def fake_cleanup_preview(prep_info, name, namespace):
+        calls["cleanup_preview_called"] = True
+        return None
+
+    injector = Injector(prepare=lambda: None, inject=lambda: None, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True, cleanup=raising_original_cleanup)
+    wrapped = wrap_injector_with_preview_prep(injector, "proposed", cleanup_preview_fn=fake_cleanup_preview)
+
+    raised = False
+    try:
+        wrapped.cleanup()
+    except RuntimeError as e:
+        raised = True
+        assert "시나리오 자체" in str(e)
+    assert raised, "원본 cleanup() 예외는 그대로 전파돼야 함"
+    assert calls["cleanup_preview_called"], "원본 cleanup()이 실패해도 preview 정리는 독립적으로 시도돼야 함"
+    print("OK - 원본 cleanup() 실패해도 미promote preview 정리는 독립적으로 실행됨")
+
+
 def test_make_detector_for_arm_reachability_check_blocks_start_when_unreachable():
     detector = make_detector_for_arm("fixed_threshold", "run-1", reachability_check_fn=lambda url: False)
     raised = False
@@ -298,6 +398,10 @@ if __name__ == "__main__":
     test_wrap_injector_with_preview_prep_failure_blocks_original_prepare()
     test_wrap_injector_with_preview_prep_rollback_failure_raises_harness_corrupted()
     test_wrap_injector_with_preview_prep_external_interference_raises_harness_corrupted_without_rollback()
+    test_wrap_injector_cleanup_aborts_unpromoted_preview_after_original_cleanup()
+    test_wrap_injector_cleanup_skips_preview_check_when_no_prep_happened()
+    test_wrap_injector_cleanup_raises_when_preview_cleanup_fails()
+    test_wrap_injector_cleanup_runs_preview_check_even_if_original_cleanup_raises()
     test_make_detector_for_arm_reachability_check_blocks_start_when_unreachable()
     test_make_detector_for_arm_reachability_check_passes_allows_start()
     test_prometheus_check_blocks_start_when_unreachable()

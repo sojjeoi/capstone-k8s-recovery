@@ -25,6 +25,7 @@ from urllib.parse import urlsplit, urlunsplit
 import requests
 
 from blue_green_prep import PREVIEW_PREP_TIMEOUT_SEC
+from blue_green_prep import cleanup_unpromoted_preview as _real_cleanup_unpromoted_preview
 from blue_green_prep import prepare_preview_with_rollback as _real_prepare_preview_with_rollback
 from run_once import Detector, HarnessCorrupted, Injector, TrialInvalid
 
@@ -205,6 +206,7 @@ def wrap_injector_with_preview_prep(
     rollout_name: str = "vllm-serving", namespace: str = "vllm-serving",
     prepare_preview_fn: Callable[[str, str, float], dict] = _real_prepare_preview_with_rollback,
     preview_prep_timeout_sec: float = PREVIEW_PREP_TIMEOUT_SEC,
+    cleanup_preview_fn: Callable[[Optional[dict], str, str], Optional[bool]] = _real_cleanup_unpromoted_preview,
 ) -> Injector:
     """native는 원본 injector를 그대로 반환(계약서 §1 - standby 자체가
     없음). non-native면 injector.prepare()가 (시나리오별 기존 prepare()
@@ -228,13 +230,28 @@ def wrap_injector_with_preview_prep(
     injector.get_preview_prep_info()로 노출한다 - run_once()가 실패 시에도
     (finally에서) TrialResult에 반영할 수 있게 하기 위함이다.
 
-    prepare_preview_fn은 기본적으로 실제 blue_green_prep.prepare_preview_
-    with_rollback(kubernetes 클라이언트로 실클러스터에 접근)을 쓰지만,
-    테스트에서 가짜 함수를 주입할 수 있게 인자로 열어뒀다."""
+    injector.cleanup()도 함께 감싼다(2026-09-19 추가 - fixed_threshold pilot
+    재실행에서 실측 발견한 별도 gap: preview 준비는 성공했는데 detector가
+    끝내 promote를 안 하고 trial이 끝나면, 위 timeout-rollback 경로를 안
+    타서 아무도 이 preview를 정리하지 않았다 - Rollout이 2-revision으로
+    방치됨). 원본 cleanup()을 먼저 실행하고(시나리오 자체 자원 정리 -
+    실패해도 아래 preview 정리는 독립적으로 계속 시도), 그 다음
+    cleanup_unpromoted_preview()로 "이번 trial이 준비했지만 promote 안 된
+    preview"만 골라 abort + 복원 재확인한다. 이미 promote됐으면(activeSelector가
+    우리 pod_hash로 바뀜) 손대지 않는다 - 그건 이제 진짜 active고, 옛 stable은
+    Rollout 컨트롤러가 알아서 정리한다. 정리 자체가 실패하면 예외를 던져
+    run_once()의 기존 injector.cleanup() 실패 처리(critical_failures ->
+    배치 끝에서 HarnessCorrupted)를 그대로 재사용한다 - 새 심각도 체계를
+    또 만들지 않는다.
+
+    prepare_preview_fn/cleanup_preview_fn은 기본적으로 실제 blue_green_prep의
+    함수(kubernetes 클라이언트로 실클러스터에 접근)를 쓰지만, 테스트에서
+    가짜 함수를 주입할 수 있게 인자로 열어뒀다."""
     if arm not in _DETECTOR_SCRIPTS:
         return injector
 
     original_prepare = injector.prepare
+    original_cleanup = injector.cleanup
     prep_state = {"last": None}
 
     def prepare_with_preview():
@@ -264,6 +281,20 @@ def wrap_injector_with_preview_prep(
             f"preview/Rollout이 방치된 상태로 남았을 수 있음, 수동 확인 필요"
         )
 
+    def cleanup_with_preview_check():
+        try:
+            original_cleanup()
+        finally:
+            ok = cleanup_preview_fn(prep_state["last"], rollout_name, namespace)
+            if ok is False:
+                info = prep_state["last"] or {}
+                raise RuntimeError(
+                    f"trial 종료 시 미promote preview 자동 정리 실패(arm={arm}, "
+                    f"pod_hash={info.get('created_pod_hash')}) - activeSelector 복원 또는 "
+                    f"preview scale-down 확인 안 됨, 수동 확인 필요"
+                )
+
     injector.prepare = prepare_with_preview
+    injector.cleanup = cleanup_with_preview_check
     injector.get_preview_prep_info = lambda: prep_state["last"]
     return injector

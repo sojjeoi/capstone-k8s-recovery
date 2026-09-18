@@ -140,6 +140,12 @@ def prepare_preview_with_rollback(name: str, namespace: str,
         external_interference가 아닐 때만 채워짐 - abort_preview()를 이번
         호출이 만든 preview(bump 직후 읽은 current_pod_hash)에만 수행하고,
         wait_until_rolled_back()으로 실제 복원을 재확인한 결과.
+      pre_prepare_active_selector / created_pod_hash: bump 전 activeSelector와
+        이번 호출이 만든 pod_hash(성공/실패/외부개입 전부 - external_interference면
+        created_pod_hash=None, 우리가 뭘 만들었는지 자체가 불확실하므로) - trial이
+        끝날 때 "이 preview가 promote됐는지"를 판단하는 데 쓰인다(2026-09-19
+        추가, cleanup_unpromoted_preview() 참고 - 성공적으로 준비됐지만 끝내
+        promote 안 된 preview를 trial 종료 시 정리하기 위함).
     """
     before = get_blue_green_status(name, namespace)
     t0 = time.monotonic()
@@ -151,11 +157,14 @@ def prepare_preview_with_rollback(name: str, namespace: str,
         "ready": False, "t_prep_start": t_prep_start, "t_preview_ready": None,
         "prep_duration_sec": None, "external_interference": False,
         "rollback_attempted": False, "rollback_ok": None, "aborted_pod_hash": None,
+        "pre_prepare_active_selector": before["active_selector"], "created_pod_hash": None,
     }
 
     if after_bump["active_selector"] != before["active_selector"]:
         result["external_interference"] = True
         return result
+
+    result["created_pod_hash"] = after_bump["current_pod_hash"]
 
     deadline = t0 + timeout
     while time.monotonic() < deadline:
@@ -173,6 +182,40 @@ def prepare_preview_with_rollback(name: str, namespace: str,
     abort_preview(name, namespace)
     result["rollback_ok"] = wait_until_rolled_back(name, namespace, before["active_selector"], our_hash)
     return result
+
+
+def cleanup_unpromoted_preview(prep_info: Optional[dict], name: str, namespace: str) -> Optional[bool]:
+    """trial 종료 시(2026-09-19 추가) - preview 준비는 성공했지만(ready=True)
+    detector가 끝내 promote를 안 한 채 trial이 끝나면, prepare_preview_with_
+    rollback()의 timeout-rollback 경로를 안 타서 아무도 정리하지 않는 gap이
+    있었다(fixed_threshold pilot 재실행에서 preview가 정상인데도 방치된 채
+    Rollout이 2-revision으로 남는 것을 실측으로 발견 - detector 미탐지/
+    prevented/timeout처럼 promote 없이 끝나는 trial에서 반복될 수 있음).
+
+    prep_info가 None이거나 ready=False면 정리할 게 없다(timeout이면 이미
+    prepare_preview_with_rollback 자신이 처리했고, 애초에 preview가 없었으면
+    (native 등) 볼 것도 없음). ready=True인데 activeSelector가 여전히 준비
+    전 값 그대로면(=promote 안 됨) 우리가 만든 pod_hash만 abort하고 복원을
+    실측 재확인한다. activeSelector가 우리 pod_hash로 이미 바뀌어 있으면
+    (=실제로 promote됨) 그건 이제 새 active이므로 손대지 않는다 - 옛 stable은
+    Rollout 컨트롤러 자신의 scaleDownDelaySeconds 로직이 알아서 정리한다.
+
+    반환: 정리 안 함(None) / 정리 성공(True) / 정리 시도했으나 실패(False -
+    호출자가 예외로 승격해야 함, run_once.py의 기존 injector.cleanup() 실패
+    처리(critical_failures->HarnessCorrupted)를 그대로 재사용하기 위함)."""
+    if prep_info is None or not prep_info.get("ready"):
+        return None
+    pre_active = prep_info.get("pre_prepare_active_selector")
+    our_hash = prep_info.get("created_pod_hash")
+    if our_hash is None:
+        return None
+    current = get_blue_green_status(name, namespace)
+    if current["active_selector"] != pre_active:
+        return None  # promote됨 - 이제 active, 손대지 않음
+    if current["current_pod_hash"] != our_hash:
+        return None  # 우리 이후 다른 변경이 있었을 가능성 - fail-closed로 손대지 않음
+    abort_preview(name, namespace)
+    return wait_until_rolled_back(name, namespace, pre_active, our_hash)
 
 
 if __name__ == "__main__":

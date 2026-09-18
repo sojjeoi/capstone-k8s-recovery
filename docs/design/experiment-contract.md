@@ -243,6 +243,13 @@ SLO·복구시간 판정 기준이 아니라 실험 준비 단계의 최대 대�
 `preview_rollback_attempted`/`preview_rollback_ok`로 결과에 기록된다
 (§5 스키마 반영).
 
+preview 준비가 **성공**했는데 detector가 끝내 promote를 안 하고 trial이
+끝나는 경우(미탐지·`prevented`·`timeout` 등)는 위 timeout-rollback
+경로를 안 타므로 별도 처리가 필요하다 - `injector.cleanup()` 실행 후
+`cleanup_unpromoted_preview()`가 activeSelector가 여전히 준비 전
+값이면(=promote 안 됨) 그 preview만 abort하고 복원을 재확인한다.
+이미 promote됐으면(activeSelector가 전환됨) 손대지 않는다(§35.8).
+
 ## 6. 안전장치 — `run_once()`가 매 trial마다 반드시 함
 
 - 이전 trial의 firing 상태 Alertmanager 알림이 다음 `run_id`로 새지 않도록, trial 사이 **quiescence 대기**(모든 알림이 resolved 상태가 될 때까지) — §4 trial 종료조건③과 동일 개념
