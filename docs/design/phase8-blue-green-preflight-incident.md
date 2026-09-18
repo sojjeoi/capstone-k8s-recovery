@@ -1030,3 +1030,62 @@ BlueGreen 특성상 적용 자체가 새 preview 리비전을 띄운다** - 즉 
 
 각 옵션의 실행 여부·순서는 판단하지 않고 비교만 보고한다. Rollout·노드·
 VM 설정 변경, preview 생성 전부 하지 않았다.
+
+## 11. worker 12코어 확장 가능성 확인 - OpenStack Nova라 기각 (2026-09-18)
+
+30분 한도로 읽기 전용 확인. `kubectl exec`로 `sj-worker`의 DMI 정보를
+직접 조회한 결과 `sys_vendor=OpenStack Foundation`, `product_name=
+OpenStack Nova` - 학교/기관이 운영하는 공유 OpenStack 위의 테넌트
+인스턴스임을 실측 확인했다. 이 세션이 접속한 로컬 노트북(Windows,
+Samsung 960XFG, 논리 프로세서 16개·RAM 16GB)은 하이퍼바이저가 아니다
+(`VBoxManage`/`vmrun`/`virsh` 전부 없음, `~/.ssh/config`에 `sj-control`/
+`sj-worker`가 `ubuntu` 계정+개인키로 원격 등록돼 있어 SSH/kubectl
+클라이언트일 뿐임을 확인 - 애초에 두 VM이 각각 16GB를 쓰는데 이 노트북
+자체가 16GB뿐이라 host일 수 없음).
+
+호스트(OpenStack 컴퓨트 노드)의 실제 물리 코어·스레드 수, 다른
+테넌트와의 오버커밋 비율은 테넌트 권한으로는 확인할 방법이 없다.
+vCPU 변경(flavor resize)은 통상 인스턴스 **정지 후에만** 가능해(hot-
+resize 아님) stop→resize→start 사이클 동안 `sj-worker`(vLLM·recovery-
+policy·chaos-mesh·monitoring 대부분이 위치)가 전부 중단되고, 원하는
+12vCPU flavor가 프로젝트 쿼터에 있는지도 별도(관리자) 확인이 필요하다.
+사용자의 사전 판단 기준("확인할 수 없거나 과할당·복잡한 변경이면
+즉시 3코어 하향안으로 전환")에 따라 **12코어 확장안은 기각**하고
+3코어 하향안(`lab-cpu3-v1`)으로 전환했다.
+
+## 12. `lab-cpu3-v1` 자원 재설계 - 결정 근거
+
+이번 변경은 임의 성능 하향이 아니라 **8vCPU 단일 worker에서 active·
+preview 동시 운영 시 시스템 안정성을 확보하기 위한 자원 재설계**다.
+근거(전부 §10에서 실측):
+
+1. 8vCPU 노드에서 vLLM 2개(active+preview)가 각각 4코어 limit이면
+   합계가 allocatable(8)의 **100%** - system 프로세스가 경쟁 없이 쓸
+   여유가 구조적으로 없었다.
+2. vLLM은 콜드스타트뿐 아니라 **실제 동시 처리 부하에서도 4000m(4코어
+   limit 전부)까지 실측 확인** - 이론상 한도가 아니라 실제로 다 쓰는
+   워크로드다.
+3. `sj-worker`는 system-reserved/kube-reserved가 전혀 설정 안 돼
+   있다(allocatable=capacity) - kubelet 자신을 위한 보장된 여유가 0.
+
+**결정**: 각 vLLM을 3코어로 제한해 2개 동시 운영 시 최대 6코어만
+쓰도록 하고, 시스템용으로 2코어 상당의 여유를 남긴다.
+
+**한계(반드시 남겨야 하는 사실)**: 이건 **kubelet의 강제 예약이 아니라
+워크로드 limit을 통한 사실상(de facto) headroom**이다 - system-
+reserved처럼 커널이 보장하는 게 아니라, "두 vLLM이 동시에 최대치를
+써도 6코어까지만"이라는 상한일 뿐이고, 그 상한 자체를 넘는 제3의
+프로세스(예: 예상 밖의 시스템 부하)가 겹치면 여전히 압박이 생길 수
+있다. **실제 운영환경이라면 12vCPU 이상 전용 노드풀 + system-reserved
+명시 설정 + 오토스케일링을 권장**하며, 이번 3코어 하향은 어디까지나
+학교 실습 클러스터(OpenStack, 노드 확장 불가)라는 제약 안에서의 완화
+조치임을 명시한다.
+
+**자원 프로필 이름**: `lab-cpu3-v1`(2026-09-18 확정) - CPU limit만
+4→3, request(`2`)·메모리(`4Gi`/`6Gi`)·모델(`Qwen/Qwen2.5-0.5B-
+Instruct`)·probe 설정은 전부 그대로. `gitops/apps/vllm-serving/
+rollout.yaml` 1줄만 변경.
+
+기존 4코어 기준 SLO v2/load_ramp 확정 설정(`experiment-contract.md`
+§4)은 삭제·수정하지 않고 그대로 보존하며, 새 자원 구성에서 재검증
+전까지 잠정 무효로 표시했다(해당 절 참고).

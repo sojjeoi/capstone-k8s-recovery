@@ -37,7 +37,7 @@ spec:
               cpu: "2"
               memory: "4Gi"
             limits:
-              cpu: "4"
+              cpu: "3" # lab-cpu3-v1(2026-09-18) - docs/design/phase8-blue-green-preflight-incident.md §11 참고
               memory: "6Gi"
           volumeMounts:
             - name: dshm

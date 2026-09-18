@@ -77,6 +77,16 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 
 ### `load_ramp` 확정 설정(2026-09-16 - 본 실험 시작 후 변경 금지)
 
+> **⚠️ 2026-09-18부로 잠정 무효(provisionally invalid) - `lab-cpu3-v1` 자원
+> 재구성 때문**: 아래 값은 vLLM CPU limit **4코어** 기준으로 확정된
+> 것이다. `gitops/apps/vllm-serving/rollout.yaml`의 limit을 CPU headroom
+> 확보 목적으로 **3코어**로 낮췄다(`docs/design/phase8-blue-green-
+> preflight-incident.md` §11) - 동일 부하에서 처리량/지연이 달라질 수
+> 있어, 아래 SLO v2 latency threshold·ramp 단계 경계는 새 자원 구성
+> (`lab-cpu3-v1`)에서 재검증하기 전까지 신뢰할 수 없다. **이 표 자체는
+> 삭제·수정하지 않는다** - 4코어 시절의 실측 기록으로 그대로 남기고,
+> 재검증 결과는 새 절로 추가한다.
+
 | 항목 | 값 |
 |---|---|
 | probe | `1 RPS`, `max_tokens=1` (`chaos/probe-config.yaml`, `inference-max1-rps1`) |
