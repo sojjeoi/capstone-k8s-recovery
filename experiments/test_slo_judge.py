@@ -20,13 +20,16 @@ def _row(offset_sec, latency, success=True):
     return {"sent_at": T0 + timedelta(seconds=offset_sec), "latency": latency, "success": success}
 
 
-def test_calibration_constants_unchanged():
-    # 이번 수정은 이벤트 타임스탬프 의미만 바꾼다 - SLO calibration 값
-    # (L_BASELINE 파생) 자체는 손대지 않았음을 확인.
-    assert LATENCY_THRESHOLD == 0.512
+def test_calibration_constants_pinned():
+    # 현재 활성 SLO 값을 고정한다 - 의도적 재보정(예: 자원 구성 변경 후
+    # L_baseline 재측정) 때만 이 값을 함께 갱신할 것. SLO v2(0.512s)는
+    # lab-cpu3-v1 4코어 시절 값이었고, SLO v3(2026-09-18, 0.648s =
+    # 2*0.324s)는 lab-cpu3-warm-v1 3코어 재측정값이다 -
+    # slo-definition.md 변경이력 참고.
+    assert LATENCY_THRESHOLD == 0.648
     assert LATENCY_PERSIST_SEC == 30
     assert AVAILABILITY_THRESHOLD == 0.99
-    print("OK - SLO calibration 상수 불변")
+    print("OK - SLO 상수가 v3(0.648s)로 고정됨")
 
 
 def test_evaluate_preserves_sent_at_and_adds_observed_at():
@@ -42,7 +45,7 @@ def test_evaluate_preserves_sent_at_and_adds_observed_at():
 def test_window_p95_and_violation_flags_match_hand_computed_baseline():
     # 윈도우 구성·P95·성공률·위반 여부 계산 로직은 이번 수정으로 바뀌지
     # 않았다 - 손으로 계산한 기대값과 정확히 일치하는지 확인(회귀 가드).
-    # 25개 요청, 1초 간격, 전부 latency=0.1s(임계값 0.512s 미만)·성공.
+    # 25개 요청, 1초 간격, 전부 latency=0.1s(현재 임계값 미만)·성공.
     rows = [_row(i, 0.1, success=True) for i in range(25)]
     points = evaluate(rows)
     last = points[-1]
@@ -66,16 +69,16 @@ def test_availability_violation_t_slo_uses_observed_at_not_sent_at():
 
 
 def test_latency_violation_t_slo_is_observed_at_domain():
-    # 0.6초(임계값 초과) 요청이 35초간 연속(30초 지속 요건 초과) -> latency 위반.
-    # 반환값이 sent_at 도메인(streak_start+30s처럼 sent_at만으로 계산한 값)이
-    # 아니라 실제 표본의 observed_at이어야 한다.
-    rows = [_row(i, 0.6, success=True) for i in range(35)]
+    # 0.8초(현재 임계값 0.648s 초과) 요청이 35초간 연속(30초 지속 요건 초과)
+    # -> latency 위반. 반환값이 sent_at 도메인(streak_start+30s처럼 sent_at만
+    # 으로 계산한 값)이 아니라 실제 표본의 observed_at이어야 한다.
+    rows = [_row(i, 0.8, success=True) for i in range(35)]
     points = evaluate(rows)
     t_slo = find_t_slo(points)
     assert t_slo is not None
-    # observed_at = sent_at + 0.6s인 표본들의 집합에 속해야 함(정확히 일치하는
-    # 표본이 존재) - 즉 "언젠가의 sent_at + 0.6s" 형태여야 한다.
-    matched = any(abs((t_slo - (T0 + timedelta(seconds=i, milliseconds=600))).total_seconds()) < 1e-6
+    # observed_at = sent_at + 0.8s인 표본들의 집합에 속해야 함(정확히 일치하는
+    # 표본이 존재) - 즉 "언젠가의 sent_at + 0.8s" 형태여야 한다.
+    matched = any(abs((t_slo - (T0 + timedelta(seconds=i, milliseconds=800))).total_seconds()) < 1e-6
                   for i in range(35))
     assert matched, f"t_slo={t_slo}가 어떤 표본의 observed_at과도 안 맞음"
     print("OK - latency 위반의 t_slo도 observed_at 도메인 값")
@@ -86,7 +89,7 @@ def test_recovery_uses_observed_at_and_filters_by_observed_at():
     # observed_at 도메인이어야 하고, "t_slo 이후" 필터도 observed_at 기준이어야
     # 한다(늦게 보냈지만 빨리 끝난 요청과 일찍 보냈지만 오래 걸린 요청이
     # 뒤섞이지 않도록).
-    violating = [_row(i, 0.6, success=True) for i in range(35)]  # 0~34초 전송, latency 위반
+    violating = [_row(i, 0.8, success=True) for i in range(35)]  # 0~34초 전송, latency 위반(현재 임계값 0.648s 초과)
     t_slo = find_t_slo(evaluate(violating))
     assert t_slo is not None
 
@@ -113,7 +116,7 @@ def test_no_violation_returns_none():
 
 
 if __name__ == "__main__":
-    test_calibration_constants_unchanged()
+    test_calibration_constants_pinned()
     test_evaluate_preserves_sent_at_and_adds_observed_at()
     test_window_p95_and_violation_flags_match_hand_computed_baseline()
     test_availability_violation_t_slo_uses_observed_at_not_sent_at()

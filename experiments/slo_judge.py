@@ -22,7 +22,7 @@ sys.stdout.reconfigure(encoding="utf-8")  # Windows 기본 cp949 콘솔 대응
 # 폐기했다(본 실험 미사용, 이력만 slo-definition.md에 보존). experiments/
 # probe.py가 항상 이 프로필로 도므로, 이 상수는 probe raw 로그 판정에만
 # 쓴다 - ramp.py 자체 원시 로그(max_tokens=10)에 이 상수를 적용하면 안 된다.
-L_BASELINE = 0.256  # 3x300건 calibration(calibrate_probe_only.py)의 P95 중앙값
+L_BASELINE = 0.324  # SLO v3(2026-09-18, lab-cpu3-warm-v1) - 3x300건 calibration(calibrate_probe_only.py)의 P95 중앙값. v2=0.256s는 4코어 시절 값 - slo-definition.md 변경이력 참고
 LATENCY_THRESHOLD = 2 * L_BASELINE  # §3
 LATENCY_PERSIST_SEC = 30  # §3, §6
 AVAILABILITY_THRESHOLD = 0.99  # §4

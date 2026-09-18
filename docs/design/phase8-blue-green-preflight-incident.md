@@ -1654,3 +1654,52 @@ startupProbe + 기존 readiness/liveness)이 Phase 8의 공식 리소스·probe
    반영한다 - 결과를 보고 규칙 자체를 바꾸지 않는다.
 
 측정은 아직 시작하지 않았다 - 이 계획을 커밋한 뒤 실행한다.
+
+## 21. SLO baseline 재측정 실행 결과 - SLO v3 확정 (2026-09-18)
+
+§20에서 사전 고정한 규칙대로 `lab-cpu3-warm-v1`(§19) 동결 상태(active
+`vllm-serving-85c55758c6-ljc6n` 단독, Chaos·experiment context 없음,
+Node Ready)에서 `calibrate_probe_only.py --config
+../chaos/probe-config.yaml --duration-sec 300`를 3회 독립 실행했다.
+
+| 회차 | run_id | 성공률 | P95 범위 | 대표 P95(마지막) |
+|---|---|---|---|---|
+| 1 | `calib-probe-only-20260918T092200Z` | 100.0% | 0.297s~1.093s | **0.300s** |
+| 2 | `calib-probe-only-20260918T092940Z` | 100.0% | 0.325s~0.928s | **0.348s** |
+| 3 | `calib-probe-only-20260918T093648Z` | 100.0% | 0.313s~0.924s | **0.324s** |
+
+3회 모두 성공률 100%로 §20 규칙의 재실행 조건(미달 시 폐기)에 걸리지
+않아 그대로 채택. 각 회차 초반 구간에서 P95가 최대 ~1.1초까지 튀는
+구간이 있었다(60초 슬라이딩 윈도우가 아직 표본을 다 채우지 못한
+구간의 소표본 노이즈로 추정 - 3회 요청 전부 성공했고 vLLM/Node 쪽
+이상 이벤트도 없어 기능적 문제는 아니다). §20 규칙이 "마지막(안정화)
+값"을 쓰도록 사전에 고정해둔 덕에 이 노이즈가 결과에 영향을 주지
+않았다.
+
+**계산(규칙 그대로 적용, 사후 조정 없음)**: 중앙값(0.300, 0.324,
+0.348) = **0.324초** = 새 `L_baseline`. 새 Latency SLO = 2 × 0.324 =
+**0.648초**(공식 불변). Availability SLO는 변경 없음(60초 윈도우,
+99%, timeout 30초).
+
+**반영**: `docs/design/slo-definition.md`에 SLO v3 섹션 추가(v1·v2는
+이력 보존, 삭제 안 함) + 변경이력 기록. `experiments/slo_judge.py`의
+`L_BASELINE`을 0.256→0.324로 갱신(`LATENCY_THRESHOLD`는 `2 *
+L_BASELINE` 공식이라 자동으로 0.648 반영). `test_slo_judge.py`의
+고정값 테스트(`test_calibration_constants_pinned`, 구
+`_unchanged`)를 새 값으로 갱신하고, 구 임계치(0.512s)보다는 크지만
+신 임계치(0.648s)보다는 작아 더 이상 "위반"을 재현하지 못하게 된
+회귀 fixture(`latency=0.6s`)를 0.8s로 올렸다(테스트 의도는 "임계치
+초과 latency의 처리 로직 검증"이지 특정 숫자 자체가 아니므로, 임계치
+변경에 맞춰 갱신하는 것이 맞다). 전체 스위트 87 passed, 2 skipped
+(무관) - 회귀 없음.
+
+`chaos/scenario-load-ramp.yaml`·`chaos/scenario-load-ramp-explore.yaml`·
+`docs/design/experiment-contract.md`의 4코어 시절 ramp 단계 값과 그
+경고 블록은 이번 작업 범위 밖이라 손대지 않았다 - load_ramp 재보정은
+별도 승인 후 진행한다.
+
+원시 calibration CSV 3개는 `experiments/results/probe-calib-*-raw.csv`
+에 보존(gitignore 대상, 본 실험 데이터 아님 - calibration 전용).
+
+SLO v3 확정 완료. 아직 load_ramp 재보정이나 본 실험(60회)으로는
+넘어가지 않았다 - 사용자 검토·승인 대기.

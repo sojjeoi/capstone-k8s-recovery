@@ -13,22 +13,37 @@
 실측한 값 대비 상대 배수**로 정의해서, 기준 자체의 출처를 데이터로 추적 가능하게
 한다.
 
-## 2. `L_baseline` (정상 상태 기준 latency) — SLO v2 공식, v1은 폐기(이력용 보존)
+## 2. `L_baseline` (정상 상태 기준 latency) — SLO v3 공식, v1·v2는 폐기(이력용 보존)
 
 Phase 8 실험(합성 probe를 별도 프로세스로 분리 - guideline.md/2차 리뷰)에서
 probe 자신의 요청 payload가 SLO 판정 대상 서비스에 유의미한 부하를 주면
 안 된다. **v1은 이 조건을 만족하지 못해 폐기했다** — probe payload를
 바꾸면 SLO 판정 대상 자체(어떤 요청 모양을 "정상"으로 보는지)가 바뀌므로
-baseline·threshold를 반드시 같이 재계산해야 한다.
+baseline·threshold를 반드시 같이 재계산해야 한다. **v2는 자원 구성이
+바뀌어(4코어→3코어, `lab-cpu3-v1`) 더 이상 현재 환경을 반영하지 않아
+폐기했다** — probe·payload는 그대로지만 서빙 환경의 CPU 여유가
+달라지면 baseline latency 자체가 달라지므로 마찬가지로 재계산이
+필요하다.
 
-### SLO v2 — 본 실험 공식 기준 (2026-09-16 확정)
+### SLO v3 — 본 실험 공식 기준 (2026-09-18 확정, `lab-cpu3-warm-v1`)
 
 | 항목 | 값 |
 |---|---|
-| `L_baseline` (P95) | **0.256초** |
+| `L_baseline` (P95) | **0.324초** |
+| 출처 | `experiments/calibrate_probe_only.py` 3회 독립 실행(각 300건, 1RPS, 300초), 성공률 100%, 각 회차 대표 P95(60초 슬라이딩 윈도우의 마지막 값) [0.300s, 0.348s, 0.324s]의 **중앙값** |
+| 조건 | `lab-cpu3-warm-v1`(3코어 CPU 제한 + exec startupProbe warmup gate, `docs/design/phase8-blue-green-preflight-incident.md` §19) 동결 직후, 장애 미주입, quiescent 상태, 정상 부하(1 RPS), vLLM `Qwen/Qwen2.5-0.5B-Instruct`, `max_tokens=1`, `chaos/probe-config.yaml` |
+| probe profile | `inference-max1-rps1`(v2와 동일 - probe 조건 자체는 안 바뀜) |
+| 계산 규칙 사전 고정 기록 | `docs/design/phase8-blue-green-preflight-incident.md` §20(측정 전 커밋 `09803c2`) - v1→v2 전환과 동일한 산정 원칙(3회 독립 실행, 마지막 안정화 P95, 중앙값) 재사용, 새로 발명하지 않음 |
+
+### SLO v2 — 폐기됨, 이력 보존용
+
+| 항목 | 값 |
+|---|---|
+| `L_baseline` (P95) | 0.256초 |
 | 출처 | `experiments/calibrate_probe_only.py` 3회 독립 실행(각 300건, 1RPS, 300초), 성공률 100%, 각 회차 P95 [0.2565s, 0.2545s, 0.2586s]의 **중앙값** |
-| 조건 | 장애 미주입, quiescent 상태, 정상 부하(1 RPS), vLLM `Qwen/Qwen2.5-0.5B-Instruct`, `max_tokens=1`, `chaos/probe-config.yaml` |
+| 조건 | 장애 미주입, quiescent 상태, 정상 부하(1 RPS), vLLM `Qwen/Qwen2.5-0.5B-Instruct`, `max_tokens=1`, `chaos/probe-config.yaml`, vLLM CPU limit **4코어**(`lab-cpu3-v1` 이전) |
 | probe profile | `inference-max1-rps1` |
+| 폐기 사유 | CPU limit을 4→3코어로 낮춰(`lab-cpu3-v1`) 동일 probe 조건에서도 baseline latency가 달라짐 - 재측정 필요 |
 
 ### SLO v1 — 폐기됨, 이력 보존용
 
@@ -45,8 +60,8 @@ baseline·threshold를 반드시 같이 재계산해야 한다.
 
 ## 3. Latency SLO
 
-> `P95 latency > 2 × L_baseline`(SLO v2 = **0.512초**)가 **30초 이상 연속**
-> 지속되면 latency SLO 위반.
+> `P95 latency > 2 × L_baseline`(SLO v3 = **0.648초**, v2 = 0.512초는
+> 폐기)가 **30초 이상 연속** 지속되면 latency SLO 위반.
 
 - 순간적으로 튀는 값이 아니라 지속되는 열화만 위반으로 잡기 위해 30초 지속 조건을
   둔다(일반적인 SRE 관행 — 단발 스파이크로 인한 오탐/flapping 방지).
@@ -96,3 +111,17 @@ baseline·threshold를 반드시 같이 재계산해야 한다.
   SLO를 다시 측정해 동결한다. `L_baseline` v1(2.686s) → v2(0.256s), latency
   SLO v1(5.372s) → v2(0.512s). v1로 이미 계산된 결과는 없음(Phase 8 실제
   arm 비교 데이터 수집 전 단계였음).
+- 2026-09-18: CPU headroom 확보를 위해 vLLM CPU limit을 4→3코어로
+  낮췄다(`lab-cpu3-v1`, `docs/design/phase8-blue-green-preflight-incident.md`
+  §11~§12). 이어서 Ready 판정이 첫 추론 완료보다 먼저 나던 문제를
+  startupProbe warmup gate로 구조적으로 해결하고 3회 공식 콜드스타트
+  검증(headroom 3/3 PASS)을 거쳐 `lab-cpu3-warm-v1`을 Phase 8 공식
+  기준선으로 동결했다(§14~§19). probe 조건(payload·RPS·profile)은 v2와
+  동일하지만 서빙 환경의 CPU 여유가 달라져 baseline latency 자체가
+  달라질 수 있어, 데이터를 보기 전에 계산 규칙을 먼저 고정(§20, 커밋
+  `09803c2`)한 뒤 동일한 산정 원칙(3회 독립 실행, 각 회차 마지막
+  안정화 P95, 중앙값)으로 재측정했다. `L_baseline` v2(0.256s) →
+  v3(0.324s), latency SLO v2(0.512s) → v3(0.648s). Availability SLO
+  (60초 윈도우, 99%, timeout 30초)는 `L_baseline`과 무관해 변경 없음.
+  재측정 3회 모두 성공률 100% - 원시 결과는 `experiments/results/
+  probe-calib-probe-only-*-raw.csv`(gitignore 대상)에 보존.
