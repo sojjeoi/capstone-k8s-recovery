@@ -1251,4 +1251,49 @@ cgroup/cpuset 조사가 별도로 필요하며 이번 점검 범위 밖이라 �
 - §14의 결론은 바뀌지 않는다 - 웜업은 여전히 **유력 가설**일 뿐이고,
   02·03회차에서의 재현 여부가 최종 판정 기준이라는 원래 입장을 유지한다.
 
+### 14.2 cgroup CPU quota/cpuset 확인 (읽기 전용, 02회차 착수 전)
+
+§14.1의 부수 관찰(OpenMP가 core ids 0-6 + reserved_cpus=[7], 총 8개를
+봄)이 `lab-cpu3-v1`의 3코어 제한과 실제로 어떤 관계인지 확인하기 위해,
+같은 pod(`vllm-serving-75d8859d89-9bq8z`, 조사 시점 기준 재확인 -
+0 restart, age 35분, 여전히 단독 pod) 안에서 cgroup 파일을 직접
+읽었다. 새 revision·설정 변경 없음.
+
+**직접 측정한 사실**:
+- `stat -fc %T /sys/fs/cgroup` → `tmpfs`, `/sys/fs/cgroup/cgroup.controllers`
+  없음 → **cgroup v1**(v2 unified hierarchy 아님).
+- `cpu/cpu.cfs_quota_us` = `300000`, `cpu/cpu.cfs_period_us` = `100000`
+  → quota/period = **3.0** → `rollout.yaml`의 `resources.limits.cpu: "3"`과
+  정확히 일치. **3코어 CFS 대역폭 제한은 실제로 적용되어 있음을 계산으로
+  확인**.
+- `cpuset/cpuset.cpus` = `0-7` (8개 전부) - **cpuset 자체는 3으로 제한되어
+  있지 않다**. `nproc`과 `/proc/cpuinfo`의 processor 수 둘 다 `8`.
+
+**해석(일반적으로 문서화된 Linux cgroup v1 동작이며, 이번 측정으로 이
+pod에 실제 적용됨을 확인함)**: cgroup v1에서 CFS quota(`cpu.cfs_quota_us`/
+`cpu.cfs_period_us`)와 cpuset(`cpuset.cpus`)은 **서로 다른 독립된
+컨트롤러**다. quota는 "주어진 period(100ms)당 총 CPU-시간 예산"만
+제한하고, cpuset은 "어느 코어에서 스케줄될 수 있는지"만 제한한다.
+Kubernetes가 (CPU Manager의 `static` policy 없이) `resources.limits.cpu`로
+설정하는 기본 방식은 quota만 건드리고 cpuset은 노드 전체로 남겨둔다 -
+이 클러스터가 정확히 이 상태다(cpuset=0-7).
+
+그 결과, `nproc`/`sched_getaffinity`/`/proc/cpuinfo`처럼 "몇 개 코어가
+보이는가"를 묻는 표준 API는 quota를 전혀 반영하지 못하고 cpuset 기준인
+8을 그대로 돌려준다. OpenMP는 기본적으로 스레드 풀 크기를 이런 API로
+정하므로, §14.1에서 관찰한 `core ids=[0..6]+reserved_cpus=[7]`(합 8)은
+**우연이나 오설정이 아니라 이 조합(quota만 설정, cpuset 미설정)에서
+일반적으로 예상되는 동작**이다 - 즉 vLLM(OpenMP)은 자신이 3코어
+예산만 받았다는 사실을 모른 채 8개 코어 기준으로 스레드를 구성할
+가능성이 있다.
+
+**확인 불가로 남기는 부분**: 위 메커니즘은 일반적으로 성립하지만, 이게
+실제로 01회차의 3건 타임아웃 순간에 CFS throttling을 유발했는지는
+이번 측정으로 확인되지 않는다. `cpu.stat`의 `nr_throttled`/
+`throttled_time`은 누적 카운터라 지금 읽어도 05:58:23~05:58:54 구간만
+분리할 수 없다 - 그 구간에 한정한 throttling 여부를 보려면 Prometheus에
+그 시각대 `container_cpu_cfs_throttled_seconds_total`(cAdvisor) 시계열이
+남아 있는지 확인해야 하는데, 이는 지시받은 5개 확인 항목 밖이라 이번엔
+수행하지 않았다 - 필요하면 별도로 승인받아 진행하겠다.
+
 02회차 설계·실행으로는 아직 넘어가지 않았다 - 사용자 검토·승인 대기.
