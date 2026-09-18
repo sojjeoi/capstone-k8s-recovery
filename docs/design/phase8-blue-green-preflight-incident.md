@@ -1450,3 +1450,83 @@ Ready 처리하는 현재 startupProbe로는 이 비용을 못 잡아낸다 - �
 
 **아직 하지 않은 것**: 실클러스터에 `kubectl apply` 미실행, `HEADROOM-COLDSTART-03`
 미실행 - 사용자 검토·승인 대기.
+
+## 17. `HEADROOM-COLDSTART-03-ATTEMPT1` - 측정 버그로 인한 오탐 abort, 정리 및 수정 (2026-09-18)
+
+§16 구현 승인 후 final preflight(저장소 clean·HEAD 일치, 단일 3코어
+active·preview 없음, Node Ready, Chaos CR 없음, `python3` 실행파일
+확인, warmup 모델명이 실제 서빙 모델과 3중 일치, Argo CD 미설치 확인
+- 배포는 순수 `kubectl apply`뿐이라 순서는 직접 통제, `kubectl diff`로
+ConfigMap·volume·volumeMount·exec startupProbe 4가지가 모두 포함되고
+readinessProbe/livenessProbe·network-tolerant overlay는 안 건드림을
+확인) 전부 통과 후 ConfigMap -> Rollout 순서로 적용, 새 preview
+`vllm-serving-748f568b45-2f7gx` 생성 확인.
+
+**측정 버그 발생**: 콜드스타트 관찰 중 `subprocess.run(..., text=True)`가
+Windows 로캘 기본 인코딩(cp949)으로 kubectl의 UTF-8 출력을 디코딩하려다
+실패하는 버그를 발견 - 특히 `risky_events()`가 이 예외를 조용히 삼켜
+매 polling마다 위험 이벤트를 사실상 탐지 못하고 있었다. 관찰을 중단하고
+`encoding="utf-8"`을 모든 `subprocess.run(text=True)` 호출 7곳에
+추가해 수정, 같은 pod(이미 콜드스타트 진행 중)를 대상으로 재개했다 -
+`compute_effective_start_mono`가 이런 관찰 재개 시나리오를 위해 이미
+있어 재적용 없이 이어갈 수 있었다.
+
+**재개 직후 `ABORTED_READY_BEFORE_WARMUP` 오탐**: 재개 시점엔 이미
+Ready 상태였다(수정하는 5분 사이 콜드스타트 자체는 계속 진행됨).
+warmup completion 로그 timestamp(`2026-09-18T08:12:51.314199658Z`,
+나노초 정밀도)와 Ready condition의 `lastTransitionTime`
+(`2026-09-18T08:12:51+00:00`, K8s API가 초 단위로 절삭)을 raw
+문자열로 비교(`warmup_log_ts < ready_ts`)했다가 **False**가 나와
+"Ready가 warmup보다 먼저 발생"으로 오판정, 지시받은 중단 조건대로
+정확히 promotion 전에 abort됐다.
+
+**원인 규명(추정 아니라 직접 로그로 확인)**: 같은 pod의 원본 vLLM
+access log를 직접 조회한 결과:
+```
+08:12:51.314199658Z  127.0.0.1:59398      POST /v1/completions  200 OK   (startupProbe warmup)
+08:12:51.352724455Z  192.168.30.76:41198  GET  /health          200 OK   (최초 /health, readinessProbe)
+```
+이 구간 이전에는 `/health` 로그가 **단 한 줄도 없다**. K8s는
+startupProbe가 성공하기 전엔 readiness/liveness probe를 아예 실행하지
+않는다는 것이 문서화된 보장이므로, 최초 `/health`가 warmup POST
+완료 38.5ms 뒤에 나타났다는 사실은 "warmup이 Ready보다 먼저 완료됐다"는
+직접적이고 정밀한 증거다. abort는 **측정 버그**(문자열 비교 시
+`.`(46)이 `+`(43)보다 큰 ASCII 순서 때문에 이른 시각이 늦은 것으로
+계산됨 + `lastTransitionTime` 자체가 초 단위로 절삭돼 있어 같은 초
+안에서는 이 필드만으로 순서를 확정할 수 없음)였지 실제 시스템
+결함이 아니다. **실제 cluster abort·pod/Node 재시작은 전혀 없었다.**
+
+**ATTEMPT1 처리**: 사용자 승인에 따라 이 회차를 공식 3/3에 포함하지
+않고 pilot으로 재분류했다. 원본 실측(경로 검증 이전까지의 전체
+polling 로그, warmup 로그 라인, Ready transition, pod/Node 상태)은
+그대로 보존하고 `is_pilot=true`·`exclusion_reason=
+timestamp_comparison_bug_in_monitor`·`included_in_main_analysis=false`
+필드만 추가해
+`experiments/results/headroom/headroom-coldstart-03-attempt1-20260918T081006Z.json`
+로 저장(gitignore 대상, 원본 수치는 전혀 수정하지 않음).
+
+**클러스터 정리**: `kubectl-argo-rollouts abort vllm-serving`으로
+promotion 없이 안전하게 중단 - `status.phase=Degraded`는 명시적
+abort 후 정상적으로 나타나는 상태 표시일 뿐 장애가 아니다.
+확인 결과: `activeSelector`가 원래 3코어 active(`7d6fbc8f96`)를 계속
+가리킴, ATTEMPT1 preview pod는 이미 완전히 scale-down됨(pod 목록에서
+사라짐, ReplicaSet은 `DESIRED=0`으로 `revisionHistoryLimit` 정책대로
+보존), active completion 실측 200 OK로 재확인. 양쪽 Node Ready·
+pressure 없음, Chaos CR 0건, 잔존 experiment context 없음.
+
+**수정**: `experiments/timestamp_order.py`(신규, 커밋 `b76c060`) -
+`compare_before(a, b)`가 timezone-aware `datetime`으로 정확히 파싱하고,
+같은 초 안에서 어느 한쪽이라도 소수초 정보가 없어 실제 순서를 확정할
+수 없으면 추정하지 않고 `None`(확인 불가)을 반환한다. 회귀 테스트
+7개(정상 순서/같은 초 microsecond만 다른 정밀 순서/`Z`·`+00:00` 형식
+동등성/실제 실패(Ready가 먼저) 순서/timestamp 누락/ATTEMPT1 정확한
+재현(초단위 절삭 시 None)/양쪽 다 정밀하면 절삭 없이 확정 판정) 전부
+PASS, `experiments/` 전체 스위트 87 passed·2 skipped(무관)로 회귀
+없음 확인. 03회차 드라이버 스크립트도 이 함수로 교체하고, 같은 초 안
+확인 불가(`None`) 상황에 대비해 같은 로그(나노초 정밀도) 안에서
+warmup 라인과 최초 `/health` 라인의 등장 순서로 교차 확인하는 대체
+경로를 추가했다.
+
+**다음**: annotation에 새 실행 ID를 넣어 완전히 새로운 preview를
+생성하고, 수정된 비교 로직으로 공식 `HEADROOM-COLDSTART-03`을
+처음부터 다시 수행한다 - 이 정리·수정 결과가 확인된 뒤 진행.
