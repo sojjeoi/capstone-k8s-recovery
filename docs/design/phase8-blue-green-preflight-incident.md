@@ -746,3 +746,183 @@ headroom 해결 전까지 보류**: overlay 적용은 Rollout의 Pod template을
 `test_pod_kill_adapter.py`(리팩터 후 재확인) 5개, `test_network_degrade_
 adapter.py`(신규) 8개, `test_collect_metrics.py`(target_replaced 연동)
 28개 포함.
+
+## 9. §8.8 1단계 - fresh preflight + 방치된 CR 정리 (2026-09-18, 읽기 전용 조사 후 최소 삭제)
+
+### 9.1 워크로드 수준 preflight - 전부 정상
+
+노드 2개 Ready(`sj-worker`는 2026-09-16 18:01:33부터 끊김 없이 약 43시간
+지속 - 10~15분 기준 훨씬 상회), MemoryPressure/DiskPressure/PIDPressure
+전부 False. vLLM은 단일 파드(`vllm-serving-7b98b55c65-gm5bm`, 재시작 0,
+13시간)만 존재하고 Rollout은 `Healthy`/`stable=current`로 preview 없음 -
+`vllm-active`/`vllm-preview` Endpoints도 같은 파드를 가리켜 모호함 없음.
+CPU/메모리 headroom(1-vLLM 상태): CPU limits 50%(8코어 중 4), 메모리
+limits 38% - §3.2가 우려한 "2-vLLM=8/8코어 100%" 상태가 전혀 아님을 직접
+확인. `/health` 5회 연속 4~10ms - §5의 간헐적 네트워크 이상 징후 없음.
+recovery-policy `/healthz` 200, `/admin/quiescent`={"quiescent":true,
+"active_count":0}, `/admin/experiment-run`={"current":null}. recovery-
+policy의 재시작 1회(43h 전, exitCode 137)는 새 사건이 아니라 §3.1에
+이미 기록된 그 NodeNotReady 사건의 결과물(파드 `-5hmvj` 그 자체) -
+종료 시각 2026-09-16T09:08:00Z가 §3.1 타임라인보다 4~8분 앞선다는
+세부값만 새로 확인.
+
+### 9.2 control-plane 경보 - "실제 etcd 장애 아님"으로 성급히 결론짓지 않고 분류만 확정
+
+Alertmanager에 `etcdInsufficientMembers`(critical)·`etcdMembersDown`·
+`KubeProxy/Scheduler/ControllerManagerInstanceUnreachable`·`TargetDown`
+×4 총 9건(`Watchdog` 제외)이 **2026-09-16T09:07~09:18Z부터 지금까지
+43시간 넘게 한 번도 안 풀리고 계속 active** 상태로 확인됨(recovery-policy
+재시작·chaos-controller-manager 파드 AGE=43h와 정확히 같은 시각대).
+
+직접 조사(단순 "단일 멤버라 오탐"으로 넘기지 않고 실측):
+- `kubectl get pods -n kube-system`: etcd/kube-proxy(양쪽)/kube-scheduler/
+  kube-controller-manager 전부 `1/1 Running`, 13일째, 최근 재시작 없음
+  (kube-scheduler의 재시작 30회는 13일 누적치이지 최근 사건 아님)
+- `etcdctl member list`: 단일 멤버(`sj-control`) 1개, `STATUS=started`
+- `etcdctl endpoint health`: `is healthy: successfully committed
+  proposal: took=19.7ms` - 실제 write 성공까지 확인
+
+**분류(확정, "단순 오탐"으로 종결하지 않음)**: etcd 자체는 실제로 정상
+동작 중임을 직접 증거로 확인했다. 다만 이 알림들이 43시간째 하나도
+안 풀렸다는 사실 자체는 **Prometheus의 scrape 경로가 이 control-plane
+컴포넌트들에 계속 도달 못 하고 있는 모니터링 결함**으로 기록한다(단일
+멤버 etcd에 다중 멤버 가정 쿼럼 공식이 적용되는 문제 + kube-proxy/
+scheduler/controller-manager metrics 엔드포인트 스크레이핑 실패로
+추정 - 근본 원인의 정확한 지점은 아직 안 밝힘). 최소 강도 500ms
+smoke 1회를 막을 사유는 아니지만, **본 실험(60회) 실행 전에는 별도
+해결 또는 명시적 제외 근거가 필요한 미해결 항목**으로 남긴다.
+
+### 9.3 방치된 Chaos Mesh CR 2건 - 증거 보존 후 삭제
+
+둘 다 대상 파드가 이미 사라졌고(`AllRecovered`/`Accomplished` 확인 후
+재확인) 오늘 계획된 작업과 무관한 과거 조사의 잔재임을 확인한 뒤 삭제했다.
+
+**`stresschaos/vllm-memory-pressure-debug`**(2026-09-04 phase5 조사의
+디버그 실행, `docs/design/phase5-memory-pressure-investigation.md` §1
+"4차 시도"와 동일 건) - 삭제 전 최종 상태:
+
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  creationTimestamp: "2026-09-04T11:48:28Z"
+  name: vllm-memory-pressure-debug
+  namespace: vllm-serving
+  uid: 6446bdb1-32a3-41bf-8af7-19126f286120
+spec:
+  duration: 10m
+  mode: one
+  selector:
+    labelSelectors: {app: vllm-serving}
+    namespaces: [vllm-serving]
+  stressors:
+    memory: {oomScoreAdj: 0, size: 5000MB, workers: 2}
+status:
+  conditions:
+    - {type: Selected, status: "True"}
+    - {type: AllInjected, status: "False"}
+    - {type: AllRecovered, status: "True"}
+    - {type: Paused, status: "False"}
+  experiment:
+    containerRecords:
+      - id: vllm-serving/vllm-serving-6c769cc5c5-h9st7/vllm
+        events:
+          - {operation: Apply, type: Succeeded, timestamp: "2026-09-04T11:48:28Z"}
+          - {operation: Recover, type: Succeeded, timestamp: "2026-09-04T11:58:28Z"}
+        injectedCount: 1
+        recoveredCount: 1
+        phase: Not Injected
+    desiredPhase: Stop
+```
+
+대상이던 `vllm-serving-6c769cc5c5-h9st7`는 삭제 직전 재확인 결과
+`NotFound`(현재 유일한 파드는 `vllm-serving-7b98b55c65-gm5bm`, 전혀
+다른 ReplicaSet).
+
+**`workflow/vllm-network-degrade`**(2026-09-05 실행분 - `test_model.py`의
+`KNOWN_ANOMALY_START/END`(13:35:02~13:41:31Z)와 거의 정확히 겹침 -
+**"발견 5"의 실제 발생원 그 자체**) - 삭제 전 최종 상태:
+
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  creationTimestamp: "2026-09-05T13:34:56Z"
+  name: vllm-network-degrade
+  namespace: vllm-serving
+  uid: 306c6561-40f2-488b-b26a-f7a77388f44a
+spec:
+  entry: degrade-serial
+  templates:
+    - {name: degrade-serial, templateType: Serial, deadline: 7m,
+       children: [stage-1-500ms, stage-2-1000ms, stage-3-2000ms, stage-4-4000ms]}
+    - {name: stage-1-500ms, templateType: NetworkChaos, deadline: 90s,
+       networkChaos: {action: delay, mode: one, delay: {latency: 500ms, jitter: 50ms},
+         selector: {labelSelectors: {app: vllm-serving}, namespaces: [vllm-serving]}}}
+    - {name: stage-2-1000ms, templateType: NetworkChaos, deadline: 90s,
+       networkChaos: {action: delay, mode: one, delay: {latency: 1000ms, jitter: 100ms},
+         selector: {labelSelectors: {app: vllm-serving}, namespaces: [vllm-serving]}}}
+    - {name: stage-3-2000ms, templateType: NetworkChaos, deadline: 90s,
+       networkChaos: {action: delay, mode: one, delay: {latency: 2000ms, jitter: 200ms},
+         selector: {labelSelectors: {app: vllm-serving}, namespaces: [vllm-serving]}}}
+    - {name: stage-4-4000ms, templateType: NetworkChaos, deadline: 90s,
+       networkChaos: {action: delay, mode: one, delay: {latency: 4000ms, jitter: 400ms},
+         selector: {labelSelectors: {app: vllm-serving}, namespaces: [vllm-serving]}}}
+status:
+  conditions:
+    - {type: Scheduled, status: "True"}
+    - {type: Accomplished, status: "True"}
+  startTime: "2026-09-05T13:34:56Z"
+  endTime: "2026-09-05T13:40:56Z"
+  entryNode: degrade-serial-kcz7q
+```
+
+삭제 명령: `kubectl delete stresschaos vllm-memory-pressure-debug -n
+vllm-serving`, `kubectl delete workflow vllm-network-degrade -n
+vllm-serving`. 삭제 후 `kubectl get podchaos,networkchaos,stresschaos,
+workflow -n vllm-serving`로 네 타입 전부 잔존 없음 확인(§9.4).
+
+### 9.4 삭제 후 잔존 확인
+
+```
+kubectl get podchaos,networkchaos,stresschaos,workflow -n vllm-serving
+  -> No resources found in vllm-serving namespace.
+```
+
+### 9.5 로컬 머신·모니터링 재확인 후 NetworkChaos 500ms 단일-stage smoke - `SMOKE-EXCLUDED`, PASS
+
+**사전 재확인**: 로컬 가용 메모리 1.81GB(§9 preflight 시점) -> 사용자가
+Notion·Slack·미사용 ChatGPT 직접 종료 -> **4.71GB로 회복**(3GB 기준 통과).
+저장소 경로·HEAD(`dab6a34`) 불변 확인. `kubectl get nodes` 4초 간격
+10회 전부 성공(`cannot allocate memory` 재발 없음).
+
+**Prometheus/Alertmanager 재분류(§9.2 확정)**: `etcdInsufficientMembers`
+등 9개 경보가 43시간째 미해소인 것은 실제 etcd 장애가 아니라(직접
+`etcdctl endpoint health`로 정상 write 확인) Prometheus scrape 경로
+결함으로 기록 - **60회 본 실험 전 별도 해결 또는 명시적 제외 근거 필요**
+항목으로 남김(단순 오탐으로 종결하지 않음).
+
+**smoke 실행**(`network_degrade_adapter.py`의 4단계 순차 로직을 쓰지
+않고 `create_network_chaos`/`delete_network_chaos`/`is_stage_injected`/
+`does_chaos_exist`만 직접 재사용한 1회성 스크립트, 90초 정규 stage나
+나머지 1/2/4초 stage는 아예 만들지 않음):
+
+| 항목 | 값 |
+|---|---|
+| `run_id` | `network-degrade-SMOKE-EXCLUDED-20260918t045134z` |
+| CR | `netdelay-smoke-excluded-20260918t045134z`(NetworkChaos, 500ms/50ms jitter 단일) |
+| 대상 | `vllm-serving-7b98b55c65-gm5bm`(uid `94662317-d673-4fbb-b19d-63dd2658e9f9`) - 실행 전후 이름·UID 동일 |
+| `AllInjected=True` 확인 | **최초로 실클러스터에서 직접 확인됨**(문서 기반·미검증이던 §8 docstring의 우려 해소) - 확인 시각 `2026-09-18T04:51:46.681053+00:00` |
+| cleanup | `AllInjected` 확인 0.121초 후 delete 요청, 0.844초 후 CR 완전 소멸 확인(`does_chaos_exist=False`) - 10초 한도 여유 있게 충족 |
+| pre/post 파드 | Ready=true/true, restart_count=0/0(delta 0), UID 동일 |
+| pre/post Node(`sj-worker`) | Ready=True/True |
+| pre/post completion 요청 | `200 0.654s` / `200 0.262s` - 둘 다 성공, 지연 증가 징후 없음(500ms 단일 CR이라 예상된 결과) |
+| 중단 조건 | 전혀 발동 안 됨(교체·재시작·Node 이상·cleanup 실패·로컬 명령 실패 없음) |
+| 결과 | **PASS** |
+
+이번 smoke로 `network_degrade_adapter.py`의 핵심 미검증 가정("문서
+기반이지 실클러스터 kubectl get networkchaos -o yaml로 직접 본 적은
+없다")이 실측으로 해소됐다 - `status.conditions`의 `AllInjected` 필드
+경로가 실제로 존재하고 정확히 동작함을 확인. tolerant overlay 적용과
+실제 timeout calibration은 지시대로 이어서 진행하지 않았다(§8.8 순서상
+3번 CPU headroom 해결이 먼저).
