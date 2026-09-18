@@ -1297,3 +1297,86 @@ Kubernetes가 (CPU Manager의 `static` policy 없이) `resources.limits.cpu`로
 수행하지 않았다 - 필요하면 별도로 승인받아 진행하겠다.
 
 02회차 설계·실행으로는 아직 넘어가지 않았다 - 사용자 검토·승인 대기.
+
+## 15. 공식 `HEADROOM-COLDSTART-02` - Pod IP 우선 진단 프로토콜 (2026-09-18, 2/3회차)
+
+§14.1/§14.2 검토 후 승인받은 프로토콜대로, 추론을 유발하지 않는 경로
+확인부터 시작해 최초 추론을 Service가 아니라 preview Pod IP로 직접
+보내 애플리케이션 자체 지연/Service 경로 문제/kubectl exec 계층 문제를
+분리했다. 트리거는 `rollout.yaml`의 `spike-revision` annotation 값만
+변경(커밋 `a37f4b9`) - 자원·probe·모델 설정은 01회차와 동일(3코어+3코어).
+frozen `coldstart_monitor.py`는 이번에도 변경하지 않았다.
+
+**headroom(자원 안정성) - PASS**: apply~Ready 350.3초(01회차 176.1초보다
+느림 - 원인 확인 안 함, 재현성 확인은 범위 밖). Ready 후 10분 안정성
+(43회 polling) 전부 clean - Node Ready 유지, pressure 전무, 양쪽 pod
+restart_count=0, 위험 이벤트 0건, active completion 43/43 성공
+(0.54~2.19초).
+
+**1단계 - 추론 없이 경로만 확인**: source pod
+`recovery-policy-76fbd457b8-5hmvj`(uid
+`2f3b02d1-efbc-4c3e-bec5-3ad3041d8cc8`), preview pod
+`vllm-serving-7d6fbc8f96-wf96q`(IP `10.244.36.47`). DNS
+`vllm-preview.vllm-serving.svc.cluster.local` -> `10.110.177.238`(Service
+ClusterIP와 정확히 일치). EndpointSlice가 이 preview pod의 IP·port
+8000을 정확히 가리킴을 확인. ClusterIP `/health`(connect 0.6ms, TTFB
+2.1ms) · Pod IP `/health`(connect 0.27ms, TTFB 1.5ms) 둘 다 200 -
+**추론 이전 시점에 DNS·EndpointSlice·TCP·health 경로는 전부 정상이고
+사실상 즉시 응답했다.**
+
+**2단계 - 최초 추론(Pod IP 직접, 60초 예산) - 결정적 실측**: 이
+preview pod에 대한 최초의 실제 추론 요청을 Service를 거치지 않고 Pod
+IP(`10.244.36.47`)로 직접 전송. **60초 예산 안에 성공(200 OK)했고,
+실제로는 27.53초 소요** - `time_connect=0.53ms`(즉시)인데
+`time_to_first_byte=27.00초`. 즉 지연은 TCP/네트워크 구간이 아니라
+**connect 이후~첫 바이트 사이, 애플리케이션 내부 구간에 전부 몰려
+있다.** 같은 시각대 vLLM 로그를 보존했고, `POST /v1/completions`
+200 OK 로그가 정확히 06:42:31.767(요청 완료 시각과 일치)에 처음
+등장 - 그 전까지는 `/health`·`/metrics`만 있었다(01회차 §14.1의
+"access log가 요청 완료 시점에 찍힌다"는 한계와 일치하는 패턴).
+
+**3단계 - 사후 검증(preview Service 3회 -> promotion -> active Service
+5회)**: 최초 추론 직후 같은 pod에 `vllm-preview` Service로 3회 -
+**3/3 즉시 성공**(1.31/0.71/0.75초, TTFB 0.26~0.37초로 active와 동일한
+정상 범위). Promotion: selector 전환 +0.035초, EndpointSlice 전환
++0.091초(역시 즉시). `vllm-active`로 5회 - **5/5 즉시 성공**
+(0.60~0.79초), 첫 성공 promotion +0.878초.
+
+**분류(관찰값 기준, 4갈래 판정 그대로 적용)**: 어떤 probe에서도
+`outer_timed_out`(kubectl exec/subprocess 자체 timeout) 없음 -> 측정
+계층 문제 아님. `vllm-preview` Service 3회 전부 성공 -> preview Service
+경로 문제 아님. Pod IP 요청이 기준선(2.0초)을 크게 초과(27.53초) ->
+**`pod_ip_first_inference_slow_possible_init`** - TCP/health는 모두
+정상이고 Pod IP 직접 요청조차 오래 걸렸다는 조건에 해당 - "애플리케이션
+첫 추론 초기화 비용 가능성"으로 분류.
+
+**이번 회차가 01회차보다 더 직접적으로 배제/지지하는 것**:
+- DNS 오설정, EndpointSlice 미전파, Service/kube-proxy 라우팅 문제는
+  **배제** - Pod IP 직접 요청도 똑같이 27초 걸렸고, health는 두 경로
+  다 즉시 응답했으므로 네트워크 경로 자체는 문제가 아니었다.
+- "10초보다 얼마나 더 걸리는지 몰랐던" 01회차와 달리, 이번엔 실제
+  소요시간(27.53초)과 지연이 걸린 정확한 구간(connect 이후~첫 바이트)을
+  직접 측정했다.
+- 첫 요청 이후로는 Service 경로를 포함해 전부 즉시 정상 - 반복되는
+  문제가 아니라 **1회성 비용**이라는 점도 이번엔 직접 확인됐다(01회차는
+  Service 경유 3회 전부 실패라 "1회성"인지조차 알 수 없었다).
+
+**확인 불가로 남기는 부분**: 애플리케이션 내부의 정확히 어떤 코드
+경로가 27초를 쓰는지는 HTTP 레벨 블랙박스 타이밍만으로는 확인 불가.
+`--enforce-eager`가 명시적으로 켜져 있어(`rollout.yaml` 주석 참고,
+torch.compile 중 OOM 확인되어 배제됨) torch.compile 지연은 아니다.
+§14.2에서 확인한 cgroup 상태(CFS quota=3코어인데 cpuset=8코어라
+OpenMP 등이 8코어 기준으로 스레드를 구성할 수 있음)가 그럴듯한 후보
+메커니즘이지만, 이번 27초 구간에 실제로 CFS throttling이 발생했는지는
+측정하지 않았다 - 여전히 **확인 불가**. "모델 웜업"은 이번 회차로 더
+강하게 뒷받침됐지만 여전히 **유력 가설**이며, 정확한 내부 메커니즘은
+미확정이다.
+
+**최종 상태**: Node Ready, 양쪽 pod Running(구 revision은
+`scaleDownDelaySeconds: 30` 대기 중이라 promotion 직후 스냅샷엔 아직
+남아있음 - 정상), recovery-policy `/healthz` 200. 원본 실측 전체는
+`experiments/results/headroom/headroom-coldstart-02-20260918T062557Z.json`
+에 보존(gitignore 대상, `results/headroom/` 유지).
+
+아직 03회차나 warmup 기능 구현으로는 넘어가지 않았다 - 사용자 검토·승인
+대기.
