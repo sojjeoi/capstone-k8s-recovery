@@ -16,7 +16,7 @@ spec:
       labels:
         app: vllm-serving
       annotations:
-        spike-revision: "HEADROOM-COLDSTART-02" # lab-cpu3-v1 공식 콜드스타트 2회차 - Pod IP 우선 프로토콜, 값만 바꿔 새 리비전 생성(자원/probe/모델 미변경)
+        spike-revision: "HEADROOM-COLDSTART-03" # lab-cpu3-warm-v1 공식 콜드스타트 3회차 - 이번엔 annotation이 아니라 startupProbe 자체(아래) 변경이 새 리비전을 만든다
     spec:
       containers:
         - name: vllm
@@ -37,18 +37,24 @@ spec:
               cpu: "2"
               memory: "4Gi"
             limits:
-              cpu: "3" # lab-cpu3-v1(2026-09-18) - docs/design/phase8-blue-green-preflight-incident.md §11 참고
+              cpu: "3" # lab-cpu3-warm-v1(2026-09-18) - docs/design/phase8-blue-green-preflight-incident.md §11·§16 참고
               memory: "6Gi"
           volumeMounts:
             - name: dshm
               mountPath: /dev/shm
             - name: hf-cache
               mountPath: /root/.cache/huggingface # 파드 재시작해도 다운로드 이어받기 — 매번 처음부터 재다운로드 방지(네트워크 불안정 대응)
+            - name: warmup-probe
+              mountPath: /opt/probes
+              readOnly: true
           startupProbe: # 모델 다운로드(HuggingFace) 시간 확보 — 이게 통과할 때까지 readiness/liveness는 대기
-            httpGet:
-              path: /health
-              port: 8000
+            exec: # lab-cpu3-warm-v1(2026-09-18) - 단순 /health는 HEADROOM-COLDSTART-02에서
+              # 확인된 최초 추론 초기화 비용(27.53초)을 못 잡아냄 - localhost 합성
+              # completion으로 실제 첫 추론 완료까지 확인한다. probes/warmup_probe.py
+              # 단일 출처 - 내용은 warmup-probe-configmap.yaml 생성 파일 참고.
+              command: ["python3", "/opt/probes/warmup_probe.py"]
             periodSeconds: 10
+            timeoutSeconds: 65 # 스크립트 내부 HTTP timeout(60초)이 먼저 끝나 깨끗한 종료 코드를 내도록 5초 여유
             failureThreshold: 90 # 최대 15분까지 시작 허용 — CPU torch.compile이 생각보다 오래 걸림(5분 초과 확인됨)
           readinessProbe:
             httpGet:
@@ -69,6 +75,9 @@ spec:
           hostPath:
             path: /home/ubuntu/hf-cache
             type: DirectoryOrCreate
+        - name: warmup-probe
+          configMap:
+            name: vllm-warmup-probe
   strategy:
     blueGreen:
       activeService: vllm-active

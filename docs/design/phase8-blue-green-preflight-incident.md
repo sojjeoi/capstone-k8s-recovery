@@ -1368,8 +1368,7 @@ torch.compile 중 OOM 확인되어 배제됨) torch.compile 지연은 아니다.
 §14.2에서 확인한 cgroup 상태(CFS quota=3코어인데 cpuset=8코어라
 OpenMP 등이 8코어 기준으로 스레드를 구성할 수 있음)가 그럴듯한 후보
 메커니즘이지만, 이번 27초 구간에 실제로 CFS throttling이 발생했는지는
-측정하지 않았다 - 여전히 **확인 불가**. "모델 웜업"은 이번 회차로 더
-강하게 뒷받침됐지만 여전히 **유력 가설**이며, 정확한 내부 메커니즘은
+측정하지 않았다 - 여전히 **확인 불가**하고, 정확한 내부 메커니즘도
 미확정이다.
 
 **최종 상태**: Node Ready, 양쪽 pod Running(구 revision은
@@ -1378,5 +1377,76 @@ OpenMP 등이 8코어 기준으로 스레드를 구성할 수 있음)가 그럴�
 `experiments/results/headroom/headroom-coldstart-02-20260918T062557Z.json`
 에 보존(gitignore 대상, `results/headroom/` 유지).
 
-아직 03회차나 warmup 기능 구현으로는 넘어가지 않았다 - 사용자 검토·승인
-대기.
+**상태 확정(2026-09-18, 사용자 승인)**: `HEADROOM-COLDSTART-02`는
+**공식 headroom 2/3 PASS**로 확정됐다. 위 4가지 관찰(TCP·`/health`는
+즉시 정상 / 최초 Pod IP completion만 27.53초 소요 / 이후 동일 pod의
+completion은 정상 / selector·EndpointSlice 전환은 즉시 완료)에 근거해,
+**"Kubernetes Ready 판정 이후에도 최초 추론 초기화 비용이 존재한다"는
+운영 현상 자체는 확인된 것으로 기록한다.** 다만 그 비용을 유발하는
+내부 세부 메커니즘(§14.2의 cgroup quota/cpuset 불일치 포함, 정확히 어느
+코드 경로가 27초를 쓰는지)은 여전히 **미확정**으로 남긴다 - 확인된 것은
+"현상이 실재한다"는 사실이지 "왜 발생하는가"가 아니다.
+
+이 확정에 따라 03회차 전에 이 현상을 startupProbe 교체로 영구 해결하는
+작업을 시작한다 - §16 참고.
+
+## 16. `lab-cpu3-warm-v1` - startupProbe를 localhost 합성 completion 확인으로 교체 (2026-09-18, 구현+오프라인 테스트만, 실클러스터 미적용)
+
+§15에서 확정된 "Ready 이후에도 최초 추론 초기화 비용이 존재한다"는
+운영 현상을 03회차 전에 영구 해결한다. 단순 `/health` 통과만으로
+Ready 처리하는 현재 startupProbe로는 이 비용을 못 잡아낸다 - 실제
+첫 추론이 끝났는지를 직접 확인하도록 startupProbe 자체를 바꾼다.
+
+**구현 방식 선택**: 저장소를 확인한 결과 `Dockerfile.cpu`(rollout.yaml
+주석의 이미지 빌드 출처)가 이 저장소 안에 아예 없다 - `vllm-cpu-env:latest`는
+`sj-worker` 노드에서 버전관리 밖으로 로컬 빌드된 이미지이고, 이
+세션에는 노드에서 이미지를 재빌드할 수단(SSH·원격 빌드 트리거)이 없다.
+따라서 1순위(이미지에 포함)는 실행 불가로 배제하고, 2순위인 ConfigMap
+마운트 방식을 채택했다 - 저장소에 기존 ConfigMap 패턴은 없어 K8s
+표준 방식(볼륨 마운트)으로 새로 만들었다.
+
+**변경 파일**:
+- `gitops/apps/vllm-serving/probes/warmup_probe.py`(신규, 단일 출처) -
+  `localhost:8000/v1/completions`에 `{"model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "prompt": "Hi", "max_tokens": 1}`로 최소 요청, 60초 내부 timeout.
+  종료 코드: `0`=성공, `2`=연결 실패, `3`=timeout(bare `TimeoutError`와
+  `URLError`로 감싸인 timeout 둘 다 처리), `4`=비정상 status,
+  `5`=응답 형식 오류(JSON 파싱 실패 또는 `choices[0].text` 없음).
+- `gitops/apps/vllm-serving/probes/test_warmup_probe.py`(신규) -
+  `urllib.request.urlopen`을 모킹한 오프라인 테스트 8건.
+- `gitops/apps/vllm-serving/warmup-probe-configmap.yaml`(신규, 생성
+  파일) - `kubectl create configmap ... --from-file=probes/warmup_probe.py
+  --dry-run=client -o yaml`로 위 스크립트에서 그대로 생성(수기 복사
+  아님 - 전사 오류로 테스트 대상과 배포본이 어긋나는 것을 방지). 파일
+  상단에 재생성 명령과 "스크립트 수정 시 반드시 재생성" 경고 주석 포함.
+- `gitops/apps/vllm-serving/rollout.yaml` 수정:
+  - `startupProbe.httpGet` → `startupProbe.exec.command:
+    ["python3", "/opt/probes/warmup_probe.py"]`, `periodSeconds: 10`·
+    `failureThreshold: 90`(기존 유지, 요구사항 6) 그대로, `timeoutSeconds: 65`
+    신규 추가 - K8s exec probe 자체의 timeout(기본 1초!)이 스크립트
+    내부 60초 timeout보다 먼저 프로세스를 죽이면 깨끗한 종료 코드를
+    낼 수 없어, 스크립트가 자기 timeout으로 먼저 끝나도록 5초 여유를
+    더했다.
+  - `volumeMounts`/`volumes`에 `warmup-probe`(ConfigMap `vllm-warmup-probe`,
+    `/opt/probes`에 read-only 마운트) 추가.
+  - `readinessProbe`/`livenessProbe`는 전혀 손대지 않음(요구사항 8).
+  - `overlays/network-tolerant/probe-timeout-patch.yaml`은 확인만 하고
+    수정 안 함 - 그 파일은 `readinessProbe`/`livenessProbe.timeoutSeconds`만
+    JSON patch로 건드리고 `startupProbe`나 volume은 다루지 않아 이번
+    변경과 겹치지 않는다(요구사항 9).
+  - `spike-revision` → `"HEADROOM-COLDSTART-03"`, CPU 리소스 주석
+    `lab-cpu3-v1` → `lab-cpu3-warm-v1`.
+
+**오프라인 테스트 결과**: `pytest gitops/apps/vllm-serving/probes/test_warmup_probe.py -v`
+→ **8/8 PASS** - 정상 completion(exit 0), 연결 실패(exit 2), bare
+`TimeoutError`(exit 3), `URLError`로 감싸인 timeout(exit 3), HTTP
+500(exit 4), JSON 파싱 실패(exit 5), `choices` 필드 누락(exit 5),
+실제 전송 payload의 `max_tokens==1`·`model` 일치 확인 각 1건씩.
+
+**검증**: `kubectl apply --dry-run=client`로 `rollout.yaml`·
+`warmup-probe-configmap.yaml` 둘 다 스키마 유효성 확인(클러스터 미접촉).
+`volumeMounts`/`volumes`/`configMap.name` 3곳의 이름이 서로 정확히
+일치하는지 직접 재확인함(dry-run은 이 참조 일치까지는 검증 안 함).
+
+**아직 하지 않은 것**: 실클러스터에 `kubectl apply` 미실행, `HEADROOM-COLDSTART-03`
+미실행 - 사용자 검토·승인 대기.

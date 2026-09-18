@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""vLLM startupProbe - localhost 합성 completion 성공 확인.
+
+K8s startupProbe의 exec 명령으로 pod 내부에서 실행된다. 단순 /health
+확인은 HEADROOM-COLDSTART-02에서 확인된 최초 추론 초기화 비용(Pod IP
+직접 요청도 27.53초 소요, docs/design/phase8-blue-green-preflight-incident.md
+§15 참고)을 잡아내지 못했다 - 모델이 /health엔 이미 응답하지만 첫
+실제 추론은 아직 못 끝낸 상태로 Ready 처리되는 문제였다. 이 스크립트는
+Service/DNS를 거치지 않고 pod 내부 localhost:8000으로 직접 최소
+추론 요청을 보내 실제로 완료되는지 확인한다.
+
+startupProbe는 K8s 특성상 한 번 성공하면 다시 실행되지 않으므로 이
+요청은 pod 생애주기당 딱 한 번(성공 시)만 나간다."""
+import json
+import sys
+import urllib.error
+import urllib.request
+
+URL = "http://localhost:8000/v1/completions"
+MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+TIMEOUT_SEC = 60
+
+EXIT_OK = 0
+EXIT_CONN_FAIL = 2
+EXIT_TIMEOUT = 3
+EXIT_BAD_STATUS = 4
+EXIT_BAD_FORMAT = 5
+
+
+def check_completion(url: str = URL, model: str = MODEL, timeout_sec: float = TIMEOUT_SEC):
+    payload = json.dumps({"model": model, "prompt": "Hi", "max_tokens": 1}).encode()
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            status = resp.status
+            body = resp.read()
+    except urllib.error.HTTPError as e:
+        return EXIT_BAD_STATUS, f"비정상 status: HTTP {e.code}"
+    except TimeoutError as e:
+        return EXIT_TIMEOUT, f"{timeout_sec}초 내 응답 없음: {e}"
+    except urllib.error.URLError as e:
+        if isinstance(e.reason, TimeoutError):
+            return EXIT_TIMEOUT, f"{timeout_sec}초 내 응답 없음: {e.reason}"
+        return EXIT_CONN_FAIL, f"서버 연결 실패: {e.reason}"
+
+    if status != 200:
+        return EXIT_BAD_STATUS, f"비정상 status: HTTP {status}"
+    try:
+        data = json.loads(body)
+        text = data["choices"][0]["text"]
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+        return EXIT_BAD_FORMAT, f"응답 형식 오류: {e}"
+    return EXIT_OK, f"완료: {text!r}"
+
+
+if __name__ == "__main__":
+    code, message = check_completion()
+    print(message, file=sys.stderr if code else sys.stdout)
+    sys.exit(code)
