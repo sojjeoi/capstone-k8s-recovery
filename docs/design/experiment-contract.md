@@ -86,6 +86,14 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 > (`lab-cpu3-v1`)에서 재검증하기 전까지 신뢰할 수 없다. **이 표 자체는
 > 삭제·수정하지 않는다** - 4코어 시절의 실측 기록으로 그대로 남기고,
 > 재검증 결과는 새 절로 추가한다.
+>
+> **SUPERSEDED(2026-09-18)**: SLO는 v2(`L_baseline=0.256s`, threshold
+> `0.512s`)에서 **v3**(`L_baseline=0.324s`, threshold `0.648s`,
+> `lab-cpu3-warm-v1` 하에서 재측정)로 갱신됐다 - 현재 유효 기준은
+> `docs/design/slo-definition.md`의 SLO v3다. 이 페이지의 SLO v2 값과
+> 아래 ramp 단계 표는 여전히 4코어 시절 이력으로 보존하며, ramp 단계
+> 재보정은 `docs/design/phase8-blue-green-preflight-incident.md`
+> §22 이하 참고.
 
 | 항목 | 값 |
 |---|---|

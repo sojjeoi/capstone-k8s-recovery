@@ -1701,5 +1701,52 @@ L_BASELINE` 공식이라 자동으로 0.648 반영). `test_slo_judge.py`의
 원시 calibration CSV 3개는 `experiments/results/probe-calib-*-raw.csv`
 에 보존(gitignore 대상, 본 실험 데이터 아님 - calibration 전용).
 
-SLO v3 확정 완료. 아직 load_ramp 재보정이나 본 실험(60회)으로는
-넘어가지 않았다 - 사용자 검토·승인 대기.
+**상태 확정(2026-09-18, 사용자 승인)**: `lab-cpu3-warm-v1`(§19) 기준선
+동결과 SLO v3(`L_baseline=0.324s`, latency threshold=0.648s) 재보정
+모두 **완료**로 확정됐다. 현재 유효 기준은 SLO v3다(v1·v2는
+`slo-definition.md`에 이력으로만 보존).
+
+다음으로 load_ramp 재보정을 진행한다(§22) - 아직 본 실험(60회)이나
+다른 시나리오 실행으로는 넘어가지 않는다.
+
+## 22. `load_ramp` 재보정 계획 사전 등록 (측정 전, 2026-09-18)
+
+SLO v3(§21)와 `lab-cpu3-warm-v1`(§19) 하에서 `chaos/scenario-load-ramp.yaml`
+의 기존 단계(4코어·SLO v2 시절 확정, 커밋 `83bb61a`)가 여전히 유효한
+경계를 보여주는지 알 수 없다 - CPU는 줄고(4→3코어) threshold는
+늘어서(0.512→0.648s) 두 효과가 서로 다른 방향이라 사전 예측이
+불가능하다. `slo-definition.md`·`experiment-contract.md` 자체 원칙과
+동일하게, **아래를 측정 전에 고정**한다:
+
+1. 기존 0.10/0.25/0.50/0.75/1.00 RPS는 **후보값일 뿐** - 자동으로
+   재사용하지 않는다. 새 환경에서 처음부터 재탐색한다.
+2. 고정 조건: `lab-cpu3-warm-v1`(3코어+exec warmup startupProbe,
+   §19), probe 1 RPS·`max_tokens=1`·`chaos/probe-config.yaml`(SLO v3
+   판정용, ramp 요청과 별개), ramp 요청은 기존과 동일하게
+   `max_tokens=10`·`prompt="Hello"`(payload를 바꾸면 RPS 효과와
+   payload 효과를 구분할 수 없음 - `scenario-load-ramp-explore.yaml`
+   자체 원칙 재사용). 각 단계 90초(기존과 동일 - 60초 P95 롤링
+   윈도우가 이전 단계 표본을 완전히 밀어낼 시간 확보).
+3. 목표 패턴(관찰로 확인, 강제로 맞추지 않음): 낮은 단계=안정(SLO
+   준수), 중간 단계=threshold 근접(경계 구간 - 반복시 일부만 위반해도
+   문제 아님, v2 때도 그랬다), **후반 최소 2단계=반복적으로 위반**
+   (v2 때보다 엄격 - v2는 마지막 1단계만 3/3 위반이었다). 위반 중에도
+   **요청 실패(성공률 저하)나 시스템 붕괴는 없어야 한다** - 있으면
+   그 후보는 기각하고 다시 설계한다.
+4. ramp 종료 후(post-ramp drain) P95가 threshold(0.648s) 아래로
+   회복해야 한다 - 회복 안 하면 그 후보는 기각.
+5. 탐색 실행(`experiments/explore_ramp_intensity.py`, run_id
+   `explore-*`)은 전부 **calibration으로 분류하고 본 분석·본 실험
+   입력 데이터에서 제외**한다(v2 때와 동일 원칙, `slo-definition.md`
+   §7). 탐색용 설정은 `chaos/scenario-load-ramp-explore-v3.yaml`
+   (신규 - 기존 `scenario-load-ramp-explore.yaml`은 v2/4코어 시절
+   이력이라 덮어쓰지 않고 보존)에 반복해서 고쳐 쓴다.
+   `chaos/scenario-load-ramp.yaml`(본편)은 최종 후보 확정 전까지
+   손대지 않는다.
+6. 최종 후보가 3·4의 패턴을 **3회 독립 반복**으로 재현하는 것을
+   확인한 뒤에만 `scenario-load-ramp.yaml`을 그 값으로 동결한다 -
+   사후 조정 없이 사전 기준을 그대로 통과해야 확정(v2 때와 동일한
+   반편향 원칙).
+
+각 실행에서 단계별 P95·성공률·post-drain P95·Node/Pod 상태를 남긴다.
+탐색은 아직 시작하지 않았다 - 이 계획을 커밋한 뒤 실행한다.
