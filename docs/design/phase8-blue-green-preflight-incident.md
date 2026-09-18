@@ -1589,3 +1589,38 @@ startupProbe)이 이후 SLO v2 재검증·load_ramp 재보정의 새 기준선�
 
 아직 SLO나 load-ramp 재보정으로는 넘어가지 않았다 - 사용자 검토·승인
 대기.
+
+## 19. `lab-cpu3-warm-v1` - Phase 8 공식 기준선 동결 (2026-09-18)
+
+**동결 근거**(사용자 확정, §14~§18 실측에 근거): 3코어 구성 콜드스타트
+자원 안정성 3/3 PASS(§14/§15/§18) - warmup completion이 Ready보다
+먼저 완료됨을 로그로 직접 확인(§18, 08:49:58.996Z < 08:49:59Z,
+`timestamp_order.compare_before`로 확정) - preview 3/3·promotion 후
+active 5/5 요청 성공, timeout 0건(§18) - Node·Rollout·recovery-policy·
+cleanup 최종 상태 정상(§18) - readiness/liveness와
+`overlays/network-tolerant/`는 전혀 변경하지 않음(§16에서 확인, 이후
+미변경).
+
+**고정 값(2026-09-18, 아래 전부 `kubectl diff`로 live 클러스터와
+git 파일이 완전히 일치함을 확인한 시점 기준)**:
+
+| 항목 | 값 |
+|---|---|
+| CPU 제한 | `resources.limits.cpu: "3"`(`gitops/apps/vllm-serving/rollout.yaml`) |
+| startupProbe | `exec.command: ["python3", "/opt/probes/warmup_probe.py"]`, `periodSeconds: 10`, `timeoutSeconds: 65`, `failureThreshold: 90` |
+| readinessProbe/livenessProbe | 미변경 - `httpGet /health`, 기존 그대로 |
+| ConfigMap | `vllm-warmup-probe`(namespace `vllm-serving`), uid `ac269725-5a33-4538-a711-0e9cad6f0cfe`, 내용은 `gitops/apps/vllm-serving/probes/warmup_probe.py` 단일 출처(생성 파일 `warmup-probe-configmap.yaml`) |
+| 이미지 | `docker.io/library/vllm-cpu-env:latest`, digest `sha256:203c637f747a53bbc9914b084d38f37cb06cf4b372152af9e616adbf9d177e35`(노드 로컬 빌드, 레지스트리 미사용) |
+| Rollout revision | `rollout.argoproj.io/revision: "23"`, `currentPodHash: 85c55758c6`, `generation: 25`(= `observedGeneration`, 반영 완료) |
+| 기준 커밋 SHA | `398b448`(이 문서 작성 시점 HEAD) - `kubectl diff -f rollout.yaml -f warmup-probe-configmap.yaml` 결과 빈 diff로 live와 완전 일치 확인 |
+
+**동결의 의미**: 위 조합(3코어 CPU 제한 + exec 기반 warmup gate
+startupProbe + 기존 readiness/liveness)이 Phase 8의 공식 리소스·probe
+기준선이 된다. 이후 SLO v2 재검증·load_ramp 재보정은 이 기준선 위에서
+수행하며, 이 커밋 이후 `gitops/apps/vllm-serving/`에 대한 어떤 변경도
+이 절을 갱신하거나 새 기준선 절을 추가해야 한다.
+
+`docs/design/experiment-contract.md`의 "⚠️ 2026-09-18부로 잠정 무효"
+경고(§5 인근 load_ramp 확정 설정)는 이 동결로 재검증 절차가
+시작됐음을 뜻하며, 아직 해제되지 않았다 - SLO baseline·load_ramp
+재보정이 완료되고 확정될 때 별도로 해제한다.
