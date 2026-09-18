@@ -1530,3 +1530,62 @@ warmup 라인과 최초 `/health` 라인의 등장 순서로 교차 확인하는
 **다음**: annotation에 새 실행 ID를 넣어 완전히 새로운 preview를
 생성하고, 수정된 비교 로직으로 공식 `HEADROOM-COLDSTART-03`을
 처음부터 다시 수행한다 - 이 정리·수정 결과가 확인된 뒤 진행.
+
+## 18. 공식 `HEADROOM-COLDSTART-03` - warmup gate 검증 성공, 공식 headroom 3/3 완료 (2026-09-18)
+
+§17 정리·수정 승인 후 final preflight(저장소 clean·HEAD `d36fd92` 일치,
+active `7d6fbc8f96` 단독 Running, preview 없음, Node Ready, Chaos 없음,
+active completion 200, 수정된 `timestamp_order.py`+동결된
+`coldstart_monitor.py` 사용 확인) 전부 통과 후 `spike-revision:
+"HEADROOM-COLDSTART-03-RETRY"`(커밋 `2808ea6`)로 완전히 새로운 preview
+`vllm-serving-85c55758c6-ljc6n` 생성, 08:47:18Z 적용.
+
+**1. warmup gate - PASS**: `127.0.0.1:53824 - "POST /v1/completions
+HTTP/1.1" 200 OK`가 `08:49:58.996551762Z`에 기록됨. `ready_transition_utc
+= 08:49:59+00:00`로 서로 다른 초라 `timestamp_order.compare_before`가
+보조 근거(로그 순서) 없이 직접 확정: **warmup이 Ready보다 먼저 완료됨
+(True)** - 이번엔 같은 초 절삭 문제 자체가 발생하지 않았다(약 3.4ms
+차이). apply~Ready 163.7초.
+
+**2. 자원 안정성 - PASS**: 10분 안정성 완료(`abort: null`). 로그 전체를
+직접 스캔해 재확인 - `coldstart_poll`/`stability_poll` 79회 전부
+`risky_events: []`, `active_completion` 38회 전부 `success: true`
+(요약 수치가 아니라 로그 79건·38건을 직접 grep해 확인). Node CPU
+스냅샷(apply 시 load1 4.44/iowait 7.2%/사용률 45.5% -> 안정성 종료 시
+load1 4.08/iowait 1.0%/사용률 36.4%, Prometheus 실측)도 안정 또는
+감소 추세로 이상 없음. 양쪽 Node Ready 유지, pressure·재시작·OOM 전무.
+
+**3. 전환 품질 - PASS**: Ready 직후 preview completion **3/3 성공,
+timeout 0건**(1.28/0.57/0.80초, TTFB 0.98/0.26/0.31초 - 01회차의
+"3/3 전부 10초 타임아웃"과 정반대). Promotion 요청 09:00:15.633Z ->
+EndpointSlice 전환 +0.93초 -> selector 전환 +2.63초(01/02회차의
+<0.1초보다 느리지만 여전히 수 초 내). Promotion 후 active completion
+**5/5 성공, timeout 0건**(0.48~0.73초, 첫 성공 +0.834초).
+
+**4. 최종 상태 - PASS**: promotion 직후 스냅샷·이후 재확인 둘 다로
+검증 - `vllm-serving-7d6fbc8f96`(구)·`vllm-serving-748f568b45`
+(ATTEMPT1) 둘 다 `DESIRED=0/CURRENT=0/READY=0`로 scale-down 완료,
+`vllm-serving-85c55758c6`만 `1/1/1` 단독 유지. Rollout
+`status.phase=Healthy`. 양쪽 Node Ready, Chaos CR·experiment context
+0건, recovery-policy `/healthz` 200(재확인).
+
+**종합**: `success_criteria_met: true`,
+`transition_verdict: "all_criteria_met..."`. 원본 실측은
+`experiments/results/headroom/headroom-coldstart-03-20260918T084718Z.json`
+에 보존(gitignore 대상).
+
+**공식 headroom 3/3 완료**: 01(§14, preview 웜업 유력 가설로 분류)·
+02(§15, Pod IP 직접 실측으로 웜업 가설 강하게 뒷받침, 사용자 확정)·
+03(§18, warmup gate로 구조적 해결 및 실측 검증) 세 회차 모두
+headroom(자원 안정성) PASS - `lab-cpu3-v1`(3코어 CPU 제한)의 자원
+설계는 3회 반복으로 확인됐다. 추가로 03회차는 01/02가 남겼던 전환
+품질 문제(모델 첫 추론 웜업 비용이 Ready 판정에 반영 안 됨)를
+`lab-cpu3-warm-v1`(exec startupProbe로 실제 warmup 완료를 Ready 조건에
+포함)로 구조적으로 해결하고, 그 해결이 실제로 작동함을 직접 로그
+증거로 검증했다. **동결 여부는 사용자 확정 대기** - 확정되면
+`gitops/apps/vllm-serving/`의 현재 설정(3코어+exec warmup
+startupProbe)이 이후 SLO v2 재검증·load_ramp 재보정의 새 기준선이
+된다.
+
+아직 SLO나 load-ramp 재보정으로는 넘어가지 않았다 - 사용자 검토·승인
+대기.
