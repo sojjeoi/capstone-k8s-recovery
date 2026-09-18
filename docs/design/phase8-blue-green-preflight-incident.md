@@ -1992,3 +1992,44 @@ P95가 threshold 바로 아래(0.60~0.63초)에 몰려있다가 0.25RPS에서만
 아직 다음 탐색 범위 조정이나 3회 재현성 검증으로 넘어가지 않았다.
 `load_ramp_adapter.IMAGE`도 아직 미변경(사용자 지시대로 최종 강도
 동결 시 함께 처리 예정).
+
+## 25. 최종 후보 재현성 검증 - 사전 등록 (측정 전, 2026-09-18)
+
+§24 탐색 결과에 근거해 사용자가 최종 후보 5단계를 확정:
+**0.025 → 0.05 → 0.20 → 0.30 → 0.40 RPS**, 각 90초
+(`chaos/scenario-load-ramp-explore-v3.yaml`에 반영). 실행 전, 판정
+규칙을 코드(`experiments/verify_ramp_candidate.py`의
+`judge_candidate()`, 오프라인 테스트 9개로 검증 완료)와 문서 양쪽에
+고정한다:
+
+1. `0.025`·`0.05` RPS: 유효한 반복 전부에서 SLO **미위반**(한 번이라도
+   위반하면 실패).
+2. `0.20` RPS: **경계 단계로만 기록** - 위반 여부가 통과/실패를
+   좌우하지 않는다.
+3. `0.30`·`0.40` RPS: 각각 유효한 반복의 **최소 2/3에서 위반**.
+4. 모든 유효한 반복에서 요청 성공률 **100%**.
+5. 모든 유효한 반복에서 실제 ramp 종료(마지막 stage의 `stage_end_utc`)
+   이후 drain P95가 threshold 아래로 회복.
+6. 모든 유효한 반복에서 Node Ready·pressure 없음, vLLM pod restart
+   증가 없음(반복 시작 전/후 비교).
+7. 구간 분류는 `ramp.py`가 기록한 실제 `stage_start_utc`/
+   `stage_end_utc`만 쓴다(§23 수정, 명목 duration 아님).
+8. 각 반복 시작 전 60초 baseline이 이미 threshold를 넘으면 ramp를
+   시작하지 않고 그 시도를 `invalid`(reason=`baseline_violating`)로
+   분리 - 유효 반복 3회 집계에 넣지 않는다(`run_candidate()`의
+   baseline gate로 구현).
+9. 반복 사이에는 Node/Pod 상태를 확인(quiescence)하고 60초
+   cooldown(`verify_ramp_candidate.COOLDOWN_SEC`) 후 다음 반복.
+
+**실행 원칙**: 3회를 전부 완료한 뒤 위 규칙을 기계적으로 적용해
+판정한다 - 첫 반복 결과가 기대와 달라도 중간에 후보 값을 바꾸지
+않는다. 안전 문제(Node 이상, pod restart 증가)나 하네스 오류가 생기면
+그 시점에 중단하고 원인을 먼저 확인한다.
+
+**통과 시**: (1) `scenario-load-ramp.yaml`을 이 5단계로 동결 (2)
+`load_ramp_adapter.IMAGE`를 `loadgen-runner:phase8-v3-boundaries`로
+변경 (3) 이미지 ID/digest·`/ramp.py` SHA-256을 문서에 기록(§23.6
+참고, 이미 확보됨) (4) 전체 오프라인 테스트 실행 (5) 커밋·푸시.
+**미통과 시**: 결과를 그대로 보존하고 새 값을 정하기 전에 보고한다.
+
+측정은 아직 시작하지 않았다 - 이 사전 등록을 커밋한 뒤 실행한다.

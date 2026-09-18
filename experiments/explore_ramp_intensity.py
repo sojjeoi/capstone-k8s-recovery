@@ -103,23 +103,43 @@ def _print_bucket(label, stats, extra=""):
           f"{stats['p95']:>8.3f} {stats['max']:>8.3f} {'예' if stats['violates'] else '아니오':>6}  {extra}")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="ramp 강도 재설계용 stage별 sweep 탐색")
-    parser.add_argument("--ramp-config", required=True)
-    parser.add_argument("--probe-config", default=str(Path(__file__).parent.parent / "chaos" / "probe-config.yaml"))
-    args = parser.parse_args()
+def check_node_and_pods(node_name="sj-worker", vllm_pod=None):
+    """Node Ready·pressure, vLLM pod restart 여부를 확인한다. 재현성
+    검증(반복 사이 quiescence·cooldown, §25)과 단발 탐색 양쪽에서 쓴다."""
+    r = _run(["kubectl", "get", "node", node_name, "-o", "json"], check=True)
+    import json as _json
+    node = _json.loads(r.stdout)
+    conditions = {c["type"]: c["status"] for c in node["status"]["conditions"]}
+    node_ok = (conditions.get("Ready") == "True"
+               and conditions.get("MemoryPressure") == "False"
+               and conditions.get("DiskPressure") == "False"
+               and conditions.get("PIDPressure") == "False")
+    restart_count = None
+    if vllm_pod:
+        r2 = _run(["kubectl", "get", "pod", vllm_pod, "-n", NAMESPACE, "-o", "json"])
+        if r2.returncode == 0:
+            pod = _json.loads(r2.stdout)
+            statuses = pod.get("status", {}).get("containerStatuses", [])
+            restart_count = sum(c.get("restartCount", 0) for c in statuses)
+    return {"node_ok": node_ok, "conditions": conditions, "restart_count": restart_count}
 
-    ramp_cfg = yaml.safe_load(Path(args.ramp_config).read_text(encoding="utf-8"))
+
+def run_candidate(ramp_config_path: str, probe_config_path: str, label: str = "explore") -> dict:
+    """ramp+probe를 1회 실행하고 stage별 결과를 반환한다. baseline이 이미
+    threshold를 넘으면(=진짜 정상 상태에서 시작한 게 아니면) ramp를 아예
+    시작하지 않고 {"valid": False, "reason": "baseline_violating", ...}를
+    반환한다(§25 재현성 기준 7번 - invalid calibration으로 분리)."""
+    ramp_cfg = yaml.safe_load(Path(ramp_config_path).read_text(encoding="utf-8"))
     stages = ramp_cfg["stages"]
     total_ramp_sec = sum(s["duration_sec"] for s in stages)
     num_stages = len(stages)
-    straggler_margin_sec = num_stages * 10  # 각 stage 종료 시 최대 10초 대기가 누적될 수 있음
+    straggler_margin_sec = num_stages * 10
 
-    run_id = f"explore-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
-    ramp_pod = f"explore-ramp-{uuid.uuid4().hex[:6]}"
-    probe_pod = f"explore-probe-{uuid.uuid4().hex[:6]}"
-    ramp_config_name = Path(args.ramp_config).name
-    probe_config_name = Path(args.probe_config).name
+    run_id = f"{label}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    ramp_pod = f"{label[:7]}-ramp-{uuid.uuid4().hex[:6]}"
+    probe_pod = f"{label[:7]}-probe-{uuid.uuid4().hex[:6]}"
+    ramp_config_name = Path(ramp_config_path).name
+    probe_config_name = Path(probe_config_path).name
     local_raw = RESULTS_DIR / f"probe-{run_id}-raw.csv"
     local_ramp_summary = RESULTS_DIR / f"ramp-{run_id}-summary.csv"
 
@@ -128,6 +148,7 @@ def main():
 
     print(f"run_id: {run_id}, baseline: {BASELINE_SEC}초, 총 ramp 시간(명목): {total_ramp_sec}초")
 
+    result = {"run_id": run_id, "valid": True, "reason": None}
     try:
         for pod_name in (ramp_pod, probe_pod):
             _run(["kubectl", "run", pod_name, "-n", NAMESPACE, f"--image={IMAGE}",
@@ -137,9 +158,9 @@ def main():
             if not _wait_pod_ready(pod_name):
                 raise RuntimeError(f"{pod_name} Ready 시간초과")
 
-        _run(["kubectl", "cp", os.path.relpath(args.ramp_config), f"{NAMESPACE}/{ramp_pod}:/{ramp_config_name}"],
+        _run(["kubectl", "cp", os.path.relpath(ramp_config_path), f"{NAMESPACE}/{ramp_pod}:/{ramp_config_name}"],
              check=True)
-        _run(["kubectl", "cp", os.path.relpath(args.probe_config), f"{NAMESPACE}/{probe_pod}:/{probe_config_name}"],
+        _run(["kubectl", "cp", os.path.relpath(probe_config_path), f"{NAMESPACE}/{probe_pod}:/{probe_config_name}"],
              check=True)
         print(f"안정화 대기 {SETTLE_SEC}초...")
         time.sleep(SETTLE_SEC)
@@ -147,7 +168,7 @@ def main():
         # 1) probe를 ramp보다 먼저 시작 - SLO 판정 가능한 baseline을 먼저
         #    확보해야 ramp 시작 전 구간이 진짜 "정상 상태"였는지 사후에 볼 수 있다.
         probe_inner = (f"PYTHONUNBUFFERED=1 python /probe.py --config /{probe_config_name} "
-                       f"--run-id {run_id} --scenario explore --arm native --rep 1 "
+                       f"--run-id {run_id} --scenario {label} --arm native --rep 1 "
                        f"--out /probe-raw.csv --duration-sec {probe_duration} "
                        f"> /probe.log 2>&1; echo $? > /probe.exit")
         _run(["kubectl", "exec", "-n", NAMESPACE, probe_pod, "--", "sh", "-c",
@@ -156,8 +177,24 @@ def main():
         print(f"probe 시작 - SLO 판정 가능한 baseline 확보 위해 {BASELINE_SEC}초 대기 후 ramp 시작")
         time.sleep(BASELINE_SEC)
 
-        # 2) baseline 확보 후에만 ramp 시작. --summary-out으로 고정 경로에
-        #    stage별 실제 시작/종료 UTC를 기록하게 한다.
+        # baseline gate - ramp 시작 전, probe가 지금까지 쌓은 표본(60개
+        # 가량, 아직 flush된 부분만)을 미리 읽어 이미 threshold를 넘고
+        # 있으면 이 시도 자체를 무효로 치고 ramp를 시작하지 않는다.
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        r_baseline = _run(["kubectl", "exec", "-n", NAMESPACE, probe_pod, "--", "cat", "/probe-raw.csv"])
+        local_raw.write_text(r_baseline.stdout, encoding="utf-8")
+        baseline_rows = slo_judge.load_raw(local_raw) if r_baseline.stdout.strip() else []
+        baseline_stats = bucket_stats(baseline_rows)
+        result["baseline_precheck"] = baseline_stats
+        if baseline_stats["violates"]:
+            result["valid"] = False
+            result["reason"] = "baseline_violating"
+            print(f"baseline이 이미 threshold를 초과(P95={baseline_stats['p95']:.3f}s) - "
+                  f"ramp를 시작하지 않고 invalid calibration으로 분리")
+            return result
+
+        # 2) baseline이 정상일 때만 ramp 시작. --summary-out으로 고정
+        #    경로에 stage별 실제 시작/종료 UTC를 기록하게 한다.
         ramp_inner = (f"PYTHONUNBUFFERED=1 python /ramp.py --config /{ramp_config_name} "
                       f"--run-id {run_id} --method native --rep 1 "
                       f"--summary-out /ramp-summary.csv > /ramp.log 2>&1; echo $? > /ramp.exit")
@@ -176,13 +213,13 @@ def main():
             time.sleep(5)
         if not ramp_done:
             print("경고: ramp.py가 예상 시간 내에 안 끝남 - 현재까지 데이터로 진행")
+        result["ramp_completed_in_time"] = ramp_done
 
         print(f"ramp 완료(경과 {time.monotonic() - t_start:.1f}초, 명목 {total_ramp_sec}초와의 차이가 "
               f"straggler 누적 지연) - post-ramp drain {POST_RAMP_DRAIN_SEC}초 대기")
         time.sleep(POST_RAMP_DRAIN_SEC)
 
         r = _run(["kubectl", "exec", "-n", NAMESPACE, probe_pod, "--", "cat", "/probe-raw.csv"], check=True)
-        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         local_raw.write_text(r.stdout, encoding="utf-8")
 
         r2 = _run(["kubectl", "exec", "-n", NAMESPACE, ramp_pod, "--", "cat", "/ramp-summary.csv"], check=True)
@@ -191,22 +228,50 @@ def main():
         _delete_pod(ramp_pod)
         _delete_pod(probe_pod)
 
+    if not result["valid"]:
+        return result
+
     rows = slo_judge.load_raw(local_raw)
     ramp_stages = parse_ramp_summary(local_ramp_summary.read_text(encoding="utf-8"))
     buckets = classify_stages(rows, ramp_stages)
 
-    print(f"\n=== 결과 (probe raw: {local_raw}, ramp summary: {local_ramp_summary}) ===")
-    print(f"경계는 ramp.py가 기록한 실제 stage_start_utc/stage_end_utc 기준 - 명목 duration 아님\n")
+    result["local_raw"] = str(local_raw)
+    result["local_ramp_summary"] = str(local_ramp_summary)
+    result["baseline"] = bucket_stats(buckets["baseline"])
+    result["stages"] = [{"stage": s["stage"], "stage_start_utc": s["stage_start_utc"],
+                          "stage_end_utc": s["stage_end_utc"], **bucket_stats(bucket)}
+                         for s, bucket in buckets["stages"]]
+    result["drain"] = bucket_stats(buckets["drain"])
+    all_buckets = [result["baseline"]] + result["stages"] + [result["drain"]]
+    result["all_success_100pct"] = all(b["n"] and b["success_rate"] == 1.0 for b in all_buckets)
+    return result
+
+
+def print_result(result: dict):
+    if not result["valid"]:
+        print(f"\n=== INVALID ({result['reason']}) - run_id: {result['run_id']} ===")
+        if result.get("baseline_precheck"):
+            _print_bucket("baseline(무효)", result["baseline_precheck"])
+        return
+    print(f"\n=== 결과 (probe raw: {result['local_raw']}, ramp summary: {result['local_ramp_summary']}) ===")
+    print("경계는 ramp.py가 기록한 실제 stage_start_utc/stage_end_utc 기준 - 명목 duration 아님\n")
     print(f"{'bucket':<22} {'n':>5} {'성공률':>8} {'mean':>8} {'P95':>8} {'max':>8} {'위반?':>6}  구간(UTC)")
-
-    _print_bucket("baseline(ramp 전)", bucket_stats(buckets["baseline"]))
-    for s, bucket in buckets["stages"]:
+    _print_bucket("baseline(ramp 전)", result["baseline"])
+    for s in result["stages"]:
         window = f"{s['stage_start_utc'].isoformat()} ~ {s['stage_end_utc'].isoformat()}"
-        _print_bucket(s["stage"], bucket_stats(bucket), window)
-    drain_from = ramp_stages[-1]["stage_end_utc"].isoformat() if ramp_stages else "-"
-    _print_bucket("post-ramp(drain)", bucket_stats(buckets["drain"]), f"{drain_from} 이후")
-
+        _print_bucket(s["stage"], s, window)
+    drain_from = result["stages"][-1]["stage_end_utc"].isoformat() if result["stages"] else "-"
+    _print_bucket("post-ramp(drain)", result["drain"], f"{drain_from} 이후")
     print(f"\nlatency SLO threshold = {slo_judge.LATENCY_THRESHOLD}s")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="ramp 강도 재설계용 stage별 sweep 탐색")
+    parser.add_argument("--ramp-config", required=True)
+    parser.add_argument("--probe-config", default=str(Path(__file__).parent.parent / "chaos" / "probe-config.yaml"))
+    args = parser.parse_args()
+    result = run_candidate(args.ramp_config, args.probe_config)
+    print_result(result)
 
 
 if __name__ == "__main__":
