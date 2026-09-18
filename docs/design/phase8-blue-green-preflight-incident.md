@@ -2962,3 +2962,165 @@ context가 없음이 이미 확실함) 조회 자체를 시도하지 않는다.
 이 값들로 실제 계산되는 것도 확인했다. RECOVERY_POLICY_SIGNAL_URL
 도달성 사전 확인으로 fail-closed도 추가했다. 실클러스터 작업 없음 -
 3-arm 파일럿은 아직 시작하지 않았다.
+
+## 34. 테스트 격리 수정 + recovery-policy 실클러스터 배포·smoke 검증 (2026-09-19)
+
+§33 승인 후, 3-arm 파일럿 전 마지막 선행 작업 - (1) 테스트 격리 결함
+수정, (2) 변경된 recovery-policy를 실클러스터에 배포, (3) 안전한
+조건에서 timing 엔드포인트 신호 전파를 실측 확인.
+
+### 34.1 `test_main.py` patch 누수 수정
+
+**원인 재확인**: `TestClient(app)`를 직접 실험해 확인한 결과(설치된
+FastAPI 0.137.2 / Starlette 1.3.1 기준), bare `TestClient(app)` 생성·
+요청은 `@app.on_event("startup")`을 아예 발화시키지 않는다 - 즉
+`git_client.start_worker` patch는 애초에 막을 대상이 없었다(무해하지만
+불필요). 반면 `git_client.enqueue`는 `process_signal()`이 매 신호마다
+실제로 호출하므로 이 patch만은 진짜로 필요했다.
+
+**재현(변경 전, 이번 절 작업 시작 시점의 커밋 `b221da7`에서 직접 확인)**:
+```
+$ pytest test_main.py test_git_client.py -q
+3 failed, 23 passed
+FAILED test_git_client.py::test_enqueue_commits_and_pushes
+FAILED test_git_client.py::test_non_fast_forward_recovers_via_rebase
+FAILED test_git_client.py::test_restart_requeues_pending
+```
+직접 파고든 결과 원인이 두 겹이었다: ① `test_main.py`가
+`patch(...).start()`만 하고 `.stop()`이 없어 mock이 프로세스 전역에
+남음(1차 원인, §33.3에서 이미 기록). ② 더 근본적으로, `test_git_client.py`
+는 자기 모듈 docstring에 "env var를 git_client import 전에 세팅해야
+모듈 상수에 반영된다"고 명시돼 있다 - `git_client.py`의 `DATA_DIR`/
+`REPO_DIR`/`GIT_REMOTE_URL` 등이 **import 시점** `os.environ`에서 한
+번만 읽혀 모듈 상수로 고정되기 때문이다. `test_main.py`(→`main.py`→
+`import git_client`)가 **먼저** import되면 `git_client`가 기본값(운영
+경로 `/data`, 빈 remote)으로 이미 캐시돼, `test_git_client.py`가
+나중에 자기만의 테스트용 env var를 설정해도 이미 캐시된 모듈 객체는
+갱신되지 않는다(파이썬 `sys.modules` 캐싱). ①만 고치고 파일 순서를
+`test_main.py test_git_client.py`로 강제하면 여전히 실패하는 게 이
+② 때문이었다 - 다만 pytest **기본(알파벳) 수집 순서**는
+`test_git_client.py`가 `test_main.py`보다 먼저라 ②가 실제로는 걸리지
+않는다는 것도 함께 확인했다.
+
+**수정**: `test_main.py`의 module-level `patch(...).start()` 두 줄을
+`_patch_git_client` autouse fixture(함수 스코프, `with patch(...),
+patch(...) as mock_enqueue: yield`)로 교체 - 매 테스트 실행 전 걸고
+직후 반드시 원복한다. 기존 테스트들이 참조하던 전역 이름
+`mock_enqueue`는 fixture가 매번 새 mock으로 재할당해 그대로 호환된다
+(부수 효과로 테스트 간 호출 이력 격리도 개선됨). `python test_main.py`
+직접 실행 경로(fixture가 안 도는 경로)도 `__main__` 블록 전체를 동일한
+`with` 블록으로 감싸 동등하게 동작하도록 맞췄다.
+
+**검증(변경 후)**:
+```
+$ python test_main.py                                    # 직접 실행
+모두 통과
+
+$ pytest test_main.py -q                                 # 단독
+23 passed
+
+$ pytest test_main.py test_git_client.py -q              # 인위적으로 문제 순서 강제
+23 passed  (이전엔 여기서 3 failed - patch 누수 원인만 제거되고,
+             import-시점-env-var 원인은 이 순서에서도 더 이상 안
+             걸림: git_client가 test_main.py 쪽에서 먼저 import돼도
+             enqueue/start_worker가 매번 patch/unpatch되니 실제
+             REPO_DIR 등의 값과 무관하게 항상 mock을 타기 때문)
+
+$ pytest -q                                               # recovery-policy/ 전체(자연 수집 순서)
+44 passed
+
+$ pytest experiments recovery-policy -q -m "not live_cluster"   # 지시된 통합 실행(항목 2)
+206 passed, 2 deselected
+```
+
+### 34.2 recovery-policy 실클러스터 배포
+
+**빌드**: `ssh capstone-worker`로 접속(이번 세션 이미 검증된 접근) -
+`/tmp/recovery-policy-build-20260919`에 Dockerfile이 필요로 하는
+소스 파일만(`__pycache__`/`.pytest_cache`/`state/` 등 로컬 산출물
+제외) 복사 후 `sudo docker build -t recovery-policy:local .`
+(의존성 설치·kubectl-argo-rollouts 다운로드 레이어는 캐시 재사용,
+`COPY . .` 레이어만 재실행 - 소스 변경만 정확히 반영됐다는 뜻).
+새 이미지 ID `sha256:634e974ed0a51f131eff193594440ad87fec4ee4cb24b403ed72656019c2da31`.
+`sudo docker save | sudo ctr -n k8s.io images import -`로 기존과
+동일한 브리지 방식으로 반입 - `recovery-policy:local` 태그가 이전
+매니페스트 다이제스트(`sha256:2f404d5f...`)에서 새 값
+(`sha256:6829b0fe...`)으로 갱신됨을 직접 확인.
+
+**롤아웃**: `kubectl rollout restart deployment/recovery-policy -n
+vllm-serving` → `kubectl rollout status`로 완료 확인
+("successfully rolled out"). 배포 전/후 상태:
+
+| 항목 | 배포 전 | 배포 후 |
+|---|---|---|
+| pod | `recovery-policy-76fbd457b8-5hmvj` | `recovery-policy-6595dc7b85-z8q8f` |
+| imageID | `sha256:6f0b6977...` | `sha256:634e974e...`(방금 빌드한 이미지와 정확히 일치) |
+| RESTARTS | 1(2일 전, 이번 세션과 무관) | **0** |
+
+**확인**: `/healthz` → `{"status":"ok"}`. 기존 admin API
+(`/admin/quiescent` → `{"quiescent":true,...}`, `/admin/experiment-run`
+→ `{"current":null}`) 정상. 신규 `/admin/experiment-run/timing` →
+`{"run_id":null,"t_detection":null,"t_api_request":null}` - 배포와
+동시에 새 엔드포인트가 실제로 응답함을 확인.
+
+### 34.3 timing 엔드포인트 smoke 검증 (조치 미발생, 안전 조건)
+
+실제 chaos 주입 전, 조치가 절대 발생할 수 없는 조건에서 신호 전파
+경로를 실측했다. **사전 확인**: 이 시점 Rollout의 `pauseConditions`가
+빈 배열이고 `previewSelector==activeSelector` - `is_paused_pre_
+promotion()`이 반드시 `False`를 반환하므로 `anomaly_risk` 신호는
+`policy.decide()`상 항상 `observe_only`만 나올 수 있음을 코드 로직과
+직접 대조해 미리 확정한 뒤 진행(추정이 아니라 이 시점 실제 Rollout
+상태로 확정).
+
+`run_id=smoke-timing-20260919T010600Z`로 7개 항목 전부 실측:
+
+1. **등록 전 값 없음**: `GET timing` → 전부 null(§34.2에서 이미 확인).
+2. **등록 후 올바른 조회**: `POST /admin/experiment-run` 후 `GET
+   timing` → `{"run_id":"smoke-timing-20260919T010600Z",
+   "t_detection":null,"t_api_request":null}`.
+3. **다른 run_id 배제**: `run_id=smoke-timing-WRONG-RUN`으로 신호
+   전송(`outcome=no_action` 정상 처리됨) 후 `GET timing` → 여전히
+   `t_detection:null` - 등록된 run_id 것으로 안 새어듦.
+4. **유효 신호 후 t_detection 기록**: 올바른 run_id로 `anomaly_risk`
+   신호 전송(`outcome=no_action`, `reasoning="anomaly_risk 감지했으나
+   preview가 준비 안 됨"`) 후 `GET timing` →
+   `t_detection="2026-09-18T16:00:55.559312+00:00"`.
+5. **조치 없음 → t_api_request=null 유지**: 위 응답에서
+   `t_api_request:null` 그대로(`decided_at`=...575340과 비교해
+   `t_detection`이 그보다 앞선 값인 것도 확인 - 지시한 순서 그대로
+   `policy.decide()` 호출 전에 기록됨).
+6. **clear 후 값 제거**: `POST clear?run_id=smoke-timing-20260919T010600Z`
+   → `{"status":"cleared"}`, 이어서 `GET timing` →
+   `{"run_id":null,"t_detection":null,"t_api_request":null}`.
+7. **정리 확인**: `GET /admin/experiment-run` → `{"current":null}`,
+   `GET /admin/quiescent` → `{"quiescent":true,"active_count":0}` -
+   실험용 context·잔여 알림 없음.
+
+7개 전부 지시된 그대로 통과. **참고**: 이 smoke의 신호 2건(다른
+run_id 1건 + 유효 신호 1건)도 `decision_log.py`의 정책대로
+`git_client.enqueue()`를 거쳐 실제 GitHub 저장소에 감사 커밋으로
+비동기 push된다(no_action도 기록 대상 - 이미 이 세션 초반 HEADROOM
+조사 때도 "audit: 1건 감사기록 (adhoc)" 형태로 여러 번 발생했던 것과
+동일한, 설계된 정상 동작) - 별도로 되돌리거나 삭제하지 않았다.
+
+### 34.4 smoke 후 클러스터 상태 재확인
+
+Node `sj-control`/`sj-worker` 둘 다 `Ready`. Rollout `phase=Healthy`,
+`currentPodHash==stableRS`(단일 revision), `previewSelector==
+activeSelector`(구분되는 preview 없음). Chaos CR
+(`podchaos/networkchaos/stresschaos/iochaos`) 없음. `vllm-serving`
+pod `RESTARTS=0`(7시간+ 무변경), `recovery-policy` pod
+`RESTARTS=0`(배포 후 smoke까지 거치고도 크래시 없음), 둘 다
+`Running`/`Ready=true`. experiment context는 §34.3에서 이미 null로
+확인.
+
+### 34.5 결론
+
+지시된 6단계 중 1~5를 전부 완료·검증했다: 테스트 격리 수정(before/
+after 재현 기록 포함), `experiments`+`recovery-policy` 통합 오프라인
+스위트 206 passed, recovery-policy 실클러스터 배포(재시작 0회, 신규
+엔드포인트 포함 전체 API 정상), 조치 미발생 조건에서의 timing 신호
+전파 smoke 7개 전부 통과, smoke 후 클러스터 완전 정상. 3-arm
+파일럿(다음 단계로 지시됨)은 이 문서화·커밋·푸시 이후, 별도 지시로
+시작한다 - 이번 세션에서는 아직 실행하지 않는다.

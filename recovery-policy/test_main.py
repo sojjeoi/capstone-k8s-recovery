@@ -6,22 +6,38 @@ monkeypatch로 대체한다 - main.py가 `from rollouts_client import ...`로
 
 git_client.enqueue/start_worker도 전체 모듈 단위로 no-op patch한다 - 실제
 git clone/PVC 쓰기는 이 파일 책임이 아니라 test_git_client.py 몫(로컬 bare
-저장소로 별도 검증)."""
+저장소로 별도 검증).
+
+2026-09-19 수정: 이 patch를 예전엔 `patch(...).start()`만 호출하고
+`.stop()`이 없어 프로세스 전역에 영구히 남았다 - 이 파일 자신의 테스트는
+전부 통과하지만(재현 스크립트 참고), 같은 pytest 세션에서 test_main.py
+"다음"에 수집되는 다른 파일(예: test_git_client.py)이 실제 git_client
+함수 대신 이 mock을 계속 보게 되는 문제가 있었다(`git stash`로 이번 세션
+변경분을 전부 제거한 원본 코드에서도 동일 재현 확인 - 기존부터 있던
+결함). 이제 `_patch_git_client` autouse fixture가 매 테스트 함수 실행
+직전에 patch를 걸고 직후에 반드시 원복한다 - `mock_enqueue`는 기존
+테스트들이 전역 이름으로 그대로 참조할 수 있게 fixture가 매번 새로
+할당한다(테스트 간 호출 이력도 자연히 격리됨, 부수 효과로 얻는 개선)."""
 import sys
 from unittest.mock import MagicMock, patch
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+import pytest
 from fastapi.testclient import TestClient
 
 import safety
 from main import app
 
-patch("main.git_client.start_worker", lambda: None).start()
-mock_enqueue = MagicMock()
-patch("main.git_client.enqueue", mock_enqueue).start()
-
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _patch_git_client():
+    global mock_enqueue
+    with patch("main.git_client.start_worker", lambda: None), \
+         patch("main.git_client.enqueue") as mock_enqueue:
+        yield
 
 
 def _reset_state():
@@ -451,28 +467,33 @@ def test_timing_endpoint_null_when_no_active_experiment():
 
 
 if __name__ == "__main__":
-    test_healthz()
-    test_quiescent_true_when_no_active_alerts()
-    test_quiescent_false_when_alertmanager_unreachable()
-    test_anomaly_signal_observe_only_when_preview_not_ready()
-    test_anomaly_signal_promotes_when_preview_ready()
-    test_promote_unverified_logged_correctly()
-    test_duplicate_signal_skipped()
-    test_action_cooldown_blocks_repeat_promotion()
-    test_alertmanager_webhook_end_to_end()
-    test_unknown_signal_type_via_alertmanager()
-    test_experiment_run_id_injected_into_alertmanager_path()
-    test_experiment_run_idempotent_reregister_and_conflict()
-    test_reset_cooldown_requires_quiescent_and_no_active_context()
-    test_get_experiment_run_reflects_current_state()
-    test_stale_alert_not_tagged_with_current_run()
-    test_predictive_signal_sets_t_detection()
-    test_reactive_alert_sets_t_detection()
-    test_duplicate_signal_does_not_overwrite_t_detection()
-    test_stale_and_different_run_id_signals_do_not_set_t_detection()
-    test_no_action_leaves_t_api_request_null()
-    test_promotion_sets_t_api_request_after_t_detection()
-    test_context_clear_removes_timing_for_next_trial()
-    test_timing_endpoint_null_when_no_active_experiment()
-    _reset_state()
-    print("모두 통과")
+    # pytest면 위 _patch_git_client autouse fixture가 매 테스트마다 자동으로
+    # 걸어주지만, 직접 실행(python test_main.py)에선 fixture가 안 돌므로
+    # 전체를 감싸는 이 with 블록이 동일한 역할을 한다(2026-09-19 수정).
+    with patch("main.git_client.start_worker", lambda: None), \
+         patch("main.git_client.enqueue") as mock_enqueue:
+        test_healthz()
+        test_quiescent_true_when_no_active_alerts()
+        test_quiescent_false_when_alertmanager_unreachable()
+        test_anomaly_signal_observe_only_when_preview_not_ready()
+        test_anomaly_signal_promotes_when_preview_ready()
+        test_promote_unverified_logged_correctly()
+        test_duplicate_signal_skipped()
+        test_action_cooldown_blocks_repeat_promotion()
+        test_alertmanager_webhook_end_to_end()
+        test_unknown_signal_type_via_alertmanager()
+        test_experiment_run_id_injected_into_alertmanager_path()
+        test_experiment_run_idempotent_reregister_and_conflict()
+        test_reset_cooldown_requires_quiescent_and_no_active_context()
+        test_get_experiment_run_reflects_current_state()
+        test_stale_alert_not_tagged_with_current_run()
+        test_predictive_signal_sets_t_detection()
+        test_reactive_alert_sets_t_detection()
+        test_duplicate_signal_does_not_overwrite_t_detection()
+        test_stale_and_different_run_id_signals_do_not_set_t_detection()
+        test_no_action_leaves_t_api_request_null()
+        test_promotion_sets_t_api_request_after_t_detection()
+        test_context_clear_removes_timing_for_next_trial()
+        test_timing_endpoint_null_when_no_active_experiment()
+        _reset_state()
+        print("모두 통과")
