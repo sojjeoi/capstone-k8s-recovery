@@ -3124,3 +3124,21 @@ after 재현 기록 포함), `experiments`+`recovery-policy` 통합 오프라인
 전파 smoke 7개 전부 통과, smoke 후 클러스터 완전 정상. 3-arm
 파일럿(다음 단계로 지시됨)은 이 문서화·커밋·푸시 이후, 별도 지시로
 시작한다 - 이번 세션에서는 아직 실행하지 않는다.
+
+### 34.6 감사기록 귀속 재확인 (2026-09-19, 3-arm 파일럿 직전)
+
+smoke가 만든 커밋 2개(`7ca8597`/`ee9f595`)를 직접 열어 확인 - 두
+`.jsonl` 레코드의 `idempotency_key`가 각각 `smoke-timing-WRONG-RUN:
+anomaly_risk`/`smoke-timing-20260919T010600Z:anomaly_risk`로 신호가
+실은 run_id를 정확히 담고 있고, 파드의 `/data/outbox.json`에서도
+`commit_sha`(`7ca85976...`/`ee9f595d...`)가 `git log`와 정확히
+일치함을 확인했다. **"adhoc"은 두 레코드 어디에도 나타나지 않는다**
+(`git_client.enqueue()`의 `signal.raw.get("experiment_run_id") or
+"adhoc"` 폴백은 run_id 자체가 없는 신호에만 적용됨, 확인 완료). 유효
+smoke 신호의 `t_detection`(`...559312`)→`decided_at`(`...575340`)→
+`t_audit_write`(`...575634`)가 16ms 이내에 순서대로 이어져 있어 동일
+요청 처리 흐름임도 확인 - **run_id 전파는 버그가 아님을 확정**한다.
+별개로(이번 판정과 무관), `DecisionRecord.evidence`가 `main.py`의
+모든 `build()` 호출에서 항상 `{}`로 남아 신호의 `detector` 필드가
+감사기록에 전혀 저장되지 않는다는 것도 확인했다 - 이번 지시 범위
+밖이라 손대지 않음.
