@@ -16,7 +16,7 @@ spec:
       labels:
         app: vllm-serving
       annotations:
-        spike-revision: "HEADROOM-COLDSTART-03" # lab-cpu3-warm-v1 공식 콜드스타트 3회차 - 이번엔 annotation이 아니라 startupProbe 자체(아래) 변경이 새 리비전을 만든다
+        spike-revision: "HEADROOM-COLDSTART-03-RETRY" # ATTEMPT1(측정 버그로 오탐 abort, 실제 시스템 결함 아님) 이후 timestamp_order.py 수정 완료 - 값만 바꿔 완전히 새 preview 생성, 자원/probe/모델 미변경
     spec:
       containers:
         - name: vllm
