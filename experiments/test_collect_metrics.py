@@ -418,6 +418,38 @@ def test_network_degrade_fields_survive_json_to_csv_round_trip(tmp_path):
     print("OK - trial JSON -> comparison.csv 파일까지 6개 원본 필드 + 2개 해석 필드 모두 남음")
 
 
+def test_slo_version_v3_preserved_through_comparison():
+    # slo_judge.SLO_VERSION="v3"로 기록된 trial이 build_comparison()을
+    # 거쳐도 "v3"가 그대로 보존돼야 한다(2026-09-18, run_once.py 기본값이
+    # 조용히 "v2"로 기록되던 문제의 회귀 방지).
+    row = _base_row(slo_version="v3", latency_slo_sec=0.648)
+    out_rows, issues = build_comparison([row])
+    assert out_rows[0]["slo_version"] == "v3"
+    print("OK - slo_version='v3'가 build_comparison()을 거쳐도 보존됨")
+
+
+def test_baseline_fields_preserved_through_comparison():
+    # 주입 전 baseline 미확보 문제 수정(2026-09-18)으로 TrialResult에 추가된
+    # 5개 baseline 필드가 build_comparison()을 거쳐 comparison.csv 행까지
+    # 그대로 남아야 한다 - 미구현 어댑터(pod_kill/network_degrade의 옛
+    # 결과 등)로 기록된, 이 필드들이 아예 없는 row도 오류 없이 None으로
+    # 읽혀야 한다.
+    row = _base_row(baseline_valid=True, t_baseline_ready="2026-01-01T00:00:57+00:00",
+                     baseline_sample_count=42, baseline_p95=0.31, baseline_availability=1.0)
+    out_rows, issues = build_comparison([row])
+    assert out_rows[0]["baseline_valid"] is True
+    assert out_rows[0]["t_baseline_ready"] == "2026-01-01T00:00:57+00:00"
+    assert out_rows[0]["baseline_sample_count"] == 42
+    assert out_rows[0]["baseline_p95"] == 0.31
+    assert out_rows[0]["baseline_availability"] == 1.0
+
+    old_row = _base_row()  # baseline 필드 자체가 없는 기존 결과(하위호환)
+    old_out_rows, _ = build_comparison([old_row])
+    assert old_out_rows[0]["baseline_valid"] is None
+    assert old_out_rows[0]["t_baseline_ready"] is None
+    print("OK - baseline 5개 필드가 comparison.csv 행까지 보존됨, 미구현 결과는 None으로 안전하게 읽힘")
+
+
 if __name__ == "__main__":
     import tempfile
     from pathlib import Path
@@ -454,14 +486,5 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as d:
         test_network_degrade_fields_survive_json_to_csv_round_trip(Path(d))
     test_slo_version_v3_preserved_through_comparison()
+    test_baseline_fields_preserved_through_comparison()
     print("\n모두 통과")
-
-
-def test_slo_version_v3_preserved_through_comparison():
-    # slo_judge.SLO_VERSION="v3"로 기록된 trial이 build_comparison()을
-    # 거쳐도 "v3"가 그대로 보존돼야 한다(2026-09-18, run_once.py 기본값이
-    # 조용히 "v2"로 기록되던 문제의 회귀 방지).
-    row = _base_row(slo_version="v3", latency_slo_sec=0.648)
-    out_rows, issues = build_comparison([row])
-    assert out_rows[0]["slo_version"] == "v3"
-    print("OK - slo_version='v3'가 build_comparison()을 거쳐도 보존됨")

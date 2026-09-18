@@ -99,15 +99,28 @@ def evaluate(rows):
     return points
 
 
-def find_t_slo(points):
+def find_t_slo(points, not_before=None):
     """latency 위반은 30초 연속 지속돼야 인정(§3), availability 위반은 즉시(§4).
     둘 중 먼저 만족되는 시각을 반환한다. 위반 여부·30초 지속 판정 자체는
     기존과 동일하게 sent_at(`p["t"]`) 기준으로 계산하지만(값 안 바뀜),
     반환값은 그 판정을 확정지은 표본의 observed_at이다(2026-09-18 정정 -
-    실패가 아직 확정되지도 않은 전송 시각을 SLO 위반 시각으로 쓰면 안 됨)."""
+    실패가 아직 확정되지도 않은 전송 시각을 SLO 위반 시각으로 쓰면 안 됨).
+
+    not_before(2026-09-18 추가 - 주입 전 baseline 미확보 문제 수정): 지정하면
+    sent_at(`p["t"]`) < not_before인 point는 latency 스트릭의 시작점도,
+    availability 위반의 t_slo 후보도 될 수 없다. 그런 point를 만나면 그냥
+    건너뛰므로(streak_start를 건드리지 않음), 주입 전부터 이어지던 위반이라도
+    "스트릭 시작"은 항상 not_before 이후 첫 위반 표본부터 다시 셈 - 주입 전
+    상태가 30초 지속 조건을 조금이라도 대신 채워주는 걸 막기 위함이다. 이
+    필터는 points 자체를 잘라내지 않는다 - evaluate()가 이미 계산해 둔 각
+    point의 rolling P95/성공률(주입 전 표본 포함)은 그대로 유지되고, 여기서는
+    "이 point가 판정의 기준 시각이 될 수 있는가"만 제한한다(§28.4의
+    overlapping-window 자체는 정상 동작이므로 유지, 판정 시작 시각만 제한)."""
     latency_t_slo = None
     streak_start = None
     for p in points:
+        if not_before is not None and p["t"] < not_before:
+            continue
         if p["latency_violating"]:
             streak_start = streak_start or p["t"]
             if (p["t"] - streak_start).total_seconds() >= LATENCY_PERSIST_SEC:
@@ -116,10 +129,42 @@ def find_t_slo(points):
         else:
             streak_start = None
 
-    availability_t_slo = next((p["observed_at"] for p in points if p["availability_violating"]), None)
+    availability_t_slo = next(
+        (p["observed_at"] for p in points
+         if p["availability_violating"] and (not_before is None or p["t"] >= not_before)),
+        None,
+    )
 
     candidates = [t for t in (latency_t_slo, availability_t_slo) if t is not None]
     return min(candidates) if candidates else None
+
+
+def find_baseline_ready(points):
+    """points 맨 앞부터 latency 평가 가능(표본 MIN_SAMPLES_FOR_RELIABLE_P95개
+    이상)하고 P95·성공률 모두 정상인 상태가 LATENCY_PERSIST_SEC(30초) 연속
+    유지되는 첫 시점을 찾는다(2026-09-18 추가 - 주입 전 baseline 관찰 단계용).
+    이전 실험 프로토콜은 probe 생존만 확인하고 바로 주입해서, 콜드스타트
+    잔재나 초기 불안정 상태가 그대로 "주입 전 정상 상태"로 오인될 수 있었다
+    (pilot-load_ramp-native-01-20260918T130111Z에서 실측 확인). 조건식은
+    find_t_recovery()와 동일(evaluable + 무위반 스트릭)하지만, t_slo 이후가
+    아니라 points 전체 맨 앞부터 찾는다는 점이 다르다 - "위반에서 회복"이
+    아니라 "애초에 안정 상태에 도달"을 확인하는 용도라 별도 함수로 둔다.
+    준비 안 됐으면 None."""
+    streak_start = None
+    for p in points:
+        if p["latency_evaluable"] and not p["latency_violating"] and not p["availability_violating"]:
+            if streak_start is None:
+                streak_start = p["t"]
+            if (p["t"] - streak_start).total_seconds() >= LATENCY_PERSIST_SEC:
+                return {
+                    "ready_at": p["observed_at"],
+                    "sample_count": p["sample_count"],
+                    "p95": p["p95"],
+                    "availability": p["success_rate"],
+                }
+        else:
+            streak_start = None
+    return None
 
 
 def find_t_recovery(points, t_slo):

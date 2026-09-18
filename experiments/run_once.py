@@ -2,8 +2,8 @@
 """Phase 8 trial 공통 하네스. experiment-contract.md의 상태머신·TrialResult
 스키마를 그대로 구현한다.
 
-상태: PREPARING -> READY -> PROBING -> INJECTING -> OBSERVING -> CLEANING
-      -> COMPLETED / INVALID / TIMEOUT
+상태: PREPARING -> READY -> PROBING -> BASELINE -> INJECTING -> OBSERVING
+      -> CLEANING -> COMPLETED / INVALID / TIMEOUT
 
 시나리오별 실제 로직(chaos 주입 방법, probe 구현)은 이 파일이 모른다 - Injector/
 Prober 어댑터(둘 다 작은 콜백 묶음)를 인자로 받는다. 여기서는 순서·타이밍·
@@ -63,12 +63,14 @@ PROBE_READY_TIMEOUT_SEC = 30
 INJECTION_STARTED_TIMEOUT_SEC = 30
 QUIESCENCE_TIMEOUT_SEC = 60
 QUIESCENCE_POLL_SEC = 3
+BASELINE_TIMEOUT_SEC = 120  # 주입 전 baseline 관찰 단계 상한(2026-09-18 추가) - 이 안에 조건이 안 채워지면 invalid_run
 
 
 class TrialState(str, Enum):
     PREPARING = "preparing"
     READY = "ready"
     PROBING = "probing"
+    BASELINE = "baseline"
     INJECTING = "injecting"
     OBSERVING = "observing"
     CLEANING = "cleaning"
@@ -180,7 +182,18 @@ class Prober:
     추가). is_slo_evaluable()이 "주입 이후" 표본만으로 유효한 관측 창이
     쌓였는지 판단하려면 주입 기준 시각을 알아야 하는데, Prober는 자기가
     언제 시작됐는지만 알고 주입이 언제 일어났는지는 모른다 - 이 훅이 그
-    기준점을 넘겨준다. 미구현이면 안 불린다(무해)."""
+    기준점을 넘겨준다. 미구현이면 안 불린다(무해).
+    get_baseline_status(): 선택 구현(2026-09-18 추가 - 주입 전 baseline
+    미확보 문제 수정). run_once()가 주입 전 BASELINE 단계에서 최대
+    BASELINE_TIMEOUT_SEC(120초) 동안 poll_interval_sec 간격으로 반복 호출한다.
+    매번 {"ready": bool, "sample_count": int|None, "p95": float|None,
+    "availability": float|None, "ready_at": str(선택)}를 반환해야 한다 -
+    "ready"가 True인 첫 호출에서 그 시점의 값들을 결과에 기록하고 즉시 주입을
+    진행, 120초 안에 한 번도 True가 안 나오면 주입 자체를 하지 않고
+    invalid_run으로 끝낸다. None(미구현)이면 이 단계 전체를 건너뛴다(하위호환
+    - pod_kill/network_degrade 등 아직 이 훅이 없는 어댑터는 기존과 동일하게
+    probe 생존 확인 직후 바로 주입, baseline_valid는 검증 안 함을 뜻하는
+    None으로 기록)."""
     start: Callable[[], None]
     is_alive: Callable[[], bool]
     check_slo_violation: Callable[[], bool]
@@ -190,6 +203,7 @@ class Prober:
     get_actual_recovery_time: Optional[Callable[[], Optional[str]]] = None
     is_slo_evaluable: Optional[Callable[[], bool]] = None
     notify_injected: Optional[Callable[[str], None]] = None
+    get_baseline_status: Optional[Callable[[], dict]] = None
 
 
 @dataclass
@@ -239,6 +253,17 @@ class TrialResult:
     # 방식(t_injection 단일 필드, t_slo/t_recovery가 sent_at 기준)으로 기록된
     # trial이다 - 기존 파일 재수정 없이 구분하기 위한 것.
     timing_schema_version: str = "v2"
+    # 주입 전 baseline 관찰 단계 결과(2026-09-18 추가 - 주입 전 baseline
+    # 미확보 문제 수정). prober.get_baseline_status()가 "ready"를 처음 True로
+    # 낸 시점의 값들, 또는(120초 안에 못 채우면) 마지막으로 관측된 값들을
+    # 기록한다. baseline_valid: True=조건 충족 후 주입 진행, False=120초 안에
+    # 못 채워 invalid_run, None=어댑터가 get_baseline_status 미구현이라 이
+    # 단계 자체를 건너뜀(검증 안 함 - is_slo_evaluable=None과 동일 관례).
+    t_baseline_ready: Optional[str] = None
+    baseline_sample_count: Optional[int] = None
+    baseline_p95: Optional[float] = None
+    baseline_availability: Optional[float] = None
+    baseline_valid: Optional[bool] = None
     # injector.inject() 호출 직전 시각(2026-09-18 추가) - 실제 주입 구간의
     # 하한. 첫 poll에서 이미 대상이 사라져 t_injection_last_seen이 없을 때
     # injection_observation_error_sec 계산의 대체 기준점으로도 쓰인다.
@@ -305,6 +330,37 @@ def _wait_for(check: Callable[[], bool], timeout: float, interval: float = 1.0) 
             return True
         time.sleep(interval)
     return False
+
+
+def _wait_for_baseline(prober: "Prober", timeout: float, interval: float) -> dict:
+    """주입 전 BASELINE 단계 폴링(2026-09-18 추가). prober.get_baseline_status
+    미구현이면 이 단계 자체를 건너뛴다(하위호환) - valid=None은 "검증 안 함"
+    이지 실패가 아니다(is_slo_evaluable=None 관례와 동일). 구현돼 있으면
+    "ready"가 True가 될 때까지 최대 timeout초 동안 interval 간격으로 poll하고,
+    실패해도(timeout 소진) 마지막으로 관측된 sample_count/p95/availability는
+    그대로 반환해 사후에 "얼마나 가까웠는지" 알 수 있게 한다."""
+    if prober.get_baseline_status is None:
+        return {"valid": None, "t_ready": None, "sample_count": None, "p95": None, "availability": None}
+    deadline = time.monotonic() + timeout
+    status = {"sample_count": None, "p95": None, "availability": None}
+    while time.monotonic() < deadline:
+        status = prober.get_baseline_status()
+        if status.get("ready"):
+            return {
+                "valid": True,
+                "t_ready": status.get("ready_at") or _now(),
+                "sample_count": status.get("sample_count"),
+                "p95": status.get("p95"),
+                "availability": status.get("availability"),
+            }
+        time.sleep(interval)
+    return {
+        "valid": False,
+        "t_ready": None,
+        "sample_count": status.get("sample_count"),
+        "p95": status.get("p95"),
+        "availability": status.get("availability"),
+    }
 
 
 def _write_result(result: TrialResult, results_dir: Path) -> None:
@@ -379,6 +435,7 @@ def run_once(
     injector: Injector, prober: Prober, timeout_sec: float, poll_interval_sec: float = 1.0,
     probe_ready_timeout_sec: float = PROBE_READY_TIMEOUT_SEC,
     injection_started_timeout_sec: float = INJECTION_STARTED_TIMEOUT_SEC,
+    baseline_timeout_sec: float = BASELINE_TIMEOUT_SEC,
     run_id: Optional[str] = None,
     is_pilot: bool = False,
     probe_profile: str = "inference-max1-rps1",
@@ -443,6 +500,25 @@ def run_once(
         _register_experiment_context(run_id, scenario, arm, rep, result.t_run_start)
         context_registered = True
         _write_result(result, results_dir)
+
+        # BASELINE(2026-09-18 추가) - probe가 살아있다는 것만 확인하고 바로
+        # 주입하면, 콜드스타트 잔재나 초기 불안정 상태가 "주입 전 정상 상태"
+        # 로 오인될 수 있다(pilot-load_ramp-native-01-20260918T130111Z에서
+        # 실측 확인). get_baseline_status 미구현 어댑터(pod_kill/network_degrade
+        # 등, 아직 이 훅 없음)는 baseline_valid=None으로 이 단계를 건너뛰고
+        # 기존과 동일하게 바로 INJECTING으로 진행 - is False로만 게이트해야
+        # None(미검증)을 실패로 오판하지 않는다.
+        result.state = TrialState.BASELINE.value
+        _write_result(result, results_dir)
+        baseline = _wait_for_baseline(prober, baseline_timeout_sec, poll_interval_sec)
+        result.baseline_valid = baseline["valid"]
+        result.t_baseline_ready = baseline["t_ready"]
+        result.baseline_sample_count = baseline["sample_count"]
+        result.baseline_p95 = baseline["p95"]
+        result.baseline_availability = baseline["availability"]
+        _write_result(result, results_dir)
+        if result.baseline_valid is False:
+            raise TrialInvalid(f"주입 전 baseline 관찰 조건을 {baseline_timeout_sec}초 내에 충족 못 함")
 
         result.state = TrialState.INJECTING.value
         result.t_injection_request = _now()  # injector.inject() 호출 직전 - 실제 주입 구간의 하한

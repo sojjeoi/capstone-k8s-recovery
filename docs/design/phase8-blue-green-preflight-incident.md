@@ -2278,3 +2278,167 @@ at`)는 표본 수를 35→65로 늘렸다 - 20개 미만 구간이 더 이상 �
 전체 오프라인 테스트 통과 확인, 실클러스터 재실행 없음. 이 부수
 현상에 대한 추가 조치는 사용자 결정 대기 - 아직 다른 arm·시나리오·
 60회 본 실험으로 넘어가지 않았다.
+
+## 29. 주입 전 baseline 미확보 문제 수정 (2026-09-18)
+
+### 29.1 문제 재정의
+
+§28.4에서 확인한 "서로 다른 두 클러스터가 겹치는 60초 윈도우를 통해
+합쳐 보이는 현상" 자체는 **결함이 아니다** - rolling P95·60초
+윈도우·30초 지속 조건은 현재 SLO 정의상 의도된 동작이며 이번
+수정에서 손대지 않는다. 대신 지시에 따라 진짜 근본 원인인 **실험
+프로토콜의 결함**을 수정한다: 지금까지 하네스는 probe가 살아있다는
+것만 확인하면(`_wait_for(prober.is_alive, ...)`) 바로
+`injector.inject()`를 호출했다 - 주입 전 상태가 실제로 안정적인지
+(콜드스타트 잔재 없이 60초 이상 SLO를 만족하는 상태인지)는 한 번도
+확인하지 않았다. 파일럿 CSV에 주입 전 표본이 단 2개뿐이었던 것
+자체가 이 결함의 직접 증거다.
+
+### 29.2 수정 원칙
+
+- `WINDOW_SEC`(60초)·`LATENCY_PERSIST_SEC`(30초)·rolling P95 계산
+  로직은 절대 변경하지 않는다 - §28.4의 겹침 현상은 그대로 유지.
+- §28의 small-sample 수정(`MIN_SAMPLES_FOR_RELIABLE_P95`=20 미만이면
+  판정 보류)도 그대로 유지 - 이번 수정과 독립적이다.
+- 새 보호장치는 두 층으로 나눈다: (1) 주입 **전**에 실제로 baseline이
+  안정 상태에 도달할 때까지 기다리는 예방 계층, (2) 그래도 주입 전
+  표본이 판정에 섞여 들어가는 걸 막는 `not_before` 게이트(사후
+  방어). 표본 자체는 자르지 않는다 - 주입 전 정상 표본은 주입 후
+  point의 rolling P95/가용성 계산에 계속 입력으로 쓰인다(윈도우
+  계산은 `evaluate()`가 그대로 담당, `not_before`는 오직
+  `find_t_slo()`의 **후보 자격**만 제한).
+
+### 29.3 구현
+
+**`experiments/slo_judge.py`**: `find_t_slo(points, not_before=None)` -
+`not_before` 지정 시 `sent_at < not_before`인 point는 latency 스트릭의
+시작/연장에도, availability 위반의 t_slo 후보에도 기여하지 못하고
+건너뛴다(단순 `continue` - 이후 point의 스트릭은 항상 처음부터 다시
+셈, 주입 전 위반이 주입 후 스트릭 지속시간에 "보태지는" 것도
+막힘). `find_baseline_ready(points)` 신규 - points 맨 앞부터
+`latency_evaluable and not violating and not availability_violating`
+상태가 30초 연속 유지되는 첫 시점을 찾아 `{ready_at, sample_count,
+p95, availability}`를 반환(`find_t_recovery()`와 조건식은 같고, t_slo
+이후가 아니라 처음부터 찾는다는 점만 다름). 준비 안 됐으면 `None`.
+
+**`experiments/run_once.py`**: `TrialState.BASELINE` 상태 추가
+(READY와 INJECTING 사이). `Prober`에 선택 필드
+`get_baseline_status: Optional[Callable[[], dict]]` 추가 - 미구현이면
+(pod_kill/network_degrade 등, 아직 이 훅이 없는 임의의 향후 어댑터)
+BASELINE 단계 전체를 건너뛰고 기존과 완전히 동일하게 바로 주입한다
+(하위호환, `baseline_valid=None`="검증 안 함"으로 기록 - `is_slo_
+evaluable` 미구현 시의 기존 관례와 동일). 구현돼 있으면 새 헬퍼
+`_wait_for_baseline()`이 `baseline_timeout_sec`(기본값
+`BASELINE_TIMEOUT_SEC=120`, `run_once()` 인자로 테스트 등에서 조정
+가능) 동안 `poll_interval_sec` 간격으로 `get_baseline_status()`를
+반복 호출 - `ready=True`가 나오면 그 시점 값을 기록하고 주입 진행,
+120초 안에 못 나오면 **`injector.inject()`를 아예 호출하지 않고**
+`TrialInvalid`로 `invalid_run` 처리(`baseline_valid is False`로만
+게이트 - `None`과 명확히 구분해야 훅 미구현 어댑터를 오판정하지
+않음). `TrialResult`에 `t_baseline_ready`/`baseline_sample_count`/
+`baseline_p95`/`baseline_availability`/`baseline_valid` 5개 필드
+추가.
+
+**`experiments/load_ramp_adapter.py`**: `check_slo_violation()`/
+`get_actual_slo_time()`/`check_recovered()` 3곳 모두
+`slo_judge.find_t_slo(..., not_before=injection_ref["t"])`로 통일
+(`injection_ref`는 기존 `notify_injected()` 훅이 이미 채워주던 값을
+그대로 재사용 - 프로토콜 시그니처를 바꾸지 않고 어댑터 내부 클로저만
+수정). `get_baseline_status()` 신규 구현 - probe raw CSV를 갱신하고
+`slo_judge.find_baseline_ready()`를 호출, 아직 준비 안 됐으면 최신
+point의 표본수/p95/가용성 스냅샷을 반환(사후 분석용 가시성).
+**`run_pod_kill_trial.py`/`run_network_degrade_trial.py` 둘 다 별도
+Prober 없이 `make_load_ramp_prober()`를 "범용 Prober 팩토리"로 그대로
+재사용한다는 걸 직접 확인**(코드 주석에도 명시) - 즉 이번 수정은
+`load_ramp_adapter.py` 한 곳만 고쳐도 pod_kill/network_degrade
+포함 3개 시나리오 전부에 동일하게 적용된다. `pod_kill_adapter.py`/
+`network_degrade_adapter.py`는 애초에 `Injector`만 정의하고
+`Prober`는 정의하지 않는다(직접 확인 - `Prober(` 생성 호출이 저장소
+전체에서 `load_ramp_adapter.py`와 `test_run_once.py`에만 존재).
+
+**`experiments/collect_metrics.py`**: `build_comparison()` 출력에
+`baseline_valid`/`t_baseline_ready`/`baseline_sample_count`/
+`baseline_p95`/`baseline_availability` 5개 필드 추가 - 기존 필드가
+없는 과거 결과는 `row.get(...)`이 안전하게 `None`을 반환.
+
+### 29.4 오프라인 테스트
+
+- `test_slo_judge.py`: 14→22개(+8) - `not_before`가 주입 전 위반을
+  후보에서 제외(단독/가용성 축 각 1개), 주입 전+후 합산으로 30초를
+  채우던 경우가 게이트 적용 시 스트릭이 주입 후부터 다시 시작해
+  더 이상 안 채워짐, `not_before`가 point의 rolling window 계산
+  자체(주입 전 표본 포함 여부)는 건드리지 않음, 순수 주입 후 지속
+  위반은 기존과 동일하게 탐지, **보존된 파일럿 원본 CSV를
+  `not_before=t_injection`으로 재분석해도 실제 클러스터 탐지력이
+  줄지 않음**(§29.6), `find_baseline_ready()` 준비됨/미준비 각 1개.
+- `test_run_once.py`: 오프라인 18→21개(+3) - `get_baseline_status`가
+  점진적으로 ready가 되는 경우 그때까지 대기 후 정상 주입+결과 필드
+  기록, 끝까지 ready가 안 되면 **`injector.inject()`가 한 번도
+  호출되지 않고** `invalid_run`, 훅 미구현 시 단계 자체를 건너뛰고
+  기존과 동일하게 즉시 주입(회귀 없음 명시적 확인).
+- `test_collect_metrics.py`: +1개 - baseline 5개 필드가
+  `comparison.csv` 행까지 보존되고, 이 필드가 아예 없는 과거 결과도
+  전부 `None`으로 안전하게 읽힘.
+- **부수 발견·수정(이번 작업과 무관한 사전 결함)**: `test_slo_judge.
+  py`와 `test_collect_metrics.py` 둘 다 `__main__` 블록이 파일 뒤쪽에
+  나중에 추가된 테스트 함수를(§28에서 추가된 `test_preserved_pilot_
+  raw_csv_...`/`test_slo_version_v3_preserved_through_comparison`)
+  정의보다 먼저 호출하고 있어, `python test_X.py`로 직접 실행하면
+  `NameError`로 죽는 상태였다(`pytest` 경로는 이름 기반 자동 수집이라
+  영향 없었음 - 그래서 지금까지 안 드러남). 정의 위치를 `__main__`
+  앞으로 옮겨 두 파일 다 직접 실행도 정상 동작하도록 고쳤다(판정
+  로직 변경 없음, 순수 위치 정리).
+- 전체 스위트 `pytest experiments/ -m "not live_cluster"`:
+  **124 passed, 2 deselected**(live_cluster 훅, `RUN_LIVE_TESTS=1`
+  필요).
+
+### 29.5 파일럿 재분류 갱신
+
+`pilot-load_ramp-native-01-20260918T130111Z`의 `outcome`/`state`(둘 다
+이미 `invalid_run`/`invalid`)는 지시대로 다시 건드리지 않았다.
+`notes` 필드에만 `pre_injection_baseline_not_established`가 2차
+원인으로 추가 확인됐다는 문장과 이 절(§29) 참고 경로를 남겼다 - JSON
+diff는 `notes` 한 필드뿐, 다른 모든 필드(원본 timestamp 포함)는
+그대로.
+
+### 29.6 보존된 CSV를 새 로직으로 재분석 - 이번엔 값이 같았다(하지만 이유가 있다)
+
+지시대로 보존된 원본 CSV(`probe-pilot-load_ramp-native-01-
+20260918T130111Z-native-1-raw.csv`)를 `not_before=t_injection`
+(`13:03:27.036375`)으로 재분석했다. 결과: `t_slo=2026-09-18
+13:04:15.461843+00:00` - **§28.4에서 이미 보고한 값과 정확히
+동일하다**(`not_before` 있음/없음 두 값을 직접 코드로 비교해 확인,
+차이 없음).
+
+원인도 확인됐다: 이 CSV에서 주입 시각(`t_injection`) 이전 표본은
+정확히 2개뿐이고, §28의 small-sample 수정 이후 이 2개는 애초에
+`latency_evaluable=False`라(20개 미만) 한 번도
+`latency_violating=True`였던 적이 없다(직접 조회해 확인). 즉
+`not_before`가 걸러낼 "주입 전 위반 후보" 자체가 이 CSV에는 이미
+없었다 - §28(small-sample 보류)과 §29(not_before) 두 수정이 이번
+한 건에 한해 우연히 같은 지점을 이미 막고 있었던 것이다. 두 수정은
+서로 다른 상황을 겨냥한다(§28은 "표본이 적어 신뢰 못 할 때", §29는
+"표본은 충분해도 주입 전 시점이라 인정 못 할 때") - 이번 CSV가
+전자에만 해당했을 뿐, 후자가 무의미하다는 뜻은 아니다(baseline 관찰
+단계가 이번에 처음 생겼으므로, 이 run은 애초에 그 단계를 거친 적이
+없다).
+
+**그렇다고 이 run이 유효해지는 것은 아니다.** 주입 전 표본이 2개뿐인
+것 자체가 "60초 baseline 관찰"이 전혀 없었다는 직접 증거이고, t=39~
+41초의 두 번째 클러스터가 "정상 baseline을 거친 뒤 주입했다면"
+나왔을 값과 같은지는 이 run만으로는 확인할 수 없다(비교 대상이 될
+정상 baseline 자체가 없었으므로 - 확인 불가, 추정하지 않는다). 이
+run은 §28에서 이미 확정한 대로 `invalid_run`/파일럿 제외로 유지하며,
+이번 재분석은 "§29 수정이 기존 위반 탐지력을 깎아먹지 않았다"는
+회귀 확인 용도로만 쓴다 -
+`test_preserved_pilot_raw_csv_with_not_before_still_detects_real_
+cluster`가 이 사실(값이 같다는 것 포함)을 코드로 고정한다.
+
+### 29.7 실클러스터 재실행 여부
+
+지시대로 여기서 멈춘다. 이번 작업은 전부 오프라인 코드·테스트·
+문서였고, baseline 관찰 단계가 실제 하네스에서 의도대로 동작하는지
+(예: 진짜 콜드스타트 직후에 붙여서 60초+ 관찰 후에만 주입되는지,
+120초 안에 준비 안 되면 실제로 주입 없이 invalid_run으로 끝나는지)
+실클러스터로 확인하는 건 다음 지시를 기다린다. 다른 arm·시나리오·
+60회 본 실험으로도 넘어가지 않았다.

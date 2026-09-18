@@ -305,22 +305,48 @@ def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str
     def check_slo_violation():
         if not _warmed_up():
             return False
-        return slo_judge.find_t_slo(_refresh()) is not None
+        return slo_judge.find_t_slo(_refresh(), not_before=injection_ref["t"]) is not None
 
     def check_recovered():
         points = _refresh()
-        t_slo = slo_judge.find_t_slo(points)
+        t_slo = slo_judge.find_t_slo(points, not_before=injection_ref["t"])
         return t_slo is not None and slo_judge.find_t_recovery(points, t_slo) is not None
 
     def get_actual_slo_time():
-        t = slo_judge.find_t_slo(cache["points"])
+        t = slo_judge.find_t_slo(cache["points"], not_before=injection_ref["t"])
         return t.isoformat() if t else None
 
     def get_actual_recovery_time():
         points = cache["points"]
-        t_slo = slo_judge.find_t_slo(points)
+        t_slo = slo_judge.find_t_slo(points, not_before=injection_ref["t"])
         t_rec = slo_judge.find_t_recovery(points, t_slo) if t_slo else None
         return t_rec.isoformat() if t_rec else None
+
+    def get_baseline_status():
+        # run_once.py의 BASELINE 단계(2026-09-18 추가)가 최대 120초 동안 반복
+        # 호출한다. injection_ref는 아직 채워지기 전(notify_injected()는 주입
+        # 확인 이후에만 호출됨)이므로 여기서는 안 쓴다 - "주입 전 안정 상태
+        # 도달"이 목적이라 not_before 개념 자체가 없다(find_baseline_ready는
+        # points 맨 앞부터 찾음).
+        points = _refresh()
+        if not points:
+            return {"ready": False, "sample_count": 0, "p95": None, "availability": None}
+        ready = slo_judge.find_baseline_ready(points)
+        if ready is not None:
+            return {
+                "ready": True,
+                "ready_at": ready["ready_at"].isoformat(),
+                "sample_count": ready["sample_count"],
+                "p95": ready["p95"],
+                "availability": ready["availability"],
+            }
+        latest = points[-1]
+        return {
+            "ready": False,
+            "sample_count": latest["sample_count"],
+            "p95": latest["p95"],
+            "availability": latest["success_rate"],
+        }
 
     def stop():
         _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "sh", "-c", "pkill -f probe.py || true"])
@@ -329,4 +355,5 @@ def make_load_ramp_prober(config_path: str, run_id: str, scenario: str, arm: str
     return Prober(start=start, is_alive=is_alive, check_slo_violation=check_slo_violation,
                   check_recovered=check_recovered, stop=stop,
                   get_actual_slo_time=get_actual_slo_time, get_actual_recovery_time=get_actual_recovery_time,
-                  is_slo_evaluable=is_slo_evaluable, notify_injected=notify_injected)
+                  is_slo_evaluable=is_slo_evaluable, notify_injected=notify_injected,
+                  get_baseline_status=get_baseline_status)

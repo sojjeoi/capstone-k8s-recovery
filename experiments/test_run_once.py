@@ -56,16 +56,23 @@ def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=Tr
                      is_effective=is_effective, is_done=is_done, cleanup=cleanup), calls
 
 
-def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1, stops_cleanly=True):
+def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1, stops_cleanly=True,
+                  baseline_ready_after_calls=None):
     """violates_after_calls: check_slo_violation() 몇 번째 호출부터 위반으로
     볼지. recovers_after_slo_calls: t_slo가 찍힌 뒤(!) check_recovered() 몇
     번째 호출부터 True를 낼지 - t_slo 이전엔 애초에 안 불리는 걸 run_once()가
     보장해야 하므로, 이 카운터는 오직 t_slo 이후 호출에만 반응한다.
     stops_cleanly=True(기본)면 stop() 호출 이후 is_alive()가 False로
     바뀐다(실제 정상 종료를 흉내) - False로 주면 stop()을 불러도 안 죽는
-    prober를 흉내낼 수 있다(2차 리뷰의 "stop 이후에도 살아있음" 시나리오용)."""
-    calls = {"start": 0, "is_alive": 0, "check_slo_violation": 0, "check_recovered": 0, "stop": 0}
-    counters = {"slo": 0, "recovered": 0}
+    prober를 흉내낼 수 있다(2차 리뷰의 "stop 이후에도 살아있음" 시나리오용).
+    baseline_ready_after_calls(2026-09-18 추가, BASELINE 단계 회귀 테스트용):
+    None(기본)이면 get_baseline_status 자체를 구현 안 함(하위호환 - pod_kill/
+    network_degrade처럼 이 훅이 없는 어댑터를 흉내) - BASELINE 단계 전체가
+    건너뛰어진다. 정수를 주면 그 호출 횟수부터 ready=True를 낸다(그 전까지는
+    ready=False + 진행 중 표본수/p95/가용성 스냅샷을 흉내낸 값을 반환)."""
+    calls = {"start": 0, "is_alive": 0, "check_slo_violation": 0, "check_recovered": 0, "stop": 0,
+             "get_baseline_status": 0}
+    counters = {"slo": 0, "recovered": 0, "baseline": 0}
     state = {"stopped": False}
 
     def start():
@@ -92,8 +99,24 @@ def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1,
         if stops_cleanly:
             state["stopped"] = True
 
-    return Prober(start=start, is_alive=is_alive, check_slo_violation=check_slo_violation,
-                   check_recovered=check_recovered, stop=stop), calls
+    prober_kwargs = dict(start=start, is_alive=is_alive, check_slo_violation=check_slo_violation,
+                          check_recovered=check_recovered, stop=stop)
+
+    if baseline_ready_after_calls is not None:
+        def get_baseline_status():
+            calls["get_baseline_status"] += 1
+            counters["baseline"] += 1
+            ready = counters["baseline"] >= baseline_ready_after_calls
+            return {
+                "ready": ready,
+                "sample_count": min(20 + counters["baseline"], 60),
+                "p95": 0.3,
+                "availability": 1.0,
+                "ready_at": "2026-01-01T00:00:05.300000+00:00" if ready else None,
+            }
+        prober_kwargs["get_baseline_status"] = get_baseline_status
+
+    return Prober(**prober_kwargs), calls
 
 
 def test_normal_completion(tmp_path):
@@ -553,6 +576,72 @@ def test_prober_still_alive_after_stop_raises_harness_corrupted(tmp_path):
     print("OK - prober.stop() 이후에도 is_alive()==True -> HarnessCorrupted")
 
 
+def test_baseline_gate_waits_until_ready_then_injects(tmp_path):
+    # 주입 전 baseline 미확보 문제 수정(2026-09-18) - get_baseline_status가
+    # 처음엔 ready=False를 내다가 3번째 호출부터 ready=True를 내면, run_once()는
+    # 그동안 주입을 미루고 폴링만 하다가 ready된 뒤에야 정상적으로 주입을
+    # 진행해야 한다. 결과에는 baseline 스냅샷이 그대로 기록돼야 한다.
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, pcalls = _fake_prober(violates_after_calls=10_000, baseline_ready_after_calls=3)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=30, sequence_index=30, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.02,
+        baseline_timeout_sec=5, results_dir=tmp_path,
+    )
+
+    assert pcalls["get_baseline_status"] >= 3
+    assert icalls["inject"] == 1, "baseline ready 이후에는 정상적으로 주입이 진행돼야 함"
+    assert result.baseline_valid is True
+    assert result.t_baseline_ready is not None
+    assert result.baseline_sample_count is not None
+    assert result.baseline_p95 is not None
+    assert result.baseline_availability == 1.0
+    print("OK - baseline ready가 될 때까지 대기한 뒤 정상적으로 주입 진행, 결과에 baseline 필드 기록")
+
+
+def test_baseline_gate_never_ready_blocks_injection_and_invalidates(tmp_path):
+    # 방식 3 회귀 테스트: baseline 조건이 제한시간(여기선 테스트 속도를 위해
+    # baseline_timeout_sec을 짧게 줌) 안에 충족되지 않으면 injector.inject()
+    # 자체가 호출되면 안 되고, invalid_run으로 끝나야 한다.
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, pcalls = _fake_prober(violates_after_calls=10_000, baseline_ready_after_calls=10_000)  # 절대 ready 안 됨
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=31, sequence_index=31, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.02,
+        baseline_timeout_sec=0.2, results_dir=tmp_path,
+    )
+
+    assert icalls["inject"] == 0, "baseline이 확보되지 않았으면 주입 자체를 시도하면 안 됨"
+    assert result.outcome == "invalid_run", result.outcome
+    assert result.baseline_valid is False
+    assert result.t_baseline_ready is None
+    print("OK - baseline이 시간 내 확보되지 않으면 주입 안 하고 invalid_run:", result.invalid_reason)
+
+
+def test_baseline_gate_skipped_when_hook_unimplemented(tmp_path):
+    # pod_kill/network_degrade처럼(둘 다 load_ramp_adapter.make_load_ramp_prober를
+    # 공용 Prober로 재사용하므로 실제로는 이 훅도 같이 갖지만, 훅 자체가 없는
+    # 어댑터에 대한 하위호환을 직접 확인) get_baseline_status 훅이 없으면 이
+    # 단계 자체가 건너뛰어져 기존과 동일하게 바로 주입돼야 한다(회귀 없음).
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, pcalls = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)  # get_baseline_status 미구현
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=32, sequence_index=32, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+        results_dir=tmp_path,
+    )
+
+    assert pcalls["get_baseline_status"] == 0
+    assert icalls["inject"] == 1
+    assert result.outcome == "recovered", result.outcome
+    assert result.baseline_valid is None, "hook 미구현이면 검증 안 함을 뜻하는 None이어야 함(실패 아님)"
+    assert result.t_baseline_ready is None
+    print("OK - get_baseline_status 미구현 어댑터는 BASELINE 단계를 건너뛰고 기존과 동일하게 동작(회귀 없음)")
+
+
 @pytest.mark.live_cluster
 def test_real_experiment_context_registration_non_native_arm(tmp_path):
     """native가 아닌 arm은 실제 recovery-policy에 quiescence 확인 +
@@ -631,6 +720,9 @@ if __name__ == "__main__":
         test_probe_never_alive_marks_invalid,
         test_critical_cleanup_failure_raises_and_still_writes_result,
         test_prober_still_alive_after_stop_raises_harness_corrupted,
+        test_baseline_gate_waits_until_ready_then_injects,
+        test_baseline_gate_never_ready_blocks_injection_and_invalidates,
+        test_baseline_gate_skipped_when_hook_unimplemented,
     )
     live_cluster_tests = (
         test_real_experiment_context_registration_non_native_arm,

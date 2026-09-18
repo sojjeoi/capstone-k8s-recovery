@@ -12,7 +12,7 @@ from pathlib import Path
 
 from slo_judge import (
     AVAILABILITY_THRESHOLD, LATENCY_PERSIST_SEC, LATENCY_THRESHOLD,
-    MIN_SAMPLES_FOR_RELIABLE_P95, evaluate, find_t_recovery, find_t_slo, load_raw,
+    MIN_SAMPLES_FOR_RELIABLE_P95, evaluate, find_baseline_ready, find_t_recovery, find_t_slo, load_raw,
 )
 
 T0 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -228,6 +228,147 @@ def test_preserved_pilot_raw_csv_small_sample_points_never_violate():
           f"(참고: 이번 CSV엔 t=39~41초의 별개 실제 클러스터로 인해 t_slo={t_slo}는 여전히 존재 - 범위 밖, 별도 보고)")
 
 
+def test_not_before_excludes_pre_injection_t_slo_candidate():
+    # 실험 프로토콜 결함 재현(2026-09-18, 주입 전 baseline 미확보): 주입
+    # 전부터 이미 위반 상태였다면(baseline 확보 실패인데도 그대로 주입해
+    # 버린 경우), not_before 없이는 그 위반이 그대로 t_slo가 된다 - "주입
+    # 때문에 위반됐다"는 잘못된 결론으로 이어진다. not_before=주입 시각을
+    # 넘기면 주입 전 위반은 후보에서 제외돼야 한다(이 fixture는 주입 후
+    # 표본이 아예 없으므로 게이트 적용 시 t_slo가 없어야 정상).
+    pre = [_row(i, 1.0, success=True) for i in range(-60, 0)]  # 주입 전부터 위반 중(evaluable 이후 충분히 지속)
+    points = evaluate(pre)
+
+    t_slo_without_gate = find_t_slo(points)
+    assert t_slo_without_gate is not None and t_slo_without_gate < T0, \
+        "전제 확인 실패 - 주입 전 위반이 게이트 없이는 t_slo가 돼야 함"
+
+    t_slo_with_gate = find_t_slo(points, not_before=T0)
+    assert t_slo_with_gate is None, \
+        "not_before 이후 표본이 하나도 없는데(주입 전 위반만 있음) t_slo가 나오면 안 됨"
+    print("OK - not_before 이전 위반은 게이트 없이는 t_slo가 되지만, not_before 지정 시 후보에서 제외됨")
+
+
+def test_not_before_forces_streak_to_restart_after_injection():
+    # 주입 전부터 위반 중이던 상태가 주입 후 잠깐만 이어지는 경우 -
+    # not_before 없이는 주입 전+후를 합친 지속시간으로 30초 조건을 채워
+    # t_slo가 나오지만(주입 때문이 아니라 주입 전부터의 문제인데도),
+    # not_before=주입 시각을 넘기면 스트릭이 주입 후부터 다시 시작해야
+    # 하므로(주입 후 18초뿐이라 30초 미달) t_slo가 없어야 한다.
+    pre = [_row(i, 1.0, success=True) for i in range(-34, 0)]  # 주입 전부터 위반 중(evaluable 이후 14초 지속)
+    post = [_row(i, 1.0, success=True) for i in range(0, 18)]  # 주입 후 18초만 위반(30초 미달)
+    points = evaluate(pre + post)
+
+    t_slo_without_gate = find_t_slo(points)
+    assert t_slo_without_gate is not None, \
+        "전제 확인 실패 - 주입 전+후를 합쳐 30초를 넘겼으므로 게이트 없이는 t_slo가 나와야 함"
+    assert t_slo_without_gate >= T0, "합쳐진 스트릭의 t_slo 자체는 주입 이후 시각이어야 함(관찰 정의상 당연)"
+
+    t_slo_with_gate = find_t_slo(points, not_before=T0)
+    assert t_slo_with_gate is None, \
+        "주입 후 18초만으로는 30초 지속 조건을 못 채우므로(주입 전 위반이 스트릭에 보태지면 안 됨) t_slo가 없어야 함"
+    print("OK - not_before는 주입 전 위반이 주입 후 스트릭 지속시간에 보태지는 걸 막음(스트릭이 주입 후부터 다시 시작)")
+
+
+def test_not_before_excludes_pre_injection_availability_failure():
+    # availability 위반은 즉시 판정(지속시간 조건 없음)이라 더 단순 - 주입
+    # 전 실패 요청은 not_before 지정 시 t_slo 후보가 되면 안 되고, 주입 후
+    # 실패 요청은 정상적으로 즉시 t_slo가 돼야 한다(방식 5/8의 availability
+    # 축).
+    pre_failure = [_row(-5, 0.1, success=False)]
+    post_failure = [_row(10, 0.1, success=False)]
+    clean_filler = [_row(i, 0.1, success=True) for i in range(-30, 30) if i not in (-5, 10)]
+    points = evaluate(pre_failure + post_failure + clean_filler)
+
+    t_slo_without_gate = find_t_slo(points)
+    assert t_slo_without_gate is not None and t_slo_without_gate < T0, \
+        "전제 확인 실패 - 게이트 없이는 주입 전 실패가 먼저 t_slo가 돼야 함"
+
+    t_slo_with_gate = find_t_slo(points, not_before=T0)
+    assert t_slo_with_gate == T0 + timedelta(seconds=10.1), \
+        "주입 전 실패는 제외되고 주입 후 실패(10초 시점)만 t_slo가 돼야 함"
+    print("OK - not_before는 주입 전 availability 위반을 t_slo 후보에서 제외, 주입 후 위반은 정상 검출")
+
+
+def test_not_before_does_not_strip_pre_injection_samples_from_window():
+    # not_before는 후보 자격만 제한한다 - evaluate()가 만든 각 point의
+    # rolling window 통계(주입 전 표본 포함)는 find_t_slo() 호출과 무관하게
+    # 그대로다(방식 7). 주입 직후 point가 60초 창을 채우려면 주입 전 표본이
+    # 반드시 필요한 상황을 구성해 확인한다.
+    pre = [_row(i, 0.1, success=True) for i in range(-40, 0)]  # 주입 전 정상 표본(윈도우 채움용)
+    post = [_row(i, 0.1, success=True) for i in range(0, 5)]  # 주입 직후 표본 5개뿐(그 자체로는 20개 미만)
+    points = evaluate(pre + post)
+
+    post_points = [p for p in points if p["t"] >= T0]
+    assert len(post_points) == 5
+    assert all(p["sample_count"] >= 40 for p in post_points), \
+        "주입 후 point라도 60초 창엔 주입 전 표본이 그대로 포함돼야 함(잘려나가면 안 됨)"
+    assert all(p["latency_evaluable"] for p in post_points), \
+        "주입 전 표본 덕분에 주입 직후 표본 5개뿐이어도 evaluable(20개 이상)이어야 함"
+    print("OK - not_before는 point 자체의 rolling window 계산에 영향 없음(주입 전 표본 그대로 포함)")
+
+
+def test_sustained_post_injection_violation_still_detected_with_not_before():
+    # not_before 도입이 정상적인 주입 후 위반 탐지 자체를 방해하면 안 된다.
+    rows = [_row(i, 1.0, success=True) for i in range(65)]  # 전부 주입 후(t>=0), 지속 고지연
+    points = evaluate(rows)
+    t_slo_gated = find_t_slo(points, not_before=T0)
+    assert t_slo_gated is not None, "not_before가 정상적인 주입 후 위반 탐지를 막으면 안 됨"
+    t_slo_baseline = find_t_slo(points)
+    assert t_slo_gated == t_slo_baseline, "전부 주입 후 표본이면 not_before 유무가 결과에 영향 없어야 함"
+    print("OK - not_before가 있어도 순수 주입 후 지속 위반은 기존과 동일하게 탐지됨")
+
+
+def test_preserved_pilot_raw_csv_with_not_before_still_detects_real_cluster():
+    # not_before가 실제 주입 후 발생한 정상적인(표본 부족 아닌) 위반
+    # 클러스터 탐지 자체를 막으면 안 된다 - 이 CSV에서 확인된 t=39~41초
+    # 클러스터(§28.4, rolling window/30초 지속 조건은 이번에도 그대로 유지)는
+    # not_before=t_injection을 줘도 여전히 잡혀야 한다(그 클러스터 자체가
+    # 주입 후 발생이므로). 원래 콜드스타트발 오탐 시각(13:03:55)은 이번에도
+    # 재현되면 안 된다.
+    path = Path(__file__).parent / "results" / "probe-pilot-load_ramp-native-01-20260918T130111Z-native-1-raw.csv"
+    if not path.exists():
+        print("SKIP - 보존된 파일럿 원본 CSV가 이 환경에 없음(gitignore 대상, 로컬 전용)")
+        return
+    rows = load_raw(path)
+    points = evaluate(rows)
+    t_injection = datetime.fromisoformat("2026-09-18T13:03:27.036375+00:00")
+
+    t_slo_gated = find_t_slo(points, not_before=t_injection)
+    assert t_slo_gated is not None, \
+        "주입 후 실제로 존재하는 고지연 클러스터(t=39~41초)가 not_before로 인해 사라지면 안 됨"
+    assert t_slo_gated >= t_injection
+
+    original_bug_t_slo = datetime.fromisoformat("2026-09-18T13:03:55.461640+00:00")
+    assert t_slo_gated != original_bug_t_slo, \
+        "원래 버그가 만든 콜드스타트발 오탐 시각이 not_before 적용 후에도 재현되면 안 됨"
+    print(f"OK - not_before 적용해도 주입 후 실제 클러스터는 그대로 탐지됨(t_slo={t_slo_gated}, "
+          f"이 값 자체는 이 run이 정상 baseline 없이 시작돼 유효성 판정에는 쓰지 않음)")
+
+
+def test_find_baseline_ready_after_clean_streak():
+    # 초반 불안정(콜드스타트성 고지연) 이후 30초 이상 깨끗하면 그 시점에
+    # baseline ready로 확인돼야 한다 - 준비 확인 시점의 표본수/p95/가용성도
+    # 함께 반환한다.
+    rows = ([_row(0, 5.0, success=True)]
+            + [_row(i, 0.1, success=True) for i in range(1, 100)])
+    points = evaluate(rows)
+    ready = find_baseline_ready(points)
+    assert ready is not None, "초반 불안정 이후 충분히 길게 정상이면 baseline ready가 있어야 함"
+    assert ready["sample_count"] >= MIN_SAMPLES_FOR_RELIABLE_P95
+    assert ready["p95"] is not None and ready["p95"] <= LATENCY_THRESHOLD
+    assert ready["availability"] == 1.0
+    print(f"OK - 초반 불안정 후 30초+ 정상 지속 시 baseline ready 확인(표본={ready['sample_count']}, p95={ready['p95']})")
+
+
+def test_find_baseline_ready_none_when_persistently_violating():
+    # 계속 나쁜 상태면(30초 무위반 구간이 아예 없음) baseline이 확보되면
+    # 안 된다 - run_once()가 이 경우 120초 안에 못 채우면 invalid_run 처리.
+    rows = [_row(i, 1.0, success=True) for i in range(90)]  # 계속 고지연
+    points = evaluate(rows)
+    assert find_baseline_ready(points) is None
+    print("OK - 지속적으로 위반 중이면 baseline ready가 확인되지 않음(None)")
+
+
 if __name__ == "__main__":
     test_calibration_constants_pinned()
     test_evaluate_preserves_sent_at_and_adds_observed_at()
@@ -242,5 +383,13 @@ if __name__ == "__main__":
     test_availability_violation_detected_even_under_20_samples()
     test_recovery_not_confirmed_by_non_evaluable_stretch_alone()
     test_normal_violate_then_recover_flow_unchanged_with_enough_samples()
-    test_preserved_pilot_raw_csv_no_longer_produces_false_t_slo()
+    test_preserved_pilot_raw_csv_small_sample_points_never_violate()
+    test_not_before_excludes_pre_injection_t_slo_candidate()
+    test_not_before_forces_streak_to_restart_after_injection()
+    test_not_before_excludes_pre_injection_availability_failure()
+    test_not_before_does_not_strip_pre_injection_samples_from_window()
+    test_sustained_post_injection_violation_still_detected_with_not_before()
+    test_preserved_pilot_raw_csv_with_not_before_still_detects_real_cluster()
+    test_find_baseline_ready_after_clean_streak()
+    test_find_baseline_ready_none_when_persistently_violating()
     print("\n모두 통과")
