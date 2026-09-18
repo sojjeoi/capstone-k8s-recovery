@@ -1,0 +1,1 @@
+{"record_id":"070d9d21-efdd-4967-82d4-33fa56d9c146","decided_at":"2026-09-18T16:00:41.598212Z","signal_source":"anomaly","signal_type":"anomaly_risk","idempotency_key":"smoke-timing-WRONG-RUN:anomaly_risk","evidence":{},"action":"observe_only","outcome":"no_action","result":null,"reasoning":"anomaly_risk 감지했으나 preview가 준비 안 됨"}
