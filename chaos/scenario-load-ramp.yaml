@@ -3,28 +3,25 @@
 # 유입 요청률 자체가 줄어들어 장애를 과소측정하므로 사용 금지 — loadgen/ramp.py가
 # 이 파일을 읽어 각 단계를 "초당 N건"으로 서버 응답과 무관하게 순서대로 실행한다.
 #
-# *** Phase 8 확정 설정(2026-09-16) - 본 실험 시작 후 RPS·payload·threshold
-# 변경 금지. 아래 stages는 SLO v2(threshold=0.512s) + probe(1RPS,
-# max_tokens=1) 상시 동반 조건에서 재보정한 값이며, 3회 독립 반복
-# (experiments/explore_ramp_intensity.py)으로 재현성을 확인한 뒤 조정 없이
-# 그대로 확정했다(사후 편향 방지 - 사전에 고정한 판정 기준을 그대로 통과함).
+# *** Phase 8 확정 설정 v2(2026-09-18, lab-cpu3-warm-v1/SLO v3) - 본
+# 실험 시작 후 RPS·payload·threshold 변경 금지.
 #
-# 1차 실행(1/3/6/12/20 RPS, probe 없이 ramp.py 단독)에서는 1 RPS 100% 성공,
-# 3 RPS에서 이미 63% 실패였으나, probe(항상 1RPS로 상시 동반) 포함 조건과
-# SLO v2(0.512s, 기존 5.372s보다 훨씬 타이트)에서는 이 스케일 자체가 안
-# 맞아 stage-1(1RPS)부터 이미 위반이었다(pilot-load_ramp-native-01-
-# 20260916T053600Z 실측). 그래서 훨씬 낮은 RPS 구간(0.1~1.0)을 3회 반복
-# 재탐색했다:
-#   - 낮은 부하 구간(0.10/0.25 RPS)에서는 측정 노이즈에 따른 소폭 역전이
-#     있었으나, 0.50 RPS 이후에는 부하 증가에 따른 지연 상승이 일관되게
-#     나타났다.
-#   - 0.50 RPS까지는 3회 모두 SLO 준수, 0.75 RPS는 2/3회, 1.00 RPS는 3/3회
-#     SLO 위반. 모든 요청 성공(실패율 0%), 부하 종료 후 항상 정상 범위로
-#     회복.
-#   - 0.75 RPS가 매번 위반하지 않는 것은 문제가 아니다 - 경계 구간의
-#     변동성을 보여주는 것이고, 1.00 RPS에서 3/3회 위반했으므로 시나리오의
-#     유효성은 확보됨.
-# "시스템 붕괴 확인용" 6번째 stage는 의도적으로 넣지 않는다 - 이 실험의
+# 이전 확정(2026-09-16, 4코어+SLO v2, 0.10/0.25/0.50/0.75/1.00RPS)은
+# vLLM CPU limit을 4→3코어로 낮추고(lab-cpu3-warm-v1) SLO를 v2(0.512s)
+# →v3(0.648s)로 재보정하면서 무효화됐다 - 상세 이력은
+# docs/design/experiment-contract.md("load_ramp 확정 설정" 표, 커밋
+# 83bb61a로 동결된 4코어 시절 원본)에 그대로 보존.
+#
+# 아래 5단계는 새 환경(lab-cpu3-warm-v1, SLO v3 threshold=0.648s,
+# probe 1RPS·max_tokens=1 상시 동반)에서 experiments/explore_ramp_
+# intensity.py로 탐색 후 experiments/verify_ramp_candidate.py로 3회
+# 독립 반복 재현성을 사전에 고정한 기준으로 확인하고 조정 없이 그대로
+# 확정했다(사후 편향 방지). 0.025·0.05RPS는 3/3회 모두 SLO 준수,
+# 0.20RPS는 threshold 부근의 경계 단계, 0.30·0.40RPS는 3/3회 모두 SLO
+# 위반. 모든 반복에서 요청 성공률 100%, ramp 종료 후 drain에서 항상
+# threshold 아래로 회복, Node/Pod 이상 없음(docs/design/
+# phase8-blue-green-preflight-incident.md §24~§26 참고).
+# "시스템 붕괴 확인용" 추가 stage는 의도적으로 넣지 않는다 - 이 실험의
 # 목적은 한계까지 무너뜨리는 게 아니라 점진적 열화에서 선제탐지·복구시간을
 # 비교하는 것이라, collapse를 넣으면 실패율 폭증·긴 회복·Alertmanager
 # 개입이 섞여 다른 실험이 된다(계약서 §4 참고).
@@ -35,18 +32,18 @@ target:
   max_tokens: 10
 
 stages:
-  - name: stage-1-0.10rps
-    rps: 0.10
+  - name: stage-1-0.025rps
+    rps: 0.025
     duration_sec: 90
-  - name: stage-2-0.25rps
-    rps: 0.25
+  - name: stage-2-0.05rps
+    rps: 0.05
     duration_sec: 90
-  - name: stage-3-0.50rps
-    rps: 0.50
+  - name: stage-3-0.20rps
+    rps: 0.20
     duration_sec: 90
-  - name: stage-4-0.75rps
-    rps: 0.75
+  - name: stage-4-0.30rps
+    rps: 0.30
     duration_sec: 90
-  - name: stage-5-1.00rps
-    rps: 1.00
+  - name: stage-5-0.40rps
+    rps: 0.40
     duration_sec: 90

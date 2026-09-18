@@ -5,16 +5,18 @@ Injector = ramp.py 자체 - load_ramp은 클라이언트가 만드는 부하 스
 fault라서, pod_kill/network_degrade/memory_pressure와 달리 별도 Chaos Mesh
 리소스가 없다(chaos/scenario-load-ramp.yaml엔 target/stages만 있고 CR 없음).
 
-Prober = 별도 파드에서 loadgen-runner:local 이미지의 probe.py를 저율(기본
+Prober = 별도 파드에서 IMAGE 상수가 가리키는 이미지의 probe.py를 저율(기본
 1RPS) open-loop로 돌려서 SLO를 판정한다 - ramp.py 자신을 판정에도 쓰면
 arm마다 실제 주입 부하 자체가 달라 비교 표본이 arm 간에 어긋난다(계약서
 §1 교정, 2차 리뷰). probe.py는 매 요청마다 즉시 append+flush하므로, 여기서는
 그 raw CSV를 주기적으로 kubectl exec cat으로 읽어와 slo_judge.py(사후분석
 함수)를 그때그때 누적된 데이터에 다시 돌려 판정한다.
 
-두 파드 모두 loadgen-runner:local 이미지 사용(pinned aiohttp==3.14.3/
-PyYAML==6.0.3, 2026-09-16 워커 노드에서 빌드) - run_ramp_in_cluster.py의
-bare python:3.11-slim + 매 trial pip install 방식을 대체한다.
+두 파드 모두 IMAGE 상수의 이미지 사용(pinned aiohttp==3.14.3/PyYAML==6.0.3,
+워커 노드에서 빌드) - run_ramp_in_cluster.py의 bare python:3.11-slim + 매
+trial pip install 방식을 대체한다. lab-cpu3-warm-v1 확정(2026-09-18) 이후
+loadgen-runner:phase8-v3-boundaries로 고정(ramp.py stage 경계 기록 포함,
+docs/design/phase8-blue-green-preflight-incident.md §23.6·§26 참고).
 
 run_id는 이 모듈이 만들지 않는다 - 호출자(트라이얼 실행 스크립트)가 먼저
 run_id를 정해서 make_load_ramp_injector()/make_load_ramp_prober()와
@@ -33,7 +35,12 @@ from run_once import Injector, Prober, TrialInvalid
 import slo_judge
 
 NAMESPACE = "vllm-serving"
-IMAGE = "loadgen-runner:local"
+IMAGE = "loadgen-runner:phase8-v3-boundaries"  # lab-cpu3-warm-v1 확정과 함께 검증된 태그로 고정(2026-09-18)
+# ramp.py --summary-out(§23 stage 경계 수정) 포함 버전 - docker image ID(config digest):
+# sha256:e58a37b2d1c5903d1ce50474fd00c7d3a39cb300549408c0e0c2305482db897a
+# containerd k8s.io manifest digest: sha256:21d6b8ef8bcb1804a28359b2db7a64faae19853493bddb52202b72ac6e9b7aaf
+# 이미지 내부 /ramp.py SHA-256(로컬 chaos/loadgen/ramp.py와 정확히 일치, smoke pod에서 확인):
+#   aadab9fc7f2a5a51cfee4e666ba7872c8e8fa378389d47a0e68e501f39153a82
 SETTLE_SEC = 60  # 새로 뜬 pod의 네트워크 안정화 대기 - run_ramp_in_cluster.py 실측 근거와 동일
 POD_READY_TIMEOUT_SEC = 60
 RESULTS_DIR = Path(__file__).parent / "results"  # probe raw 캐시 저장용, .gitignore의 results/*.csv에 이미 포함됨

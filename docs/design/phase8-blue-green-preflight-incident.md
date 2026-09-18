@@ -2033,3 +2033,90 @@ P95가 threshold 바로 아래(0.60~0.63초)에 몰려있다가 0.25RPS에서만
 **미통과 시**: 결과를 그대로 보존하고 새 값을 정하기 전에 보고한다.
 
 측정은 아직 시작하지 않았다 - 이 사전 등록을 커밋한 뒤 실행한다.
+
+## 26. 최종 후보 3회 재현성 검증 결과 - `target_rps` 버그 발견·수정 후 PASS, 동결 (2026-09-18)
+
+§25 사전 등록대로 `verify_ramp_candidate.py`로 3회 독립 반복 실행
+(`verify-20260918T120401Z`/`121658Z`/`122953Z`, 사이 60초 cooldown,
+전부 유효 - baseline gate에 걸린 무효 시도 없음).
+
+| stage | rep1 P95 | rep1 위반? | rep2 P95 | rep2 위반? | rep3 P95 | rep3 위반? |
+|---|---|---|---|---|---|---|
+| baseline | 0.349 | 아니오 | 0.355 | 아니오 | 0.347 | 아니오 |
+| 0.025rps | 0.536 | 아니오 | 0.601 | 아니오 | 0.586 | 아니오 |
+| 0.05rps | 0.581 | 아니오 | 0.634 | 아니오 | 0.583 | 아니오 |
+| 0.20rps | 0.686 | 예 | 0.701 | 예 | 0.670 | 예 |
+| 0.30rps | 0.721 | 예 | 0.714 | 예 | 0.699 | 예 |
+| 0.40rps | 0.777 | 예 | 0.879 | 예 | 0.879 | 예 |
+| drain | 0.283 | 아니오 | 0.306 | 아니오 | 0.291 | 아니오 |
+
+3회 전부 요청 성공률 100%, Node Ready·pressure 없음, pod restart
+증가 없음(반복 전/후 비교).
+
+### 26.1 `judge_candidate()` 자체의 버그 발견 - 최초 판정은 오탐 FAIL
+
+**첫 실행 직후 자동 판정은 8개 기준 중 4개(0.025rps/0.05rps 미위반,
+0.30rps/0.40rps 2/3 이상 위반)가 전부 FAIL로 나왔다** - 그런데 위 표를
+보면 실제로는 0.025·0.05rps는 3/3 전부 미위반(기준 충족), 0.30·0.40rps는
+3/3 전부 위반(기준을 오히려 초과 충족)이다. 표와 자동판정이 정면으로
+모순돼 판정 로직 자체를 의심하고 원시 CSV(`ramp-verify-*-summary.csv`)
+를 직접 열어 확인했다.
+
+**원인**: `explore_ramp_intensity.run_candidate()`가 stage별 결과 dict를
+만들 때 `{"stage": s["stage"], "stage_start_utc":..., "stage_end_utc":...,
+**bucket_stats(bucket)}`처럼 3개 필드만 골라 담아, `ramp.py`가 실제로
+기록한 `target_rps`가 통째로 빠졌다. `judge_candidate()`의 RPS별 stage
+탐색(`float(s.get("target_rps", -1))`)이 전부 못 찾는 값(`-1`)으로
+떨어져 매 stage가 `None`(판정 불가) 취급되고, "미위반"·"위반"
+어느 쪽도 아닌 `None`이 쌓여 두 기준 모두 기계적으로 FAIL 처리된
+것이었다 - 실제 후보 성능과는 무관한 **순수 harness 버그**.
+
+**수정**: `{**s, **bucket_stats(bucket)}`로 원본 stage dict 전체(`target_rps`
+포함)를 보존하도록 변경. 회귀 테스트
+(`test_parse_ramp_summary_preserves_target_rps`) 추가. **이미 저장된
+3회분 원시 CSV를 재파싱해 재판정했다(클러스터 재실행 없음)** - 아래
+26.2가 수정 후 진짜 결과다.
+
+### 26.2 수정 후 판정 - PASS
+
+| 기준 | 결과 |
+|---|---|
+| 유효 반복 3회 이상 | PASS (3/3) |
+| 0.025rps 전부 미위반 | PASS (3/3) |
+| 0.05rps 전부 미위반 | PASS (3/3) |
+| 0.30rps 최소 2/3 위반 | PASS (3/3) |
+| 0.40rps 최소 2/3 위반 | PASS (3/3) |
+| 전 구간 성공률 100% | PASS |
+| drain 회복 | PASS |
+| Node·Pod 상태 정상 | PASS |
+
+**종합: PASS.** 0.20rps는 3/3 전부 위반으로 나왔으나 사전 등록대로
+"경계 단계, 방향 강제 없음"이라 판정에 포함하지 않는다(참고: v2 때의
+0.75rps처럼 매번 위반하지 않아야 하는 건 아니다 - 그냥 threshold
+바로 위에서 안정적으로 위반하는 것도 유효한 경계).
+
+### 26.3 동결 조치
+
+- `chaos/scenario-load-ramp.yaml`: 5단계를 0.025/0.05/0.20/0.30/0.40
+  RPS(각 90초)로 확정. 이전 4코어/SLO v2 확정본(0.10~1.00RPS, 커밋
+  `83bb61a`)은 파일 상단 주석으로 이력 링크만 남기고
+  `experiment-contract.md`의 원본 표는 그대로 보존(삭제 안 함).
+- `experiments/load_ramp_adapter.py`의 `IMAGE`를
+  `loadgen-runner:phase8-v3-boundaries`로 변경 - image ID(config
+  digest) `sha256:e58a37b2d1c5903d1ce50474fd00c7d3a39cb300549408c0e0c2305482db897a`,
+  containerd manifest digest
+  `sha256:21d6b8ef8bcb1804a28359b2db7a64faae19853493bddb52202b72ac6e9b7aaf`,
+  이미지 내부 `/ramp.py` SHA-256
+  `aadab9fc7f2a5a51cfee4e666ba7872c8e8fa378389d47a0e68e501f39153a82`
+  (§23.6과 동일 - 재검증 아니라 인용).
+- `experiments/explore_ramp_intensity.py`/`load_ramp_adapter.py`의
+  관련 주석도 "본 실험은 loadgen-runner:local을 계속 씀"이라던 이제
+  틀린 서술을 갱신.
+- 전체 오프라인 스위트 **104 passed, 2 skipped**(무관, 기존
+  live_cluster 스킵) - 회귀 없음.
+
+원본 3회분 CSV는 `experiments/results/{probe,ramp}-verify-2026091
+8T{120401,121658,122953}Z-*.csv`(gitignore 대상)에 보존.
+
+**load_ramp 재보정 완료.** 아직 60회 본 실험이나 다른 시나리오로는
+넘어가지 않았다.

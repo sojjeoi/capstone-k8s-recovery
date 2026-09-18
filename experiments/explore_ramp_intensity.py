@@ -35,13 +35,14 @@ import yaml
 import slo_judge
 from load_ramp_adapter import NAMESPACE, SETTLE_SEC, _delete_pod, _run, _wait_pod_ready
 
-# 탐색 전용 이미지 - load_ramp_adapter.IMAGE("loadgen-runner:local", 본
-# 실험/실제 trial harness가 쓰는 태그)는 그대로 두고 이 스크립트만 새
-# 태그를 쓴다. stage 경계 버그 수정(ramp.py --summary-out 등, §23)이
-# 반영된 이미지로, sj-worker에서 chaos/loadgen/ramp.py·probe.py·
-# requirements.txt·Dockerfile만 격리된 임시 디렉터리로 복사해
-# `docker build` 후 `docker save | ctr -n k8s.io images import`로
-# 주입했다(§23.6). 기존 loadgen-runner:local은 덮어쓰지 않음.
+# 탐색용 이미지 태그 - lab-cpu3-warm-v1/SLO v3 최종 후보 동결(§25~§26)
+# 이후로는 load_ramp_adapter.IMAGE도 같은 태그로 바뀌어 사실상 동일하지만,
+# 이 스크립트는 본 실험 harness의 상수에 기대지 않고 독립적으로 명시한다.
+# stage 경계 버그 수정(ramp.py --summary-out 등, §23)이 반영된 이미지로,
+# sj-worker에서 chaos/loadgen/ramp.py·probe.py·requirements.txt·
+# Dockerfile만 격리된 임시 디렉터리로 복사해 `docker build` 후
+# `docker save | ctr -n k8s.io images import`로 주입했다(§23.6). 기존
+# loadgen-runner:local은 덮어쓰지 않고 그대로 둠(이력 보존).
 # docker image ID(config digest): sha256:e58a37b2d1c5903d1ce50474fd00c7d3a39cb300549408c0e0c2305482db897a
 # containerd k8s.io manifest digest: sha256:21d6b8ef8bcb1804a28359b2db7a64faae19853493bddb52202b72ac6e9b7aaf
 # 이미지 내부 /ramp.py SHA-256(로컬 chaos/loadgen/ramp.py와 smoke pod에서 직접 대조 확인):
@@ -238,9 +239,12 @@ def run_candidate(ramp_config_path: str, probe_config_path: str, label: str = "e
     result["local_raw"] = str(local_raw)
     result["local_ramp_summary"] = str(local_ramp_summary)
     result["baseline"] = bucket_stats(buckets["baseline"])
-    result["stages"] = [{"stage": s["stage"], "stage_start_utc": s["stage_start_utc"],
-                          "stage_end_utc": s["stage_end_utc"], **bucket_stats(bucket)}
-                         for s, bucket in buckets["stages"]]
+    # ramp.py의 원본 summary(target_rps 포함)를 전부 보존한 뒤 probe 기준
+    # bucket_stats()로 덮어써야 한다 - target_rps를 빠뜨리면 judge_candidate()가
+    # RPS로 stage를 찾지 못해 전부 None 취급되는 버그가 난다(실제로 발생,
+    # §25 재현성 검증 1차 시도에서 확인 - verify_ramp_candidate.py 판정
+    # 함수 재검증 필요).
+    result["stages"] = [{**s, **bucket_stats(bucket)} for s, bucket in buckets["stages"]]
     result["drain"] = bucket_stats(buckets["drain"])
     all_buckets = [result["baseline"]] + result["stages"] + [result["drain"]]
     result["all_success_100pct"] = all(b["n"] and b["success_rate"] == 1.0 for b in all_buckets)

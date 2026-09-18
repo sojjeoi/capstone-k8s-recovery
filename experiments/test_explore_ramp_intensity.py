@@ -92,3 +92,23 @@ def test_parse_ramp_summary_parses_timestamps_to_datetime():
     assert rows[0]["stage"] == "s1"
     assert rows[0]["stage_start_utc"] == T0
     assert rows[0]["stage_end_utc"] == T0 + timedelta(seconds=105)
+
+
+def test_parse_ramp_summary_preserves_target_rps():
+    # 실제로 발생한 버그의 재현: run_candidate()가 stage 결과 dict를 만들 때
+    # {"stage":..., "stage_start_utc":..., "stage_end_utc":..., **bucket_stats(bucket)}
+    # 처럼 필드를 골라 담으면 target_rps가 빠져 judge_candidate()가 RPS로
+    # stage를 못 찾고 전부 None 취급했다(§25 재현성 검증 1차 시도에서 실측
+    # 확인). classify_stages()가 반환하는 원본 stage dict에 target_rps가
+    # 남아있는지, 그리고 {**s, **bucket_stats(bucket)} 병합 패턴이 그걸
+    # 보존하는지 확인한다.
+    text = ("stage,target_rps,stage_start_utc,stage_end_utc\n"
+            "explore-0.3rps,0.3,2026-01-01T00:00:00+00:00,2026-01-01T00:01:30+00:00\n")
+    ramp_stages = parse_ramp_summary(text)
+    assert ramp_stages[0]["target_rps"] == "0.3"
+
+    rows = [_row(10)]
+    result = classify_stages(rows, ramp_stages)
+    s, bucket = result["stages"][0]
+    merged = {**s, **bucket_stats(bucket)}
+    assert merged["target_rps"] == "0.3", "target_rps가 병합 후에도 남아있어야 함(버그: 누락되면 RPS 판정 불가)"
