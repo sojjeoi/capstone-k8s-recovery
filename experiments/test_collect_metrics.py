@@ -450,6 +450,23 @@ def test_baseline_fields_preserved_through_comparison():
     print("OK - baseline 5개 필드가 comparison.csv 행까지 보존됨, 미구현 결과는 None으로 안전하게 읽힘")
 
 
+def test_stage_fields_preserved_through_comparison():
+    # stage 관측성 보완(2026-09-18)으로 추가된 slo_stage/detection_stage/
+    # action_stage가 build_comparison()을 거쳐 comparison.csv 행까지
+    # 그대로 남아야 한다 - 이 필드가 없는 과거 결과도 오류 없이 None으로
+    # 읽혀야 한다.
+    row = _base_row(slo_stage="stage-3-0.20rps", detection_stage=None, action_stage=None)
+    out_rows, issues = build_comparison([row])
+    assert out_rows[0]["slo_stage"] == "stage-3-0.20rps"
+    assert out_rows[0]["detection_stage"] is None
+    assert out_rows[0]["action_stage"] is None
+
+    old_row = _base_row()  # stage 필드 자체가 없는 기존 결과(하위호환)
+    old_out_rows, _ = build_comparison([old_row])
+    assert old_out_rows[0]["slo_stage"] is None
+    print("OK - stage 3개 필드가 comparison.csv 행까지 보존됨, 미구현 결과는 None으로 안전하게 읽힘")
+
+
 if __name__ == "__main__":
     import tempfile
     from pathlib import Path
@@ -487,4 +504,5 @@ if __name__ == "__main__":
         test_network_degrade_fields_survive_json_to_csv_round_trip(Path(d))
     test_slo_version_v3_preserved_through_comparison()
     test_baseline_fields_preserved_through_comparison()
+    test_stage_fields_preserved_through_comparison()
     print("\n모두 통과")

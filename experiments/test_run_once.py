@@ -28,7 +28,12 @@ import requests
 from run_once import RECOVERY_POLICY_URL, HarnessCorrupted, Injector, Prober, run_once
 
 
-def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=True):
+def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=True, classify_stage_fn=None):
+    """classify_stage_fn(2026-09-18 추가, stage 관측성 보완 회귀 테스트용):
+    None(기본)이면 Injector.classify_stage 자체를 구현 안 함(하위호환 -
+    pod_kill/network_degrade처럼 stage 개념이 없는 어댑터를 흉내). 함수를
+    주면 그대로 classify_stage로 노출한다(테스트가 원하는 값을 반환하거나
+    예외를 던지게 할 수 있음)."""
     calls = {"prepare": 0, "inject": 0, "is_started": 0, "is_effective": 0, "is_done": 0, "cleanup": 0}
 
     def prepare():
@@ -52,8 +57,11 @@ def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=Tr
     def cleanup():
         calls["cleanup"] += 1
 
-    return Injector(prepare=prepare, inject=inject, is_started=is_started,
-                     is_effective=is_effective, is_done=is_done, cleanup=cleanup), calls
+    injector_kwargs = dict(prepare=prepare, inject=inject, is_started=is_started,
+                            is_effective=is_effective, is_done=is_done, cleanup=cleanup)
+    if classify_stage_fn is not None:
+        injector_kwargs["classify_stage"] = classify_stage_fn
+    return Injector(**injector_kwargs), calls
 
 
 def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1, stops_cleanly=True,
@@ -642,6 +650,93 @@ def test_baseline_gate_skipped_when_hook_unimplemented(tmp_path):
     print("OK - get_baseline_status 미구현 어댑터는 BASELINE 단계를 건너뛰고 기존과 동일하게 동작(회귀 없음)")
 
 
+def test_slo_stage_populated_when_classify_stage_implemented(tmp_path):
+    # stage 관측성 보완(2026-09-18) - injector.classify_stage가 구현돼
+    # 있고 t_slo가 실제로 찍히면, run_once()는 그 값으로 classify_stage를
+    # 호출해 slo_stage를 채워야 한다.
+    calls = {"classify_stage": []}
+
+    def classify_stage_fn(timestamp_iso):
+        calls["classify_stage"].append(timestamp_iso)
+        return "stage-3-0.20rps"
+
+    injector, _ = _fake_injector(is_done_after_calls=5, classify_stage_fn=classify_stage_fn)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=40, sequence_index=40, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.02,
+        results_dir=tmp_path,
+    )
+
+    assert result.t_slo is not None
+    assert result.slo_stage == "stage-3-0.20rps"
+    assert result.t_slo in calls["classify_stage"], "classify_stage가 실제 t_slo 값으로 호출돼야 함"
+    print("OK - classify_stage 구현 시 t_slo 기준으로 slo_stage가 채워짐")
+
+
+def test_detection_and_action_stage_stay_none_without_source_timestamp(tmp_path):
+    # native arm은 t_detection/t_api_request 자체가 항상 None(정책 엔진
+    # 개입 없음) - classify_stage가 구현돼 있어도 대응하는 timestamp가
+    # 없으면 detection_stage/action_stage는 "unknown"이 아니라 None이어야
+    # 한다("사건이 없었음"과 "사건은 있었는데 분류 못 함"을 구분).
+    injector, _ = _fake_injector(is_done_after_calls=5, classify_stage_fn=lambda t: "stage-1-0.025rps")
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=41, sequence_index=41, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.02,
+        results_dir=tmp_path,
+    )
+
+    assert result.t_detection is None and result.t_api_request is None
+    assert result.detection_stage is None
+    assert result.action_stage is None
+    print("OK - t_detection/t_api_request가 None이면 대응 stage 필드도 None(unknown 아님)")
+
+
+def test_stage_fields_stay_none_when_classify_stage_unimplemented(tmp_path):
+    # pod_kill/network_degrade처럼 classify_stage 훅이 없는 어댑터는
+    # 3개 필드 전부 None으로 남아야 한다(회귀 없음).
+    injector, _ = _fake_injector(is_done_after_calls=5)  # classify_stage_fn 미지정
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=42, sequence_index=42, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.02,
+        results_dir=tmp_path,
+    )
+
+    assert result.t_slo is not None  # 전제 확인 - 위반 자체는 있었음
+    assert result.slo_stage is None
+    assert result.detection_stage is None
+    assert result.action_stage is None
+    print("OK - classify_stage 훅 미구현이면 3개 필드 전부 None(회귀 없음)")
+
+
+def test_classify_stage_exception_does_not_break_trial(tmp_path):
+    # classify_stage 자체가 버그로 예외를 던져도, 이미 확정된 핵심 판정
+    # (outcome/t_slo 등)이 오염되거나 HarnessCorrupted로 번지면 안 된다 -
+    # 보조 정보 하나의 결함이 trial 전체를 망가뜨리지 않아야 함.
+    def raising_classify_stage(timestamp_iso):
+        raise RuntimeError("stage 분류 도중 의도적으로 터뜨린 예외")
+
+    injector, _ = _fake_injector(is_done_after_calls=5, classify_stage_fn=raising_classify_stage)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=43, sequence_index=43, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.02,
+        results_dir=tmp_path,
+    )
+
+    assert result.outcome == "recovered", result.outcome
+    assert result.t_slo is not None
+    assert result.slo_stage is None
+    assert "stage 분류 실패" in result.notes
+    print("OK - classify_stage 예외는 notes에만 남고 핵심 판정(outcome/t_slo)은 정상 유지")
+
+
 @pytest.mark.live_cluster
 def test_real_experiment_context_registration_non_native_arm(tmp_path):
     """native가 아닌 arm은 실제 recovery-policy에 quiescence 확인 +
@@ -723,6 +818,10 @@ if __name__ == "__main__":
         test_baseline_gate_waits_until_ready_then_injects,
         test_baseline_gate_never_ready_blocks_injection_and_invalidates,
         test_baseline_gate_skipped_when_hook_unimplemented,
+        test_slo_stage_populated_when_classify_stage_implemented,
+        test_detection_and_action_stage_stay_none_without_source_timestamp,
+        test_stage_fields_stay_none_when_classify_stage_unimplemented,
+        test_classify_stage_exception_does_not_break_trial,
     )
     live_cluster_tests = (
         test_real_experiment_context_registration_non_native_arm,

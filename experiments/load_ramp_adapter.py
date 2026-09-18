@@ -24,6 +24,8 @@ run_once(run_id=...)에 동일하게 넘겨야 ramp.py/probe.py의 raw 로그가
 TrialResult와 같은 run_id로 join된다(run_once.py에 run_id 인자를 추가한
 이유가 이것).
 """
+import csv
+import io
 import os
 import subprocess
 import time
@@ -73,6 +75,46 @@ def _delete_pod(pod_name: str) -> None:
         raise RuntimeError(f"{pod_name} 삭제 실패: {r.stderr}")
 
 
+def _classify_timestamp_against_stages(timestamp_iso, stages):
+    """실제 stage_start_utc/stage_end_utc 경계로 timestamp_iso를 분류하는
+    순수 함수 - kubectl 의존 없어 오프라인 테스트 가능(2026-09-18, stage
+    관측성 보완 - §30에서 stage 경계가 명목값(주입시각+90초 단위)으로만
+    보고돼 실제 드리프트를 반영 못 했던 문제 수정).
+
+    stages는 ramp.py --summary-out CSV(experiments/results/ramp-summary-
+    *.csv)를 csv.DictReader로 읽은 행 리스트 - 문자열 값 그대로 넘겨받아
+    여기서 파싱한다. stages가 None/빈 리스트이거나 한 행이라도 stage/
+    stage_start_utc/stage_end_utc 파싱에 실패하면 "unknown"을 반환한다
+    (임의 추정 안 함 - summary fetch 자체가 실패했거나 손상된 경우).
+
+    stage 구간에 안 속하면 세 가지로 구분한다: 첫 stage 시작 전은
+    "baseline", stage 사이(ramp.py가 각 stage 끝에서 최대 10초 straggler
+    대기 - §23에서 확인된 드리프트)는 "inter_stage_tail", 마지막 stage
+    종료 후는 "drain"."""
+    if not stages:
+        return "unknown"
+    t = datetime.fromisoformat(timestamp_iso)
+    parsed = []
+    for s in stages:
+        try:
+            parsed.append({
+                "stage": s["stage"],
+                "start": datetime.fromisoformat(s["stage_start_utc"]),
+                "end": datetime.fromisoformat(s["stage_end_utc"]),
+            })
+        except (KeyError, ValueError):
+            return "unknown"
+    parsed.sort(key=lambda p: p["start"])
+    if t < parsed[0]["start"]:
+        return "baseline"
+    for p in parsed:
+        if p["start"] <= t <= p["end"]:
+            return p["stage"]
+    if t > parsed[-1]["end"]:
+        return "drain"
+    return "inter_stage_tail"
+
+
 def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -> Injector:
     """arm은 ramp.py의 --method로 그대로 전달(3-way 비교 축 태깅용) - 정책
     판단에는 안 쓰인다. native/fixed_threshold/proposed 무엇이든 동일한 부하
@@ -80,8 +122,11 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
     pod_name = f"ramp-inj-{uuid.uuid4().hex[:8]}"
     config_name = Path(config_path).name
     log, exitfile = "/ramp.log", "/ramp.exit"
+    summary_remote = f"/ramp-summary-{run_id}.csv"  # pod 자체가 trial마다 새로 뜨므로 굳이 필요하진 않지만, run_id를 넣어 확실히 구분(2026-09-18 추가)
+    local_summary_path = RESULTS_DIR / f"ramp-summary-{run_id}-{arm}-{rep}.csv"  # probe raw CSV와 동일한 명명 관례
     first_started_at = {"t": None}  # 마커를 처음 관측한 시각(datetime)
     last_not_started_at = {"t": None}  # 마커가 아직 없음을 마지막으로 관측한 시각(datetime)
+    stage_cache = {"fetched": False, "stages": None}  # stages=None: 미시도 또는 fetch/파싱 실패(둘 다 "unknown"으로 처리 - 2026-09-18 추가)
 
     def prepare():
         _run(["kubectl", "run", pod_name, "-n", NAMESPACE, f"--image={IMAGE}",
@@ -107,6 +152,7 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
         # 끝나므로 블로킹 없이 빠르게 반환한다.
         inner = (f"PYTHONUNBUFFERED=1 python /ramp.py --config /{config_name} "
                  f"--run-id {run_id} --method {arm} --rep {rep} "
+                 f"--summary-out {summary_remote} "
                  f"> {log} 2>&1; echo $? > {exitfile}")
         cmd = f"nohup sh -c '{inner}' < /dev/null > /ramp-wrapper.log 2>&1 &"
         _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "sh", "-c", cmd], check=True)
@@ -163,6 +209,28 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
         # ramp.py에 진행률 파일 옵션을 추가한 뒤 여기서 그 값을 읽기.
         return is_started() and not _exit_code_ready()
 
+    def _fetch_stage_summary():
+        # ramp.py가 정상 종료(exit=0)한 직후 딱 한 번만 시도한다(2026-09-18
+        # 추가, stage 관측성 보완) - pod가 곧 cleanup()으로 삭제될 수 있어
+        # 재시도는 의미 없고, is_done()이 OBSERVING 루프에서 반복 호출되므로
+        # 매번 kubectl exec를 새로 하면 낭비다. 실패해도(kubectl 오류, 빈
+        # 응답, 파싱 오류) 예외를 던지지 않는다 - stage 분석은 SLO 판정
+        # 결과(outcome/t_slo/t_recovery)에 영향을 주면 안 된다(계약서
+        # §5.1 정책). stages는 None으로 남고, classify_stage()가
+        # "unknown"으로 처리한다.
+        if stage_cache["fetched"]:
+            return
+        stage_cache["fetched"] = True
+        r = _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "cat", summary_remote])
+        if r.returncode != 0 or not r.stdout.strip():
+            return
+        try:
+            RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+            local_summary_path.write_text(r.stdout, encoding="utf-8")
+            stage_cache["stages"] = list(csv.DictReader(io.StringIO(r.stdout)))
+        except Exception:
+            stage_cache["stages"] = None
+
     def is_done():
         if not _exit_code_ready():
             return False
@@ -171,7 +239,12 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
         if code != 0:
             tail = _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "tail", "-c", "2000", log])
             raise TrialInvalid(f"ramp.py 비정상 종료(exit={code}): {tail.stdout}")
+        _fetch_stage_summary()
         return True
+
+    def classify_stage(timestamp_iso):
+        _fetch_stage_summary()  # is_done()에서 이미 시도됐어야 하지만 방어적으로 재시도(fetched 플래그로 1회 제한이라 무해)
+        return _classify_timestamp_against_stages(timestamp_iso, stage_cache["stages"])
 
     def cleanup():
         _delete_pod(pod_name)
@@ -180,7 +253,8 @@ def make_load_ramp_injector(config_path: str, run_id: str, arm: str, rep: int) -
                      is_effective=is_effective, is_done=is_done, cleanup=cleanup,
                      get_actual_injection_time=get_actual_injection_time,
                      get_injection_observation_error_sec=get_injection_observation_error_sec,
-                     get_last_seen_present_time=get_last_seen_present_time)
+                     get_last_seen_present_time=get_last_seen_present_time,
+                     classify_stage=classify_stage)
 
 
 def _is_post_injection_window_evaluable(rows, injection_time, window_sec=None, min_samples=None):

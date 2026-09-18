@@ -138,7 +138,19 @@ class Injector:
     (예: 네트워크 열화가 probe를 실패시켜 재시작을 유발하는 연쇄장애 자체가
     관찰 대상). 반대로 주입이 아직 한 번도 효과를 내기 전의 대상 교체는
     여전히 어댑터가 TrialInvalid로 직접 처리해야 한다(외부 오염과 실험
-    결과를 구분하는 경계가 "효과를 낸 적이 있는가"). None이면 교체 없음."""
+    결과를 구분하는 경계가 "효과를 낸 적이 있는가"). None이면 교체 없음.
+    classify_stage(timestamp_iso): 선택 구현(2026-09-18 추가 - stage
+    관측성 보완, §30에서 명목 stage 경계만 참고할 수 있었던 문제 수정).
+    ISO8601 타임스탬프 문자열을 받아 그 시각이 실제 어느 실험 단계에
+    속했는지 문자열로 분류해 반환한다(주입이 여러 "stage"로 나뉘는
+    시나리오, 지금은 load_ramp만 구현) - stage 이름, 또는 "baseline"/
+    "inter_stage_tail"/"drain"/"unknown" 중 하나. 절대 예외를 던지면
+    안 되고(run_once()가 t_slo/t_detection/t_api_request 각각에 대해
+    호출해 slo_stage/detection_stage/action_stage를 채우는 보조 정보라
+    핵심 판정에 영향을 주면 안 됨), 분류할 근거가 없으면(요약 fetch
+    실패 등) "unknown"을 반환해야지 임의로 추정하면 안 된다. 미구현
+    (None 필드)이면 run_once()가 아예 호출하지 않고 관련 필드는 None으로
+    남는다(pod_kill/network_degrade 등 stage 개념이 없는 시나리오)."""
     prepare: Callable[[], None]
     inject: Callable[[], None]
     is_started: Callable[[], bool]
@@ -149,6 +161,7 @@ class Injector:
     get_last_seen_present_time: Optional[Callable[[], Optional[str]]] = None
     get_injection_observation_error_sec: Optional[Callable[[], Optional[float]]] = None
     get_target_replacement: Optional[Callable[[], Optional[dict]]] = None
+    classify_stage: Optional[Callable[[str], str]] = None
 
 
 @dataclass
@@ -293,6 +306,17 @@ class TrialResult:
     t_api_request: Optional[str] = None
     t_switch: Optional[str] = None
     t_slo: Optional[str] = None
+    # injector.classify_stage()로 계산한 stage 분류(2026-09-18 추가 - stage
+    # 관측성 보완). 대응하는 timestamp(t_slo/t_detection/t_api_request)가
+    # None이면 이 필드도 None(사건 자체가 없었음 - "unknown"과는 다르다).
+    # 어댑터가 classify_stage 미구현이면 셋 다 None(하위호환, pod_kill/
+    # network_degrade 등). action_stage는 t_api_request(정책이 K8s API를
+    # 실제로 호출해 조치를 실행한 시각) 기준으로 분류한다 - action 필드
+    # 자체는 문자열(예: "promote_preview")이라 대응하는 타임스탬프가 없어,
+    # 셋 중 "조치가 취해진 시각"에 가장 가까운 t_api_request를 썼다.
+    slo_stage: Optional[str] = None
+    detection_stage: Optional[str] = None
+    action_stage: Optional[str] = None
     # outcome=prevented로 결론 낸 시점에 prober.is_slo_evaluable()이 True였는지
     # (2026-09-17 추가 - pod_kill native 파일럿에서 warmup 전에 관측이 끝나
     # probe 데이터를 한 번도 못 읽은 채 prevented로 오판정된 사례를 계기로,
@@ -639,6 +663,23 @@ def run_once(
         result.outcome = "invalid_run"
         result.invalid_reason = f"예외: {type(e).__name__}: {e}"
     finally:
+        # stage 분류(2026-09-18 추가) - cleanup()으로 pod가 삭제되기 전,
+        # injector가 아직 살아있는 이 시점에 수행한다. classify_stage()
+        # 자체가 "예외를 던지면 안 된다"는 계약이지만, 이 보조 정보 하나
+        # 때문에 trial 전체가 HarnessCorrupted로 번지면 안 되므로 한 번 더
+        # try/except로 감싼다 - 실패해도 result.outcome/t_slo 등 핵심
+        # 판정은 이미 위에서 전부 확정된 뒤라 영향 없다.
+        if injector.classify_stage is not None:
+            try:
+                if result.t_slo is not None:
+                    result.slo_stage = injector.classify_stage(result.t_slo)
+                if result.t_detection is not None:
+                    result.detection_stage = injector.classify_stage(result.t_detection)
+                if result.t_api_request is not None:
+                    result.action_stage = injector.classify_stage(result.t_api_request)
+            except Exception as e:
+                result.notes += f"stage 분류 실패(핵심 SLO 결과에는 영향 없음): {e} | "
+
         result.state = TrialState.CLEANING.value
         _write_result(result, results_dir)
 

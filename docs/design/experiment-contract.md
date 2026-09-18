@@ -134,6 +134,9 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 | `target_replacement_pod_name` / `target_replacement_pod_uid` | str \| null | 교체된 pod의 이름/UID - active selector가 단일 pod으로 특정되면 채워지고, 전환 중이라 2개 이상 동시 매칭되는 등 특정할 수 없으면 null(교체 자체는 여전히 기록됨) |
 | `timing_schema_version` | str | `"v2"` = 아래 3분할 주입 시각 + observed_at 기준 `t_slo`/`t_recovery`. 필드 없음 또는 `"v1"` = 옛 방식(단일 `t_injection`, `t_slo`/`t_recovery`가 `sent_at` 기준)(2026-09-18 추가) |
 | `t_run_start` | ISO8601 UTC | preview 준비 등 trial 준비 시작 시각 |
+| `t_baseline_ready` | ISO8601 UTC \| null | 주입 전 baseline 관찰 단계(2026-09-18 추가, §29)가 안정 상태(20+ 표본·P95≤threshold·가용성≥99%가 30초 연속)에 도달한 시각. `prober.get_baseline_status()` 미구현 어댑터는 이 단계 자체를 건너뛰어 항상 null |
+| `baseline_sample_count` / `baseline_p95` / `baseline_availability` | int/float \| null | 위 시점의 창 표본 수·P95(초)·성공률 스냅샷 - baseline 조건이 제한시간(120초) 안에 안 채워졌으면 마지막 관측값(미달성 상태) |
+| `baseline_valid` | bool \| null | `true`=조건 충족 후 주입 진행, `false`=120초 안에 못 채워 `invalid_run`, `null`=어댑터가 baseline 단계 자체를 구현 안 함(검증 안 함 - `slo_evaluable_at_exit=null`과 동일 관례) |
 | `t_injection_request` | ISO8601 UTC | `injector.inject()` 호출 직전 시각 - 실제 주입 구간의 하한(2026-09-18 추가) |
 | `t_injection` | ISO8601 UTC | **하위 호환용 대표값** - `t_injection_observed`와 항상 같다(2026-09-18부터. 그 전에는 이 필드 하나만 있었음) |
 | `t_injection_last_seen` | ISO8601 UTC \| null | 기존 대상이 살아있음을 마지막으로 관측한 시각 - `injector.get_last_seen_present_time()` 미구현이거나 첫 poll에서 이미 사라졌으면 null(2026-09-18 추가) |
@@ -141,10 +144,13 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 | `injection_observation_error_sec` | float \| null | 3단계 우선순위로 계산(2026-09-18 정정): 1) 어댑터의 `get_injection_observation_error_sec()`, 2) 없으면 `t_injection_last_seen`~`t_injection_observed`, 3) `t_injection_last_seen`도 없으면(첫 poll에서 이미 사라짐) `t_injection_request`~`t_injection_observed`. 전부 실측 구간이지 `poll_interval_sec` 같은 임의 설정값은 없다(2026-09-16 정정) - `injection_valid=true`인 trial은 이제 이 필드가 절대 null로 남지 않는다 |
 | `t_injection_end` | ISO8601 UTC | chaos 자체가 끝난 시각(§4 종료조건①) |
 | `t_detection` | ISO8601 UTC \| null | 미탐지면 null |
+| `detection_stage` | str \| null | `t_detection`이 실제로 어느 실험 단계에 속했는지(2026-09-18 추가, stage 관측성 보완 - `load_ramp`만 구현). `t_detection`이 null이면 이 필드도 null(사건 자체가 없음). 값은 아래 `slo_stage`와 동일한 분류 체계 |
 | `t_decision` | ISO8601 UTC \| null | |
 | `t_api_request` | ISO8601 UTC \| null | |
+| `action_stage` | str \| null | `t_api_request`(정책이 실제로 조치를 실행한 시각) 기준 stage 분류 - `t_api_request`가 null이면 null. 분류 체계는 `slo_stage`와 동일 |
 | `t_switch` | ISO8601 UTC \| null | |
 | `t_slo` | ISO8601 UTC \| null | `outcome=prevented`면 null. `timing_schema_version=v2`부터는 실패가 확정된 **완료 시각**(`sent_at+latency`) 기준 - 요청을 보낸 시각(`sent_at`)이 아니다(2026-09-18 정정 - pod_kill 파일럿에서 `t_slo`가 `t_injection`보다 앞서는 사례 발견, 원인은 전송 시각을 판정 시각으로 오용한 것). |
+| `slo_stage` | str \| null | `t_slo`가 실제로 어느 실험 단계에 속했는지(2026-09-18 추가) - `injector.classify_stage()`가 `ramp.py --summary-out`이 기록한 실제(명목 아님) `stage_start_utc`/`stage_end_utc`로 판정한다. 값은 stage 이름(예: `stage-3-0.20rps`) 또는 `baseline`(첫 stage 시작 전)/`inter_stage_tail`(stage 사이 straggler 대기 구간)/`drain`(마지막 stage 종료 후)/`unknown`(summary fetch·파싱 실패 - 임의 추정 안 함). `t_slo`가 null이거나 어댑터가 `classify_stage` 미구현이면 null(스키마 §6.1 참고) |
 | `t_recovery` | ISO8601 UTC \| null | timeout이면 null |
 | `t_audit_write` | ISO8601 UTC \| null | |
 | `t_audit_push` | ISO8601 UTC \| null | **복구시간 계산에 포함 안 함**. 비동기라 trial 종료 시점엔 비어있을 수 있음(§6 reconcile) |
@@ -166,6 +172,28 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 ### 비동기 감사기록 reconcile
 
 `git_client.py`의 push는 비동기라 trial row를 처음 쓰는 시점엔 `t_audit_push`/`commit_sha`가 비어있을 수 있다. 전체 실험(또는 각 시나리오) 종료 후, recovery-policy의 `outbox.json`을 다시 읽어 각 `run_id`에 대응하는 결과 row에 `t_audit_push`/`commit_sha`를 채워 넣는 **reconcile 단계**를 실험 절차에 명시한다(`collect_metrics.py` 실행 전에 반드시 거침).
+
+### 5.1 stage 분석은 참고용이며 본 실험에서 필수가 아니다 (2026-09-18 추가)
+
+`slo_stage`/`detection_stage`/`action_stage`, 그리고 `experiments/
+results/`에 trial마다 별도로 저장되는 `ramp-summary-{run_id}-{arm}-
+{rep}.csv`(stage별 실제 `stage_start_utc`/`stage_end_utc`·목표/실제
+RPS·성공률)는 **참고용 보조 정보**다. 본 실험(60회)에서 trial의 핵심
+판정(`outcome`/`t_slo`/`t_recovery`/`injection_valid`/`probe_valid`
+등)은 이 정보의 확보 여부와 완전히 독립적으로 결정된다.
+
+`ramp.py --summary-out` 요약을 fetch하는 데 실패해도(kubectl 오류, pod
+조기 종료, 손상된 CSV 등) 해당 trial은 그대로 정상 진행되고, 관련
+stage 필드만 `unknown`(대응하는 timestamp 자체가 null이면 그대로
+`null`)으로 남는다 - **trial이 이 이유만으로 `invalid_run`이 되지
+않는다.** 따라서 본 실험 60회 중 일부 trial의 stage 필드가 `unknown`
+으로 남는 것 자체는 재실행 사유가 아니다.
+
+다만 `load_ramp` 60회 전체가 체계적으로(예: 이미지 자체의 `--summary-
+out` 관련 결함으로 전부 fetch 실패) stage 정보를 못 얻으면, 그 사실은
+실행 로그·집계 보고서에 명시하고 사후 해석 시 "stage 위치는 명목값
+(주입 시각+90초 단위)으로만 참고 가능, 실제 경계는 확인 불가"라고
+표시한다 - 추정값을 확정값처럼 보고하지 않는다.
 
 ## 6. 안전장치 — `run_once()`가 매 trial마다 반드시 함
 
@@ -207,3 +235,4 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 - 2026-09-18: 완성도 점검 대응(실클러스터 작업 없음). `pod_kill_adapter.py`의 active pod 동적 탐지 로직을 `active_pod_resolver.py`로 추출해 공용화(기존 테스트 영향 없음 확인). `network_degrade_adapter.py`(신규)를 같은 패턴으로 구현 - Chaos Mesh Workflow 대신 NetworkChaos 4단계를 어댑터가 직접 순차 생성/삭제(status.conditions의 AllInjected 폴링, 문서 기반이라 실클러스터 미검증 명시). §5 스키마에 `readiness_probe_profile`/`readiness_probe_timeout_sec` 추가(network_degrade의 "기본 probe 연쇄장애 vs probe timeout 조정 순수 열화" 실험 분리용, 발견 5 대응). `gitops/apps/vllm-serving/overlays/network-tolerant/`에 probe timeoutSeconds만 patch하는 Kustomize overlay 신규 작성(base rollout.yaml은 무수정 유지) - patch 값(10초)은 미검증 후보로 명시, 확정엔 `calibrate_network_tolerant_probe.py`(신규)로 실클러스터 calibration 필요. `run_network_degrade_trial.py`(신규)는 실행 직전 active pod의 실제 probe timeoutSeconds를 읽어 요청한 profile과 다르면 fail-closed. 오프라인 스위트 64 passed, 2 skipped(live_cluster) - `test_network_degrade_adapter.py`(신규 5개) 포함, 자체 버그 1건 발견·수정. 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §8 참고.
 - 2026-09-18: 바로 위 커밋들에 대한 리뷰에서 방법론 문제가 지적됐다 - 주입 도중 active pod의 UID가 바뀌면 무조건 `invalid_run`으로 처리하던 것은, 네트워크 열화가 probe 실패->재시작(발견 5)으로 이어지는 것 자체가 실험의 관찰 대상이 될 수 있다는 점을 놓친 것이었다. "주입이 한 번도 효과를 내기 전"(외부 오염 가능성이 높음 - 여전히 `invalid_run`)과 "이미 효과를 낸 뒤"(실험 자체의 결과일 수 있음)를 구분하도록 `network_degrade_adapter.py`를 정정했다. §5 스키마에 `target_replaced`/`t_target_replaced`/`target_replacement_pod_name`/`target_replacement_pod_uid` 추가, `Injector`에 `get_target_replacement()` 선택 훅 추가. 대상 재확인은 이름 하나가 아니라 `get_active_pods_fn()`을 다시 불러 vllm-active selector가 실제로 지금 가리키는 pod을 다시 조회하는 방식으로 바꿔(교체 시 새 pod의 name/uid를 얻으려면 이 방식이 필요), 더 이상 안 쓰는 `get_pod_fn` 파라미터를 제거했다. 회귀 테스트 3개 추가(효과 전 변경=invalid, 효과 후 단일 교체=기록, 효과 후 모호한 전환(2개 동시 매칭)=역시 기록). 오프라인 스위트 69 passed, 2 skipped(live_cluster). 실클러스터 작업 없음.
 - 2026-09-18: 바로 위 항목에서 추가한 필드들이 실제로 trial JSON -> `comparison.csv`까지 이어지는지 질문받아 `collect_metrics.py`의 `build_comparison()`을 직접 읽어 확인했다 - `TrialResult`에 필드를 추가하면 `asdict()`로 원본 JSON에는 자동으로 남지만, `comparison.csv`는 `build_comparison()`의 명시적 화이트리스트 dict라 새 필드를 안 넣으면 절대 안 나온다. 실제로 `readiness_probe_profile`/`readiness_probe_timeout_sec`/`target_replaced`/`t_target_replaced`/`target_replacement_pod_name`/`target_replacement_pod_uid` 6개가 전부 빠져 있었다 - 6개 모두 추가. 또한 `readiness_probe_profile`+`target_replaced` 조합을 해석하는 분석 전용 필드 2개를 새로 추가했다: `restart_chain_observed`(default profile에서 target_replaced 그대로 - 연쇄장애 자체가 관찰 대상), `probe_isolation_held`(network_tolerant profile에서 target_replaced의 반대 - 그 설정이 열화로부터 probe를 실제로 격리했는지). 어느 쪽도 `outcome`을 바꾸지 않는다(SLO 판정과 별개). tolerant profile에서 교체가 있었는데 `outcome=prevented`로만 남으면 "설정이 열화를 견뎠다"로 오해할 위험이 있어(위반이 안 잡힌 이유가 실제로는 pod이 바뀌어 무의미해진 측정일 수 있음) `_check_tolerant_profile_prevented_misleading()`으로 별도 issue도 남기게 했다(native+prevented 검증과 같은 패턴). 회귀 테스트 6개 추가(default/tolerant 조합 3가지, 오해소지 issue 검출, 신규 필드 없는 기존 결과의 하위호환, trial JSON 파일→comparison.csv 파일까지의 실제 왕복 확인). 오프라인 스위트 75 passed, 2 skipped(live_cluster). 실클러스터 작업 없음.
+- 2026-09-18: `load_ramp × native` 파일럿(`pilot-load_ramp-native-01-20260918T141420Z`)을 유효한 `load_ramp native 경로 E2E PASS`로 확정(§29 baseline gate가 실클러스터에서 정상 동작함을 실측 확인, 위반 자체도 표본 충분·단일 전환점·stage3 진행 중 발생으로 근거가 명확 - 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §30 참고). 3-arm 파일럿 전 stage 관측성을 보완했다(실클러스터 작업 없음, 코드·테스트·문서만) - `load_ramp_adapter.py`가 `ramp.py --summary-out`에 run별 고유 경로(`/ramp-summary-{run_id}.csv`)를 넘기고, `is_done()`이 정상 종료를 처음 확인한 직후 이 요약을 1회만 fetch해 `experiments/results/ramp-summary-{run_id}-{arm}-{rep}.csv`에 저장한다. 새 순수 함수 `_classify_timestamp_against_stages()`가 실제(명목 아닌) `stage_start_utc`/`stage_end_utc`로 timestamp를 stage 이름/`baseline`/`inter_stage_tail`/`drain`/`unknown` 중 하나로 분류하고, `Injector.classify_stage()`(선택 훅, 미구현 어댑터는 하위호환으로 무시됨) 경유로 `run_once()`가 `t_slo`→`slo_stage`, `t_detection`→`detection_stage`, `t_api_request`→`action_stage`를 채운다. 소스 timestamp가 null이면 대응 stage 필드도 null(`unknown`과 구분), summary fetch 실패나 `classify_stage()` 자체의 예외는 전부 삼켜 stage 필드만 `unknown`/`null`로 남기고 trial의 핵심 판정(`outcome`/`t_slo` 등)은 전혀 건드리지 않는다(§5.1 정책 신설). §5 스키마에 baseline 5개 필드(이전에 §29에서 추가했으나 이 표에는 누락돼 있던 것을 발견해 함께 보완)와 stage 3개 필드 추가, `collect_metrics.py`의 `build_comparison()`에도 반영. 회귀 테스트 12개 추가(`test_load_ramp_adapter.py` 7개 - 실제 지연된 stage 경계가 명목 경계보다 우선한다는 핵심 케이스 포함, `test_run_once.py` 4개, `test_collect_metrics.py` 1개). 기존 파일럿(`...141420Z`)의 "stage3" 표현은 명목 경계 추정이라는 점을 그대로 유지했고 원본값을 소급 생성하지 않았다(summary-out을 캡처 안 한 실행이라 실제 경계 데이터가 없음). 오프라인 스위트 136 passed, 2 deselected(live_cluster). 실클러스터 작업 없음 - 3-arm 파일럿은 아직 시작 안 함.

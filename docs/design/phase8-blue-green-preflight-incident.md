@@ -2579,3 +2579,122 @@ cluster`가 이 사실(값이 같다는 것 포함)을 코드로 고정한다.
 불변(Node/Rollout/pod restart count 동일, 잔여 pod·Chaos CR·
 experiment context 없음) 확인. 실클러스터 추가 재실행 없음 - 다른
 arm·시나리오·60회 본 실험으로는 넘어가지 않는다.
+
+## 31. `load_ramp native` E2E 확정 + 3-arm 파일럿 전 stage 관측성 보완 (2026-09-18)
+
+### 31.1 `load_ramp native` 경로 확정
+
+`pilot-load_ramp-native-01-20260918T141420Z`을 유효한 `load_ramp
+native 경로 E2E PASS`로 확정한다(지시). §30에서 분석한 위반은 정상
+baseline 이후 충분한 표본으로 지속적으로 관찰됐고, §4(`load_ramp`
+확정 설정)의 기존 0.20 RPS 근방 재현성 결과와도 방향이 일치해 추가
+SLO 수정이나 재실행이 필요 없다고 판단됐다. 이 pilot의 원본
+(결과 JSON·raw CSV)과 §30의 문서 내용은 이번 절에서 수정하지
+않는다 - "stage3" 표현은 명목 경계 추정이라는 서술 그대로 유지하고,
+아래에서 새로 만든 stage 분류 메커니즘으로 이 pilot의 값을 소급
+생성하지 않았다(이 실행은 `ramp.py --summary-out`을 캡처하지 않은
+채 진행돼 실제 stage 경계 데이터 자체가 없다 - 확인 불가).
+
+### 31.2 stage 관측성 보완 - 동기
+
+3-arm 파일럿(아직 미시작)부터는 `t_slo`/`t_detection`/`t_api_request`
+등이 실제로 어느 ramp stage에서 발생했는지 사후 분석 없이도 결과
+파일 자체에서 바로 알 수 있어야 한다는 지시에 따라, §30에서
+명목값(주입 시각+90초 단위)으로만 참고할 수 있었던 stage 경계를
+실제 값으로 대체하는 인프라를 추가했다. §23에서 이미 확인된 대로
+`ramp.py`는 각 stage 종료 시 최대 10초의 straggler 대기를 하므로
+명목 경계와 실제 경계가 어긋날 수 있다 - 이번 보완은 그 어긋남을
+그대로 반영한다.
+
+### 31.3 구현
+
+**`chaos/loadgen/ramp.py`**: 변경 없음 - §23에서 이미 `--summary-out`
+(stage별 `stage`/`target_rps`/`actual_rps`/`sent`/`success`/
+`success_rate`/`p95`/`p99`/`stage_start_utc`/`stage_end_utc` CSV)을
+지원하고 있었다. `explore_ramp_intensity.py`(탐색 전용 도구)만 이
+옵션을 쓰고 있었고, 실제 trial 하네스(`load_ramp_adapter.py`)는 한
+번도 이 값을 안 넘기고 있었다는 걸 이번에 확인했다.
+
+**`experiments/load_ramp_adapter.py`**:
+- `make_load_ramp_injector()`의 `inject()`가 이제
+  `--summary-out /ramp-summary-{run_id}.csv`(pod 내부 경로 - pod
+  자체가 trial마다 새로 뜨므로 필수는 아니지만 run_id를 넣어 명확히
+  구분)를 넘긴다.
+- `is_done()`이 `ramp.py`의 정상 종료(exit=0)를 **처음** 확인한
+  직후 `_fetch_stage_summary()`를 호출 - `stage_cache["fetched"]`
+  플래그로 딱 한 번만 시도한다(OBSERVING 루프가 `is_done()`을
+  반복 호출하므로 매번 kubectl exec하면 낭비). pod에서 요약을
+  가져와 로컬 `experiments/results/ramp-summary-{run_id}-{arm}-
+  {rep}.csv`에 저장하고(probe raw CSV와 동일한 명명 관례),
+  `csv.DictReader`로 파싱해 메모리에도 캐시한다. kubectl 오류·빈
+  응답·파싱 실패는 전부 조용히 삼킨다(`stages=None`으로 남음) -
+  **예외를 던지지 않는다**(§5.1 정책 - stage 정보 부재가
+  `invalid_run`을 유발하면 안 됨).
+- 새 순수 함수 `_classify_timestamp_against_stages(timestamp_iso,
+  stages)`(kubectl 의존 없음, `test_load_ramp_adapter.py`에서 직접
+  단위 테스트) - `stages`가 없거나 한 행이라도 파싱 실패하면
+  `"unknown"`. 있으면 각 stage의 실제 `[stage_start_utc,
+  stage_end_utc]` 구간에 timestamp가 속하는지 확인해 stage 이름을
+  반환하고, 어느 구간에도 안 속하면 첫 stage 이전은 `"baseline"`,
+  stage 사이 틈은 `"inter_stage_tail"`, 마지막 stage 이후는
+  `"drain"`으로 구분한다.
+- `classify_stage(timestamp_iso)` 클로저가 `Injector`의 새 선택
+  훅으로 노출된다(`_fetch_stage_summary()`를 방어적으로 한 번 더
+  호출 - idempotent라 무해).
+
+**`experiments/run_once.py`**:
+- `Injector`에 `classify_stage: Optional[Callable[[str], str]] =
+  None` 추가(미구현 어댑터는 하위호환 - pod_kill/network_degrade는
+  현재 stage 개념이 없으므로 이 훅 자체가 없고, `run_once()`가
+  아예 호출하지 않는다).
+- `TrialResult`에 `slo_stage`/`detection_stage`/`action_stage`
+  추가. `finally` 블록에서(`cleanup()`으로 pod가 삭제되기 전) 훅이
+  있으면 `t_slo`→`slo_stage`, `t_detection`→`detection_stage`,
+  `t_api_request`→`action_stage` 순으로 호출한다 - **대응하는
+  timestamp가 null이면 아예 호출하지 않고 필드도 null로 남긴다**
+  (사건이 없었던 것과 분류 못 한 것을 구분). `action_stage`는
+  `t_api_request`(정책이 K8s API를 실제로 호출해 조치를 실행한
+  시각) 기준으로 골랐다 - `action` 필드 자체는 문자열이라 대응
+  timestamp가 없어, "조치가 실행된 시각"에 가장 가까운 필드를
+  선택한 설계 판단이다.
+- 이 블록 전체를 다시 한 번 `try/except`로 감쌌다 -
+  `classify_stage()` 자체가 계약을 어기고 예외를 던져도(구현
+  버그), 이미 확정된 핵심 판정(`outcome`/`t_slo` 등)이나 trial의
+  성공적인 종료가 오염되지 않는다. 실패하면 `notes`에 사유만
+  남긴다.
+
+**`experiments/collect_metrics.py`**: `build_comparison()` 출력에
+`slo_stage`/`detection_stage`/`action_stage` 3개 필드 추가. 겸사겸사
+§29에서 추가했지만 이 문서 §5 스키마 표에는 반영이 누락돼 있던
+baseline 5개 필드도 `experiment-contract.md`에 함께 보완했다(발견
+즉시 수정 - 이전에도 같은 유형의 누락이 있었던 전례, §변경이력
+2026-09-18 "6개가 전부 빠져 있었다" 항목 참고).
+
+### 31.4 오프라인 테스트
+
+- `test_load_ramp_adapter.py`: +7개 - 실제 stage 구간 안 분류, 첫
+  stage 이전 `baseline`, 마지막 stage 이후 `drain`, **명목 90초
+  경계가 아니라 실제(지연된) `stage_end_utc`로 분류되는지 확인하는
+  핵심 회귀 테스트**(stage-1이 straggler로 8초 늦게 끝난 걸
+  가정 - 명목 경계였다면 오분류됐을 시점이 실제 경계로는 올바르게
+  분류됨을 직접 확인), stage 사이 틈은 `inter_stage_tail`, summary
+  없음/손상된 행은 각각 `unknown`.
+- `test_run_once.py`: +4개 - `classify_stage` 구현 시 `t_slo` 기준
+  `slo_stage` 정상 채움, `t_detection`/`t_api_request`가 null이면
+  대응 stage 필드도 null(unknown 아님), 훅 미구현 시 3개 필드 전부
+  None(회귀 없음), `classify_stage`가 예외를 던져도 trial 핵심
+  판정은 영향 없고 `notes`에만 남음.
+- `test_collect_metrics.py`: +1개 - stage 3개 필드가
+  `comparison.csv` 행까지 보존되고, 필드 자체가 없는 과거 결과도
+  전부 `None`으로 안전하게 읽힘.
+- 전체 스위트 `pytest experiments/ -m "not live_cluster"`:
+  **136 passed, 2 deselected**(live_cluster).
+
+### 31.5 결론
+
+3-arm 파일럿 전 요구된 stage 관측성 보완을 오프라인으로 완료했다 -
+실클러스터 작업은 하지 않았다(요구된 그대로). `load_ramp native`
+경로는 §31.1에서 확정한 대로 E2E PASS로 남고, 이번 작업은 다음
+실행(3-arm 파일럿, 아직 미시작)부터 stage 정보가 정확히 기록되도록
+하는 순수 인프라 추가다. 다른 arm·시나리오·60회 본 실험, 그리고
+3-arm 파일럿 자체로도 아직 넘어가지 않는다.
