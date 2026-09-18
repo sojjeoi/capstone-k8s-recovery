@@ -2120,3 +2120,81 @@ P95가 threshold 바로 아래(0.60~0.63초)에 몰려있다가 0.25RPS에서만
 
 **load_ramp 재보정 완료.** 아직 60회 본 실험이나 다른 시나리오로는
 넘어가지 않았다.
+
+## 27. 공식 `run_once()` 경로 `load_ramp × native` 파일럿 - 측정 버그 발견으로 중단 (2026-09-18)
+
+목적: 동결된 SLO v3·5단계 ramp·새 runner 이미지가 실제 Phase 8
+하네스(`run_once.py`)와 끝까지 연결되는지 확인(성능 비교 목적 아님).
+`run_id=pilot-load_ramp-native-01-20260918T130111Z`, `is_pilot=true`.
+
+**preflight 10개 전부 통과**: 저장소 `ed83c40` clean·동기화, 양쪽 Node
+Ready/pressure 없음, Rollout Healthy·active 1개·preview 없음, active
+pod 1/1·restart 0·completion 200, pod가 `lab-cpu3-warm-v1`(CPU limit
+"3", exec warmup startupProbe) 그대로, recovery-policy `/healthz`
+200, `quiescent=true`/`experiment-run.current=null`, Chaos CR 없음,
+`loadgen-runner:phase8-v3-boundaries`가 워커 containerd `k8s.io`
+네임스페이스에 존재(digest 동일), `scenario-load-ramp.yaml`이 동결된
+5단계와 일치.
+
+**실행 결과(표면)**: `outcome=recovered`, `state=completed`,
+`t_injection=13:03:27.036`, `t_slo=13:03:55.462`(주입 28초 후),
+`t_recovery=13:04:27.450`. `injection_valid=true`, `probe_valid=true`,
+`detected=false`, `action=none`, `promotion_verified=null`,
+`commit_sha=null` - 여기까지는 통과 기준과 일치하는 것처럼 보였다.
+
+**이상 감지**: 0.025rps(1단계)는 §26에서 3/3 반복 전부 미위반으로
+검증된 단계인데, 주입 28초 만에(아직 1단계 초반) 위반이 잡힌 건
+비정상적으로 빠르다고 판단해 원시 probe CSV를 직접 확인했다 - t=0~37초
+구간 요청은 전부 성공(200)이고 latency도 0.18~0.3초로 완전히 정상이었다
+(유일한 예외: 주입 **이전** t=-1.78초 시점 1건이 0.989초). "정상
+표본뿐인데 위반 판정"이라는 모순을 발견해 자동 수정하지 않고 원인부터
+추적했다.
+
+**근본 원인(직접 코드 확인)**: `slo_judge.evaluate()`는 윈도우 표본이
+20개 미만이면 `statistics.quantiles()`(정식 백분위수) 대신
+`max(latencies)`를 P95 대용으로 쓴다. probe는 1RPS라 처음 20초 가량은
+윈도우에 20개 미만 표본만 쌓이고, 그동안 "P95"는 사실상 "지금까지 본
+표본 중 최댓값"이 된다. 주입 직전(-1.78초)에 우연히 찍힌 콜드스타트성
+단일 샘플(0.989초, threshold 0.648초 초과)이 이후 한동안 이 "최댓값"
+자리를 차지하면서, 실제로는 이후 모든 요청이 정상이었음에도 30초
+넘게 "위반 지속" 조건을 인위적으로 만족시켜 `t_slo`가 찍혔다
+(`slo_judge.find_t_slo()`를 원시 CSV에 직접 재실행해 지점별
+p95/violating 값을 전부 출력, t=-1.78~37초 구간 내내
+`latency_violating=True`로 나오는 것을 직접 확인). **이는 이번 세션
+탐색 도구(explore_ramp_intensity.py 등)의 버그가 아니라, 이미 동결돼
+있던 `slo_judge.py`(L_baseline 계산 자체는 정상) 안에 원래부터 있던
+결함이며, 이번 파일럿이 처음으로 실제 `run_once()` 경로에서 이 결함을
+발동시킨 것이다.** `load_ramp_adapter.py`의 `_warmed_up()`(60초 대기
+게이트)은 `check_slo_violation()`의 **폴링 시작 시점**만 늦출 뿐,
+`get_actual_slo_time()`이 `find_t_slo()`로 역산하는 **기록 시각
+자체**는 이 게이트의 보호를 받지 않는다 - 그래서 게이트가 있어도
+28초짜리 `t_slo`가 그대로 기록됐다.
+
+**부수 발견(경미)**: `TrialResult.slo_version`이 `"v2"`로
+하드코딩된 기본값(`run_once.py`)을 그대로 쓰고 있어, 실제로는 v3
+threshold(0.648초, `latency_slo_sec` 필드는 정확함)를 썼는데도 버전
+라벨만 `"v2"`로 잘못 기록됐다 - `run_load_ramp_trial.py`가
+`run_once()` 호출 시 `slo_version`을 명시적으로 넘기지 않아서다.
+
+**정상 확인된 부분(참고용, 위 결함과 무관)**: 정리(probe/ramp pod
+완전 삭제, Chaos 리소스 0건, experiment context null), 종료 후
+Rollout Healthy·Node Ready/pressure 없음, `timing_schema_version=v2`
+정확, `t_injection` 근거 필드(`t_injection_request`/`_last_seen`/
+`_observed`, `injection_observation_error_sec=1.334`)에 모순 없음,
+native arm이라 promotion·감사 Git commit 전혀 없음(사전 HEAD
+`ed83c40` 이후 origin에 새 커밋 없음, 직접 확인), 결과 JSON이
+`collect_metrics.py`의 `build_comparison()`에서 오류 없이 읽히고
+`included_in_main_analysis=False`/`exclusion_reason='pilot'`로 정확히
+분류됨.
+
+**처리**: 지시대로 이 실행의 원본(결과 JSON
+`experiments/results/pilot/trial-pilot-load_ramp-native-01-20260918T
+130111Z.json`, probe raw CSV, 둘 다 gitignore 대상)을 그대로 보존하고
+**어떤 코드도 수정하지 않은 채** 여기서 멈춘다. 이 발견은
+`load_ramp`에만 국한되지 않는다 - `slo_judge.evaluate()`는
+pod_kill/network_degrade/memory_pressure 등 SLO 판정을 쓰는 모든
+시나리오가 공유하는 모듈이라, 같은 결함이 어디서든 재현될 수 있다.
+
+다음 조치(수정 방향·범위·검증 방법)는 사용자 결정을 기다린다 - 아직
+`fixed_threshold`·`proposed` arm, preview 생성, promotion, 다른
+시나리오, 60회 본 실험으로는 넘어가지 않았다.
