@@ -2442,3 +2442,140 @@ cluster`가 이 사실(값이 같다는 것 포함)을 코드로 고정한다.
 120초 안에 준비 안 되면 실제로 주입 없이 invalid_run으로 끝나는지)
 실클러스터로 확인하는 건 다음 지시를 기다린다. 다른 arm·시나리오·
 60회 본 실험으로도 넘어가지 않았다.
+
+## 30. baseline gate 실클러스터 검증 - `load_ramp × native` 파일럿 재실행 (2026-09-18)
+
+### 30.1 사전 확인
+
+실행 전 7개 항목을 읽기 전용으로 직접 확인:
+
+- 저장소: `git status` clean, `HEAD=d5a6ea9`, `git fetch` 후
+  `git rev-list --left-right --count HEAD...origin/master` = `0 0`
+  (완전 동기화).
+- Node: `sj-control`/`sj-worker` 둘 다 `Ready=True`,
+  Memory/Disk/PIDPressure 전부 `False`.
+- Rollout: `phase=Healthy`, `replicas=updated=ready=available=1`,
+  `currentPodHash==stableRS==85c55758c6`,
+  `blueGreen.previewSelector==activeSelector`(구분되는 preview 없음).
+- active completion: recovery-policy pod에서
+  `vllm-active.vllm-serving.svc.cluster.local`로 직접 POST ->
+  `http_code=200`, `vllm-serving` pod `restarts=0`.
+- `GET /admin/quiescent` -> `{"quiescent":true,"active_count":0}`,
+  `GET /admin/experiment-run` -> `{"current":null}`.
+- `kubectl get podchaos,networkchaos,stresschaos,iochaos -n
+  vllm-serving` -> 리소스 없음.
+- 로컬 설정 직접 확인: `slo_judge.py`의 `L_BASELINE=0.324`/
+  `LATENCY_THRESHOLD=0.648`/`SLO_VERSION="v3"`,
+  `chaos/scenario-load-ramp.yaml`의 5단계(0.025/0.05/0.20/0.30/
+  0.40rps × 90초, §26에서 동결된 값 그대로),
+  `load_ramp_adapter.py`의
+  `IMAGE="loadgen-runner:phase8-v3-boundaries"`.
+
+7개 전부 통과 확인 후 실행.
+
+### 30.2 실행
+
+`python run_load_ramp_trial.py --pilot`(전부 기본값 - `arm=native`,
+`rep=1`, `sequence_index=1`, `order_seed=1`, config/probe-config는
+동결된 파일 경로, `timeout_sec=900`) - §27의 첫 파일럿과 동일한
+설정으로 재실행.
+
+`run_id=pilot-load_ramp-native-01-20260918T141420Z`,
+`outcome=recovered`, `state=completed`. `t_injection=14:17:32.895986`,
+`t_slo=14:21:34.258091`, `t_recovery=14:26:00.024205`(전부 UTC).
+
+### 30.3 15개 확인 항목
+
+1. **state가 baseline을 거침**: 상태 전이 로그 자체는 안 남지만(같은
+   파일을 매 전이마다 덮어씀), `t_baseline_ready`/`baseline_sample_
+   count`/`baseline_p95`/`baseline_availability`가 전부 채워져 있다는
+   것 자체가 충분한 증거다 - `run_once.py` 코드상 이 필드들은
+   `result.state = TrialState.BASELINE.value`를 설정한 바로 다음
+   블록(`_wait_for_baseline()` 호출)에서만 채워질 수 있고 다른 코드
+   경로는 없다(직접 확인). ✓
+2. `baseline_valid: true` ✓
+3. `t_baseline_ready: 2026-09-18T14:17:27.941448+00:00` ✓
+4. `baseline_sample_count: 57`(≥20) ✓
+5. `baseline_p95: 0.3345`(≤0.648) ✓
+6. `baseline_availability: 1.0`(≥0.99) ✓
+7. `t_baseline_ready(14:17:27.941) < t_injection_request(14:17:
+   30.889)` - 약 2.95초 차 ✓
+8. **baseline 이후에만 injector 호출**: `outcome=recovered`(invalid_
+   run 아님)이므로 `if baseline_valid is False: raise` 분기를
+   통과했다는 뜻이고, 실측 타임스탬프 순서(`t_baseline_ready` <
+   `t_injection_request`)도 일치 - 코드 경로·실측 둘 다로 확인 ✓
+9. `slo_version: "v3"` ✓
+10. `t_slo(14:21:34.258091) ≥ t_injection(14:17:32.895986)` - 약
+    241.4초 뒤(항상 이후여야 한다는 §29의 `not_before` 보장이 실제로
+    지켜짐) ✓
+11. `t_recovery: 2026-09-18T14:26:00.024205+00:00` 기록,
+    `outcome=recovered` ✓
+12. `detected=false`, `action=none`, `promotion_verified=null`,
+    `commit_sha=null` - native arm이라 정책 엔진 개입 없음, 예상대로
+    ✓
+13. cleanup 후 `kubectl get pods -n vllm-serving`에 probe/ramp pod
+    없음(`recovery-policy`/`vllm-serving` 2개만 남음), Chaos CR
+    없음, experiment context=null ✓
+14. Node `Ready=True` 유지, Rollout `Healthy`·단일 revision
+    (`currentPodHash==stableRS`) 유지, `vllm-serving` pod
+    `restarts=0`(실행 전후 불변) ✓
+15. `collect_metrics.py`의 `build_comparison()`에 이 실행의 실제
+    결과 JSON을 직접 넣어 확인 - `exclusion_reason='pilot'`,
+    baseline 5개 필드 전부 정상 전달, validation issue 0건 ✓
+
+**15개 전부 통과.**
+
+### 30.4 위반 원인 분석 (raw CSV 직접 재확인)
+
+지시에 따라 "발생 시점이 예상보다 빠르다"는 이유만으로 버그로
+분류하지 않고, raw CSV와 판정 과정을 직접 재현해 근거를 확인했다.
+
+- 원본 probe CSV(`probe-pilot-load_ramp-native-01-20260918T141420Z-
+  native-1-raw.csv`, 601건)를 `slo_judge.find_t_slo(evaluate(rows),
+  not_before=t_injection)`으로 독립 재계산 -> `t_slo=2026-09-18T14:
+  21:34.258091+00:00`로 결과 JSON과 정확히 일치(재현성 확인).
+- `latency_violating`이 `False->True`로 바뀌는 시점은 **주입 후
+  209.8초**(14:21:02.694, window 표본 61개, p95=0.649) 단 한 번뿐이고,
+  그 뒤로 **주입 후 506.8초**(14:25:59.698, n=60, p95=0.336)까지
+  **끊김 없이 계속 위반 상태**였다(전체 구간을 직접 스캔해 중간에
+  False로 꺾이는 지점이 없음을 확인). `t_slo`(+241.4초)는 이
+  스트릭이 `LATENCY_PERSIST_SEC`(30초) 조건을 처음 만족한 지점의
+  observed_at이다(209.8+30=239.8초 부근과 정확히 부합).
+- 스트릭 구간(주입+195.8~244.8초)의 원본 요청을 직접 나열해 보면
+  0.15~0.28초(정상)와 0.45~0.67초(threshold 근접·초과)가 섞여 있다 -
+  단일 이상치가 아니라 **표본 다수가 실제로 threshold 부근까지
+  올라간 상태**이고, 창 표본 수가 60~61개(기준 20개의 3배)라 §28의
+  small-sample 문제와도 무관하다.
+- 명목(주입 시각+90초 단위) stage 경계로 보면 stage3(0.20rps)는
+  주입+180.9~270.9초 구간이다. 위반 스트릭 시작(+209.8초)과
+  `t_slo`(+241.4초) 둘 다 이 구간 안에 있다 - **stage3(0.20rps)
+  진행 중에 발생한 것이지, stage4/5보다 빠르지도 stage 경계보다
+  이르지도 않다.** 다만 이 stage 경계는 명목값이다 -
+  `load_ramp_adapter.py`의 `inject()`는 `--summary-out`을 넘기지
+  않아(exploration 전용 도구 `explore_ramp_intensity.py`만 이 옵션을
+  씀) `ramp.py`가 기록하는 실제 stage 시각을 이번 실행에서는 캡처하지
+  못했다 - §23에서 이미 확인된 대로 straggler 대기로 인한 최대
+  ~10초 드리프트 가능성이 있으나 이번 실행 자체의 정확한 드리프트
+  값은 확인 불가(추정하지 않음).
+- `t_injection_end`(ramp 종료, +451.7초) 이후에도 위반이 +506.8초까지
+  이어지다 해소됐다 - ramp가 멈춘 뒤로도 부하 잔재가 ~55초간 남았다가
+  정상화된 것으로 보이며, 이는 관측된 사실과 일관된다.
+
+종합하면 표본 수(60~61개, 기준의 3배), 명확한 단일 전환점(중간에
+꺾이지 않는 연속 위반), threshold 근접·초과가 섞인 실제 latency
+분포, stage3 진행 중 발생 - 이 네 가지 모두 §28(small-sample
+오탐)·§29(주입 전 오염) 두 결함 중 어느 쪽 징후와도 일치하지 않는다.
+판정 로직 자체가 잘못 반응했다고 볼 근거는 찾지 못했다(다만 이 결과를
+"연구 결과로서 타당한 위반"으로 최종 해석하는 것은 사용자 판단 영역
+이므로, 여기서는 재현 가능한 사실 관계까지만 보고한다).
+
+### 30.5 결론
+
+15개 확인 항목 전부 통과 - baseline gate가 실클러스터에서 의도대로
+동작함을 확인했다(baseline 57표본·30초 안정 후에만 주입, `t_slo`가
+항상 주입 이후로만 기록됨, 훅 정상 배선). 이번 위반은 표본 수·전환
+패턴·raw latency 분포·stage 시점 네 축 모두에서 하네스 결함 징후가
+없는, 근거가 명확한 위반으로 판단된다. 실행 전후 클러스터 상태
+불변(Node/Rollout/pod restart count 동일, 잔여 pod·Chaos CR·
+experiment context 없음) 확인. 실클러스터 추가 재실행 없음 - 다른
+arm·시나리오·60회 본 실험으로는 넘어가지 않는다.
