@@ -14,10 +14,12 @@
 # 급등(최대 4.7초)이 있었다(L_baseline calibration 3회에서도 같은
 # 패턴 관찰됨) - stage-1 전체 P95를 오염시켰다.
 #
-# 이번엔 기존 v2 범위(0.10~1.00RPS, 5단계)를 그대로 재검증한다 -
-# "기존 값 자동 재사용 금지"는 검증 없이 채택 금지라는 뜻이지 후보로
-# 시도하지 말라는 뜻은 아니다. 해석 시 stage-1 최초 ~10초는 콜드스타트
-# 급등으로 알려진 구간이라 별도로 확인한다.
+# 2차 탐색(0.10~1.00RPS, 5단계, explore-20260918T101717Z)은 harness
+# 경계 버그가 있던 상태로 돈 것이라 후보 판단에서 제외했다(§23). harness
+# 수정·이미지 재빌드·검증(§23.4~§23.7, explore-20260918T110801Z) 통과
+# 후, 그 결과가 0.10RPS부터 이미 threshold를 살짝 넘기는 걸 보여줘
+# (P95=0.691s) 3차 탐색은 0.10RPS 주변을 촘촘하게 본다 - 사용자 지정
+# 범위, 각 stage 90초 유지.
 target:
   url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
   model: "Qwen/Qwen2.5-0.5B-Instruct"
@@ -25,18 +27,24 @@ target:
   max_tokens: 10
 
 stages:
+  - name: explore-0.05rps
+    rps: 0.05
+    duration_sec: 90
+  - name: explore-0.075rps
+    rps: 0.075
+    duration_sec: 90
   - name: explore-0.10rps
     rps: 0.10
     duration_sec: 90
+  - name: explore-0.125rps
+    rps: 0.125
+    duration_sec: 90
+  - name: explore-0.15rps
+    rps: 0.15
+    duration_sec: 90
+  - name: explore-0.20rps
+    rps: 0.20
+    duration_sec: 90
   - name: explore-0.25rps
     rps: 0.25
-    duration_sec: 90
-  - name: explore-0.50rps
-    rps: 0.50
-    duration_sec: 90
-  - name: explore-0.75rps
-    rps: 0.75
-    duration_sec: 90
-  - name: explore-1.00rps
-    rps: 1.00
     duration_sec: 90
