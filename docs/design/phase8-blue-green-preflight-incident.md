@@ -1178,3 +1178,77 @@ headroom-coldstart-01-20260918T054527Z.json`에 보존(gitignore 대상 -
 같은 이유로 이 디렉터리로 옮김).
 
 아직 02·03회차나 SLO v2·load_ramp 재보정으로는 넘어가지 않았다.
+
+### 14.1 사후 로그 포렌식 - preview 타임아웃 3건 서버측 흔적 확인 (읽기 전용, 02회차 착수 전)
+
+§14의 `preview_first_request_timeout` 판정에 대해 "모델 웜업"을 확정
+짓지 않고, 02회차 설계 전에 지시받은 5개 항목을 로그로만 재확인했다.
+새 revision 생성·설정 변경 없음.
+
+**조사 대상**: 01회차에서 preview였고 promotion 후 유일하게 남은 pod
+`vllm-serving-75d8859d89-9bq8z`. (1) `--since-time="2026-09-18T05:58:00Z"
+--timestamps`로 3건의 preview 진단 요청 시각(05:58:23~05:58:54) 전후
+구간을 좁게 조회, (2) 컨테이너 시작부터 전체 로그를 `grep -iE
+"error|warn|exception|Loading|compil|engine|Started server"`로 넓게 조회.
+
+**항목 1-2 (요청이 실제로 pod에 도착했는가)**: 좁은 구간(05:58:00~
+06:03:38, 약 150줄)에 `/health`(5초 간격)·`/metrics` GET 로그만 있고,
+`POST /v1/completions` 로그는 **0건** - 3건의 preview 요청 시각대에
+매칭되는 access log가 전혀 없다.
+
+**항목 3 (10초 timeout 이후 서버에서 완료됐는가)**: 조회된 전체 로그를
+통틀어 최초의 `POST /v1/completions` 로그가 `05:59:03.080883Z`
+(`10.244.36.7:55864 - "POST /v1/completions HTTP/1.1" 200 OK`) - 이는
+driver가 기록한 promotion 후 첫 completion 성공 시각과 정확히 일치한다.
+엔진 주기 통계 로그(`[loggers.py:310] Avg prompt throughput...`)도
+전체 로그에서 최초 등장이 `05:59:03.891869Z`로 동일 시점이다. 즉 3건의
+preview 요청이 05:58:23~05:59:03(약 40~80초) 사이 어느 시점에든 서버
+측에서 지연 완료됐다는 로그 흔적도 없다.
+
+**항목 3의 한계(확인 불가 명시)**: uvicorn류 access log는 요청이
+"도착한" 시점이 아니라 "응답을 반환한" 시점에 찍힌다. 따라서 로그가
+없다는 사실만으로는 "애초에 pod에 도달하지 않음"과 "도달했지만 이
+로그를 조회한 시점까지도 응답을 못 내고 있었음(예: 여전히 처리 중이거나
+소켓 종료로 응답을 못 내보냄)"을 구분할 수 없다. 이 둘을 가르려면
+tcpdump/소켓 레벨 증거가 필요하고, 이는 이번 읽기 전용 로그 점검 범위
+밖이다 - **확인 불가**로 남긴다.
+
+**항목 4 (preview/active 요청이 코드상 정말 동일했는가)**:
+`headroom_coldstart_01_official.py`의 `completion_once(target_host,
+timeout_sec=10.0)`을 재확인 - payload
+`{"model":"Qwen/Qwen2.5-0.5B-Instruct","prompt":"Hi","max_tokens":1}`,
+`curl --max-time {timeout_sec}`, URL 템플릿
+`http://{target_host}.vllm-serving.svc.cluster.local:8000/v1/completions`
+모두 고정. 실제 4개 호출 지점(라인 140/178/202/238) 전부 `timeout_sec`
+인자를 생략해 기본값 10.0초를 그대로 쓴다. preview 진단(라인 202,
+`target_host="vllm-preview"`)과 active 측정(라인 140/178/238,
+`target_host="vllm-active"`) 사이 차이는 `target_host` 문자열 하나뿐 -
+"timeout이나 payload가 달라서"라는 설명은 코드로 배제된다.
+
+**부수 관찰(5개 항목 밖, 인과관계 미확인)**: 항목 1-2의 넓은 조회 중
+같은 pod의 컨테이너 시작 로그(`05:47:36`, OpenMP 스레드 바인딩)에
+`local_rank=0, core ids=[0, 1, 2, 3, 4, 5, 6]` / `reserved_cpus=[7]`가
+찍혀 있다 - 합쳐서 0~7 총 8개 값으로, 이 파드의 cgroup CPU limit인
+3코어가 아니라 **노드 전체 allocatable(8코어) 기준으로 보이는 값**이라는
+점은 로그에서 직접 관찰된 사실이다. 다만 이게 실제로 vLLM/OpenMP가
+cgroup 쿼터를 무시하고 스레드를 스폰한다는 뜻인지, 그리고 그것이 preview
+첫 요청 지연에 기여했는지는 이 로그만으로는 **확인 불가** - in-container
+cgroup/cpuset 조사가 별도로 필요하며 이번 점검 범위 밖이라 참고 사실로만
+기록한다.
+
+**종합**:
+- 직접 확인된 사실: (a) 3건의 preview 요청 시각대엔 completions 관련
+  access log가 전무, (b) 이후 첫 promotion-후 요청 이전까지도 지연 완료를
+  나타내는 로그가 없음, (c) 모델 safetensors 로딩은 `05:48:01.660Z`에
+  이미 끝나 있었음(`Loading safetensors checkpoint shards: 100%
+  Completed | 1/1 [00:08<00:00, 8.26s/it]`) - 타임아웃 구간(05:58:23~)보다
+  약 10분 전이라 "아직 모델 로딩 중이라서"라는 단순 설명과는 맞지 않음,
+  (d) preview/active 요청은 코드상 `target_host`만 다르고 완전히 동일.
+- 확인 불가: 요청이 실제로 pod 소켓까지 도달했는지 여부(위 한계 참고);
+  최초 추론 요청에서 실제로 무엇이 지연을 유발했는지의 메커니즘(예: 최초
+  요청시 lazy한 KV-cache/스레드풀 초기화 등은 전부 가설이며 로그상 직접
+  근거 없음); CPU affinity 부수 관찰과 지연의 인과관계.
+- §14의 결론은 바뀌지 않는다 - 웜업은 여전히 **유력 가설**일 뿐이고,
+  02·03회차에서의 재현 여부가 최종 판정 기준이라는 원래 입장을 유지한다.
+
+02회차 설계·실행으로는 아직 넘어가지 않았다 - 사용자 검토·승인 대기.
