@@ -16,7 +16,7 @@ spec:
       labels:
         app: vllm-serving
       annotations:
-        spike-revision: "HEADROOM-COLDSTART-01" # lab-cpu3-v1 공식 콜드스타트 1회차 - 값만 바꿔 새 리비전 생성(자원/probe/모델 미변경)
+        spike-revision: "HEADROOM-COLDSTART-02" # lab-cpu3-v1 공식 콜드스타트 2회차 - Pod IP 우선 프로토콜, 값만 바꿔 새 리비전 생성(자원/probe/모델 미변경)
     spec:
       containers:
         - name: vllm
