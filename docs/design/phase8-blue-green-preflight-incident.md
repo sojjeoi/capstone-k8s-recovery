@@ -3142,3 +3142,152 @@ smoke 신호의 `t_detection`(`...559312`)→`decided_at`(`...575340`)→
 모든 `build()` 호출에서 항상 `{}`로 남아 신호의 `detector` 필드가
 감사기록에 전혀 저장되지 않는다는 것도 확인했다 - 이번 지시 범위
 밖이라 손대지 않음.
+
+## 35. `fixed_threshold` pilot 01회 `invalid_run` - 근본원인 조사, 클러스터
+정리, 자동 rollback + timeout 상향 (2026-09-19)
+
+### 35.1 무슨 일이 있었나
+
+승인받은 순서(native → fixed_threshold → proposed)대로 3-arm 파일럿을
+시작, native는 전 항목 정상 통과(`outcome=recovered`, 감사기록·
+preview·detector 전부 미개입 확인). 이어서 `fixed_threshold` 01회가
+`outcome=invalid_run`, `invalid_reason="vllm-serving preview가 시간
+내 Ready 안 됨(arm=fixed_threshold) - 주입 시도 안 함"`으로 종료 -
+`wrap_injector_with_preview_prep()`의 fail-closed가 설계대로 정확히
+작동해 chaos 주입·detector 시작 둘 다 일어나지 않았다. 지시대로
+`proposed`로 진행하지 않고 즉시 중단·보고했다.
+
+### 35.2 근본원인 조사 - 확정/관찰/미확정 구분
+
+**확정**: `kubectl describe pod`의 `conditions[].lastTransitionTime`을
+직접 대조 - preview pod는 `2026-09-18T16:51:54Z` 생성, `Ready=True`
+전환은 `16:55:49Z`(235초 후, restart 0회, 크래시 없음). harness는
+`t_run_end=16:54:57Z`(183초 후)에 이미 180초 timeout으로 포기한
+뒤였다 - preview가 harness의 포기 시점보다 52초 늦게 도착했을 뿐,
+고장난 게 아니다.
+
+**확정**: 같은 구간의 Prometheus 실측(`container_cpu_usage_seconds_total`
+rate, `container_cpu_cfs_throttled_periods_total`)으로 active pod는
+CPU 0.008~0.021 core만 사용하고 throttle 0회 - active와의 자원 경합은
+배제된다. Node 레벨도 스케줄링 여유가 있었다(`requests 56%`,
+`limits 75%` 할당) - 캐파 부족도 아니다.
+
+**관찰**: 같은 구간에 preview pod 자신은 CPU 0.12~1.03 core(자기
+limit 3코어의 최대 1/3 수준)만 썼는데도 CFS throttle이 36회
+발생했다(active pod는 0회). §14.2에서 이미 확인한 대로 3코어 CFS
+quota 자체는 실제로 이 pod에 적용돼 있다.
+
+**미확정**: throttle 36회가 235초 지연의 직접 원인인지, 아니면 모델
+로딩·디스크 I/O·JIT/컴파일·첫 추론 자체가 원래도 이 정도(163.7~350.3초
+범위) 걸리는지는 이번 조사로 확정할 수 없다. `container_cpu_cfs_
+throttled_seconds_total`(누적 throttle 시간)을 조회했으나 데이터가
+비어 있어 정량적 기여도는 확인 불가로 남긴다. §14/§15에서도 동일하게
+"실제로 타임아웃 순간에 CFS throttling을 유발했는지는 확인되지
+않는다"고 명시한 바 있어, 이번 미확정 판정은 그 선례와 일관된다.
+
+### 35.3 클러스터 정리 (수동, 승인받은 뒤 실행)
+
+`kubectl argo rollouts` 플러그인이 로컬에 없어, 그것과 동일한 효과
+(`status.abort=true` 패치)를 `kubernetes` 파이썬 클라이언트로 직접
+수행(`patch_namespaced_custom_object_status`). 결과 - `phase=Degraded`,
+`abort=true`, `Progressing=False(reason=RolloutAborted)`, preview
+ReplicaSet(`vllm-serving-768595dd6c`)이 `DESIRED=0/CURRENT=0`로
+scale-down, preview pod `Terminating`→삭제 완료. active pod
+(`85c55758c6-ljc6n`)는 무변경(`RESTARTS=0`, 8시간 연속 `Running`),
+`vllm-active` selector도 그대로. Node Ready, pressure 없음, 조치
+불필요(experiment context/Chaos CR/load pod 전부 없음, 로컬 detector
+프로세스도 없음) 확인. **참고**: abort 직후에도 `Healthy=False`/
+`phase=Degraded`/`Paused=True(reason=RolloutPaused)` 자체는 남는다 -
+이는 `kubectl argo rollouts abort`의 정상적인 종결 상태(마지막 업데이트가
+실패/취소됐다는 컨트롤러 자체의 기록)이지 방치나 고장의 신호가 아니다.
+다음 절의 재실행이 이 상태에서도 새 preview를 정상적으로 준비할 수
+있음을 실측으로 재확인했다(§35.6).
+
+### 35.4 구현 1 - `wrap_injector_with_preview_prep()` 자동 rollback
+
+`experiments/blue_green_prep.py`에 `get_blue_green_status()`(activeSelector/
+currentPodHash 스냅샷)·`abort_preview()`(`status.abort=true` 패치)·
+`_replicaset_desired()`·`wait_until_rolled_back()`(abort 후 activeSelector
+복원 + 대상 RS가 실제로 0으로 줄었는지 폴링 재확인)·
+`prepare_preview_with_rollback()`(신규 통합 함수)을 추가했다.
+`run_calibration.py`가 이미 쓰고 있는 기존 `prepare_preview()`(bool
+반환)는 건드리지 않았다 - `arm_controller.py`만 새 함수로 전환.
+
+`prepare_preview_with_rollback()`의 판단 순서:
+1. bump 전 activeSelector를 먼저 스냅샷.
+2. bump 직후 activeSelector가 이미 스냅샷과 다르면(다른 프로세스가
+   동시에 개입했을 가능성) **무엇이 "이번 호출이 만든 preview"인지
+   특정할 수 없으므로 abort를 시도하지 않고 그대로 실패 반환**
+   (`external_interference=True`, fail-closed - 이미 존재하던 preview를
+   함부로 건드리지 않음).
+3. 정상 경로면 bump 직후 읽은 `current_pod_hash`를 "이번 호출이 만든
+   preview"로 못박고, 그 값만 이후 abort 대상으로 삼는다.
+4. timeout까지 `is_paused_pre_promotion()`을 폴링 - 성공하면 실제 Ready
+   시각·소요시간을 기록하고 rollback 없이 반환.
+5. timeout이면 위에서 특정한 pod_hash에만 `abort_preview()` 실행 후
+   `wait_until_rolled_back()`으로 activeSelector 복원 + 대상 RS
+   desired=0을 실측 재확인(최대 60초 폴링, 이미 조건이 충족돼 있어도
+   idempotent).
+
+`arm_controller.wrap_injector_with_preview_prep()`은 이 결과를 받아
+심각도를 둘로 나눈다:
+- **rollback 성공**(또는 애초에 rollback이 필요 없었던 정상 실패) ->
+  기존과 동일하게 `TrialInvalid`(이 trial만 무효, 배치는 계속).
+- **`external_interference` 또는 rollback 자체가 실패** -> `HarnessCorrupted`
+  (클러스터가 다음 trial을 오염시켰을 수 있음 - `run_once.py`에 새로
+  추가한 `except HarnessCorrupted` 절이 `critical_failures`에 반영해
+  기존 §6 패턴(action cooldown 초기화 실패와 동일)으로 배치를 멈춘다).
+
+두 경우 모두 원래 실패 사유(몇 초 만에 timeout됐는지)와 rollback
+결과(성공/실패, 대상 pod_hash)를 예외 메시지 하나에 함께 남긴다.
+preview 준비 진단(`t_preview_ready`/소요시간/rollback 결과)은
+`injector.get_preview_prep_info()`(신규 `Injector` 선택 필드)로
+노출하고, `run_once()`가 `finally`에서 prepare() 성공/실패와 무관하게
+회수해 `TrialResult`의 신규 필드(`t_preview_prep_start`/`t_preview_ready`/
+`preview_prep_duration_sec`/`preview_rollback_attempted`/
+`preview_rollback_ok`)에 반영한다 - invalid_run이 된 trial도 진단
+목적으로 이 값들이 남는다.
+
+**타임아웃 직후 뒤늦게 Ready되는 경합**(이번 사고가 정확히 그 사례)도
+오프라인 테스트로 검증했다(`test_blue_green_prep.py::
+test_wait_until_rolled_back_polls_until_converged` - 첫 poll에서
+아직 RS가 안 줄어도 이후 poll에서 수렴하면 성공 처리) + 실제로 이번
+사고의 방치된 preview를 수동으로 abort할 때 이미 실측 확인됨(§35.3).
+
+### 35.5 구현 2 - preview 준비 timeout 180초 -> 480초
+
+`PREVIEW_PREP_TIMEOUT_SEC = 480.0`(`blue_green_prep.py`). 근거 -
+전부 3코어+3코어 active+preview 동시구동 조건에서 실측한 apply~Ready
+시간: `HEADROOM-COLDSTART-01` 176.1초, `-02` 350.3초, `-03` 163.7초
+(§14/§15/§18), 이번 `fixed_threshold` 01회 235초. 네 값 모두
+163.7~350.3초 범위 - 180초는 애초에 여유가 거의 없었던 값이었다.
+480초는 관측된 최댓값(350.3초)에도 137초(약 1.4배) 여유를 둔다. 이
+값은 SLO나 복구시간 판정 기준이 아니라 "실험 준비 단계"(주입 전, 아직
+관찰 구간이 시작되기 전)의 최대 대기시간일 뿐이며, `t_slo`/`t_recovery`
+계산에는 관여하지 않는다. 480초를 넘겨도 동작은 기존과 동일 -
+`invalid_run` 처리 후 자동 rollback(§35.4).
+
+### 35.6 회귀 테스트 + 통합 테스트
+
+신규 `test_blue_green_prep.py`(6개) - 시간 내 Ready 시 rollback 미시도,
+timeout 시 "이번 호출이 만든" pod_hash만 대상으로 rollback 성공/실패
+기록, activeSelector 예상 밖 변경 시 fail-closed(abort 미호출),
+`wait_until_rolled_back()`의 경합 상황(첫 poll 실패 후 수렴)과 완전
+timeout 케이스. `test_arm_controller.py`에 5개 추가/수정 - preview
+준비 성공 시 진단 정보 노출, 실패+rollback 성공 시 `TrialInvalid`(원래
+메시지 그대로 보존 확인), rollback 실패 시 `HarnessCorrupted` 승격,
+외부 개입 감지 시 rollback 미시도+`HarnessCorrupted`. `test_run_once.py`에
+2개 추가 - `injector.prepare()`가 직접 `HarnessCorrupted`를 던지면
+`invalid_run` 기록과 동시에 함수 밖으로 예외가 전파되는지, preview 진단
+정보가 prepare() 실패 이후에도 결과에 반영되는지. `experiments`+
+`recovery-policy` 통합 오프라인 스위트 218 passed, 2 deselected
+(live_cluster) - 전부 통과.
+
+### 35.7 보존 정책
+
+`trial-pilot-load_ramp-fixed_threshold-01-20260918T165153Z.json`(01회
+invalid_run 결과)은 `outcome`/`invalid_reason`/타임스탬프 등 핵심
+필드를 전혀 수정하지 않고 원본 그대로 보존한다 - `is_pilot=true`는
+이미 참이었고, `included_in_main_analysis: false`만 새로 추가해 향후
+60회 본 실험 집계에서 이 실행이 제외 대상임을 명시했다(이유:
+preview 준비 timeout - 위 §35.1/35.2 참고).

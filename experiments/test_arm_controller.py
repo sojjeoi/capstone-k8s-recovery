@@ -14,12 +14,13 @@ sys.stdout.reconfigure(encoding="utf-8")
 from arm_controller import (
     _DETECTOR_SCRIPTS,
     _build_detector_command,
+    _prometheus_reachable_and_fresh,
     _resolved_signal_url,
     _subprocess_detector,
     make_detector_for_arm,
     wrap_injector_with_preview_prep,
 )
-from run_once import Injector, TrialInvalid
+from run_once import HarnessCorrupted, Injector, TrialInvalid
 
 
 def test_make_detector_for_arm_native_returns_none():
@@ -102,30 +103,37 @@ def test_wrap_injector_with_preview_prep_native_passthrough():
 def test_wrap_injector_with_preview_prep_success_calls_original_prepare():
     calls = {"prepare": 0, "preview_fn_args": None}
 
-    def fake_prepare_preview(name, namespace):
-        calls["preview_fn_args"] = (name, namespace)
-        return True
+    def fake_prepare_preview(name, namespace, timeout):
+        calls["preview_fn_args"] = (name, namespace, timeout)
+        return {"ready": True, "t_prep_start": "t0", "t_preview_ready": "t1",
+                "prep_duration_sec": 12.3, "external_interference": False,
+                "rollback_attempted": False, "rollback_ok": None, "aborted_pod_hash": None}
 
     injector = Injector(prepare=lambda: calls.__setitem__("prepare", calls["prepare"] + 1),
                          inject=lambda: None, is_started=lambda: True, is_effective=lambda: True,
                          is_done=lambda: True, cleanup=lambda: None)
     wrapped = wrap_injector_with_preview_prep(
         injector, "fixed_threshold", rollout_name="vllm-serving", namespace="vllm-serving",
-        prepare_preview_fn=fake_prepare_preview,
+        prepare_preview_fn=fake_prepare_preview, preview_prep_timeout_sec=480.0,
     )
     wrapped.prepare()
-    assert calls["preview_fn_args"] == ("vllm-serving", "vllm-serving")
+    assert calls["preview_fn_args"] == ("vllm-serving", "vllm-serving", 480.0)
     assert calls["prepare"] == 1, "preview 준비 성공 후에는 원본 prepare()도 호출돼야 함"
-    print("OK - preview 준비 성공 시 원본 prepare()까지 정상 호출됨")
+    info = wrapped.get_preview_prep_info()
+    assert info["t_preview_ready"] == "t1" and info["prep_duration_sec"] == 12.3
+    print("OK - preview 준비 성공 시 원본 prepare() 호출 + 진단 정보(get_preview_prep_info) 노출")
 
 
 def test_wrap_injector_with_preview_prep_failure_blocks_original_prepare():
     # 핵심 회귀 테스트(방식 8) - preview 준비 실패 시 injector.inject()로
-    # 이어질 원본 prepare() 자체가 호출되면 안 된다.
+    # 이어질 원본 prepare() 자체가 호출되면 안 된다. rollback은 성공했다고
+    # 가정(클러스터는 정상 복원) - 이 경우는 여전히 TrialInvalid여야 한다.
     calls = {"prepare": 0}
 
-    def failing_prepare_preview(name, namespace):
-        return False
+    def failing_prepare_preview(name, namespace, timeout):
+        return {"ready": False, "t_prep_start": "t0", "t_preview_ready": None,
+                "prep_duration_sec": 480.4, "external_interference": False,
+                "rollback_attempted": True, "rollback_ok": True, "aborted_pod_hash": "previewXYZ"}
 
     injector = Injector(prepare=lambda: calls.__setitem__("prepare", calls["prepare"] + 1),
                          inject=lambda: None, is_started=lambda: True, is_effective=lambda: True,
@@ -137,11 +145,63 @@ def test_wrap_injector_with_preview_prep_failure_blocks_original_prepare():
     raised = False
     try:
         wrapped.prepare()
-    except TrialInvalid:
+    except TrialInvalid as e:
         raised = True
-    assert raised, "preview 준비 실패는 TrialInvalid를 던져야 함"
+        assert "previewXYZ" in str(e) and "rollback 성공" in str(e)
+    assert raised, "preview 준비 실패 + rollback 성공은 TrialInvalid여야 함(이 trial만 무효, 클러스터는 정상)"
     assert calls["prepare"] == 0, "preview 준비 실패 시 원본 prepare()(따라서 이후 inject())가 호출되면 안 됨"
-    print("OK - preview 준비 실패 시 TrialInvalid, 원본 prepare()/이후 injection 미실행")
+    print("OK - preview 준비 실패+rollback 성공 시 TrialInvalid, 원본 prepare()/이후 injection 미실행")
+
+
+def test_wrap_injector_with_preview_prep_rollback_failure_raises_harness_corrupted():
+    # 2026-09-19 추가 - fixed_threshold pilot 01회 사고(preview 방치, Rollout
+    # Paused/Degraded로 남음) 재발 방지. rollback 자체가 실패하면 이 trial만
+    # 무효 처리하고 다음 trial로 넘어가면 안 된다 - HarnessCorrupted로 승격.
+    def failing_rollback(name, namespace, timeout):
+        return {"ready": False, "t_prep_start": "t0", "t_preview_ready": None,
+                "prep_duration_sec": 480.2, "external_interference": False,
+                "rollback_attempted": True, "rollback_ok": False, "aborted_pod_hash": "previewXYZ"}
+
+    injector = Injector(prepare=lambda: None, inject=lambda: None, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True, cleanup=lambda: None)
+    wrapped = wrap_injector_with_preview_prep(injector, "fixed_threshold", prepare_preview_fn=failing_rollback)
+
+    raised = False
+    try:
+        wrapped.prepare()
+    except HarnessCorrupted as e:
+        raised = True
+        assert "previewXYZ" in str(e) and "rollback 실패" in str(e)
+    except TrialInvalid:
+        assert False, "rollback 실패는 TrialInvalid가 아니라 HarnessCorrupted여야 함"
+    assert raised, "자동 rollback 자체가 실패하면 HarnessCorrupted를 던져야 함"
+    print("OK - preview 준비 실패 + 자동 rollback도 실패 시 HarnessCorrupted로 승격")
+
+
+def test_wrap_injector_with_preview_prep_external_interference_raises_harness_corrupted_without_rollback():
+    # 2026-09-19 추가 - bump 직후 activeSelector가 예상 밖이면(다른 프로세스
+    # 개입 가능성) 무엇이 "우리 preview"인지 특정 불가 - abort를 시도하지
+    # 않고(이미 존재하던 preview를 함부로 제거하지 않음) HarnessCorrupted.
+    calls = {"abort_would_be_called": False}
+
+    def interfered_prepare(name, namespace, timeout):
+        return {"ready": False, "t_prep_start": "t0", "t_preview_ready": None,
+                "prep_duration_sec": 1.0, "external_interference": True,
+                "rollback_attempted": False, "rollback_ok": None, "aborted_pod_hash": None}
+
+    injector = Injector(prepare=lambda: calls.__setitem__("abort_would_be_called", True),
+                         inject=lambda: None, is_started=lambda: True, is_effective=lambda: True,
+                         is_done=lambda: True, cleanup=lambda: None)
+    wrapped = wrap_injector_with_preview_prep(injector, "proposed", prepare_preview_fn=interfered_prepare)
+
+    raised = False
+    try:
+        wrapped.prepare()
+    except HarnessCorrupted:
+        raised = True
+    assert raised, "activeSelector 예상 밖 변경은 HarnessCorrupted여야 함"
+    assert calls["abort_would_be_called"] is False, "원본 prepare()(따라서 injection)가 호출되면 안 됨"
+    print("OK - 외부 개입 감지 시 rollback 시도 없이 HarnessCorrupted(fail-closed)")
 
 
 def test_make_detector_for_arm_reachability_check_blocks_start_when_unreachable():
@@ -160,10 +220,58 @@ def test_make_detector_for_arm_reachability_check_passes_allows_start():
     fake_proc = MagicMock()
     fake_proc.poll.return_value = None  # 계속 살아있는 것처럼
     with patch("arm_controller.subprocess.Popen", return_value=fake_proc) as mock_popen:
-        detector = make_detector_for_arm("proposed", "run-1", reachability_check_fn=lambda url: True)
+        detector = make_detector_for_arm("proposed", "run-1", reachability_check_fn=lambda url: True,
+                                          prometheus_check_fn=lambda: True)
         detector.start()
         assert mock_popen.called, "reachability 통과 시 실제 서브프로세스 시작 시도까지 이어져야 함"
     print("OK - RECOVERY_POLICY_SIGNAL_URL 접근 가능하면 detector.start()가 정상적으로 서브프로세스를 시작함")
+
+
+def test_prometheus_check_blocks_start_when_unreachable():
+    # RECOVERY_POLICY 쪽은 통과시키고 Prometheus만 막아, 두 검사가 서로
+    # 독립적으로 게이트한다는 걸 확인(2026-09-19 추가).
+    detector = make_detector_for_arm("fixed_threshold", "run-1",
+                                      reachability_check_fn=lambda url: True,
+                                      prometheus_check_fn=lambda: False)
+    raised = False
+    try:
+        detector.start()
+    except TrialInvalid:
+        raised = True
+    assert raised, "Prometheus가 접근 불가/오래됐으면 TrialInvalid를 던져야 함"
+    assert detector.is_alive() is False, "Prometheus 확인 실패 시 detector 프로세스를 띄우면 안 됨"
+    print("OK - Prometheus 접근 불가 시 detector.start()가 TrialInvalid로 fail-closed(recovery-policy는 정상이어도)")
+
+
+def test_prometheus_reachable_and_fresh_rejects_stale_or_missing_data():
+    # 실제 네트워크 없이 requests.get 자체를 mocking해 "쿼리는 성공하지만
+    # 표본이 오래됨"과 "표본 자체가 없음" 두 경우 모두 False가 나오는지 확인.
+    import time as _time
+
+    stale_resp = MagicMock()
+    stale_resp.status_code = 200
+    stale_resp.json.return_value = {
+        "status": "success",
+        "data": {"result": [{"value": [_time.time() - 999, "1.0"]}]},
+    }
+    with patch("arm_controller.requests.get", return_value=stale_resp):
+        assert _prometheus_reachable_and_fresh(max_age_sec=120.0) is False
+
+    empty_resp = MagicMock()
+    empty_resp.status_code = 200
+    empty_resp.json.return_value = {"status": "success", "data": {"result": []}}
+    with patch("arm_controller.requests.get", return_value=empty_resp):
+        assert _prometheus_reachable_and_fresh() is False
+
+    fresh_resp = MagicMock()
+    fresh_resp.status_code = 200
+    fresh_resp.json.return_value = {
+        "status": "success",
+        "data": {"result": [{"value": [_time.time(), "1.0"]}]},
+    }
+    with patch("arm_controller.requests.get", return_value=fresh_resp):
+        assert _prometheus_reachable_and_fresh() is True
+    print("OK - Prometheus 응답의 표본 신선도(오래됨/없음/신선함)를 정확히 판별")
 
 
 def test_resolved_signal_url_prefers_env_override():
@@ -188,7 +296,11 @@ if __name__ == "__main__":
     test_wrap_injector_with_preview_prep_native_passthrough()
     test_wrap_injector_with_preview_prep_success_calls_original_prepare()
     test_wrap_injector_with_preview_prep_failure_blocks_original_prepare()
+    test_wrap_injector_with_preview_prep_rollback_failure_raises_harness_corrupted()
+    test_wrap_injector_with_preview_prep_external_interference_raises_harness_corrupted_without_rollback()
     test_make_detector_for_arm_reachability_check_blocks_start_when_unreachable()
     test_make_detector_for_arm_reachability_check_passes_allows_start()
+    test_prometheus_check_blocks_start_when_unreachable()
+    test_prometheus_reachable_and_fresh_rejects_stale_or_missing_data()
     test_resolved_signal_url_prefers_env_override()
     print("\n모두 통과")

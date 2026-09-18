@@ -35,7 +35,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 import pytest
 import requests
 
-from run_once import RECOVERY_POLICY_URL, Detector, HarnessCorrupted, Injector, Prober, run_once
+from run_once import RECOVERY_POLICY_URL, Detector, HarnessCorrupted, Injector, Prober, TrialInvalid, run_once
 
 
 def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=True, classify_stage_fn=None,
@@ -650,6 +650,71 @@ def test_critical_cleanup_failure_raises_and_still_writes_result(tmp_path):
     print("OK - injector.cleanup() 실패 -> HarnessCorrupted 전파 + 결과 파일은 남음")
 
 
+def test_prepare_harness_corrupted_propagates_and_marks_invalid_run(tmp_path):
+    # 2026-09-19 추가 - arm_controller.wrap_injector_with_preview_prep()가
+    # preview 준비 실패 후 자동 rollback까지 실패하면 injector.prepare()
+    # 자체가 HarnessCorrupted를 던진다(fixed_threshold pilot 01회, preview가
+    # 방치되고 Rollout이 Paused/Degraded로 남은 사고 계기). 이 trial은
+    # invalid_run으로 기록되면서도 배치 자체는 멈춰야 한다(critical_failures
+    # 경유로 함수 끝에서 HarnessCorrupted 재발생 - _reset_action_cooldown
+    # 실패와 동일한 기존 패턴 재사용).
+    def raising_prepare():
+        raise HarnessCorrupted("preview 준비 실패 + 자동 rollback도 실패(시뮬레이션)")
+
+    injector, icalls = _fake_injector()
+    injector.prepare = raising_prepare
+    prober, pcalls = _fake_prober()
+
+    raised = False
+    try:
+        run_once(
+            scenario="dry_run", arm="native", rep=20, sequence_index=20, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+            results_dir=tmp_path,
+        )
+    except HarnessCorrupted as e:
+        raised = True
+        print("  ->", e)
+
+    assert raised, "prepare()의 HarnessCorrupted는 run_once() 밖으로 전파돼야 함(배치 중단 신호)"
+    result_files = sorted(tmp_path.glob("trial-dry_run-native-20-*.json"))
+    assert len(result_files) == 1, "HarnessCorrupted로 끝나도 결과 파일은 기록돼야 함"
+    written = json.loads(result_files[0].read_text(encoding="utf-8"))
+    assert written["outcome"] == "invalid_run"
+    assert "rollback" in written["invalid_reason"]
+    assert icalls["inject"] == 0, "prepare() 실패 시 주입 자체를 시도하면 안 됨"
+    print("OK - prepare()의 HarnessCorrupted -> invalid_run 기록 + 배치 중단용 예외 전파")
+
+
+def test_preview_prep_info_populates_result_even_on_prepare_failure(tmp_path):
+    # 2026-09-19 추가 - preview 준비 진단(t_preview_ready/소요시간/rollback
+    # 결과)은 prepare()가 실패해도(=invalid_run이 돼도) 남아야 진단이 가능하다.
+    def raising_prepare():
+        raise TrialInvalid("preview가 timeout 내 Ready 안 됨(시뮬레이션)")
+
+    injector, icalls = _fake_injector()
+    injector.prepare = raising_prepare
+    injector.get_preview_prep_info = lambda: {
+        "t_prep_start": "2026-09-19T00:00:00+00:00", "t_preview_ready": None,
+        "prep_duration_sec": 480.3, "rollback_attempted": True, "rollback_ok": True,
+    }
+    prober, _ = _fake_prober()
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=21, sequence_index=21, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+        results_dir=tmp_path,
+    )
+
+    assert result.outcome == "invalid_run"
+    assert result.t_preview_prep_start == "2026-09-19T00:00:00+00:00"
+    assert result.t_preview_ready is None
+    assert result.preview_prep_duration_sec == 480.3
+    assert result.preview_rollback_attempted is True
+    assert result.preview_rollback_ok is True
+    print("OK - preview 준비 진단 정보가 prepare() 실패(invalid_run) 이후에도 결과에 반영됨")
+
+
 def test_prober_still_alive_after_stop_raises_harness_corrupted(tmp_path):
     # 2차 리뷰 지적: stop()이 예외 없이 반환해도 실제로 안 멈췄을 수 있다 -
     # is_alive()로 재확인해서, 여전히 살아있으면(다음 trial 오염 위험)
@@ -1151,6 +1216,8 @@ if __name__ == "__main__":
         test_exception_still_cleans_up_and_marks_invalid,
         test_probe_never_alive_marks_invalid,
         test_critical_cleanup_failure_raises_and_still_writes_result,
+        test_prepare_harness_corrupted_propagates_and_marks_invalid_run,
+        test_preview_prep_info_populates_result_even_on_prepare_failure,
         test_prober_still_alive_after_stop_raises_harness_corrupted,
         test_baseline_gate_waits_until_ready_then_injects,
         test_baseline_gate_never_ready_blocks_injection_and_invalidates,

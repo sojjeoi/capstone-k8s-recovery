@@ -17,14 +17,16 @@ fixed_threshold.py/score_server.py의 실제 실행·종료나 preview 준비를
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
-from blue_green_prep import prepare_preview as _real_prepare_preview
-from run_once import Detector, Injector, TrialInvalid
+from blue_green_prep import PREVIEW_PREP_TIMEOUT_SEC
+from blue_green_prep import prepare_preview_with_rollback as _real_prepare_preview_with_rollback
+from run_once import Detector, HarnessCorrupted, Injector, TrialInvalid
 
 ANOMALY_DETECTION_DIR = Path(__file__).parent.parent / "anomaly-detection"
 
@@ -72,6 +74,37 @@ def _recovery_policy_reachable(signal_url: str) -> bool:
         r = requests.get(health_url, timeout=REACHABILITY_CHECK_TIMEOUT_SEC)
         return r.status_code == 200
     except requests.exceptions.RequestException:
+        return False
+
+
+LOCAL_PROMETHEUS_URL = "http://localhost:9090"  # features.py의 PROM_URL과 동일 전제(로컬 port-forward)
+PROMETHEUS_FRESHNESS_MAX_AGE_SEC = 120.0  # score_server.py/fixed_threshold.py의 WINDOW_SEC(60초)보다 넉넉히 큰 상한
+_PROMETHEUS_PROBE_QUERY = 'container_cpu_usage_seconds_total{namespace="vllm-serving",container="vllm"}'
+
+
+def _prometheus_reachable_and_fresh(prom_url: str = LOCAL_PROMETHEUS_URL,
+                                     max_age_sec: float = PROMETHEUS_FRESHNESS_MAX_AGE_SEC) -> bool:
+    """Prometheus가 실제로 쿼리에 응답하고, vLLM 지표가 최근에 갱신되고
+    있는지 확인한다(2026-09-19 추가, fail-closed 사전 확인). 단순 포트
+    연결이나 /-/healthy만으로는 Prometheus 프로세스는 떠있지만 실제
+    타겟 스크랩이 죽어있는 경우(오래된 데이터만 응답)를 못 잡는다 -
+    detector(score_server.py/fixed_threshold.py)가 실제로 쓰는 것과 같은
+    종류의 지표를 인스턴트 쿼리로 직접 조회해 표본이 있는지, 그 표본의
+    timestamp가 max_age_sec 이내로 신선한지까지 확인한다."""
+    try:
+        r = requests.get(f"{prom_url}/api/v1/query", params={"query": _PROMETHEUS_PROBE_QUERY},
+                          timeout=REACHABILITY_CHECK_TIMEOUT_SEC)
+        if r.status_code != 200:
+            return False
+        body = r.json()
+        if body.get("status") != "success":
+            return False
+        result = body.get("data", {}).get("result", [])
+        if not result:
+            return False
+        sample_ts = float(result[0]["value"][0])
+        return (time.time() - sample_ts) <= max_age_sec
+    except (requests.exceptions.RequestException, KeyError, IndexError, ValueError, TypeError):
         return False
 
 
@@ -123,22 +156,30 @@ def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None) -> Det
 def make_detector_for_arm(
     arm: str, run_id: str,
     reachability_check_fn: Optional[Callable[[str], bool]] = None,
+    prometheus_check_fn: Optional[Callable[[], bool]] = None,
 ) -> Optional[Detector]:
     """native면 None - run_once()가 detector 관련 로직을 아예 안 탄다.
     fixed_threshold/proposed면 anomaly-detection/{script} --run-id
     {run_id}를 로컬 서브프로세스로 띄우는 Detector를 반환한다.
 
     반환된 Detector.start()는 실제로 서브프로세스를 띄우기 전에
-    RECOVERY_POLICY_SIGNAL_URL이 도달 가능한지부터 확인한다(2026-09-19
-    추가, fail-closed 지시) - 도달 불가면 TrialInvalid를 던져 detector
-    자체를 시작하지 않는다. run_once()에서 detector.start()는 chaos 주입
+    RECOVERY_POLICY_SIGNAL_URL과 Prometheus 둘 다 도달 가능한지부터
+    확인한다(2026-09-19 추가, fail-closed 지시) - 둘 중 하나라도 접근
+    불가면 TrialInvalid를 던져 detector 자체를 시작하지 않는다.
+    detector(score_server.py/fixed_threshold.py)는 Prometheus 없이는
+    첫 evaluate()에서 곧바로 크래시하므로(features.py, 예외 처리 없음)
+    is_alive() 크래시 감지로도 결국 invalid_run이 되긴 하지만, 그건
+    "시작한 뒤에 실패"고 이 사전 확인은 "애초에 시작(=chaos 주입 직전
+    단계)하지 않음"이다 - run_once()에서 detector.start()가 chaos 주입
     "직전"에 호출되므로(§32), 여기서 막히면 주입도 자동으로 안 일어난다.
-    reachability_check_fn은 테스트에서 가짜 함수를 주입할 수 있게 열어둔
-    선택 인자(기본값은 실제 _recovery_policy_reachable)."""
+    reachability_check_fn/prometheus_check_fn은 테스트에서 가짜 함수를
+    주입할 수 있게 열어둔 선택 인자(기본값은 각각 실제
+    _recovery_policy_reachable/_prometheus_reachable_and_fresh)."""
     spec = _DETECTOR_SCRIPTS.get(arm)
     if spec is None:
         return None
     check_fn = reachability_check_fn or _recovery_policy_reachable
+    prom_fn = prometheus_check_fn or _prometheus_reachable_and_fresh
     cmd = _build_detector_command(arm, run_id)
     base = _subprocess_detector(cmd, spec["name"], cwd=str(ANOMALY_DETECTION_DIR))
 
@@ -149,6 +190,11 @@ def make_detector_for_arm(
                 f"RECOVERY_POLICY_SIGNAL_URL({signal_url}) 접근 불가 - "
                 f"detector 시작 안 함(fail-closed, arm={arm})"
             )
+        if not prom_fn():
+            raise TrialInvalid(
+                f"Prometheus 접근 불가 또는 지표가 오래됨 - "
+                f"detector 시작 안 함(fail-closed, arm={arm})"
+            )
         base.start()
 
     return Detector(start=start_with_reachability_preflight, is_alive=base.is_alive, stop=base.stop, name=base.name)
@@ -157,30 +203,67 @@ def make_detector_for_arm(
 def wrap_injector_with_preview_prep(
     injector: Injector, arm: str,
     rollout_name: str = "vllm-serving", namespace: str = "vllm-serving",
-    prepare_preview_fn: Callable[[str, str], bool] = _real_prepare_preview,
+    prepare_preview_fn: Callable[[str, str, float], dict] = _real_prepare_preview_with_rollback,
+    preview_prep_timeout_sec: float = PREVIEW_PREP_TIMEOUT_SEC,
 ) -> Injector:
     """native는 원본 injector를 그대로 반환(계약서 §1 - standby 자체가
     없음). non-native면 injector.prepare()가 (시나리오별 기존 prepare()
-    호출 앞에) prepare_preview()를 먼저 호출하도록 감싼다 - 실패하면(시간
-    내 Ready 안 됨) TrialInvalid를 던진다. run_once()의 PREPARING 단계는
-    이 예외를 그대로 invalid_run으로 처리하고 injector.inject()를 아예
-    호출하지 않는다(기존 "probe 미준비면 주입 안 함"과 동일한 안전장치를
-    재사용 - 새로 만들지 않음).
+    호출 앞에) prepare_preview_with_rollback()을 먼저 호출하도록 감싼다.
 
-    prepare_preview_fn은 기본적으로 실제 blue_green_prep.prepare_preview
-    (kubernetes 클라이언트로 실클러스터에 접근)를 쓰지만, 테스트에서
-    가짜 함수를 주입할 수 있게 인자로 열어뒀다."""
+    2026-09-19 추가(fixed_threshold pilot 01회 사고 계기 - preview가 180초
+    timeout보다 늦게 Ready된 채 방치되고 Rollout이 Paused/Degraded로 남음):
+    실패를 두 층으로 구분한다.
+      - preview timeout이지만 자동 rollback 성공(클러스터 정상 복원) ->
+        기존과 동일하게 TrialInvalid(이 trial만 무효, 배치는 계속).
+      - activeSelector가 bump 직후 이미 예상 밖이거나(다른 프로세스 개입
+        가능성 - 무엇이 "우리 preview"인지 특정 불가) 자동 rollback 자체가
+        실패 -> HarnessCorrupted(클러스터가 다음 trial을 오염시킬 수 있는
+        상태로 남았을 가능성 - run_once()가 critical_failures에 반영해
+        배치를 멈춘다). 둘 다 "이 trial은 무효"라는 점은 같지만 후자는
+        수동 확인 없이 다음 trial로 넘어가면 안 된다.
+    두 경우 모두 원래 prepare 실패 사유(몇 초 만에 timeout됐는지)와 rollback
+    결과(성공/실패, 대상 pod_hash)를 예외 메시지 하나에 함께 남긴다.
+
+    preview 준비 진단 정보(t_preview_ready, 소요시간, rollback 결과)는
+    injector.get_preview_prep_info()로 노출한다 - run_once()가 실패 시에도
+    (finally에서) TrialResult에 반영할 수 있게 하기 위함이다.
+
+    prepare_preview_fn은 기본적으로 실제 blue_green_prep.prepare_preview_
+    with_rollback(kubernetes 클라이언트로 실클러스터에 접근)을 쓰지만,
+    테스트에서 가짜 함수를 주입할 수 있게 인자로 열어뒀다."""
     if arm not in _DETECTOR_SCRIPTS:
         return injector
 
     original_prepare = injector.prepare
+    prep_state = {"last": None}
 
     def prepare_with_preview():
-        if not prepare_preview_fn(rollout_name, namespace):
-            raise TrialInvalid(
-                f"{rollout_name} preview가 시간 내 Ready 안 됨(arm={arm}) - 주입 시도 안 함"
+        prep = prepare_preview_fn(rollout_name, namespace, preview_prep_timeout_sec)
+        prep_state["last"] = prep
+        if prep["ready"]:
+            original_prepare()
+            return
+
+        if prep["external_interference"]:
+            raise HarnessCorrupted(
+                f"{rollout_name}의 activeSelector가 preview 준비 도중 예상 밖으로 바뀜(arm={arm}) - "
+                f"다른 프로세스가 개입했을 가능성이 있어 무엇이 '이번 호출의 preview'인지 특정 불가, "
+                f"fail-closed로 아무 것도 건드리지 않음 - 수동 확인 필요"
             )
-        original_prepare()
+
+        base_msg = (
+            f"{rollout_name} preview가 {preview_prep_timeout_sec}초 내 Ready 안 됨(arm={arm}, "
+            f"실측 대기 {prep['prep_duration_sec']:.1f}초) - 주입 시도 안 함"
+        )
+        if not prep["rollback_attempted"]:
+            raise TrialInvalid(base_msg)
+        if prep["rollback_ok"]:
+            raise TrialInvalid(f"{base_msg} | 자동 rollback 성공(aborted_pod_hash={prep['aborted_pod_hash']})")
+        raise HarnessCorrupted(
+            f"{base_msg} | 자동 rollback 실패(aborted_pod_hash={prep['aborted_pod_hash']}) - "
+            f"preview/Rollout이 방치된 상태로 남았을 수 있음, 수동 확인 필요"
+        )
 
     injector.prepare = prepare_with_preview
+    injector.get_preview_prep_info = lambda: prep_state["last"]
     return injector

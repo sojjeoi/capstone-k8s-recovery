@@ -162,6 +162,14 @@ class Injector:
     get_injection_observation_error_sec: Optional[Callable[[], Optional[float]]] = None
     get_target_replacement: Optional[Callable[[], Optional[dict]]] = None
     classify_stage: Optional[Callable[[str], str]] = None
+    # 선택 구현(2026-09-19 추가) - preview 준비 진단 정보(실제 Ready 시각,
+    # 소요시간, timeout 시 자동 rollback 결과)를 노출한다. prepare()가
+    # TrialInvalid/HarnessCorrupted를 던져도(=preview 준비 실패) 이 값은
+    # 여전히 조회 가능해야 한다 - arm_controller.wrap_injector_with_preview_prep()가
+    # prepare() 실행마다 최신 결과를 갱신해두므로, run_once()는 finally에서
+    # (prepare 성공/실패 무관하게) 한 번 호출해 TrialResult에 반영한다.
+    # 미구현(None 필드)이면 native 등 preview 자체가 없는 arm이라 스킵.
+    get_preview_prep_info: Optional[Callable[[], Optional[dict]]] = None
 
 
 @dataclass
@@ -316,6 +324,17 @@ class TrialResult:
     baseline_p95: Optional[float] = None
     baseline_availability: Optional[float] = None
     baseline_valid: Optional[bool] = None
+    # BlueGreen preview 준비 진단(2026-09-19 추가 - fixed_threshold pilot 01회,
+    # preview가 180초 timeout보다 늦게(235초) Ready된 채 방치된 사고 계기).
+    # injector.get_preview_prep_info() 구현 시(non-native arm)만 채워짐 -
+    # native나 preview 개념이 없는 시나리오는 전부 None. prepare()가
+    # TrialInvalid/HarnessCorrupted로 실패해도(=preview 준비 자체가 실패)
+    # finally에서 무관하게 회수하므로, invalid_run 결과에도 진단 목적으로 남는다.
+    t_preview_prep_start: Optional[str] = None
+    t_preview_ready: Optional[str] = None  # 시간 내 도달 못 했으면 None(실패 확정 - 늦게라도 됐는지는 별도 추적 안 함)
+    preview_prep_duration_sec: Optional[float] = None  # 성공/실패(timeout) 모두 기록
+    preview_rollback_attempted: Optional[bool] = None
+    preview_rollback_ok: Optional[bool] = None
     # injector.inject() 호출 직전 시각(2026-09-18 추가) - 실제 주입 구간의
     # 하한. 첫 poll에서 이미 대상이 사라져 t_injection_last_seen이 없을 때
     # injection_observation_error_sec 계산의 대체 기준점으로도 쓰인다.
@@ -722,6 +741,15 @@ def run_once(
             else:
                 result.outcome = "recovered"
 
+    except HarnessCorrupted as e:
+        # injector.prepare()(예: preview 준비 실패 후 자동 rollback까지 실패)
+        # 등 try 블록 내부에서 직접 HarnessCorrupted를 던진 경우(2026-09-19
+        # 추가) - 이 trial 자체는 invalid_run으로 기록하되, critical_failures에도
+        # 반영해 함수 끝(§830 부근)에서 실제로 HarnessCorrupted가 재발생하도록
+        # 한다 - _reset_action_cooldown 실패와 동일한 패턴(§6) 재사용.
+        result.outcome = "invalid_run"
+        result.invalid_reason = str(e)
+        critical_failures.append(str(e))
     except TrialInvalid as e:
         result.outcome = "invalid_run"
         result.invalid_reason = str(e)
@@ -729,6 +757,22 @@ def run_once(
         result.outcome = "invalid_run"
         result.invalid_reason = f"예외: {type(e).__name__}: {e}"
     finally:
+        # preview 준비 진단 정보 회수(2026-09-19 추가) - prepare()가 실패해도
+        # (TrialInvalid/HarnessCorrupted) 진단 데이터는 남겨야 하므로 성공/실패
+        # 무관하게 여기서 수행한다. 이 정보 하나 때문에 trial 전체가 오염되면
+        # 안 되므로(기존 classify_stage와 동일한 이유) 별도 try/except로 감싼다.
+        if injector.get_preview_prep_info is not None:
+            try:
+                prep_info = injector.get_preview_prep_info()
+                if prep_info is not None:
+                    result.t_preview_prep_start = prep_info.get("t_prep_start")
+                    result.t_preview_ready = prep_info.get("t_preview_ready")
+                    result.preview_prep_duration_sec = prep_info.get("prep_duration_sec")
+                    result.preview_rollback_attempted = prep_info.get("rollback_attempted")
+                    result.preview_rollback_ok = prep_info.get("rollback_ok")
+            except Exception as e:
+                result.notes += f"preview prep 진단 정보 회수 실패(핵심 결과에는 영향 없음): {e} | "
+
         # t_detection/t_api_request 회수(2026-09-19 추가) - context가
         # clear되기 전에(아래에서 더 나중에 일어남) 반드시 먼저 읽어야 한다.
         # native는 조회 대상 자체가 없어 스킵(계약서 §1 재확인 - recovery-
