@@ -1132,3 +1132,49 @@ recovery-policy `/healthz` 200.
 조합이었다(promotion 전까지) - active도 3코어인 진짜 3+3 비교는
 다음 공식 콜드스타트 3회에서 확인한다. 아직 SLO v2·load_ramp
 재보정으로는 넘어가지 않았다.
+
+## 14. 공식 `HEADROOM-COLDSTART-01` - 3코어+3코어, preview/active 경로
+분리 진단 (2026-09-18, 1/3회차)
+
+migration pilot의 promotion 직후 completion 10초 timeout 원인(모델 웜업
+vs Service/Endpoint 전환 지연)을 추정하지 않고 분류하기 위해, 동결된
+`experiments/coldstart_monitor.py`를 재사용하는 공식 스크립트로 promotion
+전 `vllm-preview` 직접 경로와 promotion 후 `vllm-active` 경로를 각각
+실측했다. 트리거는 `rollout.yaml`의 `spike-revision` annotation 값만
+변경(커밋 `ed55856`) - 자원·probe·모델 설정 무변경, active(3코어)도
+그대로.
+
+**headroom(자원 안정성) - PASS**: apply~Ready 176.1초. Ready 후 10분
+안정성(39회 polling) 전부 clean - Node Ready 유지, pressure 전무, 양쪽
+파드 restart_count=0 유지, 위험 이벤트 0건, active completion 39/39
+성공(0.66~1.1초 - migration pilot 대비 더 안정적인 범위). 이 구간 동안
+preview는 `/health` 기준 Ready였지만 실제 추론 요청은 한 번도 안
+들어갔다(아래 진단에서 처음 들어감).
+
+**전환 품질 진단(별도 판정) - 결정적 실측**:
+- promotion 전 `vllm-preview` 직접 completion 3회 - **3/3 전부 10초
+  타임아웃**(http_code=000, 각 10.4~10.5초). 이게 이 preview pod에 대한
+  최초의 실제 추론 요청이었다.
+- promotion: `active_selector_changed_at` +0.017초, `endpointslice_
+  changed_at` +0.056초 - Service/Endpoint 전환 자체는 사실상 즉시
+  일어났다(전환 지연이라 부를 만한 게 없음).
+- promotion 후 `vllm-active`(같은 pod) completion 5회 연속 - **5/5 전부
+  즉시 성공**(첫 성공 promotion +0.935초, 이후 0.686~0.915초).
+
+**분류(관찰값 기준, 추정 아님)**: `preview_first_request_timeout` -
+같은 pod이 promotion 전엔 3/3 타임아웃, promotion 후(불과 8~17초 뒤,
+Service/Endpoint는 이미 그 훨씬 전에 즉시 전환 완료)엔 5/5 즉시 성공한
+패턴은 Service/Endpoint 전환 지연 가설과는 맞지 않고(전환 자체가 이미
+끝나 있었으므로) 모델 첫 추론 자체의 웜업 비용 가설과 부합한다. 다만
+이번 1회차만으로 확정하지 않는다 - 나머지 공식 2회에서 재현되는지가
+최종 판정 기준이다.
+
+**최종 상태**: 이전 revision(`69544744bf`) 자동 scale-down 확인, 신규
+3코어 revision(`75d8859d89`)만 단독 유지, Node Ready, recovery-policy
+`/healthz` 200. 원본 실측 전체는 `experiments/results/headroom/
+headroom-coldstart-01-20260918T054527Z.json`에 보존(gitignore 대상 -
+`results/pilot/`이 아니라 `results/headroom/`에 둬서 `collect_metrics.py`
+의 `load_all_results()` 스캔 대상에서 제외했다 - migration pilot 기록도
+같은 이유로 이 디렉터리로 옮김).
+
+아직 02·03회차나 SLO v2·load_ramp 재보정으로는 넘어가지 않았다.
