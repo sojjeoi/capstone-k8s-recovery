@@ -3341,3 +3341,100 @@ abort/promote됐으면 스킵/preview 자체가 없으면 스킵/pod_hash 불일
 실행되는 순서 확인/prepare 안 됐으면 스킵/정리 실패 시 예외 전파/원본
 cleanup이 실패해도 독립적으로 실행). 오프라인 스위트 226 passed, 2
 deselected(live_cluster). `proposed`는 아직 실행하지 않음.
+
+## 36. `proposed` pilot 01회 - 이번 세션 최초의 실제 promotion 성공,
+그리고 `detected`/`action`/`promotion_verified` 미기록 발견 (2026-09-19)
+
+### 36.1 실행 전 preflight
+
+지시받은 8개 항목 전부 확인 후 시작 - working tree clean(HEAD `d2f79be`),
+Node 둘 다 Ready·pressure 없음, context/Chaos CR/실험용 pod/detector
+프로세스 없음, `/healthz` 200 + Prometheus 인스턴트 쿼리 0.1초 이내
+신선도, `anomaly-detection/score_server.load_model()`로 `IsolationForest`
++`StandardScaler`(8 features) 정상 로드 확인. Rollout `phase=Degraded`/
+`Healthy=False`는 §35.3에서 이미 분석한 abort 직후 정상 잔존 상태(pod·
+selector 레벨은 이미 단일 revision으로 clean) - `fixed_threshold`
+재실행이 바로 이 상태에서 시작해 정상 성공했던 선례로 재확인, 새 항목
+아님.
+
+### 36.2 실행 결과 - `outcome=recovered`, 최초의 실제 promotion
+
+`run_id=pilot-load_ramp-proposed-01-20260918T181524Z`. preview 183.5초
+만에 Ready(480초 이내, rollback 불필요). baseline 60 샘플/p95=0.347/
+availability=1.0/`baseline_valid=true`, baseline 확보(`t_baseline_ready=
+18:21:52.72`) 이후에 detector가 시작됐음을 타임스탬프로 확인. `t_slo=
+18:23:32.678`, `t_recovery=18:24:19.760`(47초 후 회복).
+
+**탐지→결정→promotion→감사기록 체인을 authoritative source(K8s
+이벤트 + git 감사기록)로 직접 확인**(트라이얼 JSON 자체의 `detected`/
+`action`/`promotion_verified`는 아래 §36.3에서 보듯 신뢰 불가라 우회):
+- `t_detection=18:22:29.207`, `t_api_request=18:22:29.242`(35ms 후).
+- 감사기록(commit `16c8f08`): `signal_source=anomaly`, `idempotency_
+  key=pilot-load_ramp-proposed-01-20260918T181524Z:anomaly_risk`(run_id
+  정확히 일치, adhoc 아님), `action=promote_preview`,
+  `outcome=executed_verified`, `result={"method":"cli","stdout":"rollout
+  'vllm-serving' promoted\n","verified":true}` - CLI 실행 자체와 검증
+  결과가 감사기록에 그대로 남음.
+- 두 번째 감사기록(commit `39ace83`, `decided_at=18:23:36`): 같은
+  idempotency_key로 들어온 후속 신호가 `outcome=skipped_duplicate`로
+  정확히 중복 처리됨(detector가 계속 평가를 돌리며 재신호를 보냈으나
+  idempotency가 정상 작동 - 버그 아님).
+- K8s 이벤트: `SwitchService`(vllm-active를 `85c55758c6`->`76769c989b`로
+  전환) -> `RolloutCompleted`(revision 26 blue-green update 완료) ->
+  `SuccessfulDelete`+`ScalingReplicaSet`(구 stable을 1->0으로 정리).
+- 현재 상태로 직접 재확인: `activeSelector==previewSelector==
+  currentPodHash==stableRS=='76769c989b'`, `phase=Healthy`(진짜
+  Healthy - abort 잔존 상태와 달리 promotion을 거치면 완전히 정착됨을
+  실측 확인), 구 active pod(`85c55758c6-ljc6n`, 9시간+ 무재시작
+  운영)는 완전히 삭제됨. **이번 세션 전체에서 recovery-policy가 실제로
+  promotion을 실행하고 검증까지 완료한 첫 사례**(native는 조치 자체가
+  없고, fixed_threshold는 2회 모두 미탐지).
+- `slo_stage`/`detection_stage`/`action_stage`를 원본 `ramp-summary-*.csv`의
+  실제 stage 경계와 직접 대조 - `t_detection`/`t_api_request`(18:22:29대)는
+  stage-1(18:21:56.13~18:23:26.14) 안에 들어 `detection_stage`/
+  `action_stage="stage-1-0.025rps"`와 일치, `t_slo`(18:23:32.68)는
+  stage-2(18:23:26.14~18:24:56.14) 안에 들어 `slo_stage="stage-2-0.05rps"`와
+  일치 - 셋 다 정확함. 예측형 탐지기가 stage-1에서 선제 조치했는데도
+  stage-2에서 SLO 위반이 확정된 뒤 회복된 것은 "예측 조치가 위반을
+  완전히 막지는 못했지만 회복은 빨랐다"는 유효한 실험 결과(버그 아님).
+
+### 36.3 새로 발견한 문제 - `detected`/`action`/`promotion_verified` 등이
+`run_once.py`에서 전혀 기록되지 않음
+
+`run_once.py` 전체에서 `result.detected`/`result.action`/`result.
+promotion_verified`/`result.detection_source`를 대입하는 코드가
+**단 한 곳도 없음**을 grep으로 확인했다(`TrialResult` 선언부의 기본값
+`False`/`"none"`/`None`/`None`에서 한 번도 안 바뀜). `collect_metrics.py`도
+`row.get("detected")` 등으로 단순히 그대로 옮길 뿐 다른 필드에서
+재계산하지 않는다(`REQUIRED_BOOL_FIELDS`에 `detected`가 있어 검증
+대상이긴 하지만, 참/거짓을 실제로 판정하는 로직 자체가 없음). 이번
+trial이 이 gap을 실제로 드러낸 첫 사례다 - `t_detection`/`t_api_request`가
+둘 다 채워지고 promotion이 실제로 실행·검증까지 됐는데도, 기록된 JSON은
+`detected=false`, `action="none"`, `promotion_verified=null`,
+`detection_source=null`이다. `t_audit_write`/`t_audit_push`/`commit_sha`도
+마찬가지로 항상 null - `run_once.py`가 감사기록(outbox.json이나 git
+로그)을 조회해 채우는 코드 자체가 없다(§33에서 `t_detection`/
+`t_api_request`는 authoritative source를 확정해 회수했지만, 그 옆의
+"실제 조치가 일어났는가" 필드들은 그 작업 범위에 포함되지 않았었다).
+
+**영향**: `is_pilot=false`인 60회 본 실험에서도 동일하게 재현될
+것이므로, `collect_metrics.py`의 `comparison.csv`에서 arm별 실제
+탐지율·조치율·promotion 성공률을 전혀 비교할 수 없다(전부 False/none/
+null로 나옴) - `t_detection`/`t_api_request`의 유무로 사후에 간접
+추정할 수는 있지만, `detected`/`action`/`promotion_verified`라는
+전용 필드 자체가 무의미해진다. 지금 당장 이 trial의 결과나 판정
+(`outcome=recovered`)에 영향은 없다(SLO 판정은 이 필드들과 독립적으로
+계산됨) - 다만 60회 본 실험 전에 authoritative source(감사기록의
+`action`/`outcome`/`result`, `commit_sha`는 outbox.json 또는 git log)를
+확정해 `run_once.py`에 채우는 작업이 필요하다. 이번 턴 범위(preview
+정리) 밖이라 코드를 고치지 않고 발견 사실만 기록한다 - 60회 본 실험
+전 별도 지시로 처리해야 한다.
+
+### 36.4 공통 정리 확인
+
+detector 프로세스 종료(`ps aux`에 `score_server.py` 없음), 부하 pod
+(`ramp-inj`/`ramp-probe`) 삭제, Chaos CR 없음, experiment context
+clear(`{"current":null}`), 양쪽 Node Ready, recovery-policy pod
+재시작 0회(154분 무중단), 신규 active pod 재시작 0회 전부 확인.
+`proposed`는 위 절차 안에서 1회만 실행했고, `60회 본 실험으로는
+진행하지 않는다`(지시 그대로).
