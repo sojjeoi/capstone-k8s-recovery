@@ -1089,3 +1089,46 @@ rollout.yaml` 1줄만 변경.
 기존 4코어 기준 SLO v2/load_ramp 확정 설정(`experiment-contract.md`
 §4)은 삭제·수정하지 않고 그대로 보존하며, 새 자원 구성에서 재검증
 전까지 잠정 무효로 표시했다(해당 절 참고).
+
+## 13. `HEADROOM-MIGRATION-PILOT-01` - 첫 콜드스타트·promotion 완료 (2026-09-18)
+
+`lab-cpu3-v1` 적용(05:16:50Z) 후 첫 콜드스타트를 관찰하다 모니터링
+스크립트 자체의 버그를 발견해 재분류했다 - 전체 원본 실측값·gap 백필
+증거는 `experiments/results/pilot/headroom-migration-pilot-01-
+20260918T051650Z.json`에 보존(`is_pilot=true`, `exclusion_reason=
+monitoring_tool_changed_during_run`, 공식 콜드스타트 3회에서 제외).
+
+**모니터링 버그**: 1차 스크립트가 정상적인 `Unhealthy: Startup probe
+failed`(모델 로딩 중 반복 실패 - `failureThreshold: 90` 설계 의도)를
+위험 이벤트로 오판해 관찰 시작 1.3초 만에 조기 abort했다. 직접 재확인
+결과 실제 클러스터·파드엔 전혀 영향 없었음(Running, restart_count=0,
+Node Ready) - 관찰 공백(05:18:49~05:20:54Z, 125초)은 K8s
+events·restart count·Node condition·Prometheus CPU/load1으로 사후
+백필했고 전부 정상 범위였다. 버그를 고쳐 `experiments/coldstart_
+monitor.py`로 판정 로직을 분리·오프라인 테스트 8개로 고정했다(커밋
+`faa7a0f`).
+
+**콜드스타트 결과**: apply~Ready 246.3초(4분6초). Ready 이후 10분
+안정성 관찰(39회 polling) 전부 clean - Node Ready 유지, pressure
+전무, 양쪽 파드 restart_count=0 유지, 위험 이벤트 0건, active
+completion 39/39 성공.
+
+**promotion**: 로컬에 `kubectl-argo-rollouts` 바이너리가 없어
+recovery-policy 컨테이너 안의 `/usr/local/bin/kubectl-argo-rollouts`
+(그 서비스 자신의 promote 코드가 쓰는 바이너리와 동일)를 `kubectl exec`
+로 직접 호출 - `rollouts_client.py`의 `promote_via_cli()`와 같은
+메커니즘 재사용. active selector가 신규(3코어) revision으로 전환된
+것까지 직접 확인(requested가 아니라 verified). 승격 직후 첫 completion
+요청 1회가 10초 타임아웃났으나 즉시 재시도 시 200/1.44초로 정상화, 새
+파드 로그에 오류 없음 - Node/파드 재시작·pressure 전혀 없어 vLLM 첫
+실제 추론 요청의 웜업 비용으로 추정한다(원인 확정 안 함, 관찰 사실로만
+기록). 이후 completion 3회 연속 정상(0.71/0.34/0.24초).
+
+**최종 상태**: 이전 4코어 revision 자동 scale-down 확인, 3코어
+revision(`vllm-serving-69544744bf-hrnqn`) 단독 유지, Node Ready,
+recovery-policy `/healthz` 200.
+
+**참고**: 이 콜드스타트는 active=4코어 + preview=3코어의 과도기
+조합이었다(promotion 전까지) - active도 3코어인 진짜 3+3 비교는
+다음 공식 콜드스타트 3회에서 확인한다. 아직 SLO v2·load_ramp
+재보정으로는 넘어가지 않았다.
