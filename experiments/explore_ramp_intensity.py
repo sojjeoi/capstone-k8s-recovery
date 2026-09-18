@@ -33,7 +33,20 @@ from pathlib import Path
 import yaml
 
 import slo_judge
-from load_ramp_adapter import IMAGE, NAMESPACE, SETTLE_SEC, _delete_pod, _run, _wait_pod_ready
+from load_ramp_adapter import NAMESPACE, SETTLE_SEC, _delete_pod, _run, _wait_pod_ready
+
+# 탐색 전용 이미지 - load_ramp_adapter.IMAGE("loadgen-runner:local", 본
+# 실험/실제 trial harness가 쓰는 태그)는 그대로 두고 이 스크립트만 새
+# 태그를 쓴다. stage 경계 버그 수정(ramp.py --summary-out 등, §23)이
+# 반영된 이미지로, sj-worker에서 chaos/loadgen/ramp.py·probe.py·
+# requirements.txt·Dockerfile만 격리된 임시 디렉터리로 복사해
+# `docker build` 후 `docker save | ctr -n k8s.io images import`로
+# 주입했다(§23.6). 기존 loadgen-runner:local은 덮어쓰지 않음.
+# docker image ID(config digest): sha256:e58a37b2d1c5903d1ce50474fd00c7d3a39cb300549408c0e0c2305482db897a
+# containerd k8s.io manifest digest: sha256:21d6b8ef8bcb1804a28359b2db7a64faae19853493bddb52202b72ac6e9b7aaf
+# 이미지 내부 /ramp.py SHA-256(로컬 chaos/loadgen/ramp.py와 smoke pod에서 직접 대조 확인):
+#   aadab9fc7f2a5a51cfee4e666ba7872c8e8fa378389d47a0e68e501f39153a82
+IMAGE = "loadgen-runner:phase8-v3-boundaries"
 
 RESULTS_DIR = Path(__file__).parent / "results"
 POST_RAMP_DRAIN_SEC = 60  # ramp 완료 후에도 잠깐 더 관찰 - 마지막 stage의 꼬리 회복 확인

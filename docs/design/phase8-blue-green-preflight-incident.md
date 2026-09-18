@@ -1835,3 +1835,61 @@ probe-explore-20260918T{095809,101717}Z-raw.csv`, gitignore 대상)는
 
 수정된 harness로 재실행하기 전, 사용자 검토·승인 대기 - 아직 YAML
 동결이나 3회 재현성 검증으로 넘어가지 않았다.
+
+### 23.6 `ssh capstone-worker`로 새 이미지 빌드·검증 (사용자 승인, 2026-09-18)
+
+`ssh capstone-worker`(실제 호스트 `sj-worker`, 사용자 `ubuntu`) 접근이
+확인돼, `loadgen-runner:local`을 덮어쓰지 않고 새 태그
+**`loadgen-runner:phase8-v3-boundaries`**로 빌드했다.
+
+**빌드 전 읽기 전용 확인**:
+- 컨테이너 런타임: `containerd://1.7.24`.
+- 워커에 `docker`(26.1.3)·`ctr`(containerd 1.7.24 동봉) 있음,
+  `nerdctl`/`buildctl`은 없음. `sudo` passwordless.
+- 기존 `loadgen-runner:local`이 `docker images`(워커 자체 Docker
+  엔진 저장소)와 `sudo ctr -n k8s.io images ls`(kubelet이 실제로
+  참조하는 containerd 네임스페이스) **양쪽 모두**에 존재함을 확인 -
+  이 노드는 `docker build` → `docker save` → `ctr -n k8s.io images
+  import`로 이미지를 K8s에 노출하는 구조라는 뜻이므로 새 이미지도
+  동일한 경로로 주입했다.
+- 디스크: `/` 155G 중 94G 여유(40% 사용). Node Ready, pressure 전무.
+
+**빌드**: 워커의 격리된 임시 디렉터리(`/tmp/loadgen-build-phase8-v3`,
+작업 후 삭제)에 저장소의 다음 4개 파일만 `scp`로 복사 - 그 외
+저장소 파일은 빌드 컨텍스트에 없음:
+- `chaos/loadgen/ramp.py`(§23.4 수정본)
+- `experiments/loadgen-runner/probe.py`
+- `experiments/loadgen-runner/requirements.txt`
+- `experiments/loadgen-runner/Dockerfile`
+
+`scp` 직후 워커에서 `ramp.py` SHA-256을 로컬과 대조해 전송 무결성을
+확인한 뒤 `sudo docker build -t loadgen-runner:phase8-v3-boundaries .`
+로 빌드, `docker save | sudo ctr -n k8s.io images import`로 주입.
+
+**빌드 산출물**:
+| 항목 | 값 |
+|---|---|
+| 이미지 태그 | `loadgen-runner:phase8-v3-boundaries` |
+| docker image ID(config digest) | `sha256:e58a37b2d1c5903d1ce50474fd00c7d3a39cb300549408c0e0c2305482db897a` |
+| containerd k8s.io manifest digest | `sha256:21d6b8ef8bcb1804a28359b2db7a64faae19853493bddb52202b72ac6e9b7aaf` |
+| 이미지 내부 `/ramp.py` SHA-256 | `aadab9fc7f2a5a51cfee4e666ba7872c8e8fa378389d47a0e68e501f39153a82` (로컬 `chaos/loadgen/ramp.py`와 정확히 일치, scp 직후·smoke pod 양쪽에서 확인) |
+
+**smoke pod 검증** (`vllm-serving` 네임스페이스, `imagePullPolicy: Never`):
+- pod `1/1 Running` 정상 기동.
+- `sha256sum /ramp.py` = 위 값, 로컬과 정확히 일치.
+- `python /ramp.py --help`에 `--summary-out SUMMARY_OUT` 확인.
+- `kubectl delete pod --wait` 후 재조회 `NotFound` - 잔존 리소스 없음.
+- Node Ready 유지, `MemoryPressure`/`DiskPressure`/`PIDPressure` 전부
+  `False`(빌드·smoke 전후 모두 확인).
+- 워커의 임시 빌드 디렉터리(이미지 tar 포함, ~150MB)도 검증 후 삭제.
+
+**코드 반영**: `experiments/explore_ramp_intensity.py`가 더 이상
+`load_ramp_adapter.IMAGE`(본 실험/실제 trial harness가 계속 쓰는
+`loadgen-runner:local`, 미변경)를 쓰지 않고 자체
+`IMAGE = "loadgen-runner:phase8-v3-boundaries"`를 정의 - 탐색 코드만
+새 이미지로 바뀌고 실제 60회 본 실험 harness의 이미지 선택에는 영향
+없음. 위 태그·digest·SHA-256을 파일 상단 주석에도 기록.
+
+이제 새 이미지로 baseline·실제 stage 경계·실제 drain 경계 기록이
+올바른지 확인하는 1회 탐색을 실행한다 - 통과 전에는 RPS 후보 선택이나
+3회 재현성 검증으로 넘어가지 않는다.
