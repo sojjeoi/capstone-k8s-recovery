@@ -116,7 +116,7 @@ def main():
             sequence_index=args.sequence_index, order_seed=args.order_seed,
             injector=injector, prober=prober, timeout_sec=args.timeout_sec,
             run_id=run_id, is_pilot=args.pilot,
-            latency_slo_sec=slo_judge.LATENCY_THRESHOLD,
+            latency_slo_sec=slo_judge.LATENCY_THRESHOLD, slo_version=slo_judge.SLO_VERSION,
             min_observation_sec=slo_judge.WINDOW_SEC,
             readiness_probe_profile=args.probe_profile,
             readiness_probe_timeout_sec=expected_timeout,

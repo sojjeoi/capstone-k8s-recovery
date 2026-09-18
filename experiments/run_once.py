@@ -206,7 +206,7 @@ class TrialResult:
     # 기준이 나중에 또 바뀔 수 있으므로 각 trial 결과 JSON 자체에 "이 trial이
     # 어떤 probe·SLO 조건으로 판정됐는지"를 같이 남긴다.
     probe_profile: str = "inference-max1-rps1"
-    slo_version: str = "v2"
+    slo_version: str = "unspecified"
     latency_slo_sec: Optional[float] = None
     probe_rps: float = 1.0
     # network_degrade 전용(2026-09-18 추가) - "default"/"network_tolerant" 중
@@ -382,7 +382,7 @@ def run_once(
     run_id: Optional[str] = None,
     is_pilot: bool = False,
     probe_profile: str = "inference-max1-rps1",
-    slo_version: str = "v2",
+    slo_version: str = "unspecified",
     latency_slo_sec: Optional[float] = None,
     probe_rps: float = 1.0,
     results_dir: Optional[Path] = None,

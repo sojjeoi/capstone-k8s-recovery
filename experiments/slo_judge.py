@@ -22,6 +22,7 @@ sys.stdout.reconfigure(encoding="utf-8")  # Windows 기본 cp949 콘솔 대응
 # 폐기했다(본 실험 미사용, 이력만 slo-definition.md에 보존). experiments/
 # probe.py가 항상 이 프로필로 도므로, 이 상수는 probe raw 로그 판정에만
 # 쓴다 - ramp.py 자체 원시 로그(max_tokens=10)에 이 상수를 적용하면 안 된다.
+SLO_VERSION = "v3"  # 단일 출처 - trial launcher는 run_once(..., slo_version=slo_judge.SLO_VERSION)로 명시 전달할 것(run_once.py 기본값 "v2" 하드코딩에 조용히 기록되는 걸 막기 위함, 2026-09-18)
 L_BASELINE = 0.324  # SLO v3(2026-09-18, lab-cpu3-warm-v1) - 3x300건 calibration(calibrate_probe_only.py)의 P95 중앙값. v2=0.256s는 4코어 시절 값 - slo-definition.md 변경이력 참고
 LATENCY_THRESHOLD = 2 * L_BASELINE  # §3
 LATENCY_PERSIST_SEC = 30  # §3, §6
@@ -60,21 +61,39 @@ def evaluate(rows):
     않는다는 제약) - 각 point에 observed_at(=sent_at+latency, 이 요청의
     결과가 실제로 확정된 시각)도 함께 남겨서 find_t_slo()/find_t_recovery()가
     "판정에 쓰인 사건이 언제 일어났는가"가 아니라 "언제 그 사실을 알 수
-    있었는가"를 반환하게 한다."""
+    있었는가"를 반환하게 한다.
+
+    2026-09-18 수정(pilot-load_ramp-native-01-20260918T130111Z에서 실측
+    확인된 버그): 표본이 MIN_SAMPLES_FOR_RELIABLE_P95(20)개 미만인 윈도우에서
+    max(latencies)를 P95 대용으로 쓰면, 콜드스타트성 단일 고지연 표본
+    하나가 그 뒤로도 계속 "P95"를 자처해 실제로는 전부 정상인 구간을
+    30초 넘게 허위 위반으로 만들 수 있다(직접 재현·확인함). 이제 20개
+    미만이면 latency 판정 자체를 보류한다(p95=None, latency_evaluable=False,
+    latency_violating=False - 추정하지 않음) - availability는 표본 수와
+    무관하게 기존 그대로 즉시 판정한다(§4, 실패 자체는 표본이 적어도
+    진짜 신호라 미루지 않음)."""
     points = []
     for r in rows:
         w = _window(rows, r["sent_at"])
         latencies = [x["latency"] for x in w]
-        p95 = (statistics.quantiles(latencies, n=100)[94]
-               if len(latencies) >= MIN_SAMPLES_FOR_RELIABLE_P95 else max(latencies))
+        sample_count = len(latencies)
+        latency_evaluable = sample_count >= MIN_SAMPLES_FOR_RELIABLE_P95
+        if latency_evaluable:
+            p95 = statistics.quantiles(latencies, n=100)[94]
+            latency_violating = p95 > LATENCY_THRESHOLD
+        else:
+            p95 = None
+            latency_violating = False
         success_rate = sum(x["success"] for x in w) / len(w)
         points.append({
             "t": r["sent_at"],
             "sent_at": r["sent_at"],
             "observed_at": r["sent_at"] + timedelta(seconds=r["latency"]),
+            "sample_count": sample_count,
+            "latency_evaluable": latency_evaluable,
             "p95": p95,
             "success_rate": success_rate,
-            "latency_violating": p95 > LATENCY_THRESHOLD,
+            "latency_violating": latency_violating,
             "availability_violating": success_rate < AVAILABILITY_THRESHOLD,
         })
     return points
@@ -116,7 +135,10 @@ def find_t_recovery(points, t_slo):
     streak_start = None
     streak_start_point = None
     for p in after:
-        if not p["latency_violating"] and not p["availability_violating"]:
+        # latency_evaluable=False(표본 부족)는 "정상 확인됨"이 아니라 "아직
+        # 모름"이므로 회복 스트릭을 시작·연장하지 않는다(2026-09-18) -
+        # availability는 표본 수와 무관하게 그대로 판단.
+        if p["latency_evaluable"] and not p["latency_violating"] and not p["availability_violating"]:
             if streak_start is None:
                 streak_start = p["t"]
                 streak_start_point = p

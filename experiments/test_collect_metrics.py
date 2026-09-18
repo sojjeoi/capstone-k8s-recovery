@@ -453,4 +453,15 @@ if __name__ == "__main__":
         test_comparison_csv_written_correctly(Path(d))
     with tempfile.TemporaryDirectory() as d:
         test_network_degrade_fields_survive_json_to_csv_round_trip(Path(d))
+    test_slo_version_v3_preserved_through_comparison()
     print("\n모두 통과")
+
+
+def test_slo_version_v3_preserved_through_comparison():
+    # slo_judge.SLO_VERSION="v3"로 기록된 trial이 build_comparison()을
+    # 거쳐도 "v3"가 그대로 보존돼야 한다(2026-09-18, run_once.py 기본값이
+    # 조용히 "v2"로 기록되던 문제의 회귀 방지).
+    row = _base_row(slo_version="v3", latency_slo_sec=0.648)
+    out_rows, issues = build_comparison([row])
+    assert out_rows[0]["slo_version"] == "v3"
+    print("OK - slo_version='v3'가 build_comparison()을 거쳐도 보존됨")

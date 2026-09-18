@@ -2198,3 +2198,83 @@ pod_kill/network_degrade/memory_pressure 등 SLO 판정을 쓰는 모든
 다음 조치(수정 방향·범위·검증 방법)는 사용자 결정을 기다린다 - 아직
 `fixed_threshold`·`proposed` arm, preview 생성, promotion, 다른
 시나리오, 60회 본 실험으로는 넘어가지 않았다.
+
+## 28. `slo_judge.py` small-sample P95 결함 수정 + 파일럿 재분류 (2026-09-18)
+
+### 28.1 파일럿 재분류
+
+`pilot-load_ramp-native-01-20260918T130111Z`을 오염된 실행으로 확정.
+원본 CSV·모든 timestamp 필드는 그대로 두고 판정 필드만 수정:
+`outcome=invalid_run`, `state=invalid`,
+`invalid_reason=small_sample_p95_fallback_false_violation`.
+`is_pilot=true`는 원래도 true였고, `collect_metrics.py`의
+`_classify_exclusion()` 우선순위(PREFLIGHT-EXCLUDED > is_pilot >
+invalid_run)상 `exclusion_reason`은 여전히 `"pilot"`으로 나오며
+`included_in_main_analysis=False`도 그대로 - 둘 다 요구사항 충족.
+
+### 28.2 `slo_judge.py` 수정
+
+`evaluate()`: 윈도우 표본이 `MIN_SAMPLES_FOR_RELIABLE_P95`(20) 미만이면
+더 이상 `max(latencies)`를 P95 대용으로 쓰지 않는다 - 그 point는
+`sample_count`(신규 필드)만 기록하고 `latency_evaluable=False`,
+`p95=None`, `latency_violating=False`로 판정을 보류한다. 20개
+이상이면 기존 `statistics.quantiles(...)[94]` 그대로,
+`latency_evaluable=True`. Availability는 표본 수와 무관하게 기존과
+완전히 동일(§4, 즉시 판정 유지).
+
+`find_t_slo()`: 코드 변경 없음 - `latency_violating`이 이제 표본
+부족 구간에서 항상 `False`가 되므로, 기존 스트릭 로직
+(`if violating: 연장 else: 리셋`)이 자동으로 "표본 부족 구간에서
+스트릭 시작·연장 안 함"을 만족한다.
+
+`find_t_recovery()`: 회복 스트릭 조건에 `latency_evaluable`을 추가
+(`p["latency_evaluable"] and not violating and not avail_violating`
+이어야 스트릭 연장) - "모른다"를 "정상"으로 오인해 회복을 조기
+확정하지 않도록.
+
+`SLO_VERSION = "v3"`를 `slo_judge.py`에 단일 출처로 추가.
+`run_load_ramp_trial.py`/`run_network_degrade_trial.py`/
+`run_pod_kill_trial.py` 3개 launcher 전부 `run_once(...,
+slo_version=slo_judge.SLO_VERSION)`로 명시 전달하도록 수정.
+`run_once.py`의 하드코딩된 기본값 2곳(`"v2"`)을 `"unspecified"`로
+변경 - 이후 launcher가 값을 안 넘기면 오래된 버전이 조용히 기록되는
+대신 명시적으로 드러난다.
+
+### 28.3 오프라인 테스트
+
+`test_slo_judge.py`에 7개 추가: 20개 미만 표본에서 고지연 1건도 위반
+아님, 20개 이상에서 지속 고지연 정상 검출, 이번 파일럿의 정확한
+패턴(초반 급등+이후 정상)에서 원래 버그 시각(13:03:55) 재현 안 됨,
+20개 미만이라도 실패 요청은 즉시 availability 위반 검출, latency
+비평가 구간만으로 recovery 미확정, 표본 충분한 위반→회복 흐름은
+기존과 동일, **보존된 이번 파일럿 원본 CSV를 직접 재분석하는 통합
+테스트**. 기존 테스트 2개(`test_latency_violation_t_slo_is_observed_
+at_domain`/`test_recovery_uses_observed_at_and_filters_by_observed_
+at`)는 표본 수를 35→65로 늘렸다 - 20개 미만 구간이 더 이상 위반으로
+안 잡히니 30초 연속 조건을 채우려면 그만큼 표본이 더 필요해서다(값
+자체가 아니라 새 판정 규칙에 맞춘 자연스러운 조정).
+`test_collect_metrics.py`에 `slo_version="v3"`가
+`build_comparison()`을 거쳐도 보존되는 테스트 1개 추가. **전체 스위트
+112 passed, 2 skipped**(무관).
+
+### 28.4 중요 - 통합 테스트가 드러낸 별개의 추가 현상(이번 수정 범위 밖)
+
+보존된 파일럿 원본을 고친 로직으로 재분석하면, **원래 버그 시각
+(13:03:55)은 더 이상 안 나오지만 t_slo 자체는 여전히 어딘가에서
+찍힌다**(다른 시각). 원인을 추적한 결과 표본 부족 문제가 아니라
+**서로 다른 두 개의 짧은 고지연 구간이 60초 슬라이딩 윈도우를 통해
+겹쳐 보이는 별개 현상**이었다: 주입 직후 콜드스타트성 클러스터
+(t=-1.78~1.22초, 4건, 0.5~0.99초)와 t=39~41초의 독립된 클러스터(3건,
+0.61~0.71초, **표본 38~54개의 정상 통계량 - 표본 부족 아님**)가 있고,
+둘 다 실제로는 30초 미만의 짧은 blip인데 겹치는 60초 윈도우 안에서
+함께 잡혀 windowed P95가 더 오래 threshold를 넘는 것처럼 보인다. 이번
+수정(표본 부족 시 판정 보류)은 이 현상을 고치지 않는다 - 별개의,
+더 근본적인 방법론 질문(겹치는 윈도우가 짧은 독립 blip들을 합쳐
+보이게 하는 문제)이라 이번 지시 범위 밖으로 판단해 손대지 않았다.
+`test_preserved_pilot_raw_csv_small_sample_points_never_violate`가
+이 사실을 코드로 명시하고, 원래 버그 시각이 재현되지 않는 것만
+검증한다.
+
+전체 오프라인 테스트 통과 확인, 실클러스터 재실행 없음. 이 부수
+현상에 대한 추가 조치는 사용자 결정 대기 - 아직 다른 arm·시나리오·
+60회 본 실험으로 넘어가지 않았다.
