@@ -1,0 +1,42 @@
+# lab-cpu3-warm-v1 + SLO v3(threshold=0.648s) 하 load_ramp 강도 재탐색용
+# 설정 (2026-09-18, §22 사전 등록 참고) - scenario-load-ramp.yaml 본편과는
+# 별개이며, 최종 후보 확정 전까지 반복해서 고쳐 쓴다. 기존
+# scenario-load-ramp-explore.yaml(v2/4코어 시절 이력)은 덮어쓰지 않는다.
+#
+# 2차 탐색(1차 결과 반영): 1차(0.10~2.00RPS 7단계)에서 1.50/2.00RPS까지
+# 넣었더니 큰 백로그가 쌓여 drain 60초로도 다 못 빠지는 현상이 나타났고
+# (explore-20260918T095809Z), 이는 explore_ramp_intensity.py가 stage
+# 경계를 "공칭" 시각(합계 630초)으로 계산해 실제 완주 시각(668.4초)과의
+# 차이(~38초)만큼 아직 진행 중인 stage-7 트래픽을 drain으로 오분류한
+# 것으로 보인다(원시 CSV 초 단위 확인 - t=675부터는 즉시 0.2초대로
+# 복귀함, 스크립트가 보고한 "drain 위반"과 모순). 또한 stage-1 초반
+# ~6초에 ramp+probe가 동시에 처음 트래픽을 내보내는 콜드스타트성
+# 급등(최대 4.7초)이 있었다(L_baseline calibration 3회에서도 같은
+# 패턴 관찰됨) - stage-1 전체 P95를 오염시켰다.
+#
+# 이번엔 기존 v2 범위(0.10~1.00RPS, 5단계)를 그대로 재검증한다 -
+# "기존 값 자동 재사용 금지"는 검증 없이 채택 금지라는 뜻이지 후보로
+# 시도하지 말라는 뜻은 아니다. 해석 시 stage-1 최초 ~10초는 콜드스타트
+# 급등으로 알려진 구간이라 별도로 확인한다.
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: explore-0.10rps
+    rps: 0.10
+    duration_sec: 90
+  - name: explore-0.25rps
+    rps: 0.25
+    duration_sec: 90
+  - name: explore-0.50rps
+    rps: 0.50
+    duration_sec: 90
+  - name: explore-0.75rps
+    rps: 0.75
+    duration_sec: 90
+  - name: explore-1.00rps
+    rps: 1.00
+    duration_sec: 90

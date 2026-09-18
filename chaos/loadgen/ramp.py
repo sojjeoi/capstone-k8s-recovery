@@ -47,6 +47,7 @@ async def run_stage(session, url, payload, rps, duration_sec, stage_name):
     results = []
     tasks = []
     stage_start = time.monotonic()
+    stage_start_utc = datetime.now(timezone.utc).isoformat()
     next_fire = stage_start
     print(f"\n=== {stage_name}: {rps} RPS, {duration_sec}s ===")
 
@@ -60,10 +61,14 @@ async def run_stage(session, url, payload, rps, duration_sec, stage_name):
             await asyncio.sleep(min(0.01, next_fire - now))
 
     # 단계 끝난 뒤 아직 안 끝난 요청은 최대 10초만 더 기다리고, 그래도 안 끝나면
-    # 다음 단계로 안 새어들어가게 취소한다.
+    # 다음 단계로 안 새어들어가게 취소한다. 이 대기 때문에 stage의 실제 wall
+    # clock 종료 시각은 명목 duration_sec보다 늦을 수 있다 - stage_end_utc를
+    # 이 대기가 끝난 뒤에 찍어야 그 지연을 그대로 반영한다(외부에서 stage
+    # 경계로 표본을 나눌 때 명목 시각이 아니라 이 실제 시각을 써야 하는 이유).
     done, pending = await asyncio.wait(tasks, timeout=10) if tasks else (set(), set())
     for t in pending:
         t.cancel()
+    stage_end_utc = datetime.now(timezone.utc).isoformat()
 
     sent = len(tasks)
     completed = [r for r in results if r["status"] is not None]
@@ -89,11 +94,12 @@ async def run_stage(session, url, payload, rps, duration_sec, stage_name):
         "stage": stage_name, "target_rps": rps, "actual_rps": round(actual_rps, 2),
         "sent": sent, "success": len(success), "success_rate": round(success_rate, 4),
         "p95": round(p95, 3), "p99": round(p99, 3),
+        "stage_start_utc": stage_start_utc, "stage_end_utc": stage_end_utc,
     }
     return summary, results
 
 
-async def main(config_path, run_id=None, method="manual", repetition=1):
+async def main(config_path, run_id=None, method="manual", repetition=1, summary_out=None):
     # Phase 8에서 Prometheus/policy 로그와 조인하려면 동일 experiment_run_id가
     # 필요하다(guideline.md 9-2절) — 오케스트레이터가 나중에 --run-id로 주입할
     # 수 있게 옵션으로 열어두고, 지금처럼 단독 실행할 땐 자동 생성한다.
@@ -130,7 +136,7 @@ async def main(config_path, run_id=None, method="manual", repetition=1):
 
     tag_fields = ["experiment_run_id", "scenario", "method", "repetition"]
 
-    summary_file = out_dir / f"load-ramp-{ts}.csv"
+    summary_file = Path(summary_out) if summary_out else out_dir / f"load-ramp-{ts}.csv"
     with summary_file.open("w", newline="", encoding="utf-8") as f:
         fieldnames = tag_fields + [k for k in summary[0].keys() if k not in tag_fields]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -159,5 +165,8 @@ if __name__ == "__main__":
     parser.add_argument("--run-id", default=None, help="미지정 시 UTC 타임스탬프로 자동 생성 (오케스트레이터가 여러 로그를 조인할 때 지정)")
     parser.add_argument("--method", default="manual", help="3-way 비교 축: self-healing / fixed-threshold / proposed 등 (기본: manual 단독 실행)")
     parser.add_argument("--rep", type=int, default=1, help="반복 실행 번호 (기본: 1)")
+    parser.add_argument("--summary-out", default=None,
+                         help="stage 요약 CSV(stage_start_utc/stage_end_utc 포함)를 이 경로에 쓴다 - 미지정 시 기존처럼 자동 타임스탬프 파일명 사용")
     args = parser.parse_args()
-    asyncio.run(main(args.config, run_id=args.run_id, method=args.method, repetition=args.rep))
+    asyncio.run(main(args.config, run_id=args.run_id, method=args.method, repetition=args.rep,
+                      summary_out=args.summary_out))

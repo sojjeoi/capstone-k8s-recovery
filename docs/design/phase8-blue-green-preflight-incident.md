@@ -1750,3 +1750,88 @@ SLO v3(§21)와 `lab-cpu3-warm-v1`(§19) 하에서 `chaos/scenario-load-ramp.yam
 
 각 실행에서 단계별 P95·성공률·post-drain P95·Node/Pod 상태를 남긴다.
 탐색은 아직 시작하지 않았다 - 이 계획을 커밋한 뒤 실행한다.
+
+## 23. 탐색 1·2회차 - stage 경계 측정 버그 발견, harness 수정 (2026-09-18)
+
+### 23.1 탐색 1회차 (`explore-20260918T095809Z`, 0.10~2.00 RPS 7단계)
+
+100% 성공률(720/720건), Node·pod 이상 없음 - 시스템 붕괴는 아니었다.
+다만 stage별 P95가 0.10RPS부터 이미 위반, drain(60초)도 회복 안 하는
+것으로 나왔다(mean 2.842s, P95 8.288s). 원시 CSV를 초 단위로 직접
+확인한 결과 t=675초부터는 즉시 0.2초대로 복귀했다 - 스크립트가 보고한
+"drain 위반"과 모순됐다.
+
+### 23.2 탐색 2회차 (`explore-20260918T101717Z`, 0.10~1.00 RPS 5단계, 기존 v2 범위 재검증)
+
+1회차의 극단적 후반 단계(1.50/2.00RPS)를 빼고 기존 범위로 재시도했으나
+같은 종류의 왜곡이 남아있었다(drain n=78, mean 0.559, P95 2.195 -
+여전히 위반으로 표시).
+
+### 23.3 근본 원인 확인(사용자 진단) - `explore_ramp_intensity.py`의 실제 버그
+
+1·2회차 모두 **측정 도구(harness) 버그**였다: 기존 코드는 probe의 첫
+`sent_at`을 t0로 삼고 stage **명목** `duration_sec`만으로 시간 구간을
+잘랐다. 그런데 `ramp.py`는 각 stage 종료 시 미완료 요청을 최대 10초
+기다린 뒤 다음 단계로 넘어간다(`chaos/loadgen/ramp.py` `run_stage()`) -
+이 대기가 stage마다 실제 종료 시각을 명목보다 밀리게 하고, 이게
+누적된다(1회차 7단계 실행에서 명목 630초가 실제로는 668.4초 -
+차이 38.4초, 대략 단계당 5~6초씩 누적과 일치). 그 결과:
+- 뒤 stage로 갈수록 probe 표본이 "아직 안 끝난 이전 stage"와
+  "이미 시작된 다음 stage" 사이에서 명목 경계 기준으로 잘못 섞여
+  분류됐다(점진적으로 나빠지는 것처럼 보인 패턴의 일부가 이 스미어링
+  때문이었다).
+- **drain 버킷이 가장 심하게 영향받았다** - 명목 합계(630초) 이후를
+  전부 drain으로 봤지만, 실제로는 그 시점에 마지막 stage(2.00RPS)가
+  아직 38초 더 진행 중이었다 - 그 트래픽이 drain으로 잘못 들어가
+  "회복 안 함"으로 보였다.
+- 부수적으로 stage-1 초반 ~6초에는 ramp+probe가 동시에 처음 트래픽을
+  내보내는 콜드스타트성 급등(최대 4.7초, `n=90` 중 6~7건)도 있었다 -
+  이건 별개 현상(L_baseline calibration 3회에서도 같은 패턴 관찰,
+  §21)이지만 명목 경계 문제와 겹쳐 stage-1 판정도 흐렸다.
+
+**1·2회차 처리**: 사용자 지시에 따라 중단하지 않고 그대로 보존했으나
+`is_pilot=true`, `exclusion_reason=nominal_stage_boundary_misalignment`
+로 본 분석·후보 확정 근거에서 제외한다. 원시 CSV(`experiments/results/
+probe-explore-20260918T{095809,101717}Z-raw.csv`, gitignore 대상)는
+그대로 유지 - harness 버그를 보여주는 증거로서 보존한다.
+
+### 23.4 수정
+
+- `chaos/loadgen/ramp.py`: 각 stage의 실제 `stage_start_utc`(요청 발사
+  시작 직전)/`stage_end_utc`(straggler 최대 10초 대기 이후)를
+  `datetime.now(timezone.utc).isoformat()`로 찍어 summary CSV에 추가.
+  `--summary-out` 옵션 추가(고정 경로 지정 가능, 미지정 시 기존
+  자동 타임스탬프 파일명 유지 - 하위 호환).
+- `experiments/explore_ramp_intensity.py`: (1) probe를 ramp보다 먼저
+  시작하고 `BASELINE_SEC=60`초(1RPS 기준 SLO 판정 가능한 최소
+  표본이자 60초 안정 구간) 대기 후에만 ramp 시작 (2) stage 분류를
+  명목 계산 대신 `ramp.py`가 기록한 실제 `stage_start_utc`/
+  `stage_end_utc`로 수행하는 `classify_stages()`로 교체(순수 함수로
+  분리, 테스트 가능) (3) drain = 마지막 stage의 실제 `stage_end_utc`
+  이후 표본만 (4) ramp 시작 전 probe 단독 구간을 별도 `baseline`
+  버킷으로 분리 (5) 출력에 표본 수·성공률·P95·mean·max·실제 시작~종료
+  시각을 stage별로 표시(기존엔 성공률 자체가 출력에 없었음).
+- `experiments/test_explore_ramp_intensity.py`(신규) - 회귀 테스트 7개:
+  경계 드리프트 없는 정상 케이스, **지연된 stage 종료의 정확한
+  재현**(명목 경계로는 다음 stage에 속할 시각이지만 실제
+  `stage_end_utc`가 그보다 늦으면 이전 stage에 남아야 함),
+  **drain이 명목 합계가 아니라 마지막 stage의 실제 종료 이후만
+  포함**하는지, `ramp_stages` 없음(전부 baseline) 엣지케이스,
+  `bucket_stats`의 빈 버킷·성공률/위반 계산, `parse_ramp_summary`의
+  timestamp 파싱. 전체 스위트 94 passed, 2 skipped(무관) - 회귀 없음.
+
+### 23.5 재실행 전 확인된 제약 - `loadgen-runner:local` 이미지 재빌드 필요
+
+`ramp.py` 변경은 **이미지에 구워진 사본**에는 반영 안 된다 -
+`experiments/loadgen-runner/Dockerfile`이 빌드 시점에
+`chaos/loadgen/ramp.py`를 복사해 넣는 구조라(`.gitignore` 주석 참고),
+지금 클러스터에 이미 존재하는 `loadgen-runner:local` 이미지는 이번
+수정 이전 버전의 `ramp.py`를 담고 있다. `vllm-cpu-env:latest`와 같은
+이유로 이 저장소에는 이미지 재빌드를 트리거할 CI/스크립트가 없고
+(`sj-worker` 노드에서 직접 build해야 하는 구조, Dockerfile 자체 주석
+확인), 이 세션은 `kubectl`만 쓰고 노드 SSH·이미지 빌드 권한이 없다 -
+안전하게 재빌드를 트리거할 방법이 없어 **재실행 전에 사용자 확인이
+필요**하다.
+
+수정된 harness로 재실행하기 전, 사용자 검토·승인 대기 - 아직 YAML
+동결이나 3회 재현성 검증으로 넘어가지 않았다.
