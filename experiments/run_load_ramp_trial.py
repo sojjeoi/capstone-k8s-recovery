@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """load_ramp 시나리오 단일 trial 수동 실행 - "native x 1회로 주입/probe/SLO
-기록만 확인" 검증용(4단계 완료 기준의 첫 단계, 사용자 지시). 이후 3-arm
-파일럿(7단계)/전체 배치(8단계 run_all_scenarios.py)는 이 스크립트가 검증된
-뒤 별도로 반복 호출한다.
+기록만 확인" 검증용(4단계 완료 기준의 첫 단계, 사용자 지시)으로 시작했으나,
+2026-09-18부터 --arm fixed_threshold/proposed도 이 스크립트 하나로 돌 수
+있다 - arm_controller.py가 detector(fixed_threshold.py/score_server.py)
+실행·종료와 preview 준비를 자동으로 배선한다(이전에는 --arm 이름만 결과에
+태깅될 뿐 실제 detector가 안 돌아서 결과가 잘못 라벨링될 위험이 있었음).
+non-native arm은 이 배선을 절대 우회할 수 없다(fail-closed) - main()이
+arm != native면 무조건 arm_controller를 거친다.
 """
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 
+import arm_controller
 import slo_judge
 from load_ramp_adapter import make_load_ramp_injector, make_load_ramp_prober
 from run_once import HarnessCorrupted, run_once
@@ -35,6 +40,8 @@ def main():
                               "is_pilot=True로 기록해 results/pilot/ 아래 구조적으로 "
                               "분리한다(collect_metrics.py 8단계가 본 실험 5회 반복 "
                               "집계에서 구조적으로 제외할 수 있게)")
+    parser.add_argument("--rollout", default="vllm-serving", help="non-native arm의 preview 준비 대상 Rollout 이름")
+    parser.add_argument("--namespace", default="vllm-serving", help="non-native arm의 preview 준비 대상 namespace")
     args = parser.parse_args()
 
     scenario = "load_ramp"
@@ -42,14 +49,19 @@ def main():
     run_id = f"{prefix}{scenario}-{args.arm}-{args.rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
     injector = make_load_ramp_injector(args.config, run_id, args.arm, args.rep)
+    # non-native arm은 이 배선을 절대 우회할 수 없다(fail-closed, 지시) -
+    # arm=native면 원본 injector를 그대로 반환(2026-09-18 추가).
+    injector = arm_controller.wrap_injector_with_preview_prep(injector, args.arm, args.rollout, args.namespace)
+    detector = arm_controller.make_detector_for_arm(args.arm, run_id)
     prober = make_load_ramp_prober(args.probe_config, run_id, scenario, args.arm, args.rep, args.timeout_sec)
 
-    print(f"run_id: {run_id}")
+    print(f"run_id: {run_id}" + (f" / detector: {detector.name}" if detector is not None else ""))
     try:
         result = run_once(
             scenario=scenario, arm=args.arm, rep=args.rep,
             sequence_index=args.sequence_index, order_seed=args.order_seed,
             injector=injector, prober=prober, timeout_sec=args.timeout_sec,
+            detector=detector,
             run_id=run_id, is_pilot=args.pilot,
             latency_slo_sec=slo_judge.LATENCY_THRESHOLD, slo_version=slo_judge.SLO_VERSION,
             # 2026-09-17 추가 - pod_kill 회귀와 동일 기준으로 명시적 통일.

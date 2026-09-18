@@ -8,6 +8,7 @@ recovery-policy/main.py는 아직 없어서(Phase 7 미착수) POST는 지금 �
 로그만 남기고 계속 돈다.
 """
 import argparse
+import os
 import pickle
 import sys
 import time
@@ -22,10 +23,16 @@ sys.stdout.reconfigure(encoding="utf-8")  # Windows 기본 cp949 콘솔 대응
 
 ARTIFACTS_DIR = Path(__file__).parent / "artifacts"
 # recovery-policy가 in-cluster Deployment/Service로 배포되므로(1단계) 그
-# in-cluster DNS를 가리킨다. score_server.py를 로컬 PC에서 돌릴 거면
-# kubectl port-forward -n vllm-serving svc/recovery-policy 8080:8080로
-# 터널을 열고 이 상수를 http://localhost:8080/signal로 바꿀 것.
-RECOVERY_POLICY_URL = "http://recovery-policy.vllm-serving.svc.cluster.local:8080/signal"
+# in-cluster DNS를 기본값으로 쓴다. Phase 8 arm_controller.py가 로컬에서
+# 이 스크립트를 서브프로세스로 띄울 때는(kubectl port-forward -n
+# vllm-serving svc/recovery-policy 8080:8080 전제 - run_once.py의
+# RECOVERY_POLICY_URL과 동일 전제) RECOVERY_POLICY_SIGNAL_URL 환경변수로
+# http://localhost:8080/signal을 넘긴다(2026-09-18 추가) - 소스를 고쳐야
+# 했던 기존 수동 절차를 없앤다. 환경변수 미지정 시 동작은 기존과 동일.
+RECOVERY_POLICY_URL = os.environ.get(
+    "RECOVERY_POLICY_SIGNAL_URL",
+    "http://recovery-policy.vllm-serving.svc.cluster.local:8080/signal",
+)
 
 EVAL_INTERVAL_SEC = 15  # 평가 주기 (features.py의 Prometheus query step과 동일)
 WINDOW_SEC = 60  # 평가 대상 trailing window (slo-definition.md와 동일 관례)

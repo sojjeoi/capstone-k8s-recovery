@@ -220,6 +220,38 @@ class Prober:
 
 
 @dataclass
+class Detector:
+    """arm별 이상탐지 프로세스 생명주기(2026-09-18 추가 - 3-arm 파일럿 전
+    orchestration 보완). run_load_ramp_trial.py가 지금까지 --arm 이름만
+    결과에 태깅할 뿐 실제 detector 프로세스나 preview 준비를 전혀 담당하지
+    않아서, non-native arm을 실행하면 detector가 실제로는 동작하지 않은 채
+    잘못 라벨링된 결과가 생길 수 있었던 문제를 고친다. native는 이 객체
+    자체가 없다(run_once(detector=None), 기본값) - arm_controller.py의
+    make_detector_for_arm()이 fixed_threshold/proposed에만 실제로 만들어
+    넘긴다.
+    start(): baseline 확보(BASELINE 단계 통과) + context 등록이 모두 끝난
+    뒤, chaos 주입 직전에 run_once()가 정확히 한 번 호출한다 - baseline
+    관찰 도중에는 detector 프로세스 자체가 아예 존재하지 않아야 그 구간의
+    신호·조치가 원천 차단된다.
+    is_alive(): OBSERVING 루프에서 prober.is_alive()와 나란히 반복
+    확인한다 - False면 TrialInvalid로 처리돼 invalid_run이 된다.
+    stop(): idempotent해야 한다(start() 전에 불려도 안전). finally에서
+    prober.stop()과 같은 자리에서 호출되고, 그 직후 is_alive()로 실제
+    종료 여부를 재확인한다 - 여전히 살아있으면(다음 trial의 신호·조치
+    오염 위험) HarnessCorrupted(prober의 기존 leak-check와 동일한
+    심각도로 처리).
+    name: 이 arm에 대응하는 detector 식별자(예: "fixed_threshold"/
+    "isolation_forest" - 각 스크립트가 post_to_recovery_policy()에 실제로
+    보내는 detector= 태그와 정확히 일치) - TrialResult.detector_process에
+    기록돼, 이 trial이 어떤 detector로 실행되려 했는지 사후 감사할 수
+    있게 한다."""
+    start: Callable[[], None]
+    is_alive: Callable[[], bool]
+    stop: Callable[[], None]
+    name: str
+
+
+@dataclass
 class TrialResult:
     run_id: str
     scenario: str
@@ -236,6 +268,13 @@ class TrialResult:
     slo_version: str = "unspecified"
     latency_slo_sec: Optional[float] = None
     probe_rps: float = 1.0
+    # 이 trial에 실제로 배선된 detector 식별자(2026-09-18 추가 - arm
+    # orchestration 보완). arm_controller.make_detector_for_arm()이 만든
+    # Detector.name을 그대로 기록 - native거나 detector=None으로 호출됐으면
+    # null. 이 trial이 "어떤 detector로 실행되려 했는지"의 감사 기록이라
+    # detector.start()가 실제로 성공했는지와 무관하게(예: 시작하자마자
+    # 크래시해 invalid_run이 됐어도) 채워진다.
+    detector_process: Optional[str] = None
     # network_degrade 전용(2026-09-18 추가) - "default"/"network_tolerant" 중
     # 실제로 어떤 K8s readiness/livenessProbe.timeoutSeconds 설정으로 돌았는지
     # 기록한다. 위 probe_profile(SLO 측정용 HTTP probe 설정)과는 다른 축이다 -
@@ -460,6 +499,7 @@ def run_once(
     probe_ready_timeout_sec: float = PROBE_READY_TIMEOUT_SEC,
     injection_started_timeout_sec: float = INJECTION_STARTED_TIMEOUT_SEC,
     baseline_timeout_sec: float = BASELINE_TIMEOUT_SEC,
+    detector: Optional[Detector] = None,
     run_id: Optional[str] = None,
     is_pilot: bool = False,
     probe_profile: str = "inference-max1-rps1",
@@ -487,6 +527,7 @@ def run_once(
         min_observation_sec=min_observation_sec,
         readiness_probe_profile=readiness_probe_profile,
         readiness_probe_timeout_sec=readiness_probe_timeout_sec,
+        detector_process=detector.name if detector is not None else None,
     )
     _write_result(result, results_dir)
     critical_failures: list = []
@@ -543,6 +584,13 @@ def run_once(
         _write_result(result, results_dir)
         if result.baseline_valid is False:
             raise TrialInvalid(f"주입 전 baseline 관찰 조건을 {baseline_timeout_sec}초 내에 충족 못 함")
+
+        # detector 시작(2026-09-18 추가) - baseline 확보 + context 등록(둘 다
+        # 위에서 이미 끝남)이 모두 끝난 뒤, chaos 주입 직전에 정확히 한 번
+        # 호출한다(지시). baseline 관찰 도중에는 detector 프로세스 자체가
+        # 존재하지 않아야 그 구간의 신호·조치가 원천 차단된다.
+        if detector is not None:
+            detector.start()
 
         result.state = TrialState.INJECTING.value
         result.t_injection_request = _now()  # injector.inject() 호출 직전 - 실제 주입 구간의 하한
@@ -602,6 +650,8 @@ def run_once(
             if not prober.is_alive():
                 result.probe_valid = False
                 raise TrialInvalid("probe가 관찰 도중 비정상 종료")
+            if detector is not None and not detector.is_alive():
+                raise TrialInvalid("detector가 관찰 도중 비정상 종료")
             if injector.is_done() and result.t_injection_end is None:
                 result.t_injection_end = _now()
             if not result.target_replaced and injector.get_target_replacement is not None:
@@ -682,6 +732,21 @@ def run_once(
 
         result.state = TrialState.CLEANING.value
         _write_result(result, results_dir)
+
+        # detector 정리(2026-09-18 추가) - prober/injector보다 먼저 멈춘다.
+        # 계속 살아있으면 이후 정리 단계가 진행되는 동안에도 신호를 계속
+        # 낼 수 있어(예: 대상이 아직 완전히 안 죽은 상태에서 또 한 번
+        # anomaly로 잡힘), 정리 과정 자체를 관찰 대상으로 오염시킬 위험이
+        # 가장 크다.
+        if detector is not None:
+            try:
+                detector.stop()
+            except Exception as e:
+                result.notes += f"detector.stop() 예외(아래 is_alive 재확인으로 최종 판단): {e} | "
+            if detector.is_alive():
+                msg = "detector.stop() 이후에도 detector가 여전히 살아있음 - 다음 trial의 신호·조치 오염 위험"
+                critical_failures.append(msg)
+                result.notes += f"CRITICAL: {msg} | "
 
         try:
             prober.stop()

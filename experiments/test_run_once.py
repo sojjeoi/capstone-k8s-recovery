@@ -25,15 +25,19 @@ sys.stdout.reconfigure(encoding="utf-8")
 import pytest
 import requests
 
-from run_once import RECOVERY_POLICY_URL, HarnessCorrupted, Injector, Prober, run_once
+from run_once import RECOVERY_POLICY_URL, Detector, HarnessCorrupted, Injector, Prober, run_once
 
 
-def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=True, classify_stage_fn=None):
+def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=True, classify_stage_fn=None,
+                    event_log=None):
     """classify_stage_fn(2026-09-18 추가, stage 관측성 보완 회귀 테스트용):
     None(기본)이면 Injector.classify_stage 자체를 구현 안 함(하위호환 -
     pod_kill/network_degrade처럼 stage 개념이 없는 어댑터를 흉내). 함수를
     주면 그대로 classify_stage로 노출한다(테스트가 원하는 값을 반환하거나
-    예외를 던지게 할 수 있음)."""
+    예외를 던지게 할 수 있음). event_log(2026-09-18 추가, arm orchestration
+    보완 회귀 테스트용): 주어지면 inject() 호출 시각을 그 리스트에
+    append - _fake_detector()의 event_log와 공유해서 "detector 시작 후에만
+    injection"의 실제 호출 순서를 검증한다."""
     calls = {"prepare": 0, "inject": 0, "is_started": 0, "is_effective": 0, "is_done": 0, "cleanup": 0}
 
     def prepare():
@@ -41,6 +45,8 @@ def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=Tr
 
     def inject():
         calls["inject"] += 1
+        if event_log is not None:
+            event_log.append("inject")
 
     def is_started():
         calls["is_started"] += 1
@@ -65,7 +71,7 @@ def _fake_injector(is_done_after_calls=1, is_started_after_calls=1, effective=Tr
 
 
 def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1, stops_cleanly=True,
-                  baseline_ready_after_calls=None):
+                  baseline_ready_after_calls=None, event_log=None):
     """violates_after_calls: check_slo_violation() 몇 번째 호출부터 위반으로
     볼지. recovers_after_slo_calls: t_slo가 찍힌 뒤(!) check_recovered() 몇
     번째 호출부터 True를 낼지 - t_slo 이전엔 애초에 안 불리는 걸 run_once()가
@@ -115,6 +121,8 @@ def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1,
             calls["get_baseline_status"] += 1
             counters["baseline"] += 1
             ready = counters["baseline"] >= baseline_ready_after_calls
+            if ready and event_log is not None and "baseline_ready" not in event_log:
+                event_log.append("baseline_ready")
             return {
                 "ready": ready,
                 "sample_count": min(20 + counters["baseline"], 60),
@@ -125,6 +133,39 @@ def _fake_prober(alive=True, violates_after_calls=1, recovers_after_slo_calls=1,
         prober_kwargs["get_baseline_status"] = get_baseline_status
 
     return Prober(**prober_kwargs), calls
+
+
+def _fake_detector(name="fake_detector", dies_after_calls=None, event_log=None):
+    """arm orchestration 보완(2026-09-18) 회귀 테스트용 가짜 Detector.
+    dies_after_calls: None(기본)이면 항상 살아있음 - 정수를 주면 그
+    호출 횟수부터 is_alive()가 False(크래시 흉내). event_log: 주어지면
+    start()/stop() 호출 시각을 그 리스트에 append(다른 컴포넌트의 호출
+    순서와 비교하기 위한 공유 로그 - baseline/injection보다 먼저/나중에
+    호출되는지 검증)."""
+    calls = {"start": 0, "is_alive": 0, "stop": 0}
+    state = {"started": False, "stopped": False}
+
+    def start():
+        calls["start"] += 1
+        state["started"] = True
+        if event_log is not None:
+            event_log.append("detector_start")
+
+    def is_alive():
+        calls["is_alive"] += 1
+        if not state["started"] or state["stopped"]:
+            return False
+        if dies_after_calls is not None and calls["is_alive"] >= dies_after_calls:
+            return False
+        return True
+
+    def stop():
+        calls["stop"] += 1
+        state["stopped"] = True
+        if event_log is not None:
+            event_log.append("detector_stop")
+
+    return Detector(start=start, is_alive=is_alive, stop=stop, name=name), calls
 
 
 def test_normal_completion(tmp_path):
@@ -737,6 +778,129 @@ def test_classify_stage_exception_does_not_break_trial(tmp_path):
     print("OK - classify_stage 예외는 notes에만 남고 핵심 판정(outcome/t_slo)은 정상 유지")
 
 
+def test_detector_starts_only_after_baseline_ready(tmp_path):
+    # arm orchestration 보완(2026-09-18) - detector.start()는 baseline이
+    # 확보된 뒤에만 호출돼야 한다(baseline 관찰 도중에는 detector 자체가
+    # 존재하면 안 됨 - 지시).
+    event_log = []
+    injector, icalls = _fake_injector(is_done_after_calls=5, event_log=event_log)
+    prober, _ = _fake_prober(violates_after_calls=10_000, baseline_ready_after_calls=3, event_log=event_log)
+    detector, dcalls = _fake_detector(event_log=event_log)
+
+    run_once(
+        scenario="dry_run", arm="native", rep=50, sequence_index=50, order_seed=1,
+        injector=injector, prober=prober, detector=detector,
+        timeout_sec=5, poll_interval_sec=0.02, baseline_timeout_sec=5, results_dir=tmp_path,
+    )
+
+    assert "baseline_ready" in event_log and "detector_start" in event_log
+    assert event_log.index("baseline_ready") < event_log.index("detector_start"), \
+        f"detector.start()는 baseline_ready 이후여야 함: {event_log}"
+    assert dcalls["start"] == 1
+    print("OK - detector는 baseline이 확보된 뒤에만 시작됨:", event_log)
+
+
+def test_injection_starts_only_after_detector_start(tmp_path):
+    event_log = []
+    injector, icalls = _fake_injector(is_done_after_calls=5, event_log=event_log)
+    prober, _ = _fake_prober(violates_after_calls=10_000, baseline_ready_after_calls=3, event_log=event_log)
+    detector, dcalls = _fake_detector(event_log=event_log)
+
+    run_once(
+        scenario="dry_run", arm="native", rep=51, sequence_index=51, order_seed=1,
+        injector=injector, prober=prober, detector=detector,
+        timeout_sec=5, poll_interval_sec=0.02, baseline_timeout_sec=5, results_dir=tmp_path,
+    )
+
+    assert "detector_start" in event_log and "inject" in event_log
+    assert event_log.index("detector_start") < event_log.index("inject"), \
+        f"injector.inject()는 detector.start() 이후여야 함: {event_log}"
+    print("OK - injection은 detector가 시작된 뒤에만 실행됨:", event_log)
+
+
+def test_detector_crash_marks_invalid_run(tmp_path):
+    injector, icalls = _fake_injector(is_done_after_calls=10_000)  # 관찰 도중 안 끝남
+    prober, _ = _fake_prober(violates_after_calls=10_000)  # 절대 위반 안 됨
+    detector, dcalls = _fake_detector(dies_after_calls=2)  # is_alive() 2번째 호출부터 크래시
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=52, sequence_index=52, order_seed=1,
+        injector=injector, prober=prober, detector=detector,
+        timeout_sec=5, poll_interval_sec=0.02, results_dir=tmp_path,
+    )
+
+    assert result.outcome == "invalid_run", result.outcome
+    assert "detector" in result.invalid_reason
+    print("OK - detector가 관찰 도중 크래시하면 invalid_run:", result.invalid_reason)
+
+
+def test_detector_stopped_even_when_injector_raises(tmp_path):
+    def raising_inject():
+        raise RuntimeError("의도적으로 터뜨린 예외 - injector.inject() 실패 시나리오")
+
+    injector = Injector(prepare=lambda: None, inject=raising_inject, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True, cleanup=lambda: None)
+    prober, _ = _fake_prober()
+    detector, dcalls = _fake_detector()
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=53, sequence_index=53, order_seed=1,
+        injector=injector, prober=prober, detector=detector,
+        timeout_sec=5, poll_interval_sec=0.1, results_dir=tmp_path,
+    )
+
+    assert result.outcome == "invalid_run", result.outcome
+    assert dcalls["start"] == 1, "detector는 injector.inject() 예외 전에 이미 시작됐어야 함"
+    assert dcalls["stop"] == 1, "injector.inject()가 예외를 던져도 detector.stop()은 호출돼야 함"
+    print("OK - injector.inject() 예외가 나도 detector는 정리됨")
+
+
+def test_detector_stopped_on_timeout(tmp_path):
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=10_000)  # 절대 회복 안 되게
+    detector, dcalls = _fake_detector()
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=54, sequence_index=54, order_seed=1,
+        injector=injector, prober=prober, detector=detector,
+        timeout_sec=1, poll_interval_sec=0.2, results_dir=tmp_path,
+    )
+
+    assert result.outcome == "timeout", result.outcome
+    assert dcalls["stop"] == 1, "timeout이어도 detector.stop()은 호출돼야 함"
+    print("OK - timeout이어도 detector는 정리됨")
+
+
+def test_detector_process_field_records_name(tmp_path):
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+    detector, dcalls = _fake_detector(name="isolation_forest")
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=55, sequence_index=55, order_seed=1,
+        injector=injector, prober=prober, detector=detector,
+        timeout_sec=5, poll_interval_sec=0.1, results_dir=tmp_path,
+    )
+
+    assert result.detector_process == "isolation_forest"
+    print("OK - detector.name이 TrialResult.detector_process에 정확히 기록됨:", result.detector_process)
+
+
+def test_detector_none_leaves_detector_process_null(tmp_path):
+    # 하위호환 - detector=None(기본값, native)이면 detector_process도 null.
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=56, sequence_index=56, order_seed=1,
+        injector=injector, prober=prober,
+        timeout_sec=5, poll_interval_sec=0.1, results_dir=tmp_path,
+    )
+
+    assert result.detector_process is None
+    print("OK - detector 미지정 시 detector_process는 null(회귀 없음)")
+
+
 @pytest.mark.live_cluster
 def test_real_experiment_context_registration_non_native_arm(tmp_path):
     """native가 아닌 arm은 실제 recovery-policy에 quiescence 확인 +
@@ -822,6 +986,13 @@ if __name__ == "__main__":
         test_detection_and_action_stage_stay_none_without_source_timestamp,
         test_stage_fields_stay_none_when_classify_stage_unimplemented,
         test_classify_stage_exception_does_not_break_trial,
+        test_detector_starts_only_after_baseline_ready,
+        test_injection_starts_only_after_detector_start,
+        test_detector_crash_marks_invalid_run,
+        test_detector_stopped_even_when_injector_raises,
+        test_detector_stopped_on_timeout,
+        test_detector_process_field_records_name,
+        test_detector_none_leaves_detector_process_null,
     )
     live_cluster_tests = (
         test_real_experiment_context_registration_non_native_arm,

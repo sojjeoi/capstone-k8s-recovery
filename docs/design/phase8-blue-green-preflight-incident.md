@@ -2698,3 +2698,137 @@ baseline 5개 필드도 `experiment-contract.md`에 함께 보완했다(발견
 실행(3-arm 파일럿, 아직 미시작)부터 stage 정보가 정확히 기록되도록
 하는 순수 인프라 추가다. 다른 arm·시나리오·60회 본 실험, 그리고
 3-arm 파일럿 자체로도 아직 넘어가지 않는다.
+
+## 32. arm 오케스트레이션 완성 - 3-arm 파일럿 전 detector·preview 배선 (2026-09-18)
+
+### 32.1 문제 확인
+
+`load_ramp native` E2E PASS 확정(§31.1)과 함께, 3-arm 파일럿에 앞서
+지적된 문제: `run_load_ramp_trial.py --arm fixed_threshold|proposed`는
+`--arm` 이름만 결과에 태깅할 뿐, 실제 `fixed_threshold.py`/
+`score_server.py` 프로세스를 실행·종료하지도, non-native arm에 필요한
+preview(standby)를 준비하지도 않았다(직접 코드 확인 - `run_once()`
+호출 인자 어디에도 detector·preview 관련 항목이 없었음). 그대로
+non-native arm을 실행했다면 detector가 실제로는 동작하지 않은 채
+"fixed_threshold"/"proposed"로 잘못 라벨링된 결과가 생겼을 것이다.
+
+### 32.2 계약서 §1 재확인 - 세 arm의 실제 실행 조건
+
+새로 추정하지 않고 `docs/design/experiment-contract.md` §1을 그대로
+표로 정리했다:
+
+| 항목 | `native` | `fixed_threshold` | `proposed` |
+|---|---|---|---|
+| 예측 모델(탐지 알고리즘) | 없음 | 고정 임계치(CPU>90%, `anomaly-detection/fixed_threshold.py`) | Isolation Forest(`anomaly-detection/score_server.py`) |
+| Alertmanager 반응형 fallback | 없음 | 있음(fixed_threshold와 공통) | 있음(fixed_threshold와 공통) |
+| standby(preview) | 없음 | 있음 | 있음 |
+| promotion 경로 | 없음 | 있음 | 있음 |
+| recovery-policy 서비스 | 미기동(개입 자체 없음) | 기동(`/signal`+`/webhooks/alertmanager`+Alertmanager 라우팅) | 기동(동일 - fixed_threshold와 완전히 같은 인프라) |
+| detector 프로세스 | 없음 | `fixed_threshold.py --run-id <run_id>` | `score_server.py --run-id <run_id>` |
+
+fixed_threshold와 proposed는 예측 모델만 다르고 나머지 인프라
+(recovery-policy·Alertmanager fallback·standby/promotion)는 완전히
+동일하다는 게 계약서의 핵심 통제변수이므로(§1 "순수 탐지방식 비교"),
+아래 구현에서 두 arm은 실행할 스크립트만 다를 뿐 동일한 메커니즘
+(`arm_controller.py`)을 공유한다.
+
+### 32.3 구현
+
+**`anomaly-detection/score_server.py`**: `RECOVERY_POLICY_URL`을
+하드코딩된 in-cluster DNS 대신 `RECOVERY_POLICY_SIGNAL_URL`
+환경변수로 덮어쓸 수 있게 했다(미지정 시 기존 in-cluster DNS 기본값
+그대로 - 하위호환). `fixed_threshold.py`는 이 상수를 `score_server.py`
+에서 직접 import해 쓰므로 같이 고쳐진다. 로컬 서브프로세스로 돌릴
+때(아래) 기존엔 소스를 직접 고쳐야 했던 절차(파일 자체 주석에 그렇게
+쓰여 있었음)를 없앴다.
+
+**신규 `experiments/arm_controller.py`**:
+- `_DETECTOR_SCRIPTS` - native 제외 2개 arm만 담는 dispatch 테이블
+  (`{"fixed_threshold": {"script": "fixed_threshold.py", "name":
+  "fixed_threshold"}, "proposed": {"script": "score_server.py",
+  "name": "isolation_forest"}}`) - "name"은 각 스크립트가
+  `post_to_recovery_policy()`로 실제 보내는 `detector=` 태그와
+  정확히 일치시켜, 사후에 recovery-policy 수신 신호와 대조 검증할 수
+  있게 했다. dict 기반 단일 조회라 arm과 스크립트가 구조적으로 어긋날
+  수 없다(if/elif 분기 복붙 실수 같은 경로 자체가 없음).
+- `_build_detector_command(arm, run_id)` - 순수 함수(커맨드 리스트만
+  조립, 프로세스 안 띄움) - 오프라인 테스트에서 run_id 전파를
+  실행 없이 검증 가능하게 분리.
+- `_subprocess_detector(cmd, name, cwd)` - 서브프로세스 생명주기
+  (start/is_alive/stop, `run_once.py`의 새 `Detector` 프로토콜)만
+  담당하는 작은 헬퍼 - detector 스크립트 자체 내용과 분리해서,
+  trivial한 커맨드(`python -c "..."`)로도 생명주기 정확성을
+  오프라인 검증할 수 있게 했다(실제 detector 스크립트는 Prometheus·
+  모델 파일 의존이라 오프라인 테스트 대상이 아님). `stop()`은
+  idempotent(시작 전 호출도 안전), `terminate()` 후
+  `STOP_TIMEOUT_SEC`(10초) 안에 안 죽으면 `kill()`.
+- `make_detector_for_arm(arm, run_id)` - native면 `None`,
+  아니면 위 둘을 엮어 실제 `Detector`를 만든다. 서브프로세스 시작 시
+  `RECOVERY_POLICY_SIGNAL_URL=http://localhost:8080/signal`을
+  환경변수로 넘긴다(`kubectl port-forward -n vllm-serving
+  svc/recovery-policy 8080:8080` 전제 - `run_once.py`의
+  `RECOVERY_POLICY_URL`과 동일한 기존 로컬 실행 전제를 그대로 따름,
+  새 조건 아님).
+- `wrap_injector_with_preview_prep(injector, arm, ...,
+  prepare_preview_fn=blue_green_prep.prepare_preview)` - native는
+  원본 injector를 그대로 반환. non-native면 `injector.prepare()`
+  앞에 `prepare_preview()`(기존 `experiments/blue_green_prep.py` -
+  `run_calibration.py`가 이미 쓰고 있던 코드, 새로 안 만듦)를 배선 -
+  실패하면(시간 내 Ready 안 됨) `TrialInvalid`를 던져 `run_once()`의
+  PREPARING 단계가 그대로 `invalid_run` 처리하고
+  `injector.inject()`는 호출되지 않는다(기존 "probe 미준비면 주입
+  안 함"과 동일한 안전장치 재사용).
+
+**`experiments/run_once.py`**: 새 `Detector` 프로토콜(start/is_alive/
+stop/name, `Injector`/`Prober`와 같은 작은 콜백 묶음 dataclass 패턴).
+`run_once(..., detector: Optional[Detector] = None)` - baseline 확보
+(BASELINE 단계 통과, §29)와 context 등록(READY 단계, 기존 순서상
+이미 baseline보다 앞)이 모두 끝난 뒤, 주입 직전에 `detector.start()`를
+정확히 한 번 호출한다(지시). OBSERVING 루프에서 `prober.is_alive()`와
+나란히 `detector.is_alive()`를 확인 - 죽으면 `TrialInvalid("detector가
+관찰 도중 비정상 종료")`. finally에서 prober/injector보다 먼저
+`detector.stop()`을 호출하고(정리 과정 자체가 오염되는 걸 최소화하려는
+순서), 곧바로 `is_alive()`로 실제 종료를 재확인 - 여전히 살아있으면
+`critical_failures`에 추가돼 `HarnessCorrupted`(prober의 기존
+leak-check와 동일한 심각도). `TrialResult.detector_process`에
+`detector.name`을 기록(detector가 실제로 시작에 성공했는지와 무관하게
+채워지는 감사 필드 - "이 trial이 어떤 detector로 실행되려 했는가").
+
+**`experiments/run_load_ramp_trial.py`**: `injector`를
+`arm_controller.wrap_injector_with_preview_prep()`으로 무조건 감싸고,
+`arm_controller.make_detector_for_arm()`으로 만든 `detector`를
+`run_once()`에 무조건 전달하도록 고쳤다 - `--arm` 값만 바꿔 orchestration
+없이 non-native arm을 실행할 경로 자체가 이제 없다(fail-closed, 지시).
+`--rollout`/`--namespace` CLI 인자를 추가(기존 `run_calibration.py`와
+동일한 패턴, 기본값 `vllm-serving`/`vllm-serving` - 실제 클러스터
+설정과 일치, 이번 세션 직접 확인).
+
+### 32.4 오프라인 테스트
+
+- 신규 `test_arm_controller.py`(10개): native는 detector 없음,
+  fixed_threshold/proposed는 각각 정확한 스크립트·`detector.name`
+  하나만 반환(서로 안 섞임), dispatch 테이블이 native 제외 2개 arm만
+  담고 서로 다른 스크립트/이름을 가짐, run_id가 `--run-id` 인자로
+  정확히 전파, 서브프로세스 생명주기(시작 전 죽어있음→시작 후
+  살아있음→정지 후 죽어있음→재정지 idempotent, 즉시 크래시하는
+  프로세스는 곧 is_alive()=False로 관측), preview 준비가 native는
+  건너뜀/성공 시 원본 prepare() 호출/**실패 시 원본 prepare()(=이후
+  injection)가 호출되지 않음**(핵심 회귀).
+- `test_run_once.py`(+7개): detector는 baseline 확보 이후에만
+  시작(실제 호출 순서 로그 `['baseline_ready', 'detector_start',
+  'inject', 'detector_stop']`로 확인), injection은 detector 시작
+  이후에만 실행, detector가 관찰 도중 크래시하면 invalid_run,
+  injector.inject() 예외·timeout 각각에서도 detector.stop()은 반드시
+  호출됨, `detector_process` 필드가 `detector.name`을 정확히 기록,
+  detector 미지정(기본값) 시 필드가 null로 남는 하위호환.
+- 전체 스위트 `pytest experiments/ -m "not live_cluster"`:
+  **153 passed, 2 deselected**(live_cluster).
+
+### 32.5 결론
+
+3-arm 파일럿 전 요구된 arm 오케스트레이션을 오프라인으로 완성했다 -
+실클러스터 작업은 하지 않았다(지시대로). `run_load_ramp_trial.py`는
+이제 세 arm 모두 이 스크립트 하나로 안전하게 돌 수 있고, non-native
+arm은 orchestration을 우회할 방법이 없다. 3-arm 파일럿 자체는 아직
+실행하지 않았다 - 다음 지시를 기다린다. 다른 시나리오·60회 본
+실험으로도 넘어가지 않았다.
