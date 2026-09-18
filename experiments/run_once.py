@@ -493,6 +493,22 @@ def _clear_experiment_context(run_id: str, arm: str) -> None:
     resp.raise_for_status()
 
 
+def _get_experiment_timing(arm: str) -> Optional[dict]:
+    """t_detection/t_api_request의 authoritative source(2026-09-19 추가) -
+    recovery-policy가 신호를 수락하거나 promotion을 시도한 실제 시각을
+    process_signal() 내부에서 동기적으로 기록해둔 admin 엔드포인트를 읽는다.
+    detector 프로세스 stdout이나 비동기 Git 감사기록(git_client.py)은
+    지연·실패가 있어도 그 함수의 반환을 막지 않게 설계돼 있어 timestamp
+    원천으로 쓸 수 없다(지시) - 이 엔드포인트 값만 신뢰한다. native는
+    recovery-policy 자체가 안 떠있으므로(계약서 §1) 호출하지 않고 None -
+    다른 admin 헬퍼들과 동일한 관례."""
+    if arm == "native":
+        return None
+    resp = requests.get(f"{RECOVERY_POLICY_URL}/admin/experiment-run/timing", timeout=ADMIN_TIMEOUT_SEC)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def run_once(
     scenario: str, arm: str, rep: int, sequence_index: int, order_seed: int,
     injector: Injector, prober: Prober, timeout_sec: float, poll_interval_sec: float = 1.0,
@@ -713,6 +729,38 @@ def run_once(
         result.outcome = "invalid_run"
         result.invalid_reason = f"예외: {type(e).__name__}: {e}"
     finally:
+        # t_detection/t_api_request 회수(2026-09-19 추가) - context가
+        # clear되기 전에(아래에서 더 나중에 일어남) 반드시 먼저 읽어야 한다.
+        # native는 조회 대상 자체가 없어 스킵(계약서 §1 재확인 - recovery-
+        # policy·detector·preview 전부 비활성). context_registered=False면
+        # (이 arm이 non-native인데도) 애초에 이 trial 몫의 experiment context가
+        # recovery-policy에 등록된 적이 없다는 뜻이라 조회 자체를 시도하지
+        # 않는다(트래픽 낭비 + 남의 context를 잘못 읽을 위험 방지) - 이미
+        # 다른 이유로 invalid_run이 확정돼 있을 것이므로 별도 처리 불필요.
+        # "값이 없다"(정말 무탐지)와 "확인 자체가 안 됐다"를 구분해야
+        # 하므로(지시), 엔드포인트 응답이 없거나 run_id가 안 맞으면 조용히
+        # null로 남기지 않고 이 trial을 명시적으로 invalid_run 처리한다 -
+        # 단, 이미 다른 사유로 invalid_run이 확정된 trial의 기존 사유는
+        # 덮어쓰지 않는다(더 구체적인 원인을 보존).
+        if arm != "native" and context_registered:
+            try:
+                timing = _get_experiment_timing(arm)
+                if timing is not None and timing.get("run_id") == run_id:
+                    result.t_detection = timing.get("t_detection")
+                    result.t_api_request = timing.get("t_api_request")
+                elif result.outcome != "invalid_run":
+                    result.outcome = "invalid_run"
+                    result.invalid_reason = (
+                        "recovery-policy에 이 run_id의 experiment context가 없음 - "
+                        "t_detection/t_api_request 회수 불가"
+                    )
+                    result.notes += "timing 조회 결과 run_id 불일치 또는 context 없음 | "
+            except Exception as e:
+                if result.outcome != "invalid_run":
+                    result.outcome = "invalid_run"
+                    result.invalid_reason = f"recovery-policy timing 엔드포인트 조회 실패: {e}"
+                result.notes += f"t_detection/t_api_request 회수 실패 - {e} | "
+
         # stage 분류(2026-09-18 추가) - cleanup()으로 pod가 삭제되기 전,
         # injector가 아직 살아있는 이 시점에 수행한다. classify_stage()
         # 자체가 "예외를 던지면 안 된다"는 계약이지만, 이 보조 정보 하나

@@ -285,6 +285,171 @@ def test_stale_alert_not_tagged_with_current_run():
     client.post("/admin/experiment-run/clear", params={"run_id": "run-c"})
 
 
+def test_predictive_signal_sets_t_detection():
+    _reset_state()
+    ctx = {"run_id": "timing-predictive-01", "scenario": "load_ramp", "arm": "proposed",
+           "rep": 1, "started_at": "2026-09-19T00:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx)
+    assert client.get("/admin/experiment-run/timing").json()["t_detection"] is None
+
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json={
+            "signal_type": "anomaly_risk", "score": -0.05,
+            "timestamp": "2026-09-19T00:00:05+00:00",
+            "experiment_run_id": "timing-predictive-01", "detector": "isolation_forest",
+        })
+
+    timing = client.get("/admin/experiment-run/timing").json()
+    assert timing["run_id"] == "timing-predictive-01"
+    assert timing["t_detection"] is not None
+    print("OK - 예측 신호(/signal)가 t_detection을 채움:", timing["t_detection"])
+    client.post("/admin/experiment-run/clear", params={"run_id": "timing-predictive-01"})
+
+
+def test_reactive_alert_sets_t_detection():
+    _reset_state()
+    ctx = {"run_id": "timing-reactive-01", "scenario": "pod_kill", "arm": "fixed_threshold",
+           "rep": 1, "started_at": "2026-09-19T01:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx)
+
+    payload = {
+        "status": "firing",
+        "alerts": [{
+            "status": "firing", "labels": {"alertname": "VLLMTargetDown"}, "annotations": {},
+            "startsAt": "2026-09-19T01:00:05Z", "fingerprint": "timing-reactive-fp",
+        }],
+    }
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/webhooks/alertmanager", json=payload)
+
+    timing = client.get("/admin/experiment-run/timing").json()
+    assert timing["run_id"] == "timing-reactive-01"
+    assert timing["t_detection"] is not None
+    print("OK - 반응형 alert(/webhooks/alertmanager)가 t_detection을 채움")
+    client.post("/admin/experiment-run/clear", params={"run_id": "timing-reactive-01"})
+
+
+def test_duplicate_signal_does_not_overwrite_t_detection():
+    _reset_state()
+    ctx = {"run_id": "timing-dup-01", "scenario": "load_ramp", "arm": "proposed",
+           "rep": 1, "started_at": "2026-09-19T02:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx)
+
+    payload = {"signal_type": "anomaly_risk", "score": -0.05, "timestamp": "2026-09-19T02:00:05+00:00",
+               "experiment_run_id": "timing-dup-01"}
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json=payload)
+        first_timing = client.get("/admin/experiment-run/timing").json()
+        second_resp = client.post("/signal", json=payload)  # 동일 payload -> 동일 idempotency_key -> 중복
+    assert second_resp.json()["outcome"] == "skipped_duplicate"
+    second_timing = client.get("/admin/experiment-run/timing").json()
+    assert second_timing["t_detection"] == first_timing["t_detection"], "중복 신호가 t_detection을 갱신하면 안 됨"
+    print("OK - 중복(재전송) 신호는 t_detection을 덮어쓰지 않음")
+    client.post("/admin/experiment-run/clear", params={"run_id": "timing-dup-01"})
+
+
+def test_stale_and_different_run_id_signals_do_not_set_t_detection():
+    _reset_state()
+    ctx = {"run_id": "timing-isolation-01", "scenario": "network_degrade", "arm": "fixed_threshold",
+           "rep": 1, "started_at": "2026-09-19T03:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx)
+
+    # 1) 다른 run_id를 직접 실은 예측 신호(예: 정리 안 된 이전 trial의 detector가
+    # 계속 보내는 신호를 흉내)
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json={
+            "signal_type": "anomaly_risk", "score": -0.05, "timestamp": "2026-09-19T03:00:05+00:00",
+            "experiment_run_id": "some-other-run-id",
+        })
+    assert client.get("/admin/experiment-run/timing").json()["t_detection"] is None, \
+        "다른 run_id를 실은 신호가 t_detection을 채우면 안 됨"
+
+    # 2) stale alert(등록 시각보다 이전 startsAt)
+    payload = {
+        "status": "firing",
+        "alerts": [{
+            "status": "firing", "labels": {"alertname": "VLLMTargetMissing"}, "annotations": {},
+            "startsAt": "2026-09-19T02:59:00Z", "fingerprint": "timing-stale-fp",  # 등록(03:00:00)보다 이전
+        }],
+    }
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/webhooks/alertmanager", json=payload)
+    assert client.get("/admin/experiment-run/timing").json()["t_detection"] is None, \
+        "stale alert가 t_detection을 채우면 안 됨"
+    print("OK - 다른 run_id·stale alert 둘 다 t_detection을 채우지 않음")
+    client.post("/admin/experiment-run/clear", params={"run_id": "timing-isolation-01"})
+
+
+def test_no_action_leaves_t_api_request_null():
+    _reset_state()
+    ctx = {"run_id": "timing-noaction-01", "scenario": "load_ramp", "arm": "proposed",
+           "rep": 1, "started_at": "2026-09-19T04:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx)
+    with patch("main.is_paused_pre_promotion", return_value=False):  # preview 없음 -> observe_only
+        client.post("/signal", json={
+            "signal_type": "anomaly_risk", "score": -0.05, "timestamp": "2026-09-19T04:00:05+00:00",
+            "experiment_run_id": "timing-noaction-01",
+        })
+    timing = client.get("/admin/experiment-run/timing").json()
+    assert timing["t_detection"] is not None
+    assert timing["t_api_request"] is None
+    print("OK - 조치가 없으면(observe_only) t_api_request는 null로 남음")
+    client.post("/admin/experiment-run/clear", params={"run_id": "timing-noaction-01"})
+
+
+def test_promotion_sets_t_api_request_after_t_detection():
+    _reset_state()
+    ctx = {"run_id": "timing-promote-01", "scenario": "load_ramp", "arm": "fixed_threshold",
+           "rep": 1, "started_at": "2026-09-19T05:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx)
+    with patch("main.is_paused_pre_promotion", return_value=True), \
+         patch("main.promote", return_value={"method": "cli", "requested": True, "verified": True}):
+        client.post("/signal", json={
+            "signal_type": "anomaly_risk", "score": -0.05, "timestamp": "2026-09-19T05:00:05+00:00",
+            "experiment_run_id": "timing-promote-01",
+        })
+    timing = client.get("/admin/experiment-run/timing").json()
+    assert timing["t_detection"] is not None
+    assert timing["t_api_request"] is not None
+    from datetime import datetime as _dt
+    assert _dt.fromisoformat(timing["t_detection"]) <= _dt.fromisoformat(timing["t_api_request"])
+    print("OK - 실제 promotion 시 t_api_request가 채워지고 t_detection <= t_api_request")
+    client.post("/admin/experiment-run/clear", params={"run_id": "timing-promote-01"})
+
+
+def test_context_clear_removes_timing_for_next_trial():
+    _reset_state()
+    ctx1 = {"run_id": "timing-clear-01", "scenario": "load_ramp", "arm": "proposed",
+            "rep": 1, "started_at": "2026-09-19T06:00:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx1)
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json={
+            "signal_type": "anomaly_risk", "score": -0.05, "timestamp": "2026-09-19T06:00:05+00:00",
+            "experiment_run_id": "timing-clear-01",
+        })
+    assert client.get("/admin/experiment-run/timing").json()["t_detection"] is not None
+    client.post("/admin/experiment-run/clear", params={"run_id": "timing-clear-01"})
+
+    ctx2 = {"run_id": "timing-clear-02", "scenario": "load_ramp", "arm": "proposed",
+            "rep": 2, "started_at": "2026-09-19T06:10:00+00:00"}
+    client.post("/admin/experiment-run", json=ctx2)
+    timing2 = client.get("/admin/experiment-run/timing").json()
+    assert timing2["run_id"] == "timing-clear-02"
+    assert timing2["t_detection"] is None
+    assert timing2["t_api_request"] is None
+    print("OK - context clear 후 다음 trial 등록엔 이전 timing이 남지 않음")
+    client.post("/admin/experiment-run/clear", params={"run_id": "timing-clear-02"})
+
+
+def test_timing_endpoint_null_when_no_active_experiment():
+    current = client.get("/admin/experiment-run").json()["current"]
+    if current is not None:
+        client.post("/admin/experiment-run/clear", params={"run_id": current["run_id"]})
+    timing = client.get("/admin/experiment-run/timing").json()
+    assert timing == {"run_id": None, "t_detection": None, "t_api_request": None}
+    print("OK - 활성 실험이 없으면 timing 엔드포인트가 전부 null")
+
+
 if __name__ == "__main__":
     test_healthz()
     test_quiescent_true_when_no_active_alerts()
@@ -301,5 +466,13 @@ if __name__ == "__main__":
     test_reset_cooldown_requires_quiescent_and_no_active_context()
     test_get_experiment_run_reflects_current_state()
     test_stale_alert_not_tagged_with_current_run()
+    test_predictive_signal_sets_t_detection()
+    test_reactive_alert_sets_t_detection()
+    test_duplicate_signal_does_not_overwrite_t_detection()
+    test_stale_and_different_run_id_signals_do_not_set_t_detection()
+    test_no_action_leaves_t_api_request_null()
+    test_promotion_sets_t_api_request_after_t_detection()
+    test_context_clear_removes_timing_for_next_trial()
+    test_timing_endpoint_null_when_no_active_experiment()
     _reset_state()
     print("모두 통과")

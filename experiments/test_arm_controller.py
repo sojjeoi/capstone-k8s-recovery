@@ -3,15 +3,18 @@
 fixed_threshold.py/score_server.py(Prometheus·모델 파일 의존)나 실클러스터
 없이 오프라인으로 돈다. 서브프로세스 생명주기 자체는 _subprocess_detector()에
 trivial한 python -c 커맨드를 직접 넣어 검증하고, preview 준비는
-prepare_preview_fn을 가짜로 주입해 검증한다."""
+prepare_preview_fn을, RECOVERY_POLICY_SIGNAL_URL reachability(2026-09-19
+추가)는 reachability_check_fn을 가짜로 주입해 검증한다."""
 import sys
 import time
+from unittest.mock import MagicMock, patch
 
 sys.stdout.reconfigure(encoding="utf-8")
 
 from arm_controller import (
     _DETECTOR_SCRIPTS,
     _build_detector_command,
+    _resolved_signal_url,
     _subprocess_detector,
     make_detector_for_arm,
     wrap_injector_with_preview_prep,
@@ -141,6 +144,39 @@ def test_wrap_injector_with_preview_prep_failure_blocks_original_prepare():
     print("OK - preview 준비 실패 시 TrialInvalid, 원본 prepare()/이후 injection 미실행")
 
 
+def test_make_detector_for_arm_reachability_check_blocks_start_when_unreachable():
+    detector = make_detector_for_arm("fixed_threshold", "run-1", reachability_check_fn=lambda url: False)
+    raised = False
+    try:
+        detector.start()
+    except TrialInvalid:
+        raised = True
+    assert raised, "RECOVERY_POLICY_SIGNAL_URL이 접근 불가능하면 TrialInvalid를 던져야 함"
+    assert detector.is_alive() is False, "reachability 확인에 실패하면 detector 프로세스 자체를 띄우면 안 됨"
+    print("OK - RECOVERY_POLICY_SIGNAL_URL 접근 불가 시 detector.start()가 TrialInvalid로 fail-closed(주입도 자동 차단)")
+
+
+def test_make_detector_for_arm_reachability_check_passes_allows_start():
+    fake_proc = MagicMock()
+    fake_proc.poll.return_value = None  # 계속 살아있는 것처럼
+    with patch("arm_controller.subprocess.Popen", return_value=fake_proc) as mock_popen:
+        detector = make_detector_for_arm("proposed", "run-1", reachability_check_fn=lambda url: True)
+        detector.start()
+        assert mock_popen.called, "reachability 통과 시 실제 서브프로세스 시작 시도까지 이어져야 함"
+    print("OK - RECOVERY_POLICY_SIGNAL_URL 접근 가능하면 detector.start()가 정상적으로 서브프로세스를 시작함")
+
+
+def test_resolved_signal_url_prefers_env_override():
+    import os
+    assert _resolved_signal_url() == "http://localhost:8080/signal"
+    os.environ["RECOVERY_POLICY_SIGNAL_URL"] = "http://localhost:9999/signal"
+    try:
+        assert _resolved_signal_url() == "http://localhost:9999/signal"
+    finally:
+        del os.environ["RECOVERY_POLICY_SIGNAL_URL"]
+    print("OK - RECOVERY_POLICY_SIGNAL_URL 환경변수가 있으면 그 값을, 없으면 로컬 기본값을 씀")
+
+
 if __name__ == "__main__":
     test_make_detector_for_arm_native_returns_none()
     test_make_detector_for_arm_fixed_threshold_dispatches_correct_script()
@@ -152,4 +188,7 @@ if __name__ == "__main__":
     test_wrap_injector_with_preview_prep_native_passthrough()
     test_wrap_injector_with_preview_prep_success_calls_original_prepare()
     test_wrap_injector_with_preview_prep_failure_blocks_original_prepare()
+    test_make_detector_for_arm_reachability_check_blocks_start_when_unreachable()
+    test_make_detector_for_arm_reachability_check_passes_allows_start()
+    test_resolved_signal_url_prefers_env_override()
     print("\n모두 통과")

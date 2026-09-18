@@ -144,10 +144,10 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 | `t_injection_observed` | ISO8601 UTC | 주입 효과를 처음 관측한 시각. 어댑터가 `get_actual_injection_time()`을 구현하면 실제 삭제/시작 시각 그 자체가 아니라 폴링으로 그 변화를 **처음 관측한** 시각(미구현이면 `t_injection_request`와 동일)(2026-09-18 추가, 이전엔 `t_injection`이 이 역할) |
 | `injection_observation_error_sec` | float \| null | 3단계 우선순위로 계산(2026-09-18 정정): 1) 어댑터의 `get_injection_observation_error_sec()`, 2) 없으면 `t_injection_last_seen`~`t_injection_observed`, 3) `t_injection_last_seen`도 없으면(첫 poll에서 이미 사라짐) `t_injection_request`~`t_injection_observed`. 전부 실측 구간이지 `poll_interval_sec` 같은 임의 설정값은 없다(2026-09-16 정정) - `injection_valid=true`인 trial은 이제 이 필드가 절대 null로 남지 않는다 |
 | `t_injection_end` | ISO8601 UTC | chaos 자체가 끝난 시각(§4 종료조건①) |
-| `t_detection` | ISO8601 UTC \| null | 미탐지면 null |
+| `t_detection` | ISO8601 UTC \| null | **authoritative source: recovery-policy**(2026-09-19 명확화). 현재 run에 속하는 유효한 예측 신호(`/signal`) 또는 반응형 alert(`/webhooks/alertmanager`)를 recovery-policy가 처음 수락해 정책 판단 대상으로 확정한 시각 - `process_signal()`이 idempotency 통과 직후, `policy.decide()` 호출 전에 `datetime.now()`로 동기 기록한다. 재시도·중복 신호로는 덮어써지지 않고(첫 값만 유지), 다른 run_id의 신호나 stale alert(등록 시각 이전)는 애초에 후보가 안 된다. `run_once()`가 `GET /admin/experiment-run/timing`으로 회수 - detector 프로세스 stdout이나 비동기 Git 감사기록은 원천으로 안 씀. `arm=native`는 조회 대상 자체가 없어 항상 null. 조회 자체가 실패하면(non-native) `invalid_run`(§5.1) |
 | `detection_stage` | str \| null | `t_detection`이 실제로 어느 실험 단계에 속했는지(2026-09-18 추가, stage 관측성 보완 - `load_ramp`만 구현). `t_detection`이 null이면 이 필드도 null(사건 자체가 없음). 값은 아래 `slo_stage`와 동일한 분류 체계 |
 | `t_decision` | ISO8601 UTC \| null | |
-| `t_api_request` | ISO8601 UTC \| null | |
+| `t_api_request` | ISO8601 UTC \| null | **authoritative source: recovery-policy**(2026-09-19 명확화). 실제 promotion API/CLI 호출(`rollouts_client.promote()`)을 시작하기 직전의 시각 - cooldown 통과 후, `promote()` 호출 바로 앞에서 `datetime.now()`로 동기 기록. 조치가 없으면(observe_only/rule-out/unknown/cooldown-skip) null로 남는다. 구조적으로 `t_detection <= t_api_request`(같은 요청 처리 흐름 안에서 순서대로 기록되거나, 더 이른 신호가 이미 `t_detection`을 채운 뒤 나중 신호가 조치로 이어짐). 나머지 회수 방식은 `t_detection`과 동일 |
 | `action_stage` | str \| null | `t_api_request`(정책이 실제로 조치를 실행한 시각) 기준 stage 분류 - `t_api_request`가 null이면 null. 분류 체계는 `slo_stage`와 동일 |
 | `t_switch` | ISO8601 UTC \| null | |
 | `t_slo` | ISO8601 UTC \| null | `outcome=prevented`면 null. `timing_schema_version=v2`부터는 실패가 확정된 **완료 시각**(`sent_at+latency`) 기준 - 요청을 보낸 시각(`sent_at`)이 아니다(2026-09-18 정정 - pod_kill 파일럿에서 `t_slo`가 `t_injection`보다 앞서는 사례 발견, 원인은 전송 시각을 판정 시각으로 오용한 것). |
@@ -196,6 +196,38 @@ out` 관련 결함으로 전부 fetch 실패) stage 정보를 못 얻으면, 그
 (주입 시각+90초 단위)으로만 참고 가능, 실제 경계는 확인 불가"라고
 표시한다 - 추정값을 확정값처럼 보고하지 않는다.
 
+### 5.2 `t_detection`/`t_api_request` 회수 - admin 엔드포인트 (2026-09-19 추가)
+
+recovery-policy가 `_current_experiment`(§1 ambient 등록 메커니즘)에
+`t_detection`/`t_api_request`를 직접 보관하고, `GET /admin/experiment-
+run/timing`으로 조회할 수 있게 한다:
+
+```
+GET /admin/experiment-run/timing
+-> {"run_id": str | null, "t_detection": ISO8601 | null, "t_api_request": ISO8601 | null}
+```
+
+활성 experiment context가 없으면 셋 다 null. `run_once()`는 이 값을
+읽을 때 응답의 `run_id`가 자기 trial의 `run_id`와 일치하는지 반드시
+확인한다 - 불일치(레이스, 등록 유실 등)나 조회 자체의 실패(네트워크
+오류 등)는 조용히 null로 남기지 않고 **명시적으로 `invalid_run`**
+처리한다("무탐지"와 "확인 불가"를 구분하기 위함, 지시) - 단, 이미 다른
+사유로 `invalid_run`이 확정된 trial의 기존 `invalid_reason`은 덮어쓰지
+않는다(더 구체적인 원인 보존). `arm=native`는 이 엔드포인트 자체를
+호출하지 않는다(recovery-policy가 안 떠있음 - §1).
+
+### 5.3 `RECOVERY_POLICY_SIGNAL_URL` 도달성 사전 확인 (2026-09-19 추가)
+
+`score_server.py`/`fixed_threshold.py`를 로컬 서브프로세스로 띄우는
+`arm_controller.make_detector_for_arm()`은, 실제로 서브프로세스를
+시작하기 전에 `RECOVERY_POLICY_SIGNAL_URL`(또는 미지정 시 로컬 기본값
+`http://localhost:8080/signal`)이 도달 가능한지 같은 host:port의
+`/healthz`로 확인한다(`/signal`에 직접 요청하면 진짜 신호로 처리돼
+idempotency·감사기록이 오염되므로 부작용 없는 엔드포인트를 씀). 도달
+불가면 `TrialInvalid`를 던져 detector 프로세스 자체를 시작하지 않고,
+`detector.start()`가 baseline 확보 후·주입 직전에 호출되므로(§32) chaos
+주입도 자동으로 일어나지 않는다(fail-closed, 지시).
+
 ## 6. 안전장치 — `run_once()`가 매 trial마다 반드시 함
 
 - 이전 trial의 firing 상태 Alertmanager 알림이 다음 `run_id`로 새지 않도록, trial 사이 **quiescence 대기**(모든 알림이 resolved 상태가 될 때까지) — §4 trial 종료조건③과 동일 개념
@@ -238,3 +270,4 @@ out` 관련 결함으로 전부 fetch 실패) stage 정보를 못 얻으면, 그
 - 2026-09-18: 바로 위 항목에서 추가한 필드들이 실제로 trial JSON -> `comparison.csv`까지 이어지는지 질문받아 `collect_metrics.py`의 `build_comparison()`을 직접 읽어 확인했다 - `TrialResult`에 필드를 추가하면 `asdict()`로 원본 JSON에는 자동으로 남지만, `comparison.csv`는 `build_comparison()`의 명시적 화이트리스트 dict라 새 필드를 안 넣으면 절대 안 나온다. 실제로 `readiness_probe_profile`/`readiness_probe_timeout_sec`/`target_replaced`/`t_target_replaced`/`target_replacement_pod_name`/`target_replacement_pod_uid` 6개가 전부 빠져 있었다 - 6개 모두 추가. 또한 `readiness_probe_profile`+`target_replaced` 조합을 해석하는 분석 전용 필드 2개를 새로 추가했다: `restart_chain_observed`(default profile에서 target_replaced 그대로 - 연쇄장애 자체가 관찰 대상), `probe_isolation_held`(network_tolerant profile에서 target_replaced의 반대 - 그 설정이 열화로부터 probe를 실제로 격리했는지). 어느 쪽도 `outcome`을 바꾸지 않는다(SLO 판정과 별개). tolerant profile에서 교체가 있었는데 `outcome=prevented`로만 남으면 "설정이 열화를 견뎠다"로 오해할 위험이 있어(위반이 안 잡힌 이유가 실제로는 pod이 바뀌어 무의미해진 측정일 수 있음) `_check_tolerant_profile_prevented_misleading()`으로 별도 issue도 남기게 했다(native+prevented 검증과 같은 패턴). 회귀 테스트 6개 추가(default/tolerant 조합 3가지, 오해소지 issue 검출, 신규 필드 없는 기존 결과의 하위호환, trial JSON 파일→comparison.csv 파일까지의 실제 왕복 확인). 오프라인 스위트 75 passed, 2 skipped(live_cluster). 실클러스터 작업 없음.
 - 2026-09-18: `load_ramp × native` 파일럿(`pilot-load_ramp-native-01-20260918T141420Z`)을 유효한 `load_ramp native 경로 E2E PASS`로 확정(§29 baseline gate가 실클러스터에서 정상 동작함을 실측 확인, 위반 자체도 표본 충분·단일 전환점·stage3 진행 중 발생으로 근거가 명확 - 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §30 참고). 3-arm 파일럿 전 stage 관측성을 보완했다(실클러스터 작업 없음, 코드·테스트·문서만) - `load_ramp_adapter.py`가 `ramp.py --summary-out`에 run별 고유 경로(`/ramp-summary-{run_id}.csv`)를 넘기고, `is_done()`이 정상 종료를 처음 확인한 직후 이 요약을 1회만 fetch해 `experiments/results/ramp-summary-{run_id}-{arm}-{rep}.csv`에 저장한다. 새 순수 함수 `_classify_timestamp_against_stages()`가 실제(명목 아닌) `stage_start_utc`/`stage_end_utc`로 timestamp를 stage 이름/`baseline`/`inter_stage_tail`/`drain`/`unknown` 중 하나로 분류하고, `Injector.classify_stage()`(선택 훅, 미구현 어댑터는 하위호환으로 무시됨) 경유로 `run_once()`가 `t_slo`→`slo_stage`, `t_detection`→`detection_stage`, `t_api_request`→`action_stage`를 채운다. 소스 timestamp가 null이면 대응 stage 필드도 null(`unknown`과 구분), summary fetch 실패나 `classify_stage()` 자체의 예외는 전부 삼켜 stage 필드만 `unknown`/`null`로 남기고 trial의 핵심 판정(`outcome`/`t_slo` 등)은 전혀 건드리지 않는다(§5.1 정책 신설). §5 스키마에 baseline 5개 필드(이전에 §29에서 추가했으나 이 표에는 누락돼 있던 것을 발견해 함께 보완)와 stage 3개 필드 추가, `collect_metrics.py`의 `build_comparison()`에도 반영. 회귀 테스트 12개 추가(`test_load_ramp_adapter.py` 7개 - 실제 지연된 stage 경계가 명목 경계보다 우선한다는 핵심 케이스 포함, `test_run_once.py` 4개, `test_collect_metrics.py` 1개). 기존 파일럿(`...141420Z`)의 "stage3" 표현은 명목 경계 추정이라는 점을 그대로 유지했고 원본값을 소급 생성하지 않았다(summary-out을 캡처 안 한 실행이라 실제 경계 데이터가 없음). 오프라인 스위트 136 passed, 2 deselected(live_cluster). 실클러스터 작업 없음 - 3-arm 파일럿은 아직 시작 안 함.
 - 2026-09-18: `load_ramp native` E2E PASS 확정을 승인받은 뒤, 3-arm 파일럿(아직 미실행) 전 arm 오케스트레이션 완성 지시를 받았다 - `run_load_ramp_trial.py --arm fixed_threshold|proposed`가 지금까지 arm 이름만 결과에 태깅할 뿐 `fixed_threshold.py`/`score_server.py` 실행·종료나 preview 준비를 전혀 담당하지 않아, non-native arm을 그대로 돌리면 detector가 실제로 동작 안 한 채 잘못 라벨링된 결과가 생길 위험이 있었다. §1 arm 정의를 다시 확인(새로 추정 없음) - native만 detector·standby(preview) 둘 다 없고, fixed_threshold/proposed는 예측 모델만 다르고 나머지(recovery-policy 기동, 공통 Alertmanager 반응형 fallback, standby/promotion)는 동일. 신규 `experiments/arm_controller.py`가 이 매핑을 그대로 구현 - `make_detector_for_arm(arm, run_id)`가 native면 None, fixed_threshold/proposed면 각 스크립트를 `RECOVERY_POLICY_SIGNAL_URL` 환경변수(로컬 서브프로세스 실행 시 recovery-policy in-cluster DNS를 `localhost:8080`으로 덮어씀 - `score_server.py`에 `os.environ.get()` 기반으로 추가, 기존 값은 기본값으로 유지)로 로컬 서브프로세스로 띄우는 `Detector`(신규 `run_once.py` 프로토콜, start/is_alive/stop/name)를 반환한다. `wrap_injector_with_preview_prep()`이 기존 `experiments/blue_green_prep.py`의 `prepare_preview()`(이미 있던 코드, run_calibration.py가 먼저 쓰고 있었음)를 non-native arm의 `injector.prepare()` 앞에 배선 - 실패하면 `TrialInvalid`로 그대로 `invalid_run` 처리되고 `injector.inject()`는 호출되지 않는다(기존 PREPARING 단계 안전장치 재사용, 새로 안 만듦). `run_once()`는 `detector` 선택 인자를 받아 baseline 확보+context 등록이 끝난 뒤·주입 직전에 정확히 한 번 `start()`, OBSERVING 루프에서 `prober.is_alive()`와 나란히 `is_alive()` 확인(죽으면 invalid_run), finally에서 prober/injector보다 먼저 `stop()`+재확인(여전히 살아있으면 HarnessCorrupted). `TrialResult.detector_process`에 실제 배선된 detector 식별자를 기록(§5 스키마 반영). `run_load_ramp_trial.py`는 이 배선을 무조건 거치도록 수정해 non-native arm을 orchestration 없이 직접 실행할 수 없게 했다(fail-closed). 회귀 테스트 17개 추가(`test_arm_controller.py` 10개 - native=detector 없음/arm별 정확한 단일 detector·스크립트 dispatch/run_id 전파/서브프로세스 생명주기(trivial 커맨드로 검증, 실제 detector 스크립트는 Prometheus·모델 파일 의존이라 오프라인 대상 아님)/preview 준비 실패 시 injection 차단, `test_run_once.py` 7개 - baseline 확보 후에만 detector 시작·detector 시작 후에만 injection(실제 호출 순서 로그로 확인)·detector crash→invalid_run·예외/timeout 각각에서도 detector 정리·detector_process 필드 전파·detector 미지정 시 하위호환). 오프라인 스위트 153 passed, 2 deselected(live_cluster). 실클러스터 작업 없음 - 3-arm 파일럿은 아직 시작하지 않음. 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §32 참고.
+- 2026-09-19: arm 오케스트레이션(§32)은 승인받았으나, `t_detection`/`t_api_request`가 `run_once.py` 어디에도 채워지는 코드가 없다는 별도 gap이 지적돼(3-arm 파일럿 전 필수 선행 작업) 이를 완성했다. 구현 전에 recovery-policy의 예측 신호(`/signal`)·반응형 Alertmanager fallback(`/webhooks/alertmanager`)·정책 결정(`policy.decide()`)·promotion 호출(`rollouts_client.promote()`)·감사기록(`git_client.py`, 비동기) 경로를 코드로 직접 추적해 authoritative source를 확정했다 - Git 감사기록은 명시적으로 배제(비동기라 반환을 안 막게 설계됨), detector 프로세스 stdout도 배제. `recovery-policy/main.py`의 `_current_experiment`(기존 ambient 등록 메커니즘)에 두 필드를 추가하고, `process_signal()`이 idempotency 통과 직후(정책 판단 대상 확정 시각 = `t_detection`, 첫 값만 유지)와 promote() 호출 직전(`t_api_request`, 조치 없으면 null)에 각각 `datetime.now()`로 동기 기록한다 - 다른 run_id·stale alert는 기존 ambient 보정 로직이 이미 걸러내는 것에 더해 재확인. 신규 `GET /admin/experiment-run/timing` 조회 엔드포인트 추가(§5.2). `run_once.py`가 finally에서(context clear 전) 이를 읽어 `TrialResult`에 반영 - 응답 run_id 불일치나 조회 실패는 조용히 null로 남기지 않고 명시적 `invalid_run`(단, 이미 확정된 더 구체적인 invalid_reason은 보존, §5.2). 추가로 `arm_controller.make_detector_for_arm()`이 detector 서브프로세스를 실제로 띄우기 전 `RECOVERY_POLICY_SIGNAL_URL`(`/healthz`로 부작용 없이 확인) 도달성을 사전 확인해, 불가능하면 detector도 chaos 주입도 시작하지 않는다(fail-closed, §5.3). §31의 `slo_stage`/`detection_stage`/`action_stage` 계산 메커니즘은 코드 변경 없이 그대로 재사용됨을 통합 테스트로 확인(이제 실제 non-null 값으로 처음 검증됨). 회귀 테스트 17개 추가(`recovery-policy/test_main.py` 8개 - 예측/반응 신호 각각 t_detection 기록, 중복 신호 미덮어씀, 다른 run_id·stale alert 배제, 무조치 시 t_api_request null, 실제 promotion 시 `t_detection<=t_api_request`, context clear 후 다음 trial에 안 남음, 활성 실험 없으면 전부 null; `experiments/test_run_once.py` 6개 - 정상 회수, 조회 실패→invalid_run, run_id 불일치→invalid_run, 기존 invalid_reason 보존, native는 recovery-policy 완전 비접근, stage 필드 통합 계산; `experiments/test_arm_controller.py` 3개 - reachability 실패 시 fail-closed, 성공 시 정상 진행, 환경변수 우선순위). 오프라인 스위트 experiments/ 162 passed, recovery-policy/ 44 passed(각각 2 deselected/live_cluster 없음). 부수 발견(수정 안 함, 이번 범위 밖) - `recovery-policy/test_main.py`의 모듈 최상단 `patch(...).start()` 호출 2개가 `.stop()` 없이 남아있어, `test_git_client.py`와 같은 pytest 세션에서 함께 수집되면(`test_main.py`가 먼저 로드된 뒤) `git_client`의 실제 함수가 계속 mock으로 남아 `test_git_client.py` 3개가 실패한다 - `git stash`로 이번 세션 변경분을 전부 제거해도 동일하게 재현되는 것을 확인해 기존부터 있던 테스트 격리 결함임을 확정(각 파일을 단독 실행하면 전부 통과). 실클러스터 작업 없음 - 3-arm 파일럿은 아직 시작하지 않음.

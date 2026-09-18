@@ -39,7 +39,7 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -73,6 +73,15 @@ class ExperimentContext(BaseModel):
     arm: str
     rep: int
     started_at: datetime
+    # Phase 8 t_detection/t_api_request의 authoritative source(2026-09-19
+    # 추가) - detector 프로세스 stdout이나 비동기 Git 감사기록(git_client.py)은
+    # 지연·실패가 있어도 요청 처리를 막지 않게 설계돼 있어(main.py 모듈
+    # docstring) timestamp 원천으로 쓸 수 없다. 여기 두 필드는 process_signal()이
+    # 매 요청을 동기적으로 처리하는 도중 직접 datetime.now()로 찍는다 - 폴링
+    # 즉시 최신 상태이고, 재시도/중복 신호로 덮어써지지 않는다(첫 값만 유지,
+    # 아래 process_signal() 참고).
+    t_detection: Optional[datetime] = None
+    t_api_request: Optional[datetime] = None
 
 
 _current_experiment: Optional[ExperimentContext] = None
@@ -123,6 +132,27 @@ def get_experiment_run():
     용도(계약서 §6 순서: quiescence -> 활성 context 없음 확인 -> cooldown
     초기화). current가 null이 아니면 다른 trial이 아직 안 끝났다는 뜻."""
     return {"current": _current_experiment}
+
+
+@app.get("/admin/experiment-run/timing")
+def get_experiment_run_timing():
+    """run_once()가 OBSERVING 중 또는 정리(clear) 직전에 조회 - t_detection/
+    t_api_request의 authoritative source(2026-09-19 추가). Git 감사기록과
+    달리 이 값들은 process_signal()이 매 요청을 동기적으로 처리하는 도중
+    직접 기록하므로, 폴링 시점에 이미 최신 상태가 보장된다(git_client.py의
+    비동기 큐를 거치지 않음).
+
+    run_id를 응답에 포함하는 이유: 호출자가 "이게 정말 내 trial의 값인가"를
+    검증할 수 있어야 한다 - 활성 context가 없거나(이미 clear됐거나 애초에
+    없었음) run_id가 자기 것과 다르면(등록이 실패했거나 레이스 상황) 호출자는
+    이 timing을 자기 trial 것으로 신뢰하면 안 된다."""
+    if _current_experiment is None:
+        return {"run_id": None, "t_detection": None, "t_api_request": None}
+    return {
+        "run_id": _current_experiment.run_id,
+        "t_detection": _current_experiment.t_detection,
+        "t_api_request": _current_experiment.t_api_request,
+    }
 
 
 @app.post("/admin/reset-cooldown")
@@ -182,6 +212,16 @@ def clear_experiment_run(run_id: str):
     return {"status": "cleared"}
 
 
+def _signal_belongs_to_current_experiment(signal: NormalizedSignal) -> bool:
+    """이 신호(ambient 보정 이후의 experiment_run_id 기준)가 지금 활성 중인
+    실험 것인지 확인한다(2026-09-19 추가) - t_detection/t_api_request를
+    엉뚱한 실험에 잘못 붙이지 않기 위한 게이트. stale alert(위 ambient 보정
+    자체가 이미 걸러냄 - started_at 이전이면 태깅 자체가 안 됨)나, 다른
+    run_id를 직접 실은(예: 이전 trial의 detector 프로세스가 정리되지 않고
+    남아 신호를 계속 보내는 경우) 예측 신호는 여기서 다시 한번 걸러진다."""
+    return _current_experiment is not None and signal.raw.get("experiment_run_id") == _current_experiment.run_id
+
+
 def process_signal(signal: NormalizedSignal) -> DecisionRecord:
     if not signal.raw.get("experiment_run_id") and _current_experiment is not None:
         if signal.received_at >= _current_experiment.started_at:
@@ -192,6 +232,16 @@ def process_signal(signal: NormalizedSignal) -> DecisionRecord:
                         reasoning="idempotency_key 중복 - 이미 처리된 신호")
         git_client.enqueue(signal, record)
         return record
+
+    # t_detection(2026-09-19 추가): "현재 run에 속하는 유효한 신호를 recovery-
+    # policy가 처음 수락해 정책 판단 대상으로 확정한 시각" - 위 idempotency
+    # 체크(중복 차단)를 통과한 신호에 대해서만, 그리고 딱 한 번만(이미 값이
+    # 있으면 재시도/후속 신호로 덮어쓰지 않음 - 지시) 기록한다. 이 시점은
+    # policy.decide() 호출 "직전"이라 decide()의 결과(rule-out/observe_only/
+    # promote 무엇이든)와 무관하게 "신호를 받아 판단 대상으로 삼았다"는
+    # 사실만 기록한다.
+    if _signal_belongs_to_current_experiment(signal) and _current_experiment.t_detection is None:
+        _current_experiment.t_detection = datetime.now(timezone.utc)
 
     preview_ready = is_paused_pre_promotion(ROLLOUT_NAME, NAMESPACE)
     ctx = policy.PolicyContext(preview_ready=preview_ready)
@@ -217,6 +267,17 @@ def process_signal(signal: NormalizedSignal) -> DecisionRecord:
         record = build(signal, action=decision.action, outcome=Outcome.SKIPPED_COOLDOWN, reasoning=decision.reasoning)
         git_client.enqueue(signal, record)
         return record
+
+    # t_api_request(2026-09-19 추가): "실제 promotion API/CLI 호출을 시작하기
+    # 직전의 시각" - promote() 호출 바로 앞에서 찍는다(그 함수 내부에서 CLI
+    # subprocess.run이 실제로 나가기까지 몇 ms 정도 더 걸릴 수 있지만, 그
+    # 오차는 이 프로세스 자신의 함수 호출 오버헤드 수준이라 별도 실측 없이도
+    # 무시 가능하다고 판단 - injector.get_injection_observation_error_sec()
+    # 같은 실측 상한이 필요한 수준의 오차가 아님). 조치가 없으면(observe_only/
+    # rule-out/unknown/cooldown-skip) 이 코드에 도달하지 않으므로
+    # t_api_request는 null로 남는다(지시). 첫 값만 기록.
+    if _signal_belongs_to_current_experiment(signal) and _current_experiment.t_api_request is None:
+        _current_experiment.t_api_request = datetime.now(timezone.utc)
 
     result = promote(ROLLOUT_NAME, NAMESPACE)
     safety.mark_action_taken()

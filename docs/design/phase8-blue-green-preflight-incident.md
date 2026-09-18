@@ -2832,3 +2832,133 @@ leak-check와 동일한 심각도). `TrialResult.detector_process`에
 arm은 orchestration을 우회할 방법이 없다. 3-arm 파일럿 자체는 아직
 실행하지 않았다 - 다음 지시를 기다린다. 다른 시나리오·60회 본
 실험으로도 넘어가지 않았다.
+
+## 33. `t_detection`/`t_api_request` authoritative source 확정 및 회수 (2026-09-19)
+
+### 33.1 문제 확인 - 조사 결과
+
+§32 arm 오케스트레이션은 승인됐지만, 3-arm 파일럿 전 별도로 확인된
+gap: `run_once.py` 어디에도 `result.t_detection`/`result.t_api_request`
+를 대입하는 코드가 없어 두 필드가 항상 기본값(null)으로 남는다(직접
+grep으로 확인 - `detected`/`action`/`promotion_verified`/
+`detection_source`도 마찬가지였으나 이번 지시 범위는 두 timestamp로
+한정돼 그 넷은 손대지 않았다).
+
+구현 전에 recovery-policy(`recovery-policy/main.py` 등)의 실제 경로를
+코드로 직접 추적했다(지시):
+- **예측 신호 수신**: `POST /signal` → `normalize_anomaly_signal()` →
+  `process_signal()`. `score_server.py`/`fixed_threshold.py`가 자체
+  생성 시각(`timestamp`)을 payload에 실어 보내는데, 이건 "언제 그
+  클라이언트가 신호를 만들었나"이지 "언제 recovery-policy가 처리했나"가
+  아니다.
+- **반응형 Alertmanager fallback**: `POST /webhooks/alertmanager` →
+  `normalize_alertmanager_webhook()` → 각 alert의 `startsAt`(Alertmanager
+  가 조건이 firing으로 바뀐 시각) 기준으로 `NormalizedSignal.received_at`
+  설정 - 이 값도 recovery-policy의 처리 시각이 아니라 알림 조건 자체가
+  시작된 시각이라 서로 다른 의미.
+- **정책 결정**: `process_signal()`이 idempotency 체크(`safety.
+  check_and_reserve()`) 통과 후 `policy.decide()` 호출.
+- **promotion 호출**: `decision.action == ACTION_PROMOTE_PREVIEW`이고
+  cooldown이 아니면 `rollouts_client.promote()` 호출.
+- **감사기록**: `decision_log.build()`가 `datetime.now()`로
+  `decided_at`을 동기적으로 찍긴 하지만, **모든** outcome(중복 차단
+  포함)에 대해 호출되므로 그대로 재사용하면 "재시도로 덮어쓰지 않음"
+  조건을 못 지킨다. 게다가 실제 파일 기록·Git 커밋·푸시(`git_client.
+  enqueue()`)는 백그라운드 큐로 비동기 처리되고(main.py 모듈 docstring:
+  "git 지연·실패가 이 함수의 반환을 막지 않는다"), 지연·실패가 있어도
+  요청 처리 자체를 막지 않게 의도적으로 설계돼 있다 - timestamp
+  원천으로 쓰면 안 됨(지시).
+
+결론: **detector 프로세스 stdout도, Git 감사기록도 authoritative
+source가 아니다.** recovery-policy가 신호를 실제로 수락/조치를 실제로
+시작하는 그 순간 자신이 직접 찍는 서버측 벽시계 시각만이 신뢰할 수
+있는 원천이다.
+
+### 33.2 의미 확정과 구현
+
+지시된 의미를 그대로 구현했다(추정·재해석 없음):
+
+- **`t_detection`**: "현재 run에 속하는 유효한 신호를 recovery-policy가
+  처음 수락해 정책 판단 대상으로 확정한 시각" - `process_signal()`이
+  idempotency 통과 **직후**, `policy.decide()` 호출 **전**에
+  `datetime.now(timezone.utc)`로 기록한다. `decide()`의 결과(rule-out/
+  observe_only/promote 무엇이든)와 무관 - "신호를 판단 대상으로
+  삼았다"는 사실만 기록.
+- **`t_api_request`**: "실제 promotion API/CLI 호출을 시작하기 직전의
+  시각" - cooldown 통과 후, `rollouts_client.promote()` 호출 바로 앞에서
+  기록. 조치가 없으면(observe_only/rule-out/unknown/cooldown-skip)
+  이 코드에 도달하지 않아 null로 남는다.
+- **첫 값만 유지**: 둘 다 `_current_experiment`의 필드가 이미 `None`이
+  아니면 갱신하지 않는다(재시도·후속 신호가 덮어쓰지 못함).
+- **격리**: `_signal_belongs_to_current_experiment()`가 (ambient 보정
+  이후의) `signal.raw["experiment_run_id"]`가 `_current_experiment.
+  run_id`와 정확히 일치할 때만 기록을 허용한다 - 다른 run_id를 직접
+  실은 신호(예: 정리 안 된 이전 trial의 detector가 계속 보내는 신호)와
+  stale alert(기존 ambient 보정 로직이 이미 걸러냄 - 등록 시각 이전
+  `startsAt`은 애초에 태깅 자체가 안 됨) 둘 다 배제된다.
+- 새 `GET /admin/experiment-run/timing` 엔드포인트가 `{run_id,
+  t_detection, t_api_request}`를 반환(활성 context 없으면 전부 null).
+
+**`experiments/run_once.py`**: `_get_experiment_timing(arm)`이(기존
+`_get_active_experiment_context()`와 동일한 `arm=="native": None` 관례)
+`finally`에서(§32 stage 분류보다 먼저 - stage 분류가 이 값을 씀,
+`_clear_experiment_context()`보다 먼저 - clear되면 서버측 값도 사라짐)
+호출된다. 응답의 `run_id`가 자기 trial 것과 다르거나 조회 자체가
+예외를 던지면, 조용히 null로 남기지 않고 **명시적으로 `invalid_run`**
+처리한다(지시 - "무탐지"와 "확인 불가"를 혼동하면 안 됨). 단, 이미 다른
+사유(예: `injector.inject()` 예외)로 `invalid_run`이 확정된 trial의
+기존 `invalid_reason`은 덮어쓰지 않는다 - 더 구체적인 원인을 보존.
+`context_registered`가 `False`면(등록 자체가 실패해 애초에 조회할
+context가 없음이 이미 확실함) 조회 자체를 시도하지 않는다.
+
+**`experiments/arm_controller.py`**: `make_detector_for_arm()`이 반환
+하는 `Detector.start()`가 실제 서브프로세스 실행 전에
+`RECOVERY_POLICY_SIGNAL_URL`(환경변수 우선, 없으면 로컬 기본값)의
+도달성을 확인한다 - `/signal`은 부작용이 있어(진짜 신호로 처리됨) 대신
+같은 host:port의 `/healthz`(부작용 없음)로 확인. 불가능하면
+`TrialInvalid`를 던져 detector도 chaos 주입도(§32에서 detector.start()
+가 주입 직전 호출) 시작되지 않는다(fail-closed, 지시).
+
+### 33.3 오프라인 테스트
+
+- `recovery-policy/test_main.py`(+8개): 예측 신호(`/signal`)·반응형
+  alert(`/webhooks/alertmanager`) 둘 다 `t_detection` 기록, 동일 신호
+  재전송(중복)은 덮어쓰지 않음, 다른 run_id를 실은 신호·stale alert
+  둘 다 배제, 조치 없으면(`observe_only`) `t_api_request` null 유지,
+  실제 promotion 시 `t_api_request` 기록 + `t_detection<=t_api_request`
+  확인, context clear 후 재등록한 다음 trial에 이전 timing이 안 남음,
+  활성 실험 없으면 엔드포인트가 전부 null.
+- `experiments/test_run_once.py`(+6개): timing 정상 회수, 엔드포인트
+  조회 실패 시 명시적 `invalid_run`(무탐지와 구분), 응답 run_id 불일치
+  시 `invalid_run`, 이미 확정된 `invalid_reason`은 timing 실패로
+  덮어써지지 않음, native는 recovery-policy에 전혀 접근 안 함(계약서
+  §1 재확인), 회수된 두 timestamp로 `detection_stage`/`action_stage`가
+  §31 메커니즘 그대로 정상 계산됨(두 작업의 통합 확인).
+- `experiments/test_arm_controller.py`(+3개): reachability 실패 시
+  detector가 시작 자체를 안 함(fail-closed), 성공 시 서브프로세스
+  시작까지 정상 진행, `RECOVERY_POLICY_SIGNAL_URL` 환경변수가 로컬
+  기본값보다 우선.
+- 전체 스위트: `experiments/` 162 passed, 2 deselected(live_cluster).
+  `recovery-policy/` 44 passed(각 파일 단독 실행 기준).
+
+**부수 발견(수정 안 함, 이번 범위 밖)**: `recovery-policy/test_main.py`
+최상단의 `patch("main.git_client.start_worker", ...).start()` /
+`patch("main.git_client.enqueue", ...).start()` 두 줄이 `with`문이
+아니라 `.start()`만 호출하고 대응하는 `.stop()`이 없다 - 같은 pytest
+세션에서 `test_main.py`가 먼저 수집되면 이 패치가 프로세스 전역에
+남아, 이후 수집되는 `test_git_client.py`의 실제 `git_client` 함수 호출
+3개가 실패한다. `git stash`로 이번 세션 변경분을 전부 제거한 원본
+코드에서도 동일하게 재현되는 것을 직접 확인해 - 이번 작업이 만든
+결함이 아니라 기존부터 있던 테스트 격리 문제임을 확정했다(각 테스트
+파일을 단독으로 돌리면 전부 통과 - `recovery-policy/` 전체를 한 번에
+`pytest`로 돌릴 때만 드러남). 수정 범위 밖이라 손대지 않았다.
+
+### 33.4 결론
+
+`t_detection`/`t_api_request`의 authoritative source를 recovery-policy
+자신의 동기 처리 경로로 확정하고, 조회 실패·불일치를 침묵 없이
+`invalid_run`으로 명시하는 회수 경로까지 구현했다 - Git 감사기록(비동기)
+이나 detector stdout에 기대지 않는다(지시 그대로). §31의 stage 분류가
+이 값들로 실제 계산되는 것도 확인했다. RECOVERY_POLICY_SIGNAL_URL
+도달성 사전 확인으로 fail-closed도 추가했다. 실클러스터 작업 없음 -
+3-arm 파일럿은 아직 시작하지 않았다.

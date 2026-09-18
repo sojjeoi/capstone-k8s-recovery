@@ -2,10 +2,18 @@
 """run_once.py의 상태머신을 검증 - 실제 chaos 없이 가짜 Injector/Prober로
 검증한다(experiment-contract.md 3단계 완료기준 + 1·2차 리뷰에서 지적된
 문제들의 회귀 테스트). run_id 등록/quiescence 확인은 arm="native"일 때
-건너뛰므로 대부분은 오프라인으로 돈다 - non-native arm은 실제
-recovery-policy에 HTTP로 붙어서(port-forward 필요) 실제 연동을 확인하며,
-`@pytest.mark.live_cluster`로 표시해 기본 `pytest` 실행에서는 건너뛴다
-(conftest.py, RUN_LIVE_TESTS=1로만 실행 - experiments/README.md "테스트" 절).
+건너뛰므로 대부분은 오프라인으로 돈다 - non-native arm의 "실제 클러스터
+연동 자체가 되는가"는 `@pytest.mark.live_cluster`로 표시해 기본 `pytest`
+실행에서는 건너뛴다(conftest.py, RUN_LIVE_TESTS=1로만 실행 -
+experiments/README.md "테스트" 절).
+
+t_detection/t_api_request 회수 로직(2026-09-19 추가)만은 예외 - non-native
+arm이어야 그 코드 경로를 타는데, 관리자 엔드포인트 장애 같은 시나리오는
+실클러스터에서 안정적으로 재현할 수 없어(포트포워딩 끊기 흉내가 어려움)
+`requests.get`/`requests.post`를 직접 mocking해 오프라인으로 검증한다
+(`_mock_admin_endpoints()` 참고) - quiescence/context 등록/cooldown 등
+"실제로 그 프로토콜을 지키는가"는 여전히 live_cluster 테스트 몫이고, 여기서는
+"timing 엔드포인트 응답에 따라 run_once()가 올바르게 반응하는가"만 본다.
 
 모든 테스트는 run_once(results_dir=...)로 결과 기록 위치를 격리한다(2026-
 09-16 수정) - 예전엔 run_once.py의 RESULTS_DIR(실제 results/)에 그대로
@@ -18,7 +26,9 @@ tempfile.TemporaryDirectory()로 새로 만들어 넘긴다 - 어느 경로로 �
 import json
 import sys
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -166,6 +176,46 @@ def _fake_detector(name="fake_detector", dies_after_calls=None, event_log=None):
             event_log.append("detector_stop")
 
     return Detector(start=start, is_alive=is_alive, stop=stop, name=name), calls
+
+
+@contextmanager
+def _mock_admin_endpoints(timing_response=None, timing_raises=None):
+    """t_detection/t_api_request 회수 로직(2026-09-19 추가) 검증용 - non-native
+    arm의 run_once() 전체 흐름이 recovery-policy 없이도 오프라인으로 돌게
+    quiescence/active-context/cooldown/register/clear는 전부 "정상 진행"
+    고정 응답을 주고, 신규 timing 엔드포인트만 테스트가 원하는 응답(또는
+    예외)을 내도록 열어둔다."""
+    def fake_get(url, timeout=None, **kwargs):
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        if url.endswith("/admin/quiescent"):
+            resp.json.return_value = {"quiescent": True, "active_count": 0}
+        elif url.endswith("/admin/experiment-run/timing"):
+            if timing_raises is not None:
+                raise timing_raises
+            resp.json.return_value = timing_response
+        elif url.endswith("/admin/experiment-run"):
+            resp.json.return_value = {"current": None}
+        else:
+            raise AssertionError(f"예상 못 한 GET: {url}")
+        return resp
+
+    def fake_post(url, timeout=None, **kwargs):
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        if url.endswith("/admin/reset-cooldown"):
+            resp.json.return_value = {"status": "cooldown_reset"}
+        elif url.endswith("/admin/experiment-run/clear"):
+            resp.json.return_value = {"status": "cleared"}
+        elif url.endswith("/admin/experiment-run"):
+            resp.json.return_value = {"status": "active"}
+        else:
+            raise AssertionError(f"예상 못 한 POST: {url}")
+        return resp
+
+    with patch("run_once.requests.get", side_effect=fake_get), \
+         patch("run_once.requests.post", side_effect=fake_post):
+        yield
 
 
 def test_normal_completion(tmp_path):
@@ -901,6 +951,129 @@ def test_detector_none_leaves_detector_process_null(tmp_path):
     print("OK - detector 미지정 시 detector_process는 null(회귀 없음)")
 
 
+def test_non_native_timing_fetch_populates_fields(tmp_path):
+    run_id = "test-timing-fixed_threshold-01"
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+    timing_response = {
+        "run_id": run_id,
+        "t_detection": "2026-09-19T00:00:05+00:00",
+        "t_api_request": "2026-09-19T00:00:06+00:00",
+    }
+    with _mock_admin_endpoints(timing_response=timing_response):
+        result = run_once(
+            scenario="dry_run", arm="fixed_threshold", rep=1, sequence_index=1, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+            run_id=run_id, results_dir=tmp_path,
+        )
+    assert result.t_detection == "2026-09-19T00:00:05+00:00"
+    assert result.t_api_request == "2026-09-19T00:00:06+00:00"
+    assert result.outcome != "invalid_run", result.invalid_reason
+    print("OK - non-native trial이 recovery-policy timing 엔드포인트에서 t_detection/t_api_request를 회수함")
+
+
+def test_non_native_timing_fetch_failure_marks_invalid_run(tmp_path):
+    run_id = "test-timing-fail-01"
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+    with _mock_admin_endpoints(timing_raises=ConnectionError("timing 엔드포인트 접속 실패 시뮬레이션")):
+        result = run_once(
+            scenario="dry_run", arm="fixed_threshold", rep=1, sequence_index=1, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+            run_id=run_id, results_dir=tmp_path,
+        )
+    assert result.outcome == "invalid_run", result.outcome
+    assert "timing" in result.invalid_reason
+    assert result.t_detection is None and result.t_api_request is None
+    print("OK - timing 엔드포인트 조회 실패 -> 명시적으로 invalid_run(무탐지와 구분됨):", result.invalid_reason)
+
+
+def test_non_native_timing_run_id_mismatch_marks_invalid_run(tmp_path):
+    run_id = "test-timing-mismatch-01"
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+    # 서버가 다른 run_id(레이스나 등록 유실 흉내)를 반환
+    timing_response = {"run_id": "some-other-run-id", "t_detection": "2026-09-19T00:00:05+00:00", "t_api_request": None}
+    with _mock_admin_endpoints(timing_response=timing_response):
+        result = run_once(
+            scenario="dry_run", arm="proposed", rep=1, sequence_index=1, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+            run_id=run_id, results_dir=tmp_path,
+        )
+    assert result.outcome == "invalid_run", result.outcome
+    assert result.t_detection is None
+    print("OK - timing 응답의 run_id가 안 맞으면 invalid_run:", result.invalid_reason)
+
+
+def test_timing_fetch_failure_does_not_override_existing_invalid_reason(tmp_path):
+    # 이미 다른 이유(예: injector.inject() 예외)로 invalid_run이 확정된
+    # trial은, timing 조회까지 실패해도 원래 사유를 덮어쓰면 안 된다(더
+    # 구체적인 원인 보존).
+    def raising_inject():
+        raise RuntimeError("의도적으로 터뜨린 예외")
+
+    injector = Injector(prepare=lambda: None, inject=raising_inject, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True, cleanup=lambda: None)
+    prober, _ = _fake_prober()
+    run_id = "test-timing-preserve-reason-01"
+    with _mock_admin_endpoints(timing_raises=ConnectionError("timing도 실패")):
+        result = run_once(
+            scenario="dry_run", arm="fixed_threshold", rep=1, sequence_index=1, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+            run_id=run_id, results_dir=tmp_path,
+        )
+    assert result.outcome == "invalid_run"
+    assert "의도적으로 터뜨린 예외" in result.invalid_reason, \
+        f"원래 invalid_reason이 timing 실패 사유로 덮어써짐: {result.invalid_reason}"
+    print("OK - 이미 확정된 invalid_run 사유는 timing 조회 실패로 덮어써지지 않음:", result.invalid_reason)
+
+
+def test_native_arm_never_calls_recovery_policy(tmp_path):
+    injector, icalls = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+
+    def fail_if_called(*a, **kw):
+        raise AssertionError("native arm이 recovery-policy에 HTTP 요청을 보내면 안 됨(계약서 §1)")
+
+    with patch("run_once.requests.get", side_effect=fail_if_called), \
+         patch("run_once.requests.post", side_effect=fail_if_called):
+        result = run_once(
+            scenario="dry_run", arm="native", rep=60, sequence_index=60, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+            results_dir=tmp_path,
+        )
+    assert result.t_detection is None and result.t_api_request is None
+    assert result.outcome != "invalid_run"
+    print("OK - native arm은 recovery-policy·detector·preview 전부 비활성(계약서 §1 재확인)")
+
+
+def test_detection_and_action_stage_computed_from_recovered_timing(tmp_path):
+    # 방식 8 - t_detection/t_api_request가 실제로 채워지면, 기존 §31 stage
+    # 분류 메커니즘(classify_stage)이 이 값들로 detection_stage/action_stage를
+    # 정상 계산해야 한다(두 메커니즘의 통합 확인).
+    run_id = "test-timing-stage-01"
+    t_detection_iso = "2026-09-19T00:01:00+00:00"
+    t_api_request_iso = "2026-09-19T00:01:30+00:00"
+
+    def classify_stage_fn(timestamp_iso):
+        return {t_detection_iso: "stage-2-0.05rps", t_api_request_iso: "stage-3-0.20rps"}.get(timestamp_iso, "unknown")
+
+    injector, icalls = _fake_injector(is_done_after_calls=1, classify_stage_fn=classify_stage_fn)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+    timing_response = {"run_id": run_id, "t_detection": t_detection_iso, "t_api_request": t_api_request_iso}
+
+    with _mock_admin_endpoints(timing_response=timing_response):
+        result = run_once(
+            scenario="dry_run", arm="fixed_threshold", rep=1, sequence_index=1, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+            run_id=run_id, results_dir=tmp_path,
+        )
+
+    assert result.detection_stage == "stage-2-0.05rps"
+    assert result.action_stage == "stage-3-0.20rps"
+    print("OK - 회수된 t_detection/t_api_request로 detection_stage/action_stage가 정상 계산됨")
+
+
 @pytest.mark.live_cluster
 def test_real_experiment_context_registration_non_native_arm(tmp_path):
     """native가 아닌 arm은 실제 recovery-policy에 quiescence 확인 +
@@ -993,6 +1166,12 @@ if __name__ == "__main__":
         test_detector_stopped_on_timeout,
         test_detector_process_field_records_name,
         test_detector_none_leaves_detector_process_null,
+        test_non_native_timing_fetch_populates_fields,
+        test_non_native_timing_fetch_failure_marks_invalid_run,
+        test_non_native_timing_run_id_mismatch_marks_invalid_run,
+        test_timing_fetch_failure_does_not_override_existing_invalid_reason,
+        test_native_arm_never_calls_recovery_policy,
+        test_detection_and_action_stage_computed_from_recovered_timing,
     )
     live_cluster_tests = (
         test_real_experiment_context_registration_non_native_arm,

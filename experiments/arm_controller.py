@@ -19,6 +19,9 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Callable, Optional
+from urllib.parse import urlsplit, urlunsplit
+
+import requests
 
 from blue_green_prep import prepare_preview as _real_prepare_preview
 from run_once import Detector, Injector, TrialInvalid
@@ -45,6 +48,31 @@ STOP_TIMEOUT_SEC = 10.0  # terminate() 이후 정상 종료 대기 - 넘기면 k
 # 전제 - run_once.py의 RECOVERY_POLICY_URL과 동일 전제, 계약서에 새로
 # 추가하는 조건이 아니라 기존 로컬 실행 전제를 그대로 따름).
 LOCAL_RECOVERY_POLICY_SIGNAL_URL = "http://localhost:8080/signal"
+REACHABILITY_CHECK_TIMEOUT_SEC = 5.0
+
+
+def _resolved_signal_url() -> str:
+    """detector 서브프로세스가 실제로 쓸 URL과 정확히 같은 값을 계산한다
+    (2026-09-19 추가) - _subprocess_detector()의 env.setdefault()와 동일한
+    우선순위(환경변수 RECOVERY_POLICY_SIGNAL_URL 우선, 없으면 로컬 기본값).
+    reachability 검사가 실제로 쓰일 URL과 다른 URL을 확인하면 무의미하므로
+    반드시 같은 계산식을 공유해야 한다."""
+    return os.environ.get("RECOVERY_POLICY_SIGNAL_URL", LOCAL_RECOVERY_POLICY_SIGNAL_URL)
+
+
+def _recovery_policy_reachable(signal_url: str) -> bool:
+    """RECOVERY_POLICY_SIGNAL_URL이 실제로 도달 가능한지 확인한다(2026-09-19
+    추가, fail-closed 사전 확인). /signal에 직접 요청을 보내면 진짜 신호로
+    처리돼 부작용이 생기므로(idempotency 소모·감사기록 오염), 같은
+    host:port의 /healthz(부작용 없는 엔드포인트, main.py에 이미 존재)로
+    대신 확인한다."""
+    parts = urlsplit(signal_url)
+    health_url = urlunsplit((parts.scheme, parts.netloc, "/healthz", "", ""))
+    try:
+        r = requests.get(health_url, timeout=REACHABILITY_CHECK_TIMEOUT_SEC)
+        return r.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
 
 
 def _build_detector_command(arm: str, run_id: str) -> Optional[list]:
@@ -92,15 +120,38 @@ def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None) -> Det
     return Detector(start=start, is_alive=is_alive, stop=stop, name=name)
 
 
-def make_detector_for_arm(arm: str, run_id: str) -> Optional[Detector]:
+def make_detector_for_arm(
+    arm: str, run_id: str,
+    reachability_check_fn: Optional[Callable[[str], bool]] = None,
+) -> Optional[Detector]:
     """native면 None - run_once()가 detector 관련 로직을 아예 안 탄다.
     fixed_threshold/proposed면 anomaly-detection/{script} --run-id
-    {run_id}를 로컬 서브프로세스로 띄우는 Detector를 반환한다."""
+    {run_id}를 로컬 서브프로세스로 띄우는 Detector를 반환한다.
+
+    반환된 Detector.start()는 실제로 서브프로세스를 띄우기 전에
+    RECOVERY_POLICY_SIGNAL_URL이 도달 가능한지부터 확인한다(2026-09-19
+    추가, fail-closed 지시) - 도달 불가면 TrialInvalid를 던져 detector
+    자체를 시작하지 않는다. run_once()에서 detector.start()는 chaos 주입
+    "직전"에 호출되므로(§32), 여기서 막히면 주입도 자동으로 안 일어난다.
+    reachability_check_fn은 테스트에서 가짜 함수를 주입할 수 있게 열어둔
+    선택 인자(기본값은 실제 _recovery_policy_reachable)."""
     spec = _DETECTOR_SCRIPTS.get(arm)
     if spec is None:
         return None
+    check_fn = reachability_check_fn or _recovery_policy_reachable
     cmd = _build_detector_command(arm, run_id)
-    return _subprocess_detector(cmd, spec["name"], cwd=str(ANOMALY_DETECTION_DIR))
+    base = _subprocess_detector(cmd, spec["name"], cwd=str(ANOMALY_DETECTION_DIR))
+
+    def start_with_reachability_preflight():
+        signal_url = _resolved_signal_url()
+        if not check_fn(signal_url):
+            raise TrialInvalid(
+                f"RECOVERY_POLICY_SIGNAL_URL({signal_url}) 접근 불가 - "
+                f"detector 시작 안 함(fail-closed, arm={arm})"
+            )
+        base.start()
+
+    return Detector(start=start_with_reachability_preflight, is_alive=base.is_alive, stop=base.stop, name=base.name)
 
 
 def wrap_injector_with_preview_prep(
