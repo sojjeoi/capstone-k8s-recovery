@@ -1624,3 +1624,33 @@ startupProbe + 기존 readiness/liveness)이 Phase 8의 공식 리소스·probe
 경고(§5 인근 load_ramp 확정 설정)는 이 동결로 재검증 절차가
 시작됐음을 뜻하며, 아직 해제되지 않았다 - SLO baseline·load_ramp
 재보정이 완료되고 확정될 때 별도로 해제한다.
+
+## 20. SLO baseline 재측정 계획 사전 고정 (측정 전, 2026-09-18)
+
+`lab-cpu3-warm-v1`(§19) 동결 후 CPU 4→3코어 변경(§12)으로 `L_baseline`
+(`slo-definition.md` §2, 현재 v2=0.256초)이 더 이상 현재 환경을 반영하지
+않는다 - 재측정이 필요하다. `slo-definition.md`의 자체 원칙("실험
+데이터를 보기 전에 확정한다")을 그대로 따라, **아래 규칙을 실측 실행
+전에 고정**한다 - v1->v2 전환 때 이미 쓴 것과 **동일한 산정 원칙**이며
+새로 발명하지 않는다:
+
+1. 측정 도구: `experiments/calibrate_probe_only.py --config
+   ../chaos/probe-config.yaml --duration-sec 300`(1 RPS, 300초=300건,
+   `chaos/probe-config.yaml`의 payload - `max_tokens=1`, prompt `"Hi"`,
+   `vllm-active` Service 대상) - **3회 독립 실행**.
+2. 각 회차는 성공률 100%가 아니면 그 회차를 폐기하고 재실행한다(측정
+   자체가 오염된 것으로 간주 - `slo-definition.md` v2 조건과 동일).
+3. 각 회차의 대표 P95는 `slo_judge.evaluate()`가 반환하는 60초
+   슬라이딩 윈도우 포인트 중 **마지막 값**(전체 300초 중 가장 안정화된
+   구간)을 쓴다 - v2 확정 시(`0.2565/0.2545/0.2586`) 쓴 것과 동일한
+   방식.
+4. 새 `L_baseline` = 3회 대표 P95의 **중앙값**.
+5. 새 Latency SLO = **2 × 새 L_baseline**(공식 자체는 불변,
+   `slo_judge.py`의 `LATENCY_THRESHOLD = 2 * L_BASELINE` 그대로).
+   Availability SLO(60초 윈도우 성공률<99%, timeout 30초 실패 처리)는
+   `L_baseline`과 무관하므로 변경하지 않는다.
+6. 위 1~5 실행 후 나온 수치를 그대로 `slo-definition.md`(새 버전
+   섹션+변경이력)와 `experiments/slo_judge.py`(`L_BASELINE` 상수)에
+   반영한다 - 결과를 보고 규칙 자체를 바꾸지 않는다.
+
+측정은 아직 시작하지 않았다 - 이 계획을 커밋한 뒤 실행한다.
