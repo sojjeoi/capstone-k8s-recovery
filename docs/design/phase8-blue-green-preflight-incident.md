@@ -3958,3 +3958,79 @@ vLLM/recovery-policy pod restarts 0, 05:40Z 이후 컨테이너 재시작 0건·
 - 결과 JSON·raw CSV·`.pre-reconcile.bak`은 gitignore 대상이라 로컬(`experiments/results/pilot/`)에만
   보존된다 - 이 절이 그 값들의 문서 기록이다.
 - 다음 단계는 사용자 지시 대기(`network_degrade` 파일럿 또는 본 실험 계획).
+
+## 41. §40 후속 3건 처리 - 오프라인 테스트의 실클러스터 접근 차단, network_degrade 러너 배선, git_askpass LF 고정 (2026-09-19)
+
+§40.6~§40.7이 남긴 후속을 지시대로 **순차** 처리했다(병렬 없음, 1단계 통과 후 2단계). 실험·이미지
+빌드/배포·실제 Chaos CR 생성은 하지 않았고 결과 스키마는 바꾸지 않았다. 모든 검증은 **존재하지 않는
+KUBECONFIG**(`D:/nonexistent-kubeconfig-guard-check/config`, `RUN_LIVE_TESTS` 미설정)에서 실행했다.
+
+### 41.1 오프라인 테스트의 실클러스터 접근 차단 (`90ed0f7`)
+
+**§40.6 정정**: 그 절은 "3개 테스트가 실제 NetworkChaos CR을 만든다"고 썼지만, 가드로 실제 호출을 관측한
+결과 정확히는 다음과 같다. 실제 **CR 생성**은 `test_stage_deletion_not_confirmed_raises` 하나다(백그라운드
+스레드가 실제 create → delete). `test_uid_change_before_injection_effective_is_invalid`와
+`test_cleanup_raises_if_residual_cr_remains`는 `cleanup()`에서 존재하지 않는 CR에 대한 실제 GET/DELETE(404)를
+냈고, 목록 밖의 `test_injection_never_effective`도 단계마다 실제 DELETE를 냈다(존재하지 않는 KUBECONFIG에서는
+`ConfigException`으로 실패하므로 통과 기준상 함께 고쳤다) - 총 4개. 워처가 본 13회의 생성·삭제는 그 한
+테스트의 실행 횟수다.
+
+- `experiments/conftest.py`의 `cluster_guard`(autouse): `live_cluster` 마커가 없는 테스트에서 kubeconfig /
+  in-cluster config 로드(6개 로더 × 패키지·구현 모듈)와 API 호출 병목(`ApiClient.call_api`,
+  `RESTClientObject.request`)을 차단해 즉시 실패시킨다. 코드가 예외를 삼키거나 백그라운드 스레드에서 나도
+  위반이 기록돼 teardown에서 실패로 드러난다. `live_cluster` 마커가 있는 테스트만 허용하고, mock/fake는
+  방해하지 않는다(그 patch가 가드를 덮어씀).
+- `test_cluster_guard.py` 11개: 로더 6종·구현 모듈·API 호출 차단, 삼킨 예외 기록, mock 비간섭, 그리고 실제
+  pytest 세션 통합 검증(존재하지 않는 KUBECONFIG로 격리한 서브프로세스 - 직접 호출은 실패, 스레드에서 삼킨
+  위반은 teardown 에러, mock은 통과, `live_cluster`만 허용). 가드가 고장 나도 실제 클러스터를 바꾸지 않게
+  프로세스 안 테스트는 읽기 전용 호출만 쓴다.
+- 수정 **전** 어댑터 테스트 4개가 가드에 걸렸고(모두 첫 실제 헬퍼의 `kubernetes.config.load_kube_config()`),
+  create/delete/does_chaos_exist/is_stage_injected fake를 주입한 뒤 통과했다. 가드 없이 `__main__`으로
+  실행해도(존재하지 않는 KUBECONFIG) 통과한다 - fake만으로 성립한다. 주석으로만 있던 주장("stage-0 CR도 안
+  만듦", "첫 단계만 만들고 멈춤")을 단언으로 고정했다.
+- **잔여**: 가드는 `experiments/` 테스트만 덮는다(`recovery-policy` 테스트는 별도 경로인데 같은 조건에서
+  통과한다). `subprocess`로 `kubectl`을 부르는 스크립트(`calibrate_*.py`, `explore_ramp_intensity.py`)는 가드
+  범위(kubeconfig·API client) 밖이며 테스트가 import하지 않는다.
+
+### 41.2 network_degrade 러너 arm 오케스트레이션 배선 (`24d8a03`)
+
+§40.1의 후속. `run_network_degrade_trial.py`에 `arm_controller.wrap_injector_with_preview_prep()` /
+`make_detector_for_arm()`을 `run_pod_kill_trial.py`와 같은 구조로 배선하고 `--rollout`/`--namespace`(기본
+`vllm-serving`)를 추가했으며, detector를 `run_once()`에 넘기고 시작 출력에 detector 이름을 표시한다. native는
+원본 injector와 detector 없음을 유지한다. `test_run_trial_wiring.py`의 RUNNERS에 network_degrade를 추가해
+세 러너 모두에 대해 native 무배선, fixed_threshold=preview wrapper+단일 `fixed_threshold` detector,
+proposed=preview wrapper+단일 `isolation_forest` detector, run_id·rollout·namespace 정확 전달과 기본값을
+고정했다. **원본 러너에서 새 테스트 4개가 의도한 단언으로 실패함을 먼저 확인**한 뒤 구현했다(native 핀은
+원본에서도 통과 - 유지 검증). network_degrade 러너가 실행 직전에 실클러스터 pod의 probe 설정을 읽는
+`_verify_probe_profile`은 테스트에서 patch로 막는다.
+
+### 41.3 git_askpass LF 고정 (`591fe96`)
+
+§40.2의 재발 방지. 루트 `.gitattributes`에 `recovery-policy/git_askpass.sh text eol=lf` **한 줄**(전역 `*.sh`
+규칙·다른 파일 변경 없음). 실측: `core.autocrlf=true`의 `git archive`가 `CR=11`로 내보내던 것이 `CR=0`(커밋
+blob과 같은 603바이트)이 됐고 `main.py` 등 다른 파일은 그대로 변환된다. `recovery-policy/test_git_askpass.py`가
+LF 셔뱅, CRLF·UTF-8 BOM 없음, 장애 재현 조건(autocrlf=true의 `git archive`)에서도 LF임을 고정하며 규칙을
+잠시 치우면 archive 테스트가 실패함을 확인했다. `recovery-policy/README.md`에 수동 이미지 빌드·배포 절차
+(`git -c core.autocrlf=false archive`, 커밋 blob 기준 SHA-256 매니페스트, 롤아웃 전 이미지 안·롤아웃 후 파드
+안 검증)를 기록했고 1~2단계는 실제 실행해 검증했다(3~7단계는 이미지 빌드·배포 금지 지시로 재실행하지 않았다 -
+§40.2에서 실제로 성공한 명령이다).
+
+**커밋 검증 중 겪은 것**: 임시 워크트리를 `.gitattributes`가 **커밋되기 전** HEAD로 체크아웃한 뒤 규칙을
+덮어쓰자 `git_askpass.sh`가 CRLF로 남아 바이트 테스트 2개가 실패했다 - 규칙은 그 뒤에 체크아웃되는 파일에만
+적용되므로 규칙 이전에 받은 클론·워크트리는 CRLF인 채로 남는다(이 PC의 기존 `claude/*` 워크트리도 해당될 수
+있다). 테스트가 장애를 실제로 잡는다는 증거이고, 실패 메시지에 `git checkout -- recovery-policy/git_askpass.sh`
+재체크아웃 힌트를 넣었다. 규칙이 커밋된 트리의 **새 체크아웃**은 `CR=0`이며 전체 스위트가 통과한다.
+
+### 41.4 검증 (전부 존재하지 않는 KUBECONFIG)
+
+| 시점 | 결과 |
+|---|---|
+| 1단계 게이트(전체 스위트) | 314 passed, 3 deselected |
+| 커밋 1 스냅샷(HEAD + 커밋 1 파일) | 314 passed |
+| 커밋 2 스냅샷 | 321 passed |
+| 커밋 3 스냅샷(새 체크아웃) | 324 passed |
+| 최종(3단계 후 전체) | 324 passed, 3 deselected, 2 warnings(기존 FastAPI 경고) |
+
+각 커밋은 브랜치에 연결하지 않은 임시 커밋/워크트리로 그 커밋의 스냅샷을 전체 스위트로 검증한 뒤 만들었다.
+클러스터의 recovery-policy 이미지(`sha256:4ddcadbf…`, `a064cdc` 기준)는 이번에 다시 빌드·배포하지 않았고,
+HEAD의 `recovery-policy/`는 그 이미지와 README·신규 테스트만 다르다(런타임 코드 동일).
