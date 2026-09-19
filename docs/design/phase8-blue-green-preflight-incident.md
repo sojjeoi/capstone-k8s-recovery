@@ -4442,3 +4442,87 @@ network-tolerant overlay의 readiness/liveness `timeoutSeconds`를 11로 바꾸�
 정리 실패 시 CR·pod 정리). `--dry-run --candidate-timeout-sec 11` OK. `--preflight-only` OK: Node 2개 Ready, Rollout gen 30 Healthy 단일 revision
 `659795b9df`, 운영 pod 2개 restarts 0, Chaos CR 없음, context null, worker ssh 체인 `/health` 3/3, **시계 오프셋 +0.293초(RTT 0.66초)** - §44.1의
 사전 측정(+0.285 +-0.28)과 일치, Prometheus 운영 pod 카운터 존재(Readiness successful 5406, Liveness successful 2703, failed series 없음).
+
+## 45. 후보 11초 독립 2회 calibration 결과 - 두 회차 모두 `PASS`, `timeoutSeconds = 11` 확정 (2026-09-19)
+
+§44 사전 등록(+§44.6 addendum)대로 **후보 11초로 독립 2회**를 실행했고, 두 회차 모두 사전 등록 PASS 조건을 충족해 `timeoutSeconds = 11`을 확정한다.
+`network_degrade` 3-arm 파일럿과 본 실험은 시작하지 않았다. 결과는 pilot이며 본 분석에서 제외한다(§42).
+
+### 45.1 실행 절차와 불변 확인
+
+- 도구 `72f8b6c`(v2), 측정 전 오프라인 463 passed·dry-run·preflight OK(§44.6). 두 회차 모두 `--execute --candidate-timeout-sec 11` - 후보는
+  **calibration pod에만** 적용했고 운영 Rollout·overlay는 그대로였다.
+- **1회차** `calib-net-tolerant-20260919t135919z`: 13:59:21Z 시작, 콜드스타트 4분 1초(pod 생성 13:59:26 -> Ready 관측 14:03:27), 정리 완료 14:15:10Z.
+- **회차 사이**: 정리 완료 뒤 상태 확인(14:17:36Z) -> **cooldown 300초**(14:20:11Z까지) -> preflight 재확인(14:20:34Z): Node 2개 Ready, Rollout gen 30
+  Healthy 단일 revision `659795b9df`(active = preview), 운영 pod UID `b1cfad9f...`(vLLM)·`95d64e6a...`(recovery-policy) restarts 0, Chaos CR·실험 pod 없음,
+  context null - 1회차 전과 동일.
+- **2회차** `calib-net-tolerant-20260919t142045z`(새 pod·새 CR): 14:20:47Z 시작, 콜드스타트 3분 52초(14:20:51 -> 14:24:43), 정리 완료 14:36:24Z. 종료 뒤
+  확인(14:37:32Z): 위와 같은 상태(Service selector·context 포함). 두 회차 모두 도구가 스스로 중단한 일이 없다(H1~H12 없음).
+
+### 45.2 조건별 판정 (도구 판정을 원본 JSON으로 다시 대조했다)
+
+| 조건 (§44.2) | 1회차 | 2회차 |
+|---|---|---|
+| C1 네 stage `AllInjected=True` | 4/4 | 4/4 |
+| C2 completion 성공률 100% (9개 창, 창마다 표본 30~90개) | 100% | 100% |
+| C3 steady 구간 readiness/liveness 실패 0 | 0 | 0 |
+| C4 전체 실행 liveness 실패 0 (shutdown 제외) | 0 | 0 |
+| C5 Ready 전이·restart·UID·OOM·eviction·Node pressure 0 | 0 (Ready 조건 `lastTransitionTime` 14:03:23Z 불변) | 0 (14:24:39Z 불변) |
+| C6 teardown readiness 실패: 구간당 비연속 단발 <= 1, Ready·restart 무영향 | `teardown_4` 1건 - 허용 | `teardown_4` 1건 - 허용 |
+| C7 `T_min <= 11` | `L_max` 8.724 -> `T_req` 10.905 -> **11** | 8.642 -> 10.803 -> **11** |
+| C8 cleanup 완전 성공 | 성공 | 성공 |
+| C9 하드 실패 없음 | 없음 | 없음 |
+| V1 시계 오프셋(시작 / 종료) | +0.281 / +0.307 s (drift 0.03) | +0.320 / +0.366 s (drift 0.05) |
+| V2 9개 창 완료 | 완료 | 완료 |
+| V3 kubelet 카운터 교차검증 `E1 <= C <= E2` | Readiness 1/1/1, Liveness 0/0/0 | 1/1/1, 0/0/0 |
+| V4 `L_max` 사용 가능(client 오류 0, 성공 표본 >= 30) | 사용 가능 | 사용 가능 |
+
+### 45.3 stage별 probe 동등 `/health` 지연 (창당 성공 표본 90개, 초)
+
+| stage (지연 +-지터) | 1회차 p50 / max | 2회차 p50 / max | 이론 상한 2 x (지연 + 지터) |
+|---|---|---|---|
+| baseline (없음) | 0.004 / 0.009 | 0.004 / 0.014 | - |
+| 500 +-50 ms | 1.002 / 1.095 | 1.008 / 1.091 | 1.10 |
+| 1000 +-100 ms | 1.980 / 2.213 | 1.984 / 2.156 | 2.20 |
+| 2000 +-200 ms | 3.936 / 4.364 | 4.029 / 4.369 | 4.40 |
+| 4000 +-400 ms | 7.949 / **8.724** | 7.956 / **8.642** | 8.80 |
+
+지연은 왕복에 두 번 걸려 `/health`가 stage 지연의 약 2배로 나온다(§43). stage-4의 completion(`max_tokens=1`)은 p50 8.21/8.22, max 8.90/8.94초로 100% 성공했다.
+kubelet이 스스로 잰 probe 소요시간 히스토그램(증거용 - 판정에 쓰지 않음)에서도 성공 probe 중 **10초를 넘은 것이 없다**: Readiness `le=10`과 `+Inf`가 1회차 127/127,
+2회차 124/124(5~10초 구간 13개/12개), Liveness 68/68, 66/66(10개/10개).
+
+### 45.4 해석 주의 - 사전 등록 규칙과 판정은 바꾸지 않고, 결과의 의미와 한계를 밝힌다
+
+1. **teardown 단발 readiness 실패가 두 회차 모두 stage 4에서 났다.** 1회차 삭제 요청 +5.21초(소멸 확인 +2.87초), 2회차 +3.41초(+1.07초), 메시지는 둘 다
+   `context deadline exceeded (Client.Timeout exceeded while awaiting headers)`. §43의 10초 후보 실행에서도 같은 위치(stage-4 삭제 +5초)에서 1건이 났다 - stage 4의
+   삭제 3회 모두에서 Readiness 1건(3/3), stage 1~3의 삭제 9회에서는 0건, Liveness는 3회 모두 0건이다. 사전 등록 규칙(조건 6)은 이를 "비연속 단발 + Ready·restart 무영향"으로
+   허용하며 두 회차 모두 그 범위 안이다. 원인은 §44.5의 가설(삭제로 netem qdisc가 제거될 때 지연 큐의 응답이 버려지고 TCP 재전송이 11초 예산 안에 못 끝남)과 **모순되지 않지만
+   검증하지 않았다**.
+2. **조건 3("steady 구간 probe 실패 0")은 이벤트 timestamp 기준으로 분류한 결과다.** 위 실패의 이벤트는 teardown 구간에 찍혔지만, 11초 timeout으로 역산한 **probe 시작 시각은
+   삭제 요청 -5.8초(1회차) / -7.6초(2회차), 즉 steady 구간 안**이다. probe 시작 시각으로 분류했다면 두 회차는 steady 실패로 FAIL이었다. 사전 등록 규칙은 "이벤트는 실제 event
+   timestamp로 분류"이므로 판정은 PASS가 맞지만, 이 PASS는 그 분류 기준에 민감하다는 점을 사용자가 알아야 한다. 정상 steady 상태의 probe는 최대 8.8초라 11초 timeout에 걸리지
+   않으므로, 이 실패는 steady 자체의 timeout 부족이 아니라 CR 삭제(teardown) 개입과 겹친 probe에서만 관찰됐다는 것이 데이터의 사실이다.
+3. **`T_min <= 11`은 이론 상한에 바짝 붙어 있다.** `L_max` 8.724/8.642초는 이론 상한 8.8초 아래이고 이 값이 8.8초를 넘으면 `T_min = 12`가 돼 FAIL이다(§44.5의 추정 1% 안팎/회).
+   stage-2의 `max`가 이론 상한 2.2초를 13 ms 넘긴 것처럼 실제 오버헤드는 수 ms~십수 ms 있다. 이번 2회는 넘지 않았지만 "11초가 최소 충분값"이라는 뜻이지 큰 여유가 있다는 뜻은
+   아니다(11 - 8.72 = 2.28초, 26%).
+4. **범위와 한계.** (a) 격리 pod(같은 spec·이미지·노드, Service 뒤가 아님)에서 잰 값이다 - 실제 Rollout active pod가 Service 뒤에서 받는 부하·Prometheus 스크랩·
+   `VLLMTargetDown` 경로는 이번 측정에 없다. (b) stage-4 지연(4초 +-0.4초)까지만 검증했다. (c) 독립 n=2다. (d) probe 동등 요청은 worker 노드에서 ssh로 보낸 것이라 kubelet 자체 probe와
+   경로가 같지는 않다(히스토그램으로 교차 확인). (e) `failureThreshold`·`period`는 바꾸지 않았고 재설계도 필요 없었다(`T_min` 11 <= 상한 15).
+
+### 45.5 확정 조치와 하지 않은 것
+
+- **확정**: overlay `gitops/apps/vllm-serving/overlays/network-tolerant/probe-timeout-patch.yaml`의 readiness/liveness `timeoutSeconds` **10 -> 11**, 파일 머리의 `TODO(calibration)`을
+  실측 검증 완료 기록(근거·한계·증거 위치)으로 교체. `kubectl kustomize` 렌더 diff는 여전히 Rollout의 그 두 경로뿐이며 값만 11이다. 테스트
+  `test_real_overlay_render_changes_only_the_two_timeouts`를 11로 갱신.
+- **증거 보존**: 원본 JSON 3개(v1 1개 + v2 2개)·콘솔 로그 2개·색인 `README.md`를 `docs/design/evidence/network-tolerant-calibration/`에 커밋(구간별 probe 이벤트는 각 JSON의
+  `probe_events[].segment`와 색인 표).
+- **도구 문구 버그 수정**: `V3` 교차검증이 통과했는데 콘솔에 `교차검증 미수행`으로 표시되던 문구를 실제 detail 표시로 고쳤다(테스트 추가). 판정·측정 코드는 두 회차 뒤에도 그대로다.
+- **전체 오프라인 테스트 463 passed**(존재하지 않는 KUBECONFIG, `RUN_LIVE_TESTS` 없음, 3 deselected).
+- **하지 않은 것**: overlay를 클러스터에 적용하지 않았다(운영 Rollout은 여전히 probe timeout 기본 1초, gen 30 불변 - 적용은 파일럿 승인 뒤의 별도 절차). `network_degrade` 3-arm 파일럿과
+  본 실험은 시작하지 않았다. 이미지 빌드·배포 없음, 결과 스키마 변경 없음.
+
+### 45.6 사용자 결정이 필요한 것
+
+1. `network_degrade` 3-arm 파일럿 시작 승인. 시작하려면 overlay 적용(preview -> promote, `blue_green_prep.py` 경로)과 `--readiness-probe-timeout-sec 11`이 필요하다.
+2. teardown 인접 단발 readiness 실패를 파일럿·본 분석에서 어떻게 다룰지(stage-4 종료 직후를 별도 구간으로 표시할지 등) - 이번 사전 등록은 calibration 판정에만 적용됐다.
+3. (선택) §44.5의 flush 가설을 검증하는 별도 측정 - 지금은 미검증 가설이다.

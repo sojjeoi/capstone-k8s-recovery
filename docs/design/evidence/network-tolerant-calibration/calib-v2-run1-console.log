@@ -1,0 +1,35 @@
+calibration 시작: run_id=calib-net-tolerant-20260919t135919z pod=vllm-calib-net-tolerant-20260919t135919z 후보 timeout=11.0s (override(--candidate-timeout-sec))
+[pod] vllm-calib-net-tolerant-20260919t135919z 생성 - Ready 대기(<= 600s)
+[pod] Ready - warmup settle 30s
+[window] baseline 60s 시작 (pod ip 10.244.36.40)
+[chaos] stage-1-500ms AllInjected
+[window] stage-1-500ms 90s 시작 (pod ip 10.244.36.40)
+[window] recovery-stage-1-500ms 30s 시작 (pod ip 10.244.36.40)
+[chaos] stage-2-1000ms AllInjected
+[window] stage-2-1000ms 90s 시작 (pod ip 10.244.36.40)
+[window] recovery-stage-2-1000ms 30s 시작 (pod ip 10.244.36.40)
+[chaos] stage-3-2000ms AllInjected
+[window] stage-3-2000ms 90s 시작 (pod ip 10.244.36.40)
+[window] recovery-stage-3-2000ms 30s 시작 (pod ip 10.244.36.40)
+[chaos] stage-4-4000ms AllInjected
+[window] stage-4-4000ms 90s 시작 (pod ip 10.244.36.40)
+[window] recovery-stage-4-4000ms 30s 시작 (pod ip 10.244.36.40)
+[crosscheck] kubelet probe 카운터 교차검증 - 45s 대기(Prometheus 스크랩)
+
+결과 파일: D:\Desktop\졸업작품\capstone-k8s-recovery\experiments\results\pilot\calibration-network-tolerant-calib-net-tolerant-20260919t135919z.json
+run_outcome=PASS L_max=8.7237 T_required=10.9046 T_min=11 (후보 11.0s)
+  [OK] C1_all_stages_allinjected: AllInjected 확인 stage [1, 2, 3, 4]
+  [OK] C2_completion_success_100pct: 완료된 모든 창 100%(창마다 표본 1개 이상)
+  [OK] C3_no_steady_probe_failure: 0건
+  [OK] C4_no_liveness_failure: 0건(shutdown 제외)
+  [OK] C5_no_ready_restart_uid_oom_evict_node: 0건
+  [OK] C6_teardown_readiness_not_consecutive: teardown readiness 실패 구간별 {'teardown_4': 1}(비연속 단발 허용)
+  [OK] C7_t_min_le_candidate: L_max=8.7237 T_required=10.9046 T_min=11 후보=11.0
+  [OK] C8_cleanup_ok: 정리 완전 성공
+  [OK] C9_no_hard_fail: 없음
+  [OK] V1_clock_offset: {'start': {'offset_sec': 0.2805137634277344, 'rtt_sec': 0.5803911685943604, 'measured_at': '2026-09-19T13:59:26.611+00:00'}, 'end': {'offset_sec': 0.30660128593444824, 'rtt_sec': 0.5823445320129395, 'measured_at': '2026-09-19T14:15:10.567+00:00'}, 'used_sec': 0.2935575246810913, 'drift_sec': 0.026087522506713867}
+  [OK] V2_all_windows_complete: 9개 창 모두 완료
+  [OK] V3_probe_counter_crosscheck: 교차검증 미수행
+  [OK] V4_l_max_usable: stage-4 창 데이터 사용 가능
+probe 이벤트(구간/종류): {'shutdown/Readiness': 3, 'startup/Startup': 19, 'teardown_4/Readiness': 1}
+정리: ok=True problems=[]
