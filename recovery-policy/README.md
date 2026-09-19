@@ -24,3 +24,47 @@ in-cluster Deployment로 배포한다(`gitops/apps/recovery-policy/`) — `rollo
    ```
 3. worker 노드에 PV가 가리키는 디렉터리 준비: `ssh capstone-worker "mkdir -p /home/ubuntu/recovery-policy-data"`
 4. `kubectl apply -f gitops/apps/recovery-policy/pv.yaml -f gitops/apps/recovery-policy/pvc.yaml`
+
+## 수동 이미지 빌드·배포 절차 (worker 노드)
+
+레지스트리 없이 worker 노드(`capstone-worker`)에서 직접 빌드해 containerd에 넣는다(`imagePullPolicy: Never`). **이미지에 들어가는 소스는 반드시 커밋된 blob과 바이트 단위로 같아야 한다.** 2026-09-19에 `core.autocrlf=true`(Windows 기본)인 PC에서 옵션 없는 `git archive`가 전 파일을 CRLF로 내보내 `git_askpass.sh`의 셔뱅이 `#!/bin/sh\r`가 됐고, 컨테이너 안에서 `cannot exec '/app/git_askpass.sh'`로 모든 감사 push가 실패했다(`docs/design/phase8-blue-green-preflight-incident.md` §40.2). Python은 CRLF를 허용해 `/healthz`·API가 정상이라 기존 배포 검증을 그대로 통과했다. 루트 `.gitattributes`가 `git_askpass.sh`만 LF로 고정하고(`test_git_askpass.py`가 고정) 다른 파일은 여전히 변환되므로, 아래 절차 - 특히 1번의 `-c core.autocrlf=false`와 2·4·5·7번의 SHA-256 대조 - 는 그대로 지켜야 한다.
+
+아래에서 `<commit>`은 배포할 커밋, `<repo>`는 저장소 루트, `<out>`은 새 임시 디렉터리다. Windows Git Bash에서 컨테이너 안 경로(`/app/...`)를 넘길 때는 `MSYS_NO_PATHCONV=1`을 붙인다.
+
+1. **커밋에서 내보내기** - 작업트리 복사나 옵션 없는 `git archive`는 쓰지 않는다:
+   ```
+   git -C <repo> -c core.autocrlf=false archive <commit> recovery-policy | tar -x -C <out>
+   ```
+2. **기준 해시 매니페스트** - 자기 추출본이 아니라 **커밋 blob**에서 만든 뒤, 추출본이 그것과 같은지 먼저 확인한다:
+   ```
+   cd <out>/recovery-policy
+   for f in $(ls); do echo "$(git -C <repo> show <commit>:recovery-policy/$f | sha256sum | cut -d' ' -f1)  $f"; done > ../MANIFEST.sha256
+   sha256sum -c ../MANIFEST.sha256      # 전부 OK여야 한다 (CRLF가 섞였으면 여기서 FAILED)
+   ```
+3. **워커로 전송** - 새 빌드 디렉터리로. 매니페스트는 빌드 컨텍스트 **밖**에 둔다(`COPY . .`로 이미지에 섞이지 않게):
+   ```
+   ssh capstone-worker "mkdir /tmp/recovery-policy-build-<commit>"
+   scp <out>/recovery-policy/* capstone-worker:/tmp/recovery-policy-build-<commit>/
+   scp <out>/MANIFEST.sha256 capstone-worker:/tmp/MANIFEST-recovery-policy-<commit>.sha256
+   ```
+4. **워커 측에서 확인한 뒤 빌드**:
+   ```
+   ssh capstone-worker "cd /tmp/recovery-policy-build-<commit> && sha256sum -c /tmp/MANIFEST-recovery-policy-<commit>.sha256 && sudo docker build -t recovery-policy:local ."
+   ```
+5. **롤아웃 전에 이미지 안을 검증** - 커밋 blob 대비 SHA-256이 전 파일 OK이고, 셔뱅이 LF이며 실행비트가 유지돼야 한다:
+   ```
+   ssh capstone-worker "cat /tmp/MANIFEST-recovery-policy-<commit>.sha256 | sudo docker run -i --rm --entrypoint sh recovery-policy:local -c 'cd /app && sha256sum -c - && head -c 12 git_askpass.sh | od -c | head -1 && ls -l git_askpass.sh'"
+   ```
+6. **반입·롤아웃**:
+   ```
+   ssh capstone-worker "sudo docker save recovery-policy:local | sudo ctr -n k8s.io images import -"
+   kubectl rollout restart deployment/recovery-policy -n vllm-serving
+   kubectl rollout status deployment/recovery-policy -n vllm-serving --timeout=180s
+   ```
+7. **롤아웃 후 실행 중인 파드 안을 다시 검증**하고 상태를 확인한다:
+   ```
+   POD=$(kubectl get pods -n vllm-serving -l app=recovery-policy -o jsonpath='{.items[0].metadata.name}')
+   kubectl exec -i $POD -n vllm-serving -- sh -c 'cd /app && sha256sum -c -' < <out>/MANIFEST.sha256
+   kubectl get pod $POD -n vllm-serving -o jsonpath='{.status.containerStatuses[0].imageID} restarts={.status.containerStatuses[0].restartCount}'
+   ```
+   `imageID`가 이전과 달라졌는지, `restarts`가 0인지, `/healthz`가 ok인지도 함께 본다.

@@ -1,0 +1,5 @@
+# recovery-policy/git_askpass.sh는 Linux 컨테이너에서 셔뱅(#!/bin/sh)으로 직접 실행된다. CRLF가 섞이면
+# "cannot exec '/app/git_askpass.sh'"로 모든 감사 push가 실패한다(2026-09-19 장애, core.autocrlf=true인
+# Windows PC의 `git archive`가 CRLF로 내보냄 - docs/design/phase8-blue-green-preflight-incident.md §40.2).
+# 이 파일 하나만 LF로 고정한다 - 전역 *.sh 규칙이나 다른 파일의 줄바꿈 변경은 하지 않는다.
+recovery-policy/git_askpass.sh text eol=lf
