@@ -41,6 +41,14 @@ network_degrade의 target_replaced(2026-09-18 추가)도 같은 이유로 outcom
 outcome=prevented로만 남으면 "설정이 열화를 견뎠다"로 오해할 위험이 있어
 _check_tolerant_profile_prevented_misleading()으로 별도 issue도 남긴다 -
 어느 쪽도 outcome 자체를 바꾸지는 않는다(SLO 판정과 별개의 분석 필드).
+
+계획된 promotion은 비정상 교체가 아니다(2026-09-20, 계약서 §5.9): promotion은 장애 pod에서 준비된
+정상 pod로 트래픽을 옮기는 실험 처치 자체라 active target이 바뀌는 것이 정상이다. target_replaced=true
+만으로 restart_chain_observed=true / probe_isolation_held=false라고 판정하면 proposed 파일럿처럼 promotion이
+만든 교체를 "probe 격리 실패"로 오해한다. _classify_target_change()가 교체를 none / planned_promotion /
+unplanned / indeterminate / not_applicable로 나누고(comparison의 target_change_kind), 두 분석 필드는 unplanned
+여부만으로 정한다 - promotion 정보가 불완전하거나 모순되면 추정하지 않고 None + validation issue다. TrialResult
+스키마와 원본 JSON은 건드리지 않는다(파생 해석만 바뀐다).
 """
 import argparse
 import csv
@@ -60,6 +68,7 @@ OPTIONAL_TS_FIELDS = [
     "t_injection", "t_injection_request", "t_injection_last_seen", "t_injection_observed",
     "t_injection_end", "t_detection", "t_decision", "t_api_request",
     "t_switch", "t_slo", "t_recovery", "t_audit_write", "t_audit_push", "t_run_end",
+    "t_target_replaced",
 ]
 # t_slo는 의도적으로 제외 - t_detection과의 선후관계가 arm/outcome에 따라
 # 뒤집히는 게 정상이라(prevented) 고정 순서 검증 대상이 아니다.
@@ -191,42 +200,123 @@ def _check_injection_timestamps_consistency(row: dict, ts: dict, issues: list) -
                 f"순서 위반: t_injection_last_seen={last_seen.isoformat()} > t_injection_observed={obs.isoformat()}"))
 
 
-def _compute_profile_interpretation(row: dict) -> tuple:
-    """network_degrade의 readiness_probe_profile + target_replaced 조합을
-    해석한다(2026-09-18 추가 - 리뷰: tolerant profile에서 파드가 교체됐는데
-    SLO 위반이 안 잡혀 outcome=prevented만 남으면 "설정이 열화를 견뎠다"로
-    오해할 수 있다는 지적). outcome은 절대 바꾸지 않는다 - SLO 판정과
-    별개의 분석 필드다.
-    - default profile: target_replaced 그대로가 restart_chain_observed(연쇄
-      장애 자체가 관찰됐는지).
-    - network_tolerant profile: target_replaced의 반대가 probe_isolation_held
-      (그 설정이 열화로부터 probe를 실제로 격리했는지).
-    - profile이 둘 중 하나가 아니면(다른 시나리오, 미적용) 둘 다 None.
-    restart_chain_observed=True는 이 통제된 실험(네트워크 열화 주입과 같은
-    trial 안에서의 시간적 연관) 안에서의 관찰을 뜻할 뿐이다 - 단일 실행
-    하나로 인과관계를 확정한다는 뜻이 아니다(반복·통계적 근거는 여러 rep을
-    모은 뒤 별도로 봐야 한다)."""
+def _pod_evidence_of_unplanned_change(evidence: Optional[dict]) -> Optional[str]:
+    """pod 수준 증거(선택 입력 - 관찰기 분석 등)에서 promotion과 별개인 restart·UID 교체 흔적을 찾는다. 없으면 None."""
+    if not evidence:
+        return None
+    found = []
+    if (evidence.get("restarts") or 0) > 0:
+        found.append(f"restart +{evidence['restarts']}")
+    if evidence.get("uid_replaced"):
+        found.append("UID 교체")
+    if evidence.get("target_lost_before_promotion"):
+        found.append(f"promotion 전 target 소멸({evidence['target_lost_before_promotion']})")
+    return ", ".join(found) or None
+
+
+def _classify_target_change(row: dict, ts: dict, evidence: Optional[dict] = None) -> tuple:
+    """active target 변경을 해석한다 -> (kind, reason)  (계약서 §5.9, 2026-09-20).
+    kind: none(교체 관측 없음) | planned_promotion(검증된 promotion이 만든 변경) | unplanned(promotion으로 설명되지 않는
+    변경 = 재시작 연쇄·교체 후보) | indeterminate(promotion 정보가 불완전·모순 - 추정하지 않는다) | not_applicable
+    (profile이 default/network_tolerant가 아니거나 target_replaced 필드 없음).
+
+    - promotion과 별개인 pod 수준 증거(restart·UID 교체·promotion 전 target 소멸 - 선택 입력 `evidence`)가 있으면
+      target_replaced 값과 무관하게 unplanned - promotion으로 가리지 않는다.
+    - target_replaced=true인데 promotion 활동(action=promote_preview, promotion_verified, t_api_request, t_switch)이 전혀
+      없으면 unplanned. 활동이 있으면 promotion_verified=true + action=promote_preview + t_api_request·t_switch 존재 +
+      인과 순서(t_api_request <= t_switch)가 모두 갖춰져야만 판단한다 - 하나라도 빠지거나 어긋나면 indeterminate.
+    - 검증된 promotion이 있을 때: 교체 관측(t_target_replaced)이 promotion 요청(t_api_request)보다 앞서면 promotion과 별개라
+      unplanned, 그 이후이고 교체 pod가 식별되면 planned_promotion, 시각이나 교체 pod 식별이 없으면 indeterminate.
+      (어댑터는 stage 경계에서만 교체를 확인하므로 t_target_replaced는 관측 시각이다 - promotion 요청 이후에 관측됐다는 사실은
+      "promotion이 만들 수 있는 변경"이라는 뜻이지 그 이전 재시작이 없었다는 증명이 아니다 - 그래서 pod 증거가 있으면 우선한다.)"""
     profile = row.get("readiness_probe_profile")
-    replaced = bool(row.get("target_replaced"))
-    restart_chain_observed = replaced if profile == "default" else None
-    probe_isolation_held = (not replaced) if profile == "network_tolerant" else None
-    return restart_chain_observed, probe_isolation_held
+    if profile not in ("default", "network_tolerant"):
+        return "not_applicable", "readiness_probe_profile이 default/network_tolerant가 아님"
+    separate = _pod_evidence_of_unplanned_change(evidence)
+    if separate:
+        return "unplanned", f"promotion과 별개의 pod 증거: {separate}"
+    replaced = row.get("target_replaced")
+    if replaced is None:
+        return "not_applicable", "target_replaced 필드 없음"
+    if not replaced:
+        return "none", "target 교체 관측 없음"
+    activity = (row.get("action") == "promote_preview" or row.get("promotion_verified") is not None
+                or row.get("t_api_request") is not None or row.get("t_switch") is not None)
+    if not activity:
+        return "unplanned", "promotion 없음(action·promotion_verified·t_api_request·t_switch 모두 없음)"
+    problems = []
+    if row.get("promotion_verified") is not True:
+        problems.append(f"promotion_verified={row.get('promotion_verified')!r}(True 아님 - promotion이 active를 바꿨는지 알 수 없음)")
+    if row.get("action") != "promote_preview":
+        problems.append(f"action={row.get('action')!r}(promote_preview 아님)")
+    for name in ("t_api_request", "t_switch"):
+        if ts.get(name) is None:
+            problems.append(f"{name} 없음/파싱 불가")
+    if ts.get("t_api_request") is not None and ts.get("t_switch") is not None and ts["t_switch"] < ts["t_api_request"]:
+        problems.append("t_switch < t_api_request(인과 순서 모순)")
+    if problems:
+        return "indeterminate", "promotion 정보 불완전/모순: " + "; ".join(problems)
+    if ts.get("t_target_replaced") is None:
+        return "indeterminate", "t_target_replaced 없음/파싱 불가 - 교체와 promotion 요청의 선후를 알 수 없음"
+    if ts["t_target_replaced"] < ts["t_api_request"]:
+        return "unplanned", (f"교체 관측 {row['t_target_replaced']}이 promotion 요청 {row['t_api_request']}보다 앞섬 - "
+                             f"promotion과 별개")
+    if not row.get("target_replacement_pod_name") or not row.get("target_replacement_pod_uid"):
+        return "indeterminate", "교체 pod 식별 불가(target_replacement_pod_name/uid 없음) - 검증된 promotion의 pod인지 확인 못 함"
+    return "planned_promotion", (f"검증된 promotion(t_api_request {row['t_api_request']}, t_switch {row['t_switch']}) 뒤 교체 관측 "
+                                 f"{row['t_target_replaced']}(pod {row['target_replacement_pod_name']})")
 
 
-def _check_tolerant_profile_prevented_misleading(row: dict, issues: list) -> None:
-    """network_tolerant profile에서 대상이 교체됐는데(probe_isolation_held=
-    False) outcome=prevented로만 남으면, "위반이 안 잡혔다"만 보고 그 설정이
-    열화를 견뎠다고 오해할 위험이 있다(2026-09-18 추가, 리뷰 지적) -
-    _check_prevented_validity와 같은 이유로 별도 issue를 남긴다(단독 CSV
-    컬럼만으로는 놓치기 쉬움)."""
+def _compute_profile_interpretation(row: dict, kind: str) -> tuple:
+    """network_degrade의 readiness_probe_profile + target 변경 해석(kind)으로 두 분석 필드를 정한다(2026-09-18 추가 -
+    리뷰: tolerant profile에서 파드가 교체됐는데 SLO 위반이 안 잡혀 outcome=prevented만 남으면 "설정이 열화를 견뎠다"로
+    오해할 수 있다는 지적; 2026-09-20 정정 - 계획된 promotion은 비정상 교체가 아니다). outcome은 절대 바꾸지 않는다 -
+    SLO 판정과 별개의 분석 필드다.
+    - default profile: unplanned 교체가 있을 때만 restart_chain_observed=True(연쇄장애 자체가 관찰됐는지).
+    - network_tolerant profile: unplanned 교체가 없으면 probe_isolation_held=True(그 설정이 열화로부터 probe를 실제로
+      격리했는지), 있으면 False.
+    - planned_promotion(검증된 promotion이 만든 변경)은 unplanned가 아니다. indeterminate(promotion 정보 불완전·모순)와
+      not_applicable(profile이 둘 중 하나가 아님·필드 없음)은 둘 다 None - True/False를 추정하지 않는다.
+    restart_chain_observed=True는 이 통제된 실험(네트워크 열화 주입과 같은 trial 안에서의 시간적 연관) 안에서의
+    관찰을 뜻할 뿐이다 - 단일 실행 하나로 인과관계를 확정한다는 뜻이 아니다(반복·통계적 근거는 여러 rep을 모은 뒤
+    별도로 봐야 한다)."""
+    profile = row.get("readiness_probe_profile")
+    if profile not in ("default", "network_tolerant") or kind in ("indeterminate", "not_applicable"):
+        return None, None
+    unplanned = kind == "unplanned"
+    return (unplanned, None) if profile == "default" else (None, not unplanned)
+
+
+def _check_tolerant_profile_prevented_misleading(row: dict, kind: str, issues: list) -> None:
+    """network_tolerant profile에서 promotion으로 설명되지 않는 대상 교체(unplanned, probe_isolation_held=
+    False)가 있는데 outcome=prevented로만 남으면, "위반이 안 잡혔다"만 보고 그 설정이 열화를 견뎠다고 오해할 위험이
+    있다(2026-09-18 추가, 리뷰 지적) - _check_prevented_validity와 같은 이유로 별도 issue를 남긴다(단독 CSV 컬럼만으로는
+    놓치기 쉬움). 계획된 promotion(planned_promotion)에 의한 교체는 해당하지 않는다(2026-09-20)."""
     if row.get("readiness_probe_profile") != "network_tolerant":
         return
-    if row.get("target_replaced") and row.get("outcome") == "prevented":
+    if kind == "unplanned" and row.get("outcome") == "prevented":
         issues.append(ValidationIssue(
             row.get("run_id", "?"), "outcome",
-            "network_tolerant profile에서 대상 교체(target_replaced=true)가 있었는데 "
+            "network_tolerant profile에서 promotion으로 설명되지 않는 대상 교체(unplanned)가 있었는데 "
             "outcome=prevented - probe_isolation_held=false를 함께 보지 않으면 "
             "설정이 열화를 견딘 것으로 오해할 수 있음"))
+
+
+def _check_target_change_consistency(row: dict, kind: str, reason: str, evidence: Optional[dict], issues: list) -> None:
+    """target 변경 해석의 validation issue(2026-09-20, 계약서 §5.9): promotion 정보가 불완전하거나 모순이라 교체를 promotion과
+    구분할 수 없으면(indeterminate) 두 분석 필드를 None으로 남기고 그 사실을 issue로 드러낸다. 반대로 어댑터는 교체를
+    관측하지 못했는데(target_replaced=false) pod 증거는 restart·교체를 가리키면 두 출처의 불일치도 issue다."""
+    run_id = row.get("run_id", "?")
+    if kind == "indeterminate":
+        issues.append(ValidationIssue(
+            run_id, "target_replaced",
+            f"target_replaced=true를 promotion과 구분할 수 없음 - {reason} -> "
+            f"restart_chain_observed/probe_isolation_held를 추정하지 않고 None으로 남김"))
+    if kind == "unplanned" and not row.get("target_replaced") and _pod_evidence_of_unplanned_change(evidence):
+        issues.append(ValidationIssue(
+            run_id, "target_replaced",
+            f"target_replaced={row.get('target_replaced')!r}인데 pod 증거는 restart·교체를 가리킴({reason}) - "
+            f"어댑터가 관측하지 못한 교체(stage 경계 밖·마지막 stage 도중)"))
 
 
 def _check_judgment_consistency(row: dict, issues: list) -> None:
@@ -398,10 +488,14 @@ def load_all_results(results_dir: Path) -> list:
     return rows
 
 
-def build_comparison(rows: list) -> tuple:
+def build_comparison(rows: list, pod_evidence: Optional[dict] = None) -> tuple:
+    """pod_evidence(선택, 2026-09-20): {run_id: {"restarts": int, "uid_replaced": bool, "target_lost_before_promotion":
+    시각|bool}} - 관찰기 등 pod 수준 증거. TrialResult에는 restart·UID 교체 증거가 없어(스키마 동결) 이 입력이 있을 때만
+    promotion과 별개인 교체를 pod 증거로 확정할 수 있다(계약서 §5.9)."""
     issues: list = []
     out_rows = []
     seen_keys: dict = {}  # (scenario, arm, rep) -> [run_id, ...] - 제외 안 된 것만 대상
+    pod_evidence = pod_evidence or {}
 
     for row in rows:
         _validate_schema(row, issues)
@@ -412,13 +506,16 @@ def build_comparison(rows: list) -> tuple:
         timing_anomaly = _check_timing(row, ts, issues)
         _check_prevented_validity(row, issues)
         _check_injection_timestamps_consistency(row, ts, issues)
-        _check_tolerant_profile_prevented_misleading(row, issues)
+        evidence = pod_evidence.get(row.get("run_id"))
+        target_change_kind, target_change_reason = _classify_target_change(row, ts, evidence)
+        _check_tolerant_profile_prevented_misleading(row, target_change_kind, issues)
+        _check_target_change_consistency(row, target_change_kind, target_change_reason, evidence, issues)
         _check_judgment_consistency(row, issues)
         _check_decision_switch_consistency(row, issues)
         detector_check = _check_detector_consistency(row, issues)
         audit_pending = _check_audit_status(row, issues)
         temporal_relation = _compute_temporal_relation(ts)
-        restart_chain_observed, probe_isolation_held = _compute_profile_interpretation(row)
+        restart_chain_observed, probe_isolation_held = _compute_profile_interpretation(row, target_change_kind)
 
         if included:
             key = (row.get("scenario"), row.get("arm"), row.get("rep"))
@@ -445,6 +542,8 @@ def build_comparison(rows: list) -> tuple:
             "t_target_replaced": row.get("t_target_replaced"),
             "target_replacement_pod_name": row.get("target_replacement_pod_name"),
             "target_replacement_pod_uid": row.get("target_replacement_pod_uid"),
+            "target_change_kind": target_change_kind,
+            "target_change_reason": target_change_reason,
             "restart_chain_observed": restart_chain_observed,
             "probe_isolation_held": probe_isolation_held,
             "state": row.get("state"),
@@ -529,10 +628,14 @@ def main():
     parser = argparse.ArgumentParser(description="Phase 8 trial 결과를 run-level comparison.csv로 집계")
     parser.add_argument("--results-dir", default=str(RESULTS_DIR))
     parser.add_argument("--out", default=str(RESULTS_DIR / "comparison.csv"))
+    parser.add_argument("--pod-evidence", default=None,
+                        help="선택 - {run_id: {restarts, uid_replaced, target_lost_before_promotion}} JSON(관찰기 분석 등 "
+                             "pod 수준 증거). 있으면 promotion과 별개인 restart·교체를 unplanned로 판정한다(계약서 §5.9)")
     args = parser.parse_args()
 
     rows = load_all_results(Path(args.results_dir))
-    out_rows, issues = build_comparison(rows)
+    pod_evidence = json.loads(Path(args.pod_evidence).read_text(encoding="utf-8")) if args.pod_evidence else None
+    out_rows, issues = build_comparison(rows, pod_evidence)
     write_comparison_csv(out_rows, Path(args.out))
 
     included = sum(1 for r in out_rows if r["included_in_main_analysis"])

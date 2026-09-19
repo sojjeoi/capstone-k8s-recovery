@@ -318,11 +318,14 @@ def test_tolerant_profile_replaced_prevented_flagged_as_misleading():
     # 본 분석에서 제외하면 안 된다(2026-09-18 재확인 - issues 리스트는
     # build_comparison() 안에서 included_in_main_analysis/exclusion_reason/
     # outcome 계산에 전혀 쓰이지 않는다는 걸 이 테스트로 고정한다).
+    # 2026-09-20: 교체 관측이 promotion 요청(00:01:32)보다 앞서야 promotion과 별개인 unplanned 교체다 - 시각이 없으면 이제
+    # indeterminate(추정 안 함)라 이 issue가 아니라 별도 issue가 나온다.
     rows = [_base_row(arm="fixed_threshold", readiness_probe_profile="network_tolerant",
-                       target_replaced=True, outcome="prevented", t_slo=None, t_recovery=None,
-                       slo_evaluable_at_exit=True)]
+                       target_replaced=True, t_target_replaced="2026-01-01T00:01:10+00:00",
+                       target_replacement_pod_name="vllm-def456", target_replacement_pod_uid="uid-2",
+                       outcome="prevented", t_slo=None, t_recovery=None, slo_evaluable_at_exit=True)]
     out_rows, issues = build_comparison(rows)
-    assert any("probe_isolation_held" in i.problem for i in issues)
+    assert any("promotion으로 설명되지 않는" in i.problem and "probe_isolation_held" in i.problem for i in issues)
     r = out_rows[0]
     assert r["outcome"] == "prevented", "경고가 outcome을 바꾸면 안 됨"
     assert r["exclusion_reason"] is None, "경고가 이 trial을 제외 사유로 만들면 안 됨"
