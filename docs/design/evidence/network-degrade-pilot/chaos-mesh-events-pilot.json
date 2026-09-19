@@ -1,0 +1,912 @@
+[
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T15:48:46Z",
+  "message": "Finalizer has been inited",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Updated",
+  "time": "2026-09-19T15:48:46Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Started",
+  "time": "2026-09-19T15:48:46Z",
+  "message": "Experiment has started",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Updated",
+  "time": "2026-09-19T15:48:46Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Updated",
+  "time": "2026-09-19T15:48:46Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Applied",
+  "time": "2026-09-19T15:48:47Z",
+  "message": "Successfully apply chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Updated",
+  "time": "2026-09-19T15:48:47Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Deleted",
+  "time": "2026-09-19T15:50:16Z",
+  "message": "Experiment has been deleted",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Updated",
+  "time": "2026-09-19T15:50:16Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Updated",
+  "time": "2026-09-19T15:50:17Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Recovered",
+  "time": "2026-09-19T15:50:17Z",
+  "message": "Successfully recover chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Updated",
+  "time": "2026-09-19T15:50:17Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T15:50:17Z",
+  "message": "Finalizer has been removed",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+  "reason": "Updated",
+  "time": "2026-09-19T15:50:17Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T15:50:18Z",
+  "message": "Finalizer has been inited",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Updated",
+  "time": "2026-09-19T15:50:18Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Started",
+  "time": "2026-09-19T15:50:18Z",
+  "message": "Experiment has started",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Updated",
+  "time": "2026-09-19T15:50:18Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Updated",
+  "time": "2026-09-19T15:50:18Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Applied",
+  "time": "2026-09-19T15:50:19Z",
+  "message": "Successfully apply chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Updated",
+  "time": "2026-09-19T15:50:19Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Deleted",
+  "time": "2026-09-19T15:51:48Z",
+  "message": "Experiment has been deleted",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Updated",
+  "time": "2026-09-19T15:51:48Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Updated",
+  "time": "2026-09-19T15:51:48Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Recovered",
+  "time": "2026-09-19T15:51:49Z",
+  "message": "Successfully recover chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Updated",
+  "time": "2026-09-19T15:51:49Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T15:51:49Z",
+  "message": "Finalizer has been removed",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Updated",
+  "time": "2026-09-19T15:51:49Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+  "reason": "Failed",
+  "time": "2026-09-19T15:51:49Z",
+  "message": "Failed to update conditions: NetworkChaos.chaos-mesh.org \"netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a\" not found",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T15:51:50Z",
+  "message": "Finalizer has been inited",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Updated",
+  "time": "2026-09-19T15:51:50Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Started",
+  "time": "2026-09-19T15:51:50Z",
+  "message": "Experiment has started",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Updated",
+  "time": "2026-09-19T15:51:50Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Updated",
+  "time": "2026-09-19T15:51:50Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Applied",
+  "time": "2026-09-19T15:51:51Z",
+  "message": "Successfully apply chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Updated",
+  "time": "2026-09-19T15:51:51Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Deleted",
+  "time": "2026-09-19T15:53:20Z",
+  "message": "Experiment has been deleted",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Updated",
+  "time": "2026-09-19T15:53:20Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Updated",
+  "time": "2026-09-19T15:53:20Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Recovered",
+  "time": "2026-09-19T15:53:20Z",
+  "message": "Successfully recover chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Updated",
+  "time": "2026-09-19T15:53:20Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T15:53:20Z",
+  "message": "Finalizer has been removed",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Updated",
+  "time": "2026-09-19T15:53:20Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+  "reason": "Failed",
+  "time": "2026-09-19T15:53:20Z",
+  "message": "Failed to update conditions: NetworkChaos.chaos-mesh.org \"netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653\" not found",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T15:53:21Z",
+  "message": "Finalizer has been inited",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Updated",
+  "time": "2026-09-19T15:53:21Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Started",
+  "time": "2026-09-19T15:53:21Z",
+  "message": "Experiment has started",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Updated",
+  "time": "2026-09-19T15:53:21Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Updated",
+  "time": "2026-09-19T15:53:21Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Applied",
+  "time": "2026-09-19T15:53:21Z",
+  "message": "Successfully apply chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Updated",
+  "time": "2026-09-19T15:53:21Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Deleted",
+  "time": "2026-09-19T15:54:51Z",
+  "message": "Experiment has been deleted",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Updated",
+  "time": "2026-09-19T15:54:51Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Updated",
+  "time": "2026-09-19T15:54:51Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Recovered",
+  "time": "2026-09-19T15:54:51Z",
+  "message": "Successfully recover chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Updated",
+  "time": "2026-09-19T15:54:51Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T15:54:51Z",
+  "message": "Finalizer has been removed",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+  "reason": "Updated",
+  "time": "2026-09-19T15:54:51Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:09:20Z",
+  "message": "Finalizer has been inited",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Updated",
+  "time": "2026-09-19T16:09:20Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Started",
+  "time": "2026-09-19T16:09:20Z",
+  "message": "Experiment has started",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Updated",
+  "time": "2026-09-19T16:09:20Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Updated",
+  "time": "2026-09-19T16:09:20Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Applied",
+  "time": "2026-09-19T16:09:20Z",
+  "message": "Successfully apply chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Updated",
+  "time": "2026-09-19T16:09:20Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Deleted",
+  "time": "2026-09-19T16:10:50Z",
+  "message": "Experiment has been deleted",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Updated",
+  "time": "2026-09-19T16:10:50Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Updated",
+  "time": "2026-09-19T16:10:50Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Recovered",
+  "time": "2026-09-19T16:10:50Z",
+  "message": "Successfully recover chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Updated",
+  "time": "2026-09-19T16:10:50Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:10:50Z",
+  "message": "Finalizer has been removed",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Updated",
+  "time": "2026-09-19T16:10:50Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+  "reason": "Failed",
+  "time": "2026-09-19T16:10:50Z",
+  "message": "Failed to update conditions: NetworkChaos.chaos-mesh.org \"netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72\" not found",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:10:51Z",
+  "message": "Finalizer has been inited",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Updated",
+  "time": "2026-09-19T16:10:51Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Started",
+  "time": "2026-09-19T16:10:51Z",
+  "message": "Experiment has started",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Updated",
+  "time": "2026-09-19T16:10:51Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Updated",
+  "time": "2026-09-19T16:10:51Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Applied",
+  "time": "2026-09-19T16:10:52Z",
+  "message": "Successfully apply chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Updated",
+  "time": "2026-09-19T16:10:52Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Deleted",
+  "time": "2026-09-19T16:12:21Z",
+  "message": "Experiment has been deleted",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Updated",
+  "time": "2026-09-19T16:12:22Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Updated",
+  "time": "2026-09-19T16:12:22Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Recovered",
+  "time": "2026-09-19T16:12:22Z",
+  "message": "Successfully recover chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Updated",
+  "time": "2026-09-19T16:12:22Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:12:22Z",
+  "message": "Finalizer has been removed",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+  "reason": "Updated",
+  "time": "2026-09-19T16:12:22Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:12:23Z",
+  "message": "Finalizer has been inited",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Updated",
+  "time": "2026-09-19T16:12:23Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Started",
+  "time": "2026-09-19T16:12:23Z",
+  "message": "Experiment has started",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Updated",
+  "time": "2026-09-19T16:12:23Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Updated",
+  "time": "2026-09-19T16:12:23Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Applied",
+  "time": "2026-09-19T16:12:23Z",
+  "message": "Successfully apply chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Updated",
+  "time": "2026-09-19T16:12:23Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Deleted",
+  "time": "2026-09-19T16:13:53Z",
+  "message": "Experiment has been deleted",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Updated",
+  "time": "2026-09-19T16:13:53Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Updated",
+  "time": "2026-09-19T16:13:53Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Recovered",
+  "time": "2026-09-19T16:13:53Z",
+  "message": "Successfully recover chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Updated",
+  "time": "2026-09-19T16:13:53Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:13:53Z",
+  "message": "Finalizer has been removed",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+  "reason": "Updated",
+  "time": "2026-09-19T16:13:53Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:13:54Z",
+  "message": "Finalizer has been inited",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Updated",
+  "time": "2026-09-19T16:13:54Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Started",
+  "time": "2026-09-19T16:13:54Z",
+  "message": "Experiment has started",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Updated",
+  "time": "2026-09-19T16:13:54Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Updated",
+  "time": "2026-09-19T16:13:54Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Applied",
+  "time": "2026-09-19T16:13:55Z",
+  "message": "Successfully apply chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Updated",
+  "time": "2026-09-19T16:13:55Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Deleted",
+  "time": "2026-09-19T16:15:24Z",
+  "message": "Experiment has been deleted",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Updated",
+  "time": "2026-09-19T16:15:25Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Updated",
+  "time": "2026-09-19T16:15:25Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Recovered",
+  "time": "2026-09-19T16:15:30Z",
+  "message": "Successfully recover chaos for vllm-serving/vllm-serving-86768cbb8f-xrbmt",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Updated",
+  "time": "2026-09-19T16:15:30Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:15:30Z",
+  "message": "Finalizer has been removed",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+  "reason": "Updated",
+  "time": "2026-09-19T16:15:30Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:28:48Z",
+  "message": "Finalizer has been inited",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Updated",
+  "time": "2026-09-19T16:28:48Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Started",
+  "time": "2026-09-19T16:28:48Z",
+  "message": "Experiment has started",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Updated",
+  "time": "2026-09-19T16:28:48Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Updated",
+  "time": "2026-09-19T16:28:48Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Applied",
+  "time": "2026-09-19T16:28:48Z",
+  "message": "Successfully apply chaos for vllm-serving/vllm-serving-9c465d5c5-wtv77",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Updated",
+  "time": "2026-09-19T16:28:48Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Deleted",
+  "time": "2026-09-19T16:30:18Z",
+  "message": "Experiment has been deleted",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Updated",
+  "time": "2026-09-19T16:30:18Z",
+  "message": "Successfully update desiredPhase of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Updated",
+  "time": "2026-09-19T16:30:18Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Recovered",
+  "time": "2026-09-19T16:30:18Z",
+  "message": "Successfully recover chaos for vllm-serving/vllm-serving-9c465d5c5-wtv77",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Updated",
+  "time": "2026-09-19T16:30:18Z",
+  "message": "Successfully update records of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "FinalizerInited",
+  "time": "2026-09-19T16:30:18Z",
+  "message": "Finalizer has been removed",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Updated",
+  "time": "2026-09-19T16:30:18Z",
+  "message": "Successfully update finalizer of resource",
+  "count": 1
+ },
+ {
+  "cr": "netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac",
+  "reason": "Failed",
+  "time": "2026-09-19T16:30:18Z",
+  "message": "Failed to update conditions: NetworkChaos.chaos-mesh.org \"netdelay-pilot-network-degrade-proposed-01-20260919t162315z-s0-7a6cac\" not found",
+  "count": 1
+ }
+]

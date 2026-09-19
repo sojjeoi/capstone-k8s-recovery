@@ -1,0 +1,6 @@
+run_id: pilot-network_degrade-fixed_threshold-01-20260919T160306Z / detector: fixed_threshold
+probe_profile: network_tolerant (readiness_probe_timeout_sec=11.0)
+outcome: recovered / state: completed
+t_injection=2026-09-19T16:09:20.912222+00:00 injection_observation_error_sec=1.000706
+t_slo=2026-09-19T16:09:54.086102+00:00 t_recovery=2026-09-19T16:16:08.546254+00:00
+결과 파일: results/pilot/trial-pilot-network_degrade-fixed_threshold-01-20260919T160306Z.json

@@ -1,0 +1,13 @@
+observer 시작: results\pilot\observer-network_degrade-native.jsonl (간격 3.0s, stop-file=results\pilot\observer-native.stop)
+[15:45:57.190] pod 생성 vllm-serving-86768cbb8f-xrbmt (app=vllm-serving hash=86768cbb8f)
+[15:45:57.190] kubelet Readiness probe failed: Get "http://10.244.36.30:8000/health": dial tcp 10.244.36.30:8000: (pod vllm-serving-659795b9df-xzmkr count=2 last=2026-09-19T15:42:43Z)
+[15:45:57.190] kubelet Readiness probe failed: Get "http://10.244.36.30:8000/health": dial tcp 10.244.36.30:8000: (pod vllm-serving-659795b9df-xzmkr count=1 last=2026-09-19T15:42:48Z)
+[15:45:57.190] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-86768cbb8f-xrbmt count=17 last=2026-09-19T15:40:03Z)
+[15:45:57.190] endpoints/vllm-active: {'ready': ['vllm-serving-86768cbb8f-xrbmt'], 'not_ready': []}
+[15:45:57.190] rollout: {'phase': 'Healthy', 'abort': False, 'current_hash': '86768cbb8f', 'stable_rs': '86768cbb8f', 'active_selector': '86768cbb8f', 'preview_selector': '86768cbb8f'}
+[15:48:49.058] chaos netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53: injected_since=None deleting=None
+[15:50:19.608] chaos netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a: injected_since=None deleting=None
+[15:51:50.048] chaos netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653: injected_since=None deleting=None
+[15:53:21.507] chaos netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894: injected_since=None deleting=None
+observer 종료

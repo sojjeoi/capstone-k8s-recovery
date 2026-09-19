@@ -1,0 +1,107 @@
+{
+  "target": "vllm-serving-86768cbb8f-xrbmt",
+  "probe_timeout_sec": 11.0,
+  "worker_offset_sec": 0.3234992027282715,
+  "offset_source": "measured",
+  "stages": [
+    {
+      "name": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72",
+      "target": "vllm-serving-86768cbb8f-xrbmt",
+      "created_ts": "2026-09-19T16:09:20Z",
+      "create": "2026-09-19T16:09:20.213+00:00",
+      "allinjected": "2026-09-19T16:09:20.565+00:00",
+      "delete_request": "2026-09-19T16:10:50.370+00:00",
+      "gone": "2026-09-19T16:10:50.869+00:00",
+      "source": "watch",
+      "teardown_end": "2026-09-19T16:11:05.869+00:00"
+    },
+    {
+      "name": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff",
+      "target": "vllm-serving-86768cbb8f-xrbmt",
+      "created_ts": "2026-09-19T16:10:51Z",
+      "create": "2026-09-19T16:10:51.830+00:00",
+      "allinjected": "2026-09-19T16:10:52.238+00:00",
+      "delete_request": "2026-09-19T16:12:21.914+00:00",
+      "gone": "2026-09-19T16:12:22.242+00:00",
+      "source": "watch",
+      "teardown_end": "2026-09-19T16:12:37.242+00:00"
+    },
+    {
+      "name": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2",
+      "target": "vllm-serving-86768cbb8f-xrbmt",
+      "created_ts": "2026-09-19T16:12:23Z",
+      "create": "2026-09-19T16:12:23.345+00:00",
+      "allinjected": "2026-09-19T16:12:23.607+00:00",
+      "delete_request": "2026-09-19T16:13:53.415+00:00",
+      "gone": "2026-09-19T16:13:53.662+00:00",
+      "source": "watch",
+      "teardown_end": "2026-09-19T16:14:08.662+00:00"
+    },
+    {
+      "name": "netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6",
+      "target": "vllm-serving-86768cbb8f-xrbmt",
+      "created_ts": "2026-09-19T16:13:54Z",
+      "create": "2026-09-19T16:13:54.836+00:00",
+      "allinjected": "2026-09-19T16:13:55.102+00:00",
+      "delete_request": "2026-09-19T16:15:24.937+00:00",
+      "gone": "2026-09-19T16:15:30.552+00:00",
+      "source": "watch",
+      "teardown_end": "2026-09-19T16:15:45.552+00:00"
+    }
+  ],
+  "target_termination_start": "2026-09-19T16:15:20.032+00:00",
+  "probe_events": [
+    {
+      "kind": "Readiness",
+      "segment": "shutdown",
+      "ambiguous": false,
+      "t_pc_iso": "2026-09-19T16:15:24.176+00:00",
+      "probe_start_iso": "2026-09-19T16:15:24.176+00:00",
+      "message": "Readiness probe failed: Get \"http://10.244.36.42:8000/health\": read tcp 192.168.30.76:59988->10.244.36.42:8000"
+    },
+    {
+      "kind": "Readiness",
+      "segment": "shutdown",
+      "ambiguous": false,
+      "t_pc_iso": "2026-09-19T16:15:28.176+00:00",
+      "probe_start_iso": "2026-09-19T16:15:28.176+00:00",
+      "message": "Readiness probe failed: Get \"http://10.244.36.42:8000/health\": dial tcp 10.244.36.42:8000: connect: connection"
+    },
+    {
+      "kind": "Readiness",
+      "segment": "shutdown",
+      "ambiguous": false,
+      "t_pc_iso": "2026-09-19T16:15:39.176+00:00",
+      "probe_start_iso": "2026-09-19T16:15:28.176+00:00",
+      "message": "Readiness probe failed: Get \"http://10.244.36.42:8000/health\": context deadline exceeded (Client.Timeout excee"
+    }
+  ],
+  "counts": {
+    "steady": 0,
+    "transition_straddling": 0,
+    "teardown": 0,
+    "other": 0,
+    "shutdown": 3
+  },
+  "other_pod_probe_failures": {
+    "vllm-serving-659795b9df-xzmkr": 3,
+    "vllm-serving-9c465d5c5-wtv77": 19
+  },
+  "notes": [],
+  "ready_false": [],
+  "ready_flaps": [],
+  "endpoint_removals": [],
+  "restarts": 0,
+  "target_lost_before_promotion": null,
+  "promotion_observed": "2026-09-19T16:14:53.310+00:00",
+  "stop_conditions": [],
+  "verdict": "PASS",
+  "row": {
+    "transition_straddling": 0,
+    "ready_transition": false,
+    "endpoint_impact": false,
+    "restart": false,
+    "steady": 0,
+    "pure_teardown": 0
+  }
+}

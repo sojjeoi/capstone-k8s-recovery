@@ -4557,3 +4557,136 @@ restart에 영향이 없으면 network-tolerant profile 실패로 판정하지 �
 
 두 회차 모두 steady 실패 0·순수 teardown 실패 0·liveness 실패 0이고 재판정도 `PASS`다(조건 위반 없음). §45.4의 "이 PASS는 이벤트 timestamp 기준에 민감하다"는 주의는
 분류 정의가 명시되면서 해소됐다 - 이제 그 실패는 steady도 순수 teardown도 아닌 별도 범주로 보고된다.
+
+### 46.2 network-tolerant profile 적용 (pilot 준비 단계 - **실험 데이터에서 제외**)
+
+**적용 전 확인(읽기 전용)**
+- **live vs Git**: base 9개 리소스(Rollout·Service 2·ServiceAccount·Role·RoleBinding·ServiceMonitor·PrometheusRule·AlertmanagerConfig) 전부 "Git의 모든 필드가 live에 같은 값으로 존재"
+  (부분집합 비교, live에만 있는 서버 기본값·annotation은 허용) - 불일치 0건. overlay 렌더는 Rollout만 base와 다르고 정확히 두 경로(`readinessProbe`/`livenessProbe`의
+  `timeoutSeconds` 10 -> 11 후보값 렌더 = 11)뿐이다(§45.5).
+- **Argo CD 자동 동기화**: 없다. `applications.argoproj.io` CRD가 없고(`kubectl get applications.argoproj.io -A` -> "server doesn't have a resource type"), CRD 목록에는 Argo
+  Rollouts(`analysisruns`·`analysistemplates`·`clusteranalysistemplates`·`experiments`·`rollouts`)만 있으며, namespace에 argocd가 없고 Flux CRD도 없다(`gitops/argocd/`는 리포지토리에
+  빈 디렉터리). 직접 적용한 값이 되돌아갈 경로가 없다 - 실제로 세 arm 동안 값이 유지됐고 러너의 fail-closed 검사가 매 arm 통과했다.
+- **적용 결과 diff**: `kubectl diff`(서버 측 dry-run) = `generation` 30 -> 31 + `readinessProbe.timeoutSeconds: 11` + `livenessProbe.timeoutSeconds: 11` 추가, 그 외 변경 없음.
+  다른 8개 리소스는 live = Git이라 건드리지 않고(부수 변경 - last-applied 주석 갱신 등 - 회피) **Rollout만** `kubectl apply`했다.
+
+**적용·승격(UTC)**: 15:37:11 apply -> revision `86768cbb8f`(preview) pod `vllm-serving-86768cbb8f-xrbmt` 생성(15:37:18) -> Ready 15:40:49(`ready_since`), Rollout `Paused`
+(BlueGreenPause) 15:40:54 - 준비 3분 43초(startup probe 연결 거부 17회는 콜드스타트 정상). **warmup 완료 확인**: Ready 뒤 60초 settle 후 worker에서 preview pod에 `/health` 8/8
+(max 10 ms)·completion 8/8(p50 0.27초). preview pod spec의 두 timeout 11 확인(구 active는 1). 15:42:08 promotion - PC에 `kubectl-argo-rollouts` 바이너리가 없어 그 CLI와 같은
+효과인 status 서브리소스 patch(`{"status":{"pauseConditions":null}}`)를 썼고 selector가 3초 안에 전환됐다(Argo `SwitchService`/`RolloutCompleted` 15:42:08). 구 revision은
+`scaleDownDelaySeconds` 30초 뒤 삭제. **15:43:33 확인**: Rollout gen 31 `Healthy`(`abort` 없음), `current = stable = active = preview = 86768cbb8f`, 구 RS 0, vLLM pod 1개(UID
+`e90dba43...`, Ready, restarts 0), **live pod spec `readinessProbe`/`livenessProbe` `timeoutSeconds` = 11/11**, Rollout template도 11/11, `vllm-active` Endpoint = 새 pod.
+recovery-policy가 개입해 자동 promote한 일은 없다(context null·quiescent). 이 구간의 알림 `adhoc` 감사기록 1건(`bb573c7`, 15:38:16 `VLLMTargetDown` `observe_only`/`no_action` - 준비 중 preview는 아직 Ready가
+아니므로 §40.6과 같은 정상 동작)은 trial에 귀속되지 않는다.
+
+### 46.3 arm 공통 사전 확인과 러너 fail-closed 검사
+
+- **러너 `--readiness-probe-timeout-sec 11` fail-closed**(trial을 시작하지 않는 읽기 전용 호출로 실측): `--probe-profile network_tolerant`에 인자를 빼면 argparse 오류(종료 코드 2), `_verify_probe_profile`은 기대값
+  10 -> `ProbeProfileMismatch`(실측 11), 기대값 1.0(default profile) -> `ProbeProfileMismatch`, 기대값 11 -> 통과. 세 arm 모두 `--pilot --probe-profile network_tolerant --readiness-probe-timeout-sec 11`로 실행했다
+  (`is_pilot=true`, run_id `pilot-` 접두어).
+- **각 trial 전**: port-forward(recovery-policy 8080, Prometheus 9090)를 실제 API로 확인(`/healthz` 200, `/admin/quiescent` `true`, `/admin/experiment-run` `null`, Prometheus `/-/healthy` 200, `arm_controller`의 도달·신선도
+  검사 True), Node 2개 Ready·pressure 없음, Chaos CR 없음, 실험용 pod·detector·runner 프로세스 없음, Rollout Healthy 단일 revision. proposed 전에는 `score_server.load_model()`(IsolationForest + StandardScaler)이
+  로드됨도 확인. 각 arm마다 읽기 전용 `trial_observer.py watch`를 별도 프로세스로 띄웠다(worker 시계 오프셋 +0.310/+0.323/+0.328초).
+
+### 46.4 세 arm 실행 결과 (`native -> fixed_threshold -> proposed`, 각 1회, `is_pilot=true`)
+
+| | native | fixed_threshold | proposed |
+|---|---|---|---|
+| run_id | `pilot-network_degrade-native-01-20260919T154616Z` | `...fixed_threshold-01-20260919T160306Z` | `...proposed-01-20260919T162315Z` |
+| `state` / `outcome` | completed / `recovered` | completed / `recovered` | completed / `recovered` |
+| `injection_valid`·`probe_valid`·`baseline_valid` | true·true·true | true·true·true | true·true·true |
+| detector / preview | 없음 / 없음(`t_preview_*` null) | `fixed_threshold` / preview 준비 229.5초(16:03:13 -> 16:07:02.7), rollback 없음 | `isolation_forest` / 준비 188.0초(16:23:21.7 -> 16:26:29.7), rollback 없음 |
+| baseline | 61표본·P95 0.282·가용성 1.0 | (`valid`) | (`valid`) |
+| `t_injection` (AllInjected 관찰) | 15:48:47.499 (오차 1.0초) | 16:09:20.912 (오차 1.0초) | 16:28:49.177 (오차 1.0초) |
+| 실행된 stage 수 | 4 (전부 Applied·Recovered) | 4 (stage 4 도중 promotion) | **1** (stage 1 도중 promotion -> 어댑터가 다음 stage를 만들지 않음) |
+| `t_slo` (주입 후) | 15:49:20.4 (+32.9초) | 16:09:54.1 (+33.2초) | 16:29:24.3 (+35.2초) |
+| `t_detection` (주입 후) | - | 16:14:45.3 (**+324.4초**) `reactive`/`alertmanager` | 16:29:48.6 (**+59.4초**) `predictive`/`isolation_forest` |
+| `t_decision`·`t_api_request` | - | +38 ms·+0.2 ms | +41.7 ms·+0.24 ms |
+| `t_switch` (탐지 뒤) | - | 16:14:50.857 (+5.5초) | 16:29:51.019 (+2.4초) |
+| `t_recovery` (주입 후 / 전환 후) | 15:55:51.9 (+424.4초 / -) | 16:16:08.5 (+407.6초 / +77.7초) | 16:31:17.9 (+148.8초 / +86.9초) |
+| `action`·`decision_outcome`·`promotion_verified` | `none`·null·null | `promote_preview`·`executed_verified`·true | `promote_preview`·`executed_verified`·true |
+| `detector_check`(collect_metrics) | `ok` | `reactive_fallback`(계약서 §5.7 정의된 예외) | `ok` |
+| `readiness_probe_profile`·`timeout_sec` | `network_tolerant`·11.0 | 같음 | 같음 |
+| `target_replaced` | false | false | **true** (16:30:19.8 - 아래 46.7) |
+| 감사 | 없음(native) | `complete`, 레코드 `4902991c...`, 커밋 `42ef66c` | `complete`, 레코드 `3f508c18...`(primary) + `skipped_duplicate` `79af22fa...`, 커밋 `ad7257e` |
+| SLO probe 실패 요청(연결 오류) | 12/533 (전부 stage 4) | - | - |
+| `t_run_start` -> `t_run_end` | 15:46:16 -> 15:57:03 | 16:03:06 -> 16:17:22 | 16:23:15 -> 16:32:34 |
+
+**원자료 대조(모든 arm)**: (a) `baseline_ready`·`t_slo`·`t_recovery`를 raw probe CSV에서 미수정 `slo_judge.py`로 다시 계산해 기록값과 **세 arm 모두 정확히 일치**. (b) `t_injection`·stage 타임라인을 Chaos Mesh
+이벤트와 대조: native `Started` 15:48:46·`Applied` 15:48:47 ... stage 4 `Recovered` 15:54:51(`t_injection_end` 15:54:52.8), proposed `Started`/`Applied` 16:28:48·`Deleted`/`Recovered` 16:30:18. (c) `t_switch`를 Argo
+`SwitchService`/`RolloutCompleted` 이벤트와 대조: fixed_threshold 16:14:50Z(기록 16:14:50.857), proposed 16:29:50Z(기록 16:29:51.019 - 이벤트는 초 단위 절삭, `t_switch`는 관측 시각). (d) `t_detection`을
+Alertmanager와 대조: fixed_threshold의 idempotency key `startsAt` 16:14:35.297 + `group_wait` 10초 = 16:14:45.297 (기록 16:14:45.333). (e) 감사 4중 연결: 결과의 `audit_record_id`·`idempotency_key`·`commit_sha`가
+origin의 감사 커밋(`42ef66c`/`ad7257e`)의 `audit-log/<run_id>.jsonl` 레코드와 일치, `decided_at`이 `t_audit_write`와 일치. (f) 타임스탬프 순서 `t_injection < t_slo < t_detection <= t_decision <= t_api_request < t_switch < t_recovery` 두 non-native arm
+모두 성립. (g) `collect_metrics.py`: 세 행 이슈 0건(전체 이슈 1건은 기존 09-17 native pod_kill `prevented`). (h) `preview_prep_duration_sec`가 `t_preview_ready - t_preview_prep_start`와 일치. 필드 모순은 없었다.
+
+### 46.5 관찰기(observer) 분석 - 계약서 5.8의 최종 표
+
+trial 동안 target pod의 Ready·Endpoint·restart·kubelet probe 실패와 CR 단계 타임라인을 읽기 전용으로 기록해 §5.8로 분류했다(`observer-*-analysis.json`).
+
+| trial | steady 실패 | **`transition_straddling`** | 순수 teardown | 종료 아티팩트(`shutdown`) | Ready 전이 | Endpoint 영향 | restart·UID | 판정 |
+|---|---|---|---|---|---|---|---|---|
+| native | 0 | **0** | 0 | 0 (target 종료 없음) | 없음 | 없음 | 없음 | PASS |
+| fixed_threshold | 0 | **0** | 0 | 3 (promotion 뒤 구 pod 종료 중) | 없음 | 없음 (promotion의 selector 전환 제외) | 없음 | PASS |
+| proposed | 0 | **0** | 0 | 1 (구 pod 종료 중) | 없음 | 없음 (promotion의 selector 전환 제외) | 없음 | PASS |
+| calibration 1회차 (§45 재분류) | 0 | **1** (`transition_straddling_4`) | 0 | 3 | 없음 | 없음(Ready 전이 0 = Endpoint 유지) | 없음 | PASS |
+| calibration 2회차 (§45 재분류) | 0 | **1** (`transition_straddling_4`) | 0 | 3 | 없음 | 없음(Ready 전이 0 = Endpoint 유지) | 없음 | PASS |
+
+- **세 trial 모두 `transition_straddling` 0건**이다 - calibration의 격리 pod는 stage-4 삭제마다 1건씩(3/3)이었는데 trial의 stage-4 삭제(native)에는 없었다. n이 작고 원인(§44.5 flush 가설)은 **검증하지 않았으므로**(승인에 따라 진행하지 않음)
+  이 차이에 결론을 내리지 않는다.
+- `fixed_threshold`의 shutdown 3건은 promotion(16:14:50) 30초 뒤 구 pod가 scale-down(`Killing` 16:15:20Z, deleting 첫 관찰 16:15:20.0)된 **뒤**의 readiness 실패(16:15:24·16:15:28·16:15:39Z: `read tcp`·`dial tcp`·`context deadline exceeded`)다.
+  같은 시각대(16:15:24.9)에 stage-4 CR 삭제가 있었지만 target 자신의 종료가 먼저 시작돼 있었으므로 §5.8의 `shutdown`(기록만, 판정 제외)이다. 이때 CR 소멸은 0.25~0.5초(stage 1~3)가 아니라 5.6초 걸렸다(종료 중인 pod의 복구).
+- `proposed`의 shutdown 1건은 구 pod 종료(16:30:20) 뒤 16:30:23Z의 readiness 실패다.
+- native의 CR 단계 타임라인은 관찰기 결함(46.8)으로 스트림이 비어 **Chaos Mesh 이벤트**(초 단위)로 재구성해 같은 분석을 돌렸다(결과 동일: 실패·Ready 전이 없음). fixed_threshold·proposed는 CR watch 스트림(sub-second)으로 분석했다.
+
+### 46.6 중단 조건 평가
+
+| 중단 조건 | native | fixed_threshold | proposed |
+|---|---|---|---|
+| readiness/liveness steady 실패 | 없음 | 없음 | 없음 |
+| Ready=False · Endpoint 제거 · restart·UID 변경 | 없음 | 없음 | 없음 |
+| HarnessCorrupted | 없음 | 없음 | 없음 |
+| preview cleanup/rollback 실패 | 해당 없음(preview 없음) | 없음(promote됨) | 없음(promote됨) |
+| Node 이상 | 없음 | 없음 | 없음 |
+| 결과 필드 모순 | 없음 | 없음(`target_replaced` 주의 - 46.7) | 없음(`target_replaced` 주의 - 46.7) |
+| port-forward·detector 비정상 종료 | 없음(로컬 API 200 유지) | 없음 | 없음 |
+
+어느 arm에서도 중단 조건이 발생하지 않아 세 arm 모두 실행했다. **trial 종료 뒤 단일 revision 복원**: native(preview 없음) Rollout 불변 `86768cbb8f`; fixed_threshold promotion -> `9c465d5c5`(gen 32) Healthy 단일; proposed promotion -> `579d5d6dfb`
+(gen 33) Healthy 단일 - 모두 구 RS 0, vLLM pod 1개 Ready restarts 0, Chaos CR·실험 pod·detector 프로세스 없음, context null, quiescent, Node Ready.
+
+### 46.7 비교(n=1 - 우열 결론을 내리지 않는다)와 해석 주의
+
+- 한 번씩의 파일럿이라 위 46.4 표의 차이(탐지 시각 +324.4초 vs +59.4초 등)는 기능 검증 값이지 통계적 근거가 아니다. 탐지 경로가 다르다는 사실만 기록한다: fixed_threshold의 CPU 임계 규칙은 신호를 내지 않았고 최초 탐지는 반응형 fallback(`VLLMTargetDown`이 stage 4에서 발화)이었으며,
+  proposed는 stage 1 시작 59초 뒤 예측으로 탐지해 2.4초 만에 전환했다. native 실행 중에도 Alertmanager 알림(`startsAt` 15:53:05, stage 3 도중)이 `adhoc`(`89cfd29`, `observe_only`/`no_action`, 15:54:50 `skipped_duplicate` `b357b32`)로 처리됐다 - 감사기록에 alertname은 없어
+  `VLLMTargetDown`으로 추정만 한다(native는 preview·context가 없어 정책이 관찰만 한다).
+- **`target_replaced`와 promotion(스키마 불변 - 해석만 명시)**: proposed의 `target_replaced=true`(16:30:19.8)는 어댑터가 **stage 경계**(stage 1 -> 2)에서 active pod가 바뀐 것을 관찰한 결과인데, 그 원인은 재시작·probe 실패가 아니라 **promotion**(`t_switch` 16:29:51.0)이다 - observer로 확인:
+  target은 promotion까지 Ready·Endpoint 유지·restart 0·probe 실패 0. 그러나 `collect_metrics.py`의 파생 값 `probe_isolation_held`는 `target_replaced=true`라서 이 행에서 **`False`**로 나온다(`comparison.csv`). 오해를 부르는 값이다. 반대로 fixed_threshold는 promotion이 마지막 stage(4) 도중에
+  일어나 그 뒤 stage 경계가 없어 `target_replaced=false`다. 즉 이 필드는 "stage 경계에서 관찰된 교체"만 뜻하고 promotion과 restart 연쇄를 구분하지 못한다. 분석에서 `probe_isolation_held`를 쓸 때 promotion으로 설명되는 교체(`promotion_verified`이고 `t_switch <= t_target_replaced`)를 제외해야 한다 - **이번엔 고치지 않고 보고만 한다**(사용자 결정, 46.10).
+- 관찰: promotion이 일어나면 그 뒤 stage가 생략되므로(proposed는 stage 1만) arm 간 주입 노출 시간이 다르다(native 4 stage, fixed_threshold 4 stage(단 stage 4는 promotion 뒤에도 CR이 90초 채움), proposed 1 stage).
+
+### 46.8 관찰기(`trial_observer.py`) 실측 결함 3건 - 발견·수정 (`01935cf`)
+
+1. **kubectl watch 출력 형식**: `kubectl get -w --output-watch-events -o json`은 이벤트마다 **한 줄짜리 compact JSON**을 내는데 여러 줄 pretty-print로 가정해 파서를 짰다 - **native arm의 CR watch 스트림이 비었다**. native의 stage별 AllInjected·삭제 완료는 Chaos Mesh
+   이벤트(`Started`/`Applied`/`Deleted`/`Recovered`)와 어댑터의 `t_injection`으로 대조했다. fixed_threshold 전에 실제 kubectl 출력 샘플로 파서를 고쳐(compact·multi-line 모두) 이후 두 arm은 스트림이 온전하다(CR 레코드 56개·14개).
+2. **AllInjected 시각**: Chaos Mesh `status.conditions`에는 `lastTransitionTime`이 없다 - `injected_since`가 항상 `None`이었다. `True`로 표시하고 시각은 스트림 수신 시각을 쓴다.
+3. **target 종료 뒤 shutdown**: promotion 뒤 Argo scale-down이 target을 종료시킬 때 그 종료 중의 probe 실패가 순수 teardown/straddling으로 분류될 뻔했다(fixed_threshold에서 실제 발생). 계약서 §5.8 표에 이미 있던 `shutdown` 범주를 target의 `Killing`
+   이벤트/deleting 첫 관찰 시각부터 적용하도록 고쳤다(분류기도 종료 시작 뒤 이벤트를 다음 stage 경계보다 우선해 shutdown으로 봄). **이 수정은 fixed_threshold 결과를 본 뒤에 한 분석 코드 수정**이다 - 규칙 자체(shutdown 제외)는 §44.1·§5.8에 사전에 있었고 적용 누락을 고친 것이며, 수정 전 분류로는 그 3건이
+   `transition_straddling`/`teardown`으로 나와 연속 실패(FAIL)로 잘못 판정됐을 것이라는 점을 함께 밝힌다. 테스트 4개 추가, 전체 오프라인 501 passed.
+- **의도치 않은 상시 실행(읽기 전용)**: profile 전환용 observer를 중지 파일로 끄려다 5~6초 만에 파일을 지워 종료되지 않았고, 16:44까지 세 arm 내내 돌았다(`kubectl get`뿐 - 클러스터 변경 없음, 이후 정상 종료·footer 기록). 결과적으로 전 구간의 독립 로그가 남았다
+  (`observer-profile-switch-to-tolerant.*`).
+
+### 46.9 base profile 복원 (preview -> warmup -> promotion)
+
+- **복원 전**: `kubectl diff -f gitops/apps/vllm-serving/rollout.yaml`(Git base vs live) = `generation` 33 -> 34 + 두 `timeoutSeconds: 11` **제거**뿐.
+- 16:34:58 apply -> revision `6b9d88c96`(preview) pod `vllm-serving-6b9d88c96-64k7r` -> Ready 16:38:16, Rollout `Paused` 16:38:17. preview pod spec의 두 timeout = **1/1(기본값)**, startup 65 불변. 53초 settle 후 worker에서 `/health` 8/8(max 17 ms)·completion 8/8(p50 0.26초).
+  16:39:24 promotion(status patch) -> selector 3초 안에 전환, 구 pod는 30초 뒤 삭제.
+- **최종 확인(16:40:18)**: Rollout gen 34 `Healthy`, `current = stable = active = preview = 6b9d88c96`, 구 RS 0, vLLM pod 1개(UID `630f21a9...`, Ready, restarts 0), **live pod `readinessProbe`/`livenessProbe` `timeoutSeconds` = 1/1(기본값)**, Rollout template의 두 값
+  미지정, `kubectl diff`(Git base vs live) **차이 없음(exit 0)**, 러너 검사: 기대 1.0 통과 / 기대 11 `ProbeProfileMismatch`. Chaos CR 없음, context null, quiescent, Node Ready, observer·port-forward·detector·runner 프로세스 종료.
+  이 전환 과정도 pilot 준비/정리 단계라 실험 데이터에서 제외한다. 종료 시점의 base 복원은 `network_degrade` 파일럿을 마친 뒤의 상태이며, 다음 network-tolerant 실험을 하려면 §46.2를 다시 거쳐야 한다.
+
+### 46.10 하지 않은 것과 사용자 결정이 필요한 것
+
+- **하지 않은 것**: `memory_pressure`와 본 실험은 시작하지 않았다. 이미지 빌드·배포 없음, 결과 스키마(`TrialResult`) 변경·새 필드 없음, flush 가설 검증 없음, force-push·rebase 없음. `claude/*` worktree는 손대지 않았다.
+- **결정 요청**
+  1. `probe_isolation_held`(및 `restart_chain_observed`)가 promotion으로 설명되는 `target_replaced`를 제외하도록 `collect_metrics.py`를 고칠지(46.7) - 본 실험 전에 정해야 한다. 스키마 변경 없이 파생 값 정의만 바꾸는 작업이다.
+  2. 본 실험의 network_degrade에서 promotion 이후 stage를 어떻게 다룰지 - 지금은 promotion으로 target이 바뀌면 다음 stage를 만들지 않아 arm 간 주입 노출이 다르다(46.7 관찰).
+  3. 본 실험 계획(60 trial)으로 넘어갈지와 `memory_pressure` 파일럿 여부.

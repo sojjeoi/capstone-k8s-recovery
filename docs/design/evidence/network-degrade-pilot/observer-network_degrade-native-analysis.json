@@ -1,0 +1,82 @@
+{
+  "target": "vllm-serving-86768cbb8f-xrbmt",
+  "probe_timeout_sec": 11,
+  "worker_offset_sec": 0.3323267698287964,
+  "offset_source": "measured",
+  "stages": [
+    {
+      "name": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s0-5f0c53",
+      "target": "vllm-serving-86768cbb8f-xrbmt",
+      "created_ts": "2026-09-19T15:01:00Z",
+      "create": "2026-09-19T15:48:46.000+00:00",
+      "allinjected": "2026-09-19T15:48:47.000+00:00",
+      "delete_request": "2026-09-19T15:50:16.000+00:00",
+      "gone": "2026-09-19T15:50:17.000+00:00",
+      "source": "watch",
+      "teardown_end": "2026-09-19T15:50:32.000+00:00"
+    },
+    {
+      "name": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s1-fd1a2a",
+      "target": "vllm-serving-86768cbb8f-xrbmt",
+      "created_ts": "2026-09-19T15:02:00Z",
+      "create": "2026-09-19T15:50:18.000+00:00",
+      "allinjected": "2026-09-19T15:50:19.000+00:00",
+      "delete_request": "2026-09-19T15:51:48.000+00:00",
+      "gone": "2026-09-19T15:51:49.000+00:00",
+      "source": "watch",
+      "teardown_end": "2026-09-19T15:52:04.000+00:00"
+    },
+    {
+      "name": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s2-2ff653",
+      "target": "vllm-serving-86768cbb8f-xrbmt",
+      "created_ts": "2026-09-19T15:03:00Z",
+      "create": "2026-09-19T15:51:50.000+00:00",
+      "allinjected": "2026-09-19T15:51:51.000+00:00",
+      "delete_request": "2026-09-19T15:53:20.000+00:00",
+      "gone": "2026-09-19T15:53:20.000+00:00",
+      "source": "watch",
+      "teardown_end": "2026-09-19T15:53:35.000+00:00"
+    },
+    {
+      "name": "netdelay-pilot-network-degrade-native-01-20260919t154616z-s3-214894",
+      "target": "vllm-serving-86768cbb8f-xrbmt",
+      "created_ts": "2026-09-19T15:04:00Z",
+      "create": "2026-09-19T15:53:21.000+00:00",
+      "allinjected": "2026-09-19T15:53:21.000+00:00",
+      "delete_request": "2026-09-19T15:54:51.000+00:00",
+      "gone": "2026-09-19T15:54:51.000+00:00",
+      "source": "watch",
+      "teardown_end": "2026-09-19T15:55:06.000+00:00"
+    }
+  ],
+  "target_termination_start": null,
+  "probe_events": [],
+  "counts": {
+    "steady": 0,
+    "transition_straddling": 0,
+    "teardown": 0,
+    "other": 0,
+    "shutdown": 0
+  },
+  "other_pod_probe_failures": {
+    "vllm-serving-659795b9df-xzmkr": 3
+  },
+  "notes": [],
+  "ready_false": [],
+  "ready_flaps": [],
+  "endpoint_removals": [],
+  "restarts": 0,
+  "target_lost_before_promotion": null,
+  "promotion_observed": null,
+  "stop_conditions": [],
+  "verdict": "PASS",
+  "row": {
+    "transition_straddling": 0,
+    "ready_transition": false,
+    "endpoint_impact": false,
+    "restart": false,
+    "steady": 0,
+    "pure_teardown": 0
+  },
+  "stage_timeline_source": "Chaos Mesh 이벤트(초 단위, 컨트롤러 시계) - native observer의 CR watch 스트림은 kubectl 출력 형식 오해로 비어 있었다(수정됨)"
+}

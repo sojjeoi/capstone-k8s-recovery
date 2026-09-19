@@ -1,0 +1,7 @@
+run_id: pilot-network_degrade-proposed-01-20260919T162315Z / detector: isolation_forest
+probe_profile: network_tolerant (readiness_probe_timeout_sec=11.0)
+outcome: recovered / state: completed
+t_injection=2026-09-19T16:28:49.177042+00:00 injection_observation_error_sec=1.001126
+t_slo=2026-09-19T16:29:24.349196+00:00 t_recovery=2026-09-19T16:31:17.929195+00:00
+target_replaced=True at 2026-09-19T16:30:19.829742+00:00 (replacement=vllm-serving-579d5d6dfb-wc6v4/3cb47b9c-a8ec-450d-9a63-9a42d6f3566d) - invalid_run 아님, network_tolerant profile 맥락에서 해석할 것
+결과 파일: results/pilot/trial-pilot-network_degrade-proposed-01-20260919T162315Z.json

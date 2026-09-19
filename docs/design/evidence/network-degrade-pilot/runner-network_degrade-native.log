@@ -1,0 +1,6 @@
+run_id: pilot-network_degrade-native-01-20260919T154616Z
+probe_profile: network_tolerant (readiness_probe_timeout_sec=11.0)
+outcome: recovered / state: completed
+t_injection=2026-09-19T15:48:47.499092+00:00 injection_observation_error_sec=1.000903
+t_slo=2026-09-19T15:49:20.434057+00:00 t_recovery=2026-09-19T15:55:51.939330+00:00
+결과 파일: results/pilot/trial-pilot-network_degrade-native-01-20260919T154616Z.json

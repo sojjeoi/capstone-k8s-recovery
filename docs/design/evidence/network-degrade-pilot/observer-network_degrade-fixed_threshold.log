@@ -1,0 +1,61 @@
+observer 시작: results\pilot\observer-network_degrade-fixed_threshold.jsonl (간격 3.0s, stop-file=results\pilot\observer-fixed_threshold.stop)
+[16:02:39.486] pod 생성 vllm-serving-86768cbb8f-xrbmt (app=vllm-serving hash=86768cbb8f)
+[16:02:39.486] kubelet Readiness probe failed: Get "http://10.244.36.30:8000/health": dial tcp 10.244.36.30:8000: (pod vllm-serving-659795b9df-xzmkr count=2 last=2026-09-19T15:42:43Z)
+[16:02:39.486] kubelet Readiness probe failed: Get "http://10.244.36.30:8000/health": dial tcp 10.244.36.30:8000: (pod vllm-serving-659795b9df-xzmkr count=1 last=2026-09-19T15:42:48Z)
+[16:02:39.486] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-86768cbb8f-xrbmt count=17 last=2026-09-19T15:40:03Z)
+[16:02:39.486] endpoints/vllm-active: {'ready': ['vllm-serving-86768cbb8f-xrbmt'], 'not_ready': []}
+[16:02:39.486] rollout: {'phase': 'Healthy', 'abort': False, 'current_hash': '86768cbb8f', 'stable_rs': '86768cbb8f', 'active_selector': '86768cbb8f', 'preview_selector': '86768cbb8f'}
+[16:03:13.751] pod 생성 vllm-serving-9c465d5c5-wtv77 (app=vllm-serving hash=9c465d5c5)
+[16:03:13.751] rollout: {'phase': 'Progressing', 'abort': False, 'current_hash': '9c465d5c5', 'stable_rs': '86768cbb8f', 'active_selector': '86768cbb8f', 'preview_selector': '9c465d5c5'}
+[16:03:25.086] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=1 last=2026-09-19T16:03:25Z)
+[16:03:36.786] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=2 last=2026-09-19T16:03:34Z)
+[16:03:44.775] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=3 last=2026-09-19T16:03:44Z)
+[16:03:56.538] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=4 last=2026-09-19T16:03:54Z)
+[16:04:08.206] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=5 last=2026-09-19T16:04:04Z)
+[16:04:19.791] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=6 last=2026-09-19T16:04:14Z)
+[16:04:31.486] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=7 last=2026-09-19T16:04:24Z)
+[16:04:35.081] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=8 last=2026-09-19T16:04:34Z)
+[16:04:46.686] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=9 last=2026-09-19T16:04:44Z)
+[16:04:54.730] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=10 last=2026-09-19T16:04:54Z)
+[16:05:06.283] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=11 last=2026-09-19T16:05:04Z)
+[16:05:18.133] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=12 last=2026-09-19T16:05:14Z)
+[16:05:29.815] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=13 last=2026-09-19T16:05:24Z)
+[16:05:33.520] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=14 last=2026-09-19T16:05:34Z)
+[16:05:45.317] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=15 last=2026-09-19T16:05:44Z)
+[16:05:56.988] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=16 last=2026-09-19T16:05:54Z)
+[16:06:04.973] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=17 last=2026-09-19T16:06:04Z)
+[16:06:16.658] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=18 last=2026-09-19T16:06:14Z)
+[16:06:28.273] kubelet Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused
+ (pod vllm-serving-9c465d5c5-wtv77 count=19 last=2026-09-19T16:06:25Z)
+[16:07:03.327] rollout: {'phase': 'Paused', 'abort': False, 'current_hash': '9c465d5c5', 'stable_rs': '86768cbb8f', 'active_selector': '86768cbb8f', 'preview_selector': '9c465d5c5'}
+[16:09:21.643] chaos netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s0-4acc72: injected_since=True deleting=None
+[16:10:52.626] chaos netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s1-d8ccff: injected_since=True deleting=None
+[16:12:24.197] chaos netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s2-9bdfa2: injected_since=True deleting=None
+[16:13:55.937] chaos netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6: injected_since=True deleting=None
+[16:14:53.310] endpoints/vllm-active: {'ready': ['vllm-serving-9c465d5c5-wtv77'], 'not_ready': []}
+[16:14:53.310] rollout: {'phase': 'Healthy', 'abort': False, 'current_hash': '9c465d5c5', 'stable_rs': '9c465d5c5', 'active_selector': '9c465d5c5', 'preview_selector': '9c465d5c5'}
+[16:15:27.906] kubelet Readiness probe failed: Get "http://10.244.36.42:8000/health": read tcp 192.168.30.76:5998 (pod vllm-serving-86768cbb8f-xrbmt count=1 last=2026-09-19T16:15:24Z)
+[16:15:27.906] chaos netdelay-pilot-network-degrade-fixed-threshold-01-20260919t160306z-s3-ca1ee6: injected_since=None deleting=2026-09-19T16:15:24Z
+[16:15:31.452] pod 소멸 vllm-serving-86768cbb8f-xrbmt
+[16:15:31.452] kubelet Readiness probe failed: Get "http://10.244.36.42:8000/health": dial tcp 10.244.36.42:8000: (pod vllm-serving-86768cbb8f-xrbmt count=1 last=2026-09-19T16:15:28Z)
+[16:15:39.884] kubelet Readiness probe failed: Get "http://10.244.36.42:8000/health": context deadline exceeded ( (pod vllm-serving-86768cbb8f-xrbmt count=1 last=2026-09-19T16:15:39Z)
+observer 종료
