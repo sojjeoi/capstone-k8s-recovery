@@ -4034,3 +4034,164 @@ LF 셔뱅, CRLF·UTF-8 BOM 없음, 장애 재현 조건(autocrlf=true의 `git ar
 각 커밋은 브랜치에 연결하지 않은 임시 커밋/워크트리로 그 커밋의 스냅샷을 전체 스위트로 검증한 뒤 만들었다.
 클러스터의 recovery-policy 이미지(`sha256:4ddcadbf…`, `a064cdc` 기준)는 이번에 다시 빌드·배포하지 않았고,
 HEAD의 `recovery-policy/`는 그 이미지와 README·신규 테스트만 다르다(런타임 코드 동일).
+
+## 42. `network_degrade` probe timeout calibration - 사전 등록 (측정 전, 2026-09-19)
+
+`8b348ea`까지의 변경을 승인받은 뒤, **timeout calibration 단계만** 진행하라는 지시를 받았다(3-arm 파일럿·
+본 실험 금지, 잔여 `claude/*` worktree·로컬 브랜치는 그대로 둠). 이 절은 **측정 전에** 판정 규칙을 고정한다 -
+측정 뒤 값·규칙을 사후 조정하지 않는다(정정이 필요하면 측정 전의 날짜 붙은 addendum으로만 한다). 후보 timeout
+10초를 미리 확정하지 않는다: 10초는 overlay의 **미검증 후보**이고, 이 절의 규칙이 측정값으로 유지/변경을 정한다.
+
+### 42.1 시작 전 확인 (2026-09-19 09:52~09:59Z, 읽기 전용)
+
+| 항목 | 결과 |
+|---|---|
+| git | HEAD == origin/master == `8b348ea`, ahead/behind 0/0, working tree clean. 잔여 `claude/*` worktree 2·브랜치 2(`192f663`, clean, 추가 커밋 없음)는 건드리지 않음 |
+| Node | `sj-control`·`sj-worker` Ready, Memory/Disk/PID pressure 없음 |
+| Rollout | Healthy, `currentPodHash = stableRS = active = preview = 659795b9df`(preview 없음), replicas 1/1, generation 30 |
+| pod | vLLM `…659795b9df-xzmkr`(UID `b1cfad9f…`), recovery-policy `…69c5fb868f-tvf7b`(UID `95d64e6a…`) - 둘 다 Ready·restarts 0. ramp-probe·calibration 등 실험용 pod 없음 |
+| Chaos CR | 전 namespace 없음 |
+| recovery-policy | context `null`(API 서버 service proxy로 읽기 전용 확인 - port-forward 없이) |
+| detector·하니스 | Windows에 detector/probe/runner python 프로세스·port-forward 없음 |
+| **현재 probe**(active pod 실측) | readiness `httpGet /health` period 5s·**timeoutSeconds 1**·failureThreshold 3 / liveness period 10s·**timeoutSeconds 1**·failureThreshold 3 / startup exec(warmup) 10s·65s·90 |
+| **overlay 후보** | readiness·liveness `timeoutSeconds: 10` - `probe-timeout-patch.yaml`의 TODO가 "미검증 후보, 확정 금지"로 명시 |
+| 렌더 diff(사전 실측) | `kubectl kustomize --load-restrictor=LoadRestrictionsNone`이 9개 리소스를 렌더하고 **Rollout만 정확히 2경로**(`/spec/template/spec/containers/0/{readiness,liveness}Probe/timeoutSeconds`, 없음→10)가 다르다. 나머지 8개(Service 2·ServiceMonitor·PrometheusRule·AlertmanagerConfig·RBAC 3)는 raw base와 동일 |
+| 노드 여력 | `sj-worker` allocatable 8 vCPU·15.5GiB, 현재 requests cpu 31%·mem 35% - vLLM pod 1개를 더 올릴 수 있다(preview와 같은 부하) |
+| GitOps | `argocd` 네임스페이스 없음(auto-sync가 수동 변경을 되돌리지 않음 - 이번엔 apply도 하지 않는다) |
+| worker | ssh OK, `curl`·`python3 3.8.10` 있음 |
+
+### 42.2 기존 도구(`calibrate_network_tolerant_probe.py`)가 실제로 하는 일 - 코드 확인
+
+- **변경**: NetworkChaos CR 1개(`netdelay-calib-*`, 4000ms/400ms·90초)를 **active pod**에 만든다. Rollout·Service·overlay는
+  건드리지 않는다.
+- **측정**: 3초마다 `restartCount`와 `vllm-active` Endpoints 소속 여부만 본다. `AllInjected` 확인, 단계별 기록,
+  completion/probe 지연, Node·pod UID 감시가 없고 stage도 하나뿐이다.
+- **정리**: `finally`에서 `delete_network_chaos`만 부른다(실제 소멸 확인 없음).
+- **선행 조건(수동)**: overlay 적용 + preview Ready + **promote**(§8.8 4번). tolerant 리비전이 active가 된 뒤에야
+  의미가 있는 도구다.
+- **지금 상태로 그대로 실행하면**: active pod는 timeout 1초 probe라 4초 지연에서 probe가 실패해 kubelet이 컨테이너를
+  재시작하고 endpoint에서 빠진다(발견 5의 재현) - 이번 지시의 "restart·pod replacement 즉시 실패"와 "기존 active
+  revision 유지" 조건과 정면으로 충돌한다.
+
+### 42.3 설계 결정 - Rollout preview 대신 **격리 calibration pod**
+
+지시문의 "preview"를 Rollout 리비전으로 구현하면 두 가지 위험이 있어(둘 다 코드·감사기록으로 확인) 다르게
+설계했다. 이 결정은 최종 보고에서 그대로 밝힌다.
+
+1. **live Rollout spec 변경·복원 경로가 미검증이다.** overlay 적용은 라이브 Rollout의 template을 바꾸고(새 리비전),
+   되돌리려면 base를 재적용해 "안정 리비전과 같은 template으로의 롤백"을 유발한다 - 이 클러스터에서 한 번도 검증되지
+   않았고, abort는 `Degraded` 잔재를 남긴다(§35).
+2. **자동 promote 위험**: `servicemonitor.yaml`은 `app: vllm-serving` Service를 **`vllm-preview`까지** 스크랩하고,
+   `prometheusrule.yaml`의 `VLLMTargetDown`(`up == 0`, for 30s)은 Alertmanager를 거쳐 recovery-policy로 가며,
+   `policy.py`는 `VLLMTargetDown` + preview 준비됨이면 **`promote_preview`(즉시 전환)** 를 결정한다(감사 근거:
+   "VLLMTargetDown, preview 준비됨 - 즉시 전환", §40.3). 대기 preview가 있는 동안 지연이 만든 스크랩 실패는 실제
+   promote를 일으킬 수 있다. preview가 **없을 때**는 같은 알림이 `observe_only`로만 처리된다(§40.4·§40.6의 `adhoc` 기록).
+
+**결정**: Rollout과 무관한 **격리 calibration pod**(`vllm-calib-*`)에서 측정한다.
+
+- Pod spec은 overlay가 렌더한 Rollout의 `spec.template`에서 **그대로** 만든다(후보 timeout 포함, image·args·resources·
+  volumes·startupProbe 동일). 바뀌는 것은 metadata뿐이다: 이름, 라벨 `app: vllm-calibration`(어떤 Service selector·
+  Rollout selector·ServiceMonitor에도 걸리지 않게 `app: vllm-serving` 금지), `experiment-run-id`, 같은 노드 고정
+  `nodeSelector`. 소유자(Rollout/RS) 없음.
+- 어떤 Service 뒤에도 없으므로 Prometheus가 스크랩하지 않는다 -> `VLLMTargetDown` 발화·promote 경로가 **구조적으로
+  없다**. Rollout·Service·active pod·recovery-policy를 변경하는 호출이 코드에 **없다**(테스트로 고정).
+- NetworkChaos는 이 pod에만 건다(이름 지정 selector). kubelet의 readiness/liveness probe는 pod spec대로 이 pod에
+  실행되므로 timeout 후보 검증에는 preview pod와 동등하다. 다른 점은 Service/Endpoints 소속뿐이며 그 신호는 pod의
+  `Ready` 조건으로 관찰한다.
+
+| 지시 항목 | 이번 설계 |
+|---|---|
+| preview 준비·warmup 완료 후에만 측정 | calibration pod의 startupProbe(`warmup_probe.py`: 합성 completion)가 통과해 **Ready**가 된 뒤 30초 settle 후 측정 |
+| `AllInjected` 확인 | 단계마다 30초 내 확인, 실패 시 즉시 중단 |
+| 단계별 probe·completion·restart·UID·Node 기록 | 42.5 |
+| 종료 후 Chaos CR 삭제, 단일 revision 복원, context·실험 pod 없음 | Rollout을 건드리지 않으므로 유지, CR·calibration pod 삭제·소멸 확인, 사전/사후 스냅샷 비교 |
+| 예외·중단·timeout에서도 정리 | `try/finally`(KeyboardInterrupt 포함) + CR `spec.duration` 자동 만료 안전망(하니스가 죽어도 Chaos Mesh가 스스로 복구) |
+| 실패 시 기존 active revision 유지 | Rollout·Service·active pod를 바꾸는 호출이 없다 |
+
+### 42.4 절차 - 네트워크 지연 단계와 지속시간
+
+단계 값·지속시간은 `network_degrade_adapter.STAGES`·`chaos/scenario-network-degrade.yaml`과 **동일**(본 실험과 같은
+조건): 4단계 × 90초.
+
+| 순서 | 내용 | 지속 |
+|---|---|---|
+| 0 | preflight(읽기 전용) + 사전 스냅샷 | - |
+| 1 | calibration pod 생성(후보 timeout 적용), Ready 대기 | ≤ 600초 |
+| 2 | warmup settle | 30초 |
+| 3 | baseline 측정(지연 없음) | 60초 |
+| 4~7 | stage-1 500ms±50ms / stage-2 1000ms±100ms / stage-3 2000ms±200ms / **stage-4 4000ms±400ms(최악)**: CR 생성 → `AllInjected` ≤ 30초 → **측정 90초** → CR 삭제·소멸 확인(≤ 60초) → 회복 측정 30초 | 단계당 ≈ 130~150초 |
+| 8 | 정리(CR·pod 삭제, 소멸 확인) + 사후 스냅샷 비교 | ≤ 120초 |
+
+전체 하드 상한 40분. 1회만 실행한다(반복·즉석 값 변경 금지).
+
+### 42.5 측정 항목
+
+- **kubelet 관측**(API 서버, 3초마다): calibration pod의 `restartCount`·UID·phase·`Ready`/`ContainersReady` 조건·컨테이너
+  `lastState`, `Unhealthy` 이벤트 중 **Readiness/Liveness probe failed**(Startup probe 실패는 제외) 누적 횟수(창 시작·끝 차).
+- **probe 동등 요청**(worker 노드에서 ssh로 - kubelet과 같은 네트워크 위치, 창마다 별도 세션): `GET /health`를 1초마다
+  (연결마다 새 TCP, 요청 timeout 30초)와 **실험과 같은 completion**(`chaos/probe-config.yaml`: 모델·`"Hi"`·`max_tokens 1`)을
+  1 rps(timeout 60초). 각 요청의 지연·상태코드·오류를 기록하고 창별 n·성공·p50·p95·max, completion 성공률을 계산한다.
+  (loopback인 port-forward·exec은 pod egress 지연을 못 받아 쓰지 않는다.)
+- **감시**(3초마다): 양 Node 조건, 운영 vLLM pod(UID·restarts·Ready), recovery-policy pod, Rollout(`generation`·`currentPodHash`·
+  `stableRS`·`activeSelector`·`previewSelector`), 두 Service selector, namespace의 pod 목록(예상 밖 신규 pod), Chaos CR 목록,
+  recovery-policy context.
+
+### 42.6 판정 규칙 (사전 등록)
+
+**즉시 실패(FAIL) - 발생 즉시 측정을 중단하고 정리, 부분 데이터는 보존**
+
+| # | 조건 |
+|---|---|
+| H1 | calibration pod `restartCount` 증가·`lastState.terminated` 출현·UID 변경·삭제·phase Failed/Unknown |
+| H2 | calibration pod `Ready`가 최초 Ready 이후 False가 됨 |
+| H3 | 어느 Node든 `Ready != True` 또는 Memory/Disk/PID pressure·NetworkUnavailable True |
+| H4 | 운영 vLLM pod 또는 recovery-policy pod의 재시작·교체·삭제·NotReady |
+| H5 | 예상 밖 manifest 변경: Rollout generation/hash/selector, Service selector 변화, preview 출현, 예상 밖 신규 pod |
+| H6 | NetworkChaos가 생성 후 30초 내 `AllInjected` 안 됨 |
+| H7 | calibration pod가 600초 내 Ready 안 됨(Pending/스케줄 불가/기동 실패 포함) |
+| H8 | 정리 실패(CR·pod가 제한시간 내 소멸 안 됨, 사후 스냅샷 불일치) - HarnessCorrupted에 준해 즉시 보고 |
+| H9 | 하니스 예외·KeyboardInterrupt·하드 상한 초과, 이 run 소유가 아닌 Chaos CR 출현, recovery-policy context가 null이 아니게 됨 |
+
+**허용 probe 실패 횟수 = 0.** kubelet readiness/liveness probe 실패 이벤트가 1회라도 있거나 probe 동등 `/health` 요청이
+실패(비200·오류·30초 초과)하면 `MARGINAL`(측정은 유효, 후보 timeout 미달 신호)로 기록하고 이어간다.
+failureThreshold(3) 연속 실패는 결국 H1/H2로 이어져 FAIL이 된다.
+
+**completion**: 창별 성공률·지연을 기록한다(정보용 - timeout 판정에는 쓰지 않는다). 성공률이 100% 미만인 창은 보고에서 이상
+관찰로 표시한다.
+
+**timeout 선택 규칙** - `L_max` = stage-4 측정 창에서 성공한 `/health` 요청의 최대 지연(초):
+
+- 필요값 `T_req = max(1.25 × L_max, L_max + 1.5초)` (25% 또는 1.5초 중 큰 여유 - 표본이 창당 ≈ 90개라 꼬리와 노드 스케줄링
+  잡음을 덮는 마진). 권고값 `T_min` = `T_req`를 올림한 정수 초.
+- 상한 `T_cap = 15초`. 근거: kubelet은 probe를 동기 실행하므로 실패 판정 주기가 대략 `max(period, timeout)`이고(구현 기준
+  추정), 진짜 hang일 때 readiness NotReady 판정은 `3 × max(5초, T)`, liveness 재시작 판정은 `3 × max(10초, T)`가 된다 -
+  기본(1초)은 15초/30초, `T = 15`는 45초/45초다. 실제 장애 감지를 그 이상 늦추지 않는다(참고: 반응형 알림 경로의 탐지는
+  주입 후 약 93초, §40.3).
+- 분류(`C` = 이번에 적용한 후보 timeout = 10초, `n=1`이므로 **모든 권고는 잠정**):
+
+| 조건 | 권고 |
+|---|---|
+| FAIL(H1~H9)이거나 stage-4 창이 80% 미만 완료·성공 `/health` 30개 미만 | `NONE` - 원인 보고, 다음 측정안만 제시 |
+| kubelet probe 실패가 있는데 `L_max < C`(측정 불일치) | `NONE` - 불일치 보고 |
+| `T_min > T_cap` | `INSUFFICIENT` - timeout만으로 불가(failureThreshold/period 재설계 필요) |
+| `C < T_min ≤ T_cap` | `RAISE` (권고 `T_min`) |
+| `T_min == C` | `KEEP` |
+| `T_min < C` (실패·불일치 없음) | `LOWER` (권고 `T_min` - 후보가 과도) |
+
+`run_outcome`: `FAIL` / `MARGINAL` / `PASS`(H·MARGINAL 모두 없음). PASS여도 권고가 `RAISE`일 수 있다(통과했지만 마진 부족).
+
+**pilot 처리**: 이 calibration 결과는 pilot이며 **본 분석에서 제외**한다 - 파일을 `experiments/results/pilot/calibration-
+network-tolerant-<run_id>.json`으로 저장해 `collect_metrics.py`의 `trial-*.json` 글롭 밖에 둔다(구조적 제외).
+확정되지 않으면 추가 측정안을 **제시만** 하고 자동 실행하지 않는다.
+
+### 42.7 정리·복원 검증 (필수)
+
+`finally`(KeyboardInterrupt 포함)에서: 이 run의 NetworkChaos CR 전부 삭제 후 소멸 확인 → calibration pod 삭제 후 소멸 확인 →
+사후 스냅샷을 사전 스냅샷과 비교(Rollout `generation`·hash·selector·phase, 두 Service selector, 운영 vLLM pod와
+recovery-policy pod의 UID·restarts·Ready, Chaos CR 0개, 신규 pod 0개, context `null`). 하나라도 어긋나면 H8.
+
+### 42.8 예측 (비구속 - 판정에는 쓰지 않는다)
+
+NetworkChaos delay는 대상 pod의 **송신** 지연이라 HTTP GET 하나에 최소 두 번 적용된다(SYN-ACK, 응답). stage-4
+(4000±400ms)의 `/health` 지연은 대략 7.2~8.8초로 예상하고, 그렇다면 `T_req ≈ 11초`라 후보 10초는 통과하더라도 마진 부족
+(`RAISE`)으로 분류될 가능성이 높다. 이 예측은 틀릴 수 있고 규칙은 측정값만 쓴다.
