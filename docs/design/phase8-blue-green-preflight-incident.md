@@ -4321,3 +4321,90 @@ Chaos CR 4개 삭제·소멸 확인(`chaos_deleted` 전부 True, 사후 조회 �
 
 `probe-timeout-patch.yaml`의 TODO는 "미검증 후보" 상태 그대로 두었다(이 결과가 확정이 아니므로 변경하지 않음). `network_degrade` 3-arm 파일럿과 본
 실험은 시작하지 않았다.
+
+## 44. 후보 11초 독립 2회 calibration - 사전 등록 (측정 전, 2026-09-19)
+
+격리 calibration pod 설계와 `create_network_chaos(duration)` 선택 인자를 승인받았다. **후보 10초는 확정하지 않는다**(§43: 사전 등록 판정
+`NONE`). §43.6의 선택지 A로 **후보 11초 독립 2회**를 진행한다. 이 절은 측정 **전에** 규칙을 고정하며, 이 후속 측정에 한해 §42.6(v1)을
+아래 v2 규칙으로 대체한다(§43의 v1 결과는 그대로 유효한 기록). 이후 값·규칙을 사후 조정하지 않는다. `network_degrade` 3-arm 파일럿과 본
+실험은 시작하지 않는다.
+
+### 44.1 측정 구간 분리 (지시 그대로)
+
+| 구간 | 시작 | 끝 |
+|---|---|---|
+| **steady injection window** (`steady_i`) | stage i의 `AllInjected=True` **확인 후** | CR **삭제 요청 전** |
+| **teardown transition window** (`teardown_i`) | CR **삭제 요청** | **삭제 완료 후 15초** (삭제 완료 = CR 소멸 첫 확인) |
+| 그 밖 - `startup` | pod 생성 | 최초 Ready 관측 |
+| 그 밖 - `baseline` | 최초 Ready | 첫 CR 생성 (settle 30초 + baseline 60초) |
+| 그 밖 - `injection_ramp_i` | stage i CR 생성 | `AllInjected=True` 첫 확인 |
+| 그 밖 - `between_stage_i` | `teardown_i` 끝 | 다음 stage CR 생성 |
+| 그 밖 - `post_teardown` | 마지막 `teardown_4` 끝 | pod 삭제 요청 |
+| `shutdown` | pod 삭제 요청 | 종료 아티팩트 - **기록만 하고 판정에서 제외** |
+
+경계 시각은 하니스가 UTC로 기록한다. **이벤트는 명목 stage 시간(90초 등)으로 추정하지 않고 실제 event timestamp로 분류한다.**
+
+- **대상 이벤트**: kubelet `Unhealthy` 중 메시지가 `Readiness probe failed` / `Liveness probe failed` / `Startup probe failed`로 시작하는 것.
+  각 발생은 하니스가 3초마다 폴링하며 `count`의 증가분으로 식별하고, 증가분마다 그 이벤트의 `lastTimestamp`를 부여한다(한 폴링에서 2건
+  이상 증가하면 모두 같은 시각 + `approx` 표시).
+- **시계 보정**: `lastTimestamp`는 kubelet(worker) 시계의 초 단위 값이다. 실행 시작·종료에 `ssh worker date`를 왕복 보정해 오프셋(worker -
+  PC)을 측정하고(사전 측정 **+0.285초 ±0.28**), 이벤트 시각을 PC 시계로 옮긴다(`ts - offset + 0.5초` - 초 해상도의 중앙).
+- **경계 모호성**: 경계 ±1초 안의 이벤트는 **보수적으로 steady로 분류**하고 `ambiguous`를 표시한다(steady/teardown, ramp/steady 경계).
+- **Endpoint 유지의 판정 방식**: 격리 pod는 Service 뒤에 두지 않아 Endpoints 객체가 없다(§42.3 - Prometheus 스크랩·알림 경로를 구조적으로
+  차단). Endpoints 컨트롤러는 **Ready인 pod만** 주소로 등록하므로 "Ready 전이 0건 ⇔ Endpoint 제거 0건"이다. Ready 전이는 조건의
+  `lastTransitionTime` 변화로 검출한다(폴링 사이의 순간 전이 포함).
+
+### 44.2 후보 11초 회차별 PASS 조건 (지시 그대로 - **모두** 충족해야 PASS)
+
+1. 네 stage 모두 `AllInjected=True`(각 30초 내).
+2. completion 성공률 100% - **실행의 모든 창**(HTTP 200 + `choices`), 창마다 표본 1개 이상.
+3. **steady injection window**의 readiness/liveness probe 실패 **0건**.
+4. **전체 실행**(`shutdown` 제외)의 liveness 실패 **0건** - teardown·baseline·공백 구간 포함.
+5. Ready=False 전이·restart 증가·UID 변경·OOM·eviction·Node pressure **모두 0건**. (검출: Ready 전이 = `Ready` 조건 `lastTransitionTime`의
+   변화, restart = `restartCount` 증가·`lastState.terminated`(OOM은 그 reason `OOMKilled`), UID = pod UID, eviction = pod phase `Failed`·reason
+   `Evicted`, Node pressure = 두 Node의 Memory/Disk/PID pressure·NetworkUnavailable - 3초마다 폴링.)
+6. **teardown transition의 readiness 실패는 별도 기록**한다. 허용은 각 전이 구간에서 **비연속 단발 1건 이내**이고 Ready 상태·Endpoint 유지·restart에
+   영향이 없을 때뿐이다. "연속" = 같은 전이 구간에 2건 이상이거나 readiness 실패 두 건이 15초 이내.
+7. teardown 실패가 **연속 발생**하거나 Ready=False/Endpoint 제거로 이어지면 **FAIL**.
+8. 기존 사전 등록 안전 여유 공식(§42.6: `T_req = max(1.25 x L_max, L_max + 1.5초)`, `T_min = 올림`)으로 계산한 **`T_min <= 11초`**.
+   `L_max` = stage-4 steady 측정 창에서 성공한 probe 동등 `/health`의 최대 지연. (`T_min <= 11`은 `L_max <= 8.8초`와 같다.)
+9. cleanup **완전 성공**(CR·pod 소멸, 사후 스냅샷이 사전과 동일, 운영 Rollout·Service·pod 불변).
+
+**측정 유효성 전제(제가 추가 - PASS를 완화하지 않고 "판정 불가"만 더한다)**: 판정 불가는 PASS가 아니며 FAIL과 같이 취급한다.
+- **이벤트 유실 교차검증**: kubelet은 객체당 이벤트 호출을 burst 25로 제한(spam filter)해 초과분을 **조용히 버릴 수 있다**(콜드스타트의 Startup
+  probe 실패 이벤트가 그 예산을 쓴다). 단발 실패는 이벤트 말고는 pod 상태에 남지 않으므로, 이벤트를 **kubelet probe 카운터**(Prometheus
+  `prober_probe_total`)와 교차검증한다. 사전 확인: 이 클러스터 Prometheus에 그 시계열이 있고(스크랩 간격 30초), §43 pod의 값(10:45:55Z)은
+  `Readiness failed 1`·`Liveness failed` 없음·`Startup failed 10`으로 **이벤트와 정확히 일치**했다(지난 pod를 삭제(10:46) 뒤에 조회하면 stale로
+  0이 나온다 - 살아 있을 때 조회해야 한다). 절차: 마지막 창 뒤 이벤트를 읽고(E1) **40초 이상** 기다려(스크랩 1회 + 여유) 카운터를 조회하고(C)
+  이벤트를 다시 읽어(E2), Readiness·Liveness 각각 **`E1 <= C <= E2`**(`failed` series가 없으면 0)를 확인한다. 또 그 pod의 Readiness·Liveness
+  `successful` series가 존재해야 한다(스크랩됐다는 양성 증거). 어긋나면 이벤트 유실 가능성이 있으므로 판정 불가다.
+- **kubelet이 잰 probe 소요시간**(`prober_probe_duration_seconds` 히스토그램, 버킷 ... 2.5·5·10·+Inf)의 누적값을 증거로 기록한다(판정에는 쓰지 않음).
+  §43 pod의 Readiness는 `le=10`과 `+Inf`가 모두 116 - kubelet이 잰 성공 probe 중 10초를 넘은 것이 0개였고 5~10초가 12개(stage-4 추정과 일치)였다.
+- 시계 오프셋을 측정하지 못했거나 stage 창이 완료되지 않았으면 판정 불가.
+
+### 44.3 즉시 중단(fail-fast)과 최종 동결 조건 (지시 그대로)
+
+- 어느 회차든 다음이 발생하면 **즉시 중단**하고 3-arm 파일럿으로 넘어가지 않는다: steady window probe 실패 / liveness 실패 / Ready 전이·
+  restart·UID 변경 / `T_min > 11초` / cleanup 실패 또는 Node 이상. 도구는 측정 도중 이를 감지하면(steady·liveness·연속 teardown 실패, 그리고 기존
+  H1~H9) **그 자리에서 측정을 멈추고 정리한 뒤 FAIL로 기록**한다(`T_min`만 실행 끝에서 계산).
+- **첫 회차가 FAIL이면 두 번째 회차를 실행하지 않는다.**
+- 후보 11초로 **독립 실행 2회**(각각 새 calibration pod·새 CR)를 수행하고 **두 회차가 모두 PASS일 때만** `timeoutSeconds = 11`을 확정한다.
+- **두 회차 사이**: 완전 정리를 확인하고 **cooldown 300초**(정리 완료 시점부터)를 둔 뒤, 읽기 전용 preflight로 Node·운영 Rollout(generation·
+  hash·selector)·운영 pod(UID·restarts)가 첫 회차 전과 같음을 확인한다.
+- 후보는 `--candidate-timeout-sec 11`로 **calibration pod에만** 적용한다. overlay 파일은 두 회차 모두 PASS한 뒤에만 11로 바꾼다.
+
+### 44.4 두 회차 모두 PASS일 때의 후속
+
+network-tolerant overlay의 readiness/liveness `timeoutSeconds`를 11로 바꾸고 TODO를 실측 검증 완료 상태로 갱신, 원본 JSON과 구간별 probe 이벤트를
+보존(`docs/design/evidence/network-tolerant-calibration/`에 커밋 - 결과 JSON 자체는 gitignore라 로컬에만 남기 때문), 전체 오프라인 테스트,
+문서화·커밋·푸시 후 **멈춘다**. 하나라도 PASS가 아니면 같은 증거 보존과 문서화 뒤 멈춘다(overlay·TODO 불변).
+
+### 44.5 예측·위험 (비구속 - 판정 규칙을 바꾸지 않는다)
+
+- **teardown 인접 실패**: §43의 단발 실패는 CR 삭제 5초 뒤였다. 삭제로 netem qdisc가 제거되며 지연 큐의 응답 패킷이 버려지는 것이 유력한 원인이나
+  **미검증 가설**이다. 11초에서 이런 실패가 줄지 남을지 모른다.
+- **liveness 규칙의 함의(미리 밝힘)**: liveness probe도 같은 이유로 teardown 구간에서 실패할 수 있고, 규칙 4는 "전체 실행 liveness 0건"이라 그 경우
+  그 회차는 **FAIL**이다(§43 실행에서는 liveness 실패가 없었다). 실제 trial에서는 failureThreshold 3 때문에 단발이 재시작으로 이어지지 않지만,
+  이 판정은 규칙 그대로 적용한다. 이런 FAIL이 나오면 그 사실(구간·시각)을 그대로 보고하고 규칙 조정은 사용자 결정으로 남긴다.
+- `T_min <= 11`(= `L_max <= 8.8초`)은 이론 상한(`2 x (4.0 + 0.4) = 8.8초`)에 정확히 걸쳐 있어 표본 하나가 오버헤드(수 ms)로 8.8초를 넘으면
+  `T_min = 12`가 된다(추정 1% 안팎/회). 그 경우도 규칙대로 FAIL로 판정한다.
