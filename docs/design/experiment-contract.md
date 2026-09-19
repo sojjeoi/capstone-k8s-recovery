@@ -130,7 +130,7 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 | `min_observation_sec` | float | "prevented" 조기 종료를 막는 최소 관찰시간(초) - 주입 효과 확인 직후부터 계산(2026-09-17 추가) |
 | `readiness_probe_profile` | str \| null | `network_degrade` 전용 - K8s readiness/livenessProbe.timeoutSeconds 설정 `"default"`(K8s 기본 1초 - 발견 5의 재시작 연쇄장애 재현)/`"network_tolerant"`(gitops/apps/vllm-serving/overlays/network-tolerant/ 적용). 다른 시나리오·미적용 trial은 null(2026-09-18 추가). SLO 측정용 HTTP probe를 가리키는 `probe_profile`과는 다른 축 |
 | `readiness_probe_timeout_sec` | float \| null | 위 profile의 실제 timeoutSeconds 값 - `run_network_degrade_trial.py`가 실행 직전 active pod에서 직접 읽어 검증한 값을 기록(2026-09-18 추가) |
-| `target_replaced` | bool | 주입이 실제 효과를 낸 뒤 대상 pod 자체가 바뀐 것을 어댑터가 관측했는지(2026-09-18 추가, 리뷰 정정). **invalid_run이 아니다** - `readiness_probe_profile=default`면 연쇄장애(재시작)가 예상 가능한 결과, `network_tolerant`면 calibration 실패나 예상 밖 재시작을 뜻할 수 있음(해석은 두 필드를 같이 봐야 함). 주입이 아직 효과를 내기 전의 대상 변경은 여전히 `invalid_run`으로 남는다(외부 오염과 실험 결과를 구분하는 경계가 "효과를 낸 적이 있는가") |
+| `target_replaced` | bool | 주입이 실제 효과를 낸 뒤 대상 pod 자체가 바뀐 것을 어댑터가 관측했는지(2026-09-18 추가, 리뷰 정정). **invalid_run이 아니다** - `readiness_probe_profile=default`면 연쇄장애(재시작)가 예상 가능한 결과, `network_tolerant`면 calibration 실패나 예상 밖 재시작을 뜻할 수 있음(해석은 두 필드를 같이 봐야 함). 주입이 아직 효과를 내기 전의 대상 변경은 여전히 `invalid_run`으로 남는다(외부 오염과 실험 결과를 구분하는 경계가 "효과를 낸 적이 있는가"). **이 필드는 "바뀌었다"는 어댑터 관측일 뿐 원인을 말하지 않는다** - 검증된 promotion이 만든 변경(실험 처치)과 그 밖의 변경(재시작 연쇄·교체 후보)의 구분은 스키마 변경 없이 `collect_metrics.py`의 파생 해석이 한다(§5.9) |
 | `t_target_replaced` | ISO8601 UTC \| null | 위 교체를 처음 관측한 시각 - `target_replaced=false`면 null |
 | `target_replacement_pod_name` / `target_replacement_pod_uid` | str \| null | 교체된 pod의 이름/UID - active selector가 단일 pod으로 특정되면 채워지고, 전환 중이라 2개 이상 동시 매칭되는 등 특정할 수 없으면 null(교체 자체는 여전히 기록됨) |
 | `timing_schema_version` | str | `"v2"` = 아래 3분할 주입 시각 + observed_at 기준 `t_slo`/`t_recovery`. 필드 없음 또는 `"v1"` = 옛 방식(단일 `t_injection`, `t_slo`/`t_recovery`가 `sent_at` 기준)(2026-09-18 추가) |
@@ -145,13 +145,13 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 | `injection_observation_error_sec` | float \| null | 3단계 우선순위로 계산(2026-09-18 정정): 1) 어댑터의 `get_injection_observation_error_sec()`, 2) 없으면 `t_injection_last_seen`~`t_injection_observed`, 3) `t_injection_last_seen`도 없으면(첫 poll에서 이미 사라짐) `t_injection_request`~`t_injection_observed`. 전부 실측 구간이지 `poll_interval_sec` 같은 임의 설정값은 없다(2026-09-16 정정) - `injection_valid=true`인 trial은 이제 이 필드가 절대 null로 남지 않는다 |
 | `t_injection_end` | ISO8601 UTC | chaos 자체가 끝난 시각(§4 종료조건①) |
 | `t_detection` | ISO8601 UTC \| null | **authoritative source: recovery-policy**(2026-09-19 명확화). 현재 run에 속하는 유효한 예측 신호(`/signal`) 또는 반응형 alert(`/webhooks/alertmanager`)를 recovery-policy가 처음 수락해 정책 판단 대상으로 확정한 시각 - `process_signal()`이 idempotency 통과 직후, `policy.decide()` 호출 전에 `datetime.now()`로 동기 기록한다. 재시도·중복 신호로는 덮어써지지 않고(첫 값만 유지), 다른 run_id의 신호나 stale alert(등록 시각 이전)는 애초에 후보가 안 된다. `run_once()`가 `GET /admin/experiment-run/timing`으로 회수 - detector 프로세스 stdout이나 비동기 Git 감사기록은 원천으로 안 씀. `arm=native`는 조회 대상 자체가 없어 항상 null. 조회 자체가 실패하면(non-native) `invalid_run`(§5.1) |
-| `detection_stage` | str \| null | `t_detection`이 실제로 어느 실험 단계에 속했는지(2026-09-18 추가, stage 관측성 보완 - `load_ramp`만 구현). `t_detection`이 null이면 이 필드도 null(사건 자체가 없음). 값은 아래 `slo_stage`와 동일한 분류 체계 |
+| `detection_stage` | str \| null | `t_detection`이 실제로 어느 실험 단계에 속했는지(2026-09-18 추가, stage 관측성 보완 - `load_ramp`, 2026-09-20부터 `network_degrade`도 구현). `t_detection`이 null이면 이 필드도 null(사건 자체가 없음). 값은 아래 `slo_stage`와 동일한 분류 체계 |
 | `t_decision` | ISO8601 UTC \| null | **authoritative source: recovery-policy**(2026-09-19 확정, §5.5). 현재 run의 유효 신호(idempotency·run_id·stale 검사 통과)에 대해 정책(`policy.decide()`)이 action을 확정한 **직후**의 서버 시각 - `process_signal()`이 `datetime.now()`로 동기 기록한다. **observe-only여도 기록**하고, 조치 자체가 없는 판정(rule-out/unknown)도 "정책이 확정한" 사건이라 기록한다(뒤이은 cooldown-skip 후보 포함). 첫 값만 유지 - 중복·후속 신호로 덮어쓰지 않는다(그래서 예측 신호가 먼저 observe-only로 판정된 뒤 반응 신호가 promotion을 실행하면 `t_decision`은 첫 유효 판정의 시각이고 `t_api_request`/`t_switch`는 실행된 promotion의 것이다 - 순서는 여전히 성립). 미탐지·native는 null. **2026-09-19 이전 trial(과거 pilot)은 null이며 추정으로 채우지 않는다** |
 | `t_api_request` | ISO8601 UTC \| null | **authoritative source: recovery-policy**(2026-09-19 명확화). 실제 promotion API/CLI 호출(`rollouts_client.promote()`)을 시작하기 직전의 시각 - cooldown 통과 후, `promote()` 호출 바로 앞에서 `datetime.now()`로 동기 기록. 조치가 없으면(observe_only/rule-out/unknown/cooldown-skip) null로 남는다. 구조적으로 `t_detection <= t_decision <= t_api_request`(같은 요청 처리 흐름 안에서 순서대로 기록되거나, 더 이른 신호가 이미 `t_detection`/`t_decision`을 채운 뒤 나중 신호가 조치로 이어짐). promotion이 없으면 `t_api_request`와 `t_switch`는 둘 다 null. 나머지 회수 방식은 `t_detection`과 동일 |
 | `action_stage` | str \| null | `t_api_request`(정책이 실제로 조치를 실행한 시각) 기준 stage 분류 - `t_api_request`가 null이면 null. 분류 체계는 `slo_stage`와 동일 |
 | `t_switch` | ISO8601 UTC \| null | **authoritative source: recovery-policy**(2026-09-19 확정, §5.5). promotion 후 **active selector가 preview와 일치함을 처음 검증한 서버 시각** - `rollouts_client.promote()`의 verify 루프가 첫 성공을 확인한 그 순간에 찍는 `verified_at`을 그대로 쓴다(`promote()`가 반환한 뒤의 시각이 아님, 감사기록의 promotion 결과에도 같은 `verified_at`이 남는다). selector 전환의 정확한 발생 시각이 아니라 그 변화를 **처음 관측한** 시각이라 폴링 간격(0.5초)+API 지연만큼의 관측 오차가 있다. **promotion이 없거나 selector 검증이 끝내 실패하면(`executed_unverified`) null**. 첫 값만 유지. promotion 경로의 구조적 순서 `t_detection <= t_decision <= t_api_request <= t_switch`는 `collect_metrics.py`가 검증한다. 과거 pilot은 null이며 추정으로 채우지 않는다 |
 | `t_slo` | ISO8601 UTC \| null | `outcome=prevented`면 null. `timing_schema_version=v2`부터는 실패가 확정된 **완료 시각**(`sent_at+latency`) 기준 - 요청을 보낸 시각(`sent_at`)이 아니다(2026-09-18 정정 - pod_kill 파일럿에서 `t_slo`가 `t_injection`보다 앞서는 사례 발견, 원인은 전송 시각을 판정 시각으로 오용한 것). |
-| `slo_stage` | str \| null | `t_slo`가 실제로 어느 실험 단계에 속했는지(2026-09-18 추가) - `injector.classify_stage()`가 `ramp.py --summary-out`이 기록한 실제(명목 아님) `stage_start_utc`/`stage_end_utc`로 판정한다. 값은 stage 이름(예: `stage-3-0.20rps`) 또는 `baseline`(첫 stage 시작 전)/`inter_stage_tail`(stage 사이 straggler 대기 구간)/`drain`(마지막 stage 종료 후)/`unknown`(summary fetch·파싱 실패 - 임의 추정 안 함). `t_slo`가 null이거나 어댑터가 `classify_stage` 미구현이면 null(스키마 §6.1 참고) |
+| `slo_stage` | str \| null | `t_slo`가 실제로 어느 실험 단계에 속했는지(2026-09-18 추가) - `injector.classify_stage()`가 `ramp.py --summary-out`이 기록한 실제(명목 아님) `stage_start_utc`/`stage_end_utc`로 판정한다. 값은 stage 이름(예: `stage-3-0.20rps`) 또는 `baseline`(첫 stage 시작 전)/`inter_stage_tail`(stage 사이 straggler 대기 구간)/`drain`(마지막 stage 종료 후)/`unknown`(summary fetch·파싱 실패 - 임의 추정 안 함). `t_slo`가 null이거나 어댑터가 `classify_stage` 미구현이면 null(스키마 §6.1 참고). **`network_degrade`(2026-09-20부터)**는 `ramp.py` 요약이 아니라 어댑터가 **실제로 만든** 각 NetworkChaos stage의 창(CR 생성 호출이 돌아온 시각 ~ 소멸을 확인한 시각, 양 끝 포함)으로 판정한다 - 만들어지지 않은 stage(§5.10 `treatment-induced truncation`)는 창이 없어 그 뒤 시각은 `drain`이고, 소멸을 확인하지 못한 창은 열린 채로 둔다(끝났다고 추정하지 않음). 이 구현 이전에 실행된 파일럿 JSON 3건은 세 stage 필드가 null이다(소급 생성하지 않음) |
 | `t_recovery` | ISO8601 UTC \| null | timeout이면 null |
 | `t_audit_write` | ISO8601 UTC \| null | **원천: recovery-policy의 outbox 상태**(2026-09-19 확정, §5.5). 감사기록을 PVC에 동기로 쓴 시각이라 push 전에도 알 수 있으면 채운다. 판정이 없으면(`audit_status=not_applicable`)·native는 null |
 | `t_audit_push` | ISO8601 UTC \| null | **복구시간 계산에 포함 안 함**. 원천은 outbox의 push 완료 시각 - push가 끝나기 전(`audit_status=pending/failed`)엔 null을 유지한다(§5.5) |
@@ -204,6 +204,10 @@ out` 관련 결함으로 전부 fetch 실패) stage 정보를 못 얻으면, 그
 실행 로그·집계 보고서에 명시하고 사후 해석 시 "stage 위치는 명목값
 (주입 시각+90초 단위)으로만 참고 가능, 실제 경계는 확인 불가"라고
 표시한다 - 추정값을 확정값처럼 보고하지 않는다.
+
+**`network_degrade` 예외(2026-09-20)**: 이 시나리오는 stage 창을 어댑터가 직접 기록하므로(`ramp.py` 요약 같은 외부 fetch가 없다)
+`action_stage`가 `unknown`이 되는 경우는 창이 하나도 없을 때(주입 전 실패) 정도뿐이고, `action_stage`는 §5.10의 주 비교 지표다.
+그래도 trial의 핵심 판정(`outcome` 등)이 stage 필드에 의존하지 않는다는 위 원칙은 그대로다.
 
 ### 5.2 `t_detection`/`t_api_request` 회수 - admin 엔드포인트 (2026-09-19 추가)
 
@@ -435,6 +439,52 @@ calibration pod는 "Ready 전이 0 = Endpoint 유지"로 갈음한다(Endpoints 
 **소급 적용**: calibration 두 회차(§45)의 stage-4 readiness 실패는 원본 JSON을 그대로 두고 이 정의로 재분류했다 - 둘 다 `transition_straddling`(추정
 probe 시작이 삭제 요청 -5.8초/-7.6초), Ready 전이·Endpoint 영향·restart 없음 -> profile 실패 아님(상세 `phase8-blue-green-preflight-incident.md` §46).
 
+### 5.9 계획된 promotion과 target 변경의 해석 (2026-09-20 추가)
+
+`target_replaced`(§5)는 "주입이 효과를 낸 뒤 active target이 바뀐 것을 어댑터가 관측했는가"일 뿐 **왜** 바뀌었는지는 말하지 않는다. `fixed_threshold`/`proposed`
+arm에서는 정책이 promotion(장애 pod에서 준비된 정상 pod로 트래픽 이탈)을 실행하면 active selector가 바뀌어 target이 바뀌는데, 이것은 재시작 연쇄나 probe 격리
+실패가 아니라 **실험 처치 자체**다. `network_degrade` 3-arm 파일럿의 `proposed`가 실제로 이 경우였다(`target_replaced=true`, 검증된 promotion 뒤). 그런데 예전
+파생 해석은 `target_replaced` 하나만 봐서 이를 `probe_isolation_held=false`로 오판정했다 - `test_collect_metrics_promotion.py`가 실제 파일럿 JSON 3건으로 이를 고정한다.
+
+`collect_metrics.py`는 `TrialResult`와 원본 JSON을 건드리지 않고(**새 필드 없음**) 분석 산출물 `comparison.csv`에 파생 열 `target_change_kind`/`target_change_reason`을
+만든다. `readiness_probe_profile`이 `default`/`network_tolerant`가 아니거나(다른 시나리오·옛 결과) `target_replaced` 필드가 없으면 `not_applicable`이고, 나머지는:
+
+| `target_change_kind` | 조건 | `probe_isolation_held` (`network_tolerant`) | `restart_chain_observed` (`default`) |
+|---|---|---|---|
+| `none` | `target_replaced=false` | true | false |
+| `planned_promotion` | **전부**: `target_replaced=true`, `action=promote_preview`, `promotion_verified=true`, `t_api_request`·`t_switch` 존재·`t_api_request <= t_switch`, `t_target_replaced >= t_api_request`, 교체 pod name/uid 존재, 아래 pod 증거 없음 | true (교체만으로 격리 실패라 하지 않음) | false |
+| `unplanned` | (a) `target_replaced=true`인데 promotion 활동이 전혀 없음(`action`≠`promote_preview`이고 `promotion_verified`·`t_api_request`·`t_switch`도 없음), (b) promotion 정보는 완결인데 `t_target_replaced < t_api_request`(promotion 요청보다 앞선 교체 - promotion으로 설명 불가), (c) 아래 **pod 증거** 존재 | false | true |
+| `indeterminate` | promotion 활동은 있는데 정보가 불완전·모순: `promotion_verified`≠true, `action`≠`promote_preview`, `t_api_request`/`t_switch` 누락 또는 `t_switch < t_api_request`, `t_target_replaced` 누락, 교체 pod name/uid 누락 | **null** (추정 안 함) | **null** (추정 안 함) |
+
+`indeterminate`는 True/False로 추정하지 않고 validation issue(`field=target_replaced`)로 드러낸다. `network_tolerant`에서 교체가 있는데 `outcome=prevented`로만 남으면
+"설정이 열화를 견뎠다"로 오해할 수 있어 남기는 별도 issue(`_check_tolerant_profile_prevented_misleading`)는 `unplanned`일 때만 발동한다.
+
+**pod 증거는 promotion과 별도**: pod restart·UID 교체·promotion 전 target 소멸의 증거(관찰 결과를 사람이 옮겨 적은 `--pod-evidence` JSON `{run_id: {restarts, uid_replaced,
+target_lost_before_promotion}}`)가 있으면 promotion이 검증돼 있어도 promotion으로 가리지 않고 `unplanned`다. 어댑터가 못 본 교체(`target_replaced=false`)에 증거가 있으면
+"관측하지 못한 교체" issue를 남긴다. 증거 파일이 없으면 어댑터 필드만으로 판단한다.
+
+**한계**: 어댑터는 stage 경계에서만 대상을 다시 조회하므로 `t_target_replaced`는 교체가 일어난 시각이 아니라 **처음 관측한 시각**이다. "promotion 요청 뒤에 관측됐다"는 것은
+promotion이 만들 수 있는 변경이라는 뜻이지 그 이전에 재시작이 없었다는 증명이 아니다 - 그래서 pod 증거가 있으면 항상 우선한다.
+
+### 5.10 arm별 주입 노출 차이의 해석 - 동결 (2026-09-20 추가)
+
+`network_degrade`의 세 arm은 **같은 stage schedule**(500ms/1000ms/2000ms/4000ms, 각 90초)로 시작하지만, 조치하는 arm(`fixed_threshold`/`proposed`)은 promotion 뒤
+장애 pod가 더 이상 트래픽을 받지 않아 arm마다 실제로 받는 주입 노출이 달라진다. 이는 결함이 아니라 처치의 결과이므로 해석을 **본 실험 전에 동결**한다. 파일럿 n=1의 실제
+모양(`phase8-blue-green-preflight-incident.md` §46): `proposed`는 stage 1 중 promotion(`t_api_request` 주입 관측 +59.5초) -> stage 1 경계(+90.7초)에서 교체를 관측해
+stage 2~4를 만들지 않았고, `fixed_threshold`는 stage 4 중 promotion(+324.5초)이라 만들 stage가 남아 있지 않았으며(`target_replaced=false`), `native`는 조치 없이 4 stage 전부를 받았다.
+
+1. **동일 출발**: 모든 arm은 같은 stage schedule로 시작한다. arm은 injector 동작을 바꾸지 않는다(detector·preview 배선만 다르다 - §1).
+2. **promotion = 처치 자체**: promotion은 장애 pod에서 준비된 정상 pod로 트래픽을 이탈시키는 실험 처치 그 자체다. 주입을 멈추는 것이 아니다 - 진행 중인 NetworkChaos는 옛 pod에 그대로 남고 트래픽만 그 pod를 떠난다.
+3. **현재 injector 동작 유지**: 검증된 promotion 뒤 원래 target이 active가 아니게 되면 injector는 다음 stage 경계에서 이를 관측하고(`_check_target()`) 남은 stage를 만들지 않는다. 이 동작을 **바꾸지 않는다**(진행 중이던 stage의 CR은 그 지속시간까지 옛 pod에 남았다가 경계에서 삭제된다).
+4. **`treatment-induced truncation`**: 그 뒤 stage들은 실패나 누락이 아니라 처치가 만든 truncation이다. `target_change_kind=planned_promotion`(§5.9)인 trial이 truncation이 일어난 trial이며, 마지막 stage 중·뒤에 promotion이 일어나 `target_replaced=false`이면 truncation은 없다(만들 stage가 남아 있지 않았다). truncation은 `invalid_run`이나 재실행 사유가 아니다.
+5. **직접 비교 금지**: promotion 이후의 stage latency와 전체 누적 노출량(만들어진 stage 수·총 지연 노출 시간)을 arm 간 직접 비교하지 않는다.
+6. **주 비교 지표**: `t_detection`, `t_decision`, `t_api_request`, `t_switch`, `t_recovery`, `outcome`, `action_stage`(`t_api_request`가 속한 실제 stage). 전부 기존 필드이고 **새 `TrialResult` 필드는 없다**.
+7. **stage별 SLO 곡선은 공통 노출 구간에서만**: stage별 SLO 곡선(raw probe 표본을 stage로 나눈 P95·성공률 등)의 arm 간 비교는 **action 이전의 공통 노출 구간**에서만 한다 - 각 trial의 `t_injection_observed`를 0으로 둔 상대 시각에서 `[0, 비교 대상 arm들의 상대 t_api_request 중 최솟값]`(조치가 없는 arm은 상한을 만들지 않는다). 이 구간은 가장 빠른 조치가 정하므로 첫 stage의 일부에 그칠 수 있고, 그러면 곡선 비교는 그 범위까지만 한다. stage 경계는 `slo_stage`/`detection_stage`/`action_stage`가 알려주는 실제 창을 쓰고, 명목 일정(90초 단위)으로 근사하면 그렇게 표시한다(§5.1과 같은 원칙).
+8. **dose 동일시 금지**: native·미조치 arm이 받은 전체 stage 노출과 조치 arm의 짧은 노출을 **같은 dose로 해석하지 않는다** - 처치가 노출을 바꾼 결과로 보고하고, 노출이 긴 쪽이 "더 나쁘다/더 잘 견뎠다"로 읽지 않는다.
+9. **실행 순서 균형화**: 본 실험에서 arm 실행 순서를 균형화해 시간대·캐시 효과를 줄인다(§7).
+
+이 해석은 분석 규칙이며 `TrialResult`·injector 동작을 바꾸지 않는다. 다만 6번의 `action_stage`가 `network_degrade`에서 채워지도록 어댑터에 실제 stage 창 기록(`classify_stage`)을 추가했다(§5 스키마 `slo_stage` 행 - 새 필드가 아니라 기존 선택 훅·기존 필드).
+
 ## 6. 안전장치 — `run_once()`가 매 trial마다 반드시 함
 
 - 이전 trial의 firing 상태 Alertmanager 알림이 다음 `run_id`로 새지 않도록, trial 사이 **quiescence 대기**(모든 알림이 resolved 상태가 될 때까지) — §4 trial 종료조건③과 동일 개념
@@ -447,6 +497,10 @@ probe 시작이 삭제 요청 -5.8초/-7.6초), Ready 전이·Endpoint 영향·r
 ## 7. 실행 순서 — arm을 섞어서 수행
 
 60회를 arm별로 몰아서 돌리지 않고 **섞어서(interleaved)** 수행한다 — 특정 arm이 특정 시간대(클러스터 상태 drift, 캐시 워밍 등)에 몰리는 걸 방지. 시나리오별로 5회×3arm=15회 블록 안에서 arm 순서를 `order_seed`로 셔플하고, 그 시드와 결과 순서(`sequence_index`)를 결과 스키마에 남겨 재현 가능하게 한다.
+
+**균형화 (2026-09-20 동결, §5.10 9번)**: 완전 무작위 셔플은 시드에 따라 한 arm이 계속 앞이나 뒤에 몰릴 수 있다(예: `native`가 5번 모두 묶음의 첫 실행). 그래서 시나리오별 15회를 rep마다 arm 3종이 정확히 1번씩 든
+5개 묶음으로 나누고, 묶음 안 순서는 `order_seed`로 재현 가능하게 정하되 5개 묶음에 걸쳐 **각 arm이 각 위치(1·2·3번째)에 오는 횟수의 최댓값-최솟값이 1 이하**(= 1~2회)가 되게 한다. 이 순서를 만드는
+`run_all_scenarios.py`는 **아직 구현되지 않았고** 이 균형 조건을 여러 시드에서 검증하는 오프라인 테스트가 그 구현의 일부다(순서를 손으로 넘기는 러너 CLI의 `--sequence-index`/`--order-seed`는 균형을 보장하지 않는다).
 
 ## 변경 이력
 
@@ -489,3 +543,4 @@ probe 시작이 삭제 요청 -5.8초/-7.6초), Ready 전이·Endpoint 영향·r
 - 2026-09-19: `network_degrade`의 network_tolerant probe `timeoutSeconds`를 격리 calibration pod(운영 Rollout·Service·recovery-policy와 무관, NetworkChaos는 그 pod에만)에서 실측해 확정했다(상세 `docs/design/phase8-blue-green-preflight-incident.md` §42~§45 - **스키마 변경·새 필드 없음**, calibration은 pilot이라 본 분석에서 제외). 10초 후보 1회 측정(§43)은 사전 등록 판정 `MARGINAL`/권고 `NONE`이었고, 사전 등록한 **후보 11초 독립 2회**(§44, 도구 v2 - 이벤트 timestamp 구간 분류·즉시 중단·kubelet 카운터 교차검증)가 모두 `PASS`(stage-4 `/health` 최대 지연 8.72/8.64초, `T_min` 11, steady 실패·liveness 실패·Ready 전이 0, cleanup 완전 성공)해 overlay `probe-timeout-patch.yaml`의 값을 10 -> 11로 바꾸고 원본 JSON을 `docs/design/evidence/network-tolerant-calibration/`에 보존했다. 해석 주의: stage-4 CR 삭제 직후 readiness probe 단발 실패가 2회 모두 관찰됐다(사전 등록상 teardown 구간의 단발로 허용되지만 역산한 probe 시작은 steady 구간이라 판정이 이벤트 timestamp 분류 기준에 민감). overlay는 파일만 바꿨고 클러스터에는 적용하지 않았으며 3-arm 파일럿·본 실험은 시작하지 않았다. 전체 오프라인 스위트는 존재하지 않는 KUBECONFIG에서 463 passed.
 - 2026-09-20: `timeoutSeconds = 11` 확정 승인. 위 항목의 stage-4 readiness 실패는 §5.8(신설)의 정의로 분류한다 - 이벤트 시각만으로 teardown 단정 금지, 추정 probe 실행 구간이 CR 삭제 시각을 가로지르면 `transition_straddling`(steady·순수 teardown과 별도 집계, 최종 표에 횟수·Ready 전이·Endpoint 영향·restart 표시, 단발이고 영향 없으면 profile 실패 아님, 연속·Ready=False·Endpoint 제거·restart면 trial 실패). **`TrialResult` 새 필드 없음**(분석 코드 `calibrate_network_tolerant_probe.py`·신규 읽기 전용 `trial_observer.py`와 문서에만 반영). calibration 두 회차를 원본 불변으로 재분류해 둘 다 `transition_straddling`(Ready 전이·Endpoint 영향·restart 없음)임을 확인(`phase8-blue-green-preflight-incident.md` §46). 전체 오프라인 스위트 497 passed.
 - 2026-09-20: `network_degrade` 3-arm 파일럿(`native -> fixed_threshold -> proposed`, 각 1회 `is_pilot=true`, network_tolerant profile `timeoutSeconds=11`)을 완료했다 - 세 arm 모두 `recovered`, 중단 조건·필드 모순 없음, **스키마 변경·새 필드 없음**(상세 `phase8-blue-green-preflight-incident.md` §46.2~§46.10). profile 전환·복원은 Rollout만 apply(preview -> warmup -> promotion, 파일럿 준비 단계라 데이터 제외)하고 종료 뒤 Git base(기본 timeout 1)로 복원·검증했다. §5.8 최종 표: 세 trial 모두 `transition_straddling` 0건·Ready 전이/Endpoint 영향/restart 없음(calibration 2회는 각 1건). 읽기 전용 `trial_observer.py`가 실측 결함 3건(kubectl watch compact JSON, Chaos Mesh AllInjected 시각 없음, target 종료 뒤 shutdown 분류)을 드러내 고쳤다(`01935cf`). 해석 주의: proposed의 `target_replaced=true`는 promotion에 의한 교체(재시작 연쇄 아님)라 파생 값 `probe_isolation_held=False`가 오해를 부른다 - 정의 수정은 사용자 결정으로 남겼다. `memory_pressure`·본 실험 미시작. 전체 오프라인 스위트 501 passed.
+- 2026-09-20: `network_degrade` 파일럿 완료 승인. 본 실험 전 두 해석을 오프라인으로 수정·동결했다(§5.9, §5.10 - **`TrialResult` 스키마·원본 JSON 불변, 새 필드 없음**, 실클러스터 작업·재실행 없음). (1) `collect_metrics.py` 파생 해석: `promotion_verified=true`이고 `t_switch`가 있는 실행의 target 변경은 계획된 promotion(`target_change_kind=planned_promotion`)이라 `target_replaced=true`만으로 `restart_chain_observed=true`/`probe_isolation_held=false`로 판정하지 않는다 - promotion 정보가 불완전·모순이면 `None`+validation issue, pod restart·UID 교체 증거(`--pod-evidence`)가 있으면 promotion으로 가리지 않고 `unplanned`. 실제 파일럿 JSON 3건(native/fixed_threshold/proposed)을 fixture로 회귀 테스트 25개 추가. (2) arm별 주입 노출 차이의 해석 동결(§5.10): 동일 stage schedule로 시작, promotion은 처치 자체, 남은 stage 미생성은 `treatment-induced truncation`(현재 injector 동작 유지), promotion 이후 노출·stage latency는 arm 간 직접 비교하지 않고 stage별 SLO 곡선은 action 이전 공통 구간에서만, 주 비교 지표는 `t_detection`/`t_decision`/`t_api_request`/`t_switch`/`t_recovery`/`outcome`/`action_stage`, 본 실험 arm 순서 균형화(§7). 이 동결을 위해 필요했던 발견: `network_degrade`는 `classify_stage`가 없어 `slo_stage`/`detection_stage`/`action_stage`가 파일럿 3건 모두 null이었다(주 비교 지표에 `action_stage`가 들어 있어 그대로는 분석 불가) - 어댑터가 실제로 만든 stage 창을 기록해 기존 선택 훅 `classify_stage`를 구현했다(오프라인 테스트 7개, 새 필드 없음, 파일럿 JSON은 소급 생성하지 않음). `run_all_scenarios.py`(arm 순서 생성기)는 아직 없다.

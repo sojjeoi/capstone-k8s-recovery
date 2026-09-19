@@ -4690,3 +4690,37 @@ trial 동안 target pod의 Ready·Endpoint·restart·kubelet probe 실패와 CR 
   1. `probe_isolation_held`(및 `restart_chain_observed`)가 promotion으로 설명되는 `target_replaced`를 제외하도록 `collect_metrics.py`를 고칠지(46.7) - 본 실험 전에 정해야 한다. 스키마 변경 없이 파생 값 정의만 바꾸는 작업이다.
   2. 본 실험의 network_degrade에서 promotion 이후 stage를 어떻게 다룰지 - 지금은 promotion으로 target이 바뀌면 다음 stage를 만들지 않아 arm 간 주입 노출이 다르다(46.7 관찰).
   3. 본 실험 계획(60 trial)으로 넘어갈지와 `memory_pressure` 파일럿 여부.
+
+## 47. 본 실험 전 오프라인 수정·동결 두 건 (2026-09-20)
+
+`network_degrade` 3-arm 파일럿 완료 승인(재실행·flush 가설 추가 측정 금지)에 이어, 46.10의 결정 1·2를 **오프라인으로**(클러스터 접근 없음 - 테스트는 `cluster_guard`가 실클러스터 접근을 막는다) 수정·동결했다.
+`TrialResult` 스키마와 원본 JSON은 바뀌지 않았고 새 필드도 없다.
+
+### 47.1 계획된 promotion을 비정상 교체에서 제외 (`collect_metrics.py`, 계약서 §5.9)
+
+- **문제**(46.7): proposed의 `target_replaced=true`는 promotion이 만든 변경(실험 처치)인데 파생 값 `probe_isolation_held`가 `target_replaced` 하나만 봐서 `False`로 나왔다.
+- **수정**: `target_change_kind` = `none` / `planned_promotion` / `unplanned` / `indeterminate` / `not_applicable`을 `comparison.csv`의 파생 열로 추가(원본 JSON·`TrialResult` 불변)하고, `probe_isolation_held`/`restart_chain_observed`는 **`unplanned`에서만** 뒤집힌다.
+  `planned_promotion` = `promotion_verified=true` + `action=promote_preview` + `t_api_request <= t_switch` + `t_target_replaced >= t_api_request` + 교체 pod 식별. promotion 정보가 불완전·모순이면 `None`+validation issue(True/False 추정 안 함).
+  pod restart·UID 교체 증거(`--pod-evidence` JSON)가 있으면 promotion과 별도로 `unplanned`. 규칙 표와 한계(`t_target_replaced`는 stage 경계에서의 **관측** 시각)는 계약서 §5.9.
+- **실제 파일럿 JSON 3건에 적용**(`docs/design/evidence/network-degrade-pilot/`, 읽기 전용): native `none`·`probe_isolation_held=True`, fixed_threshold `none`·True, **proposed `planned_promotion`·True**(46.7의 오해 값 `False` 해소). validation issue 0건.
+- **테스트**: 신규 `test_collect_metrics_promotion.py` 25개 - 위 3건을 fixture로(메모리에서만 변형) 실제 행 모양(`target_replaced` F/F/T, `t_api_request < t_switch < t_target_replaced`), 오판 회귀, default profile 변형, 교체가 promotion 요청보다 앞섬·promotion 없는 교체 = `unplanned`,
+  불완전·모순 promotion 정보 = `indeterminate`(양 profile), pod 증거 우선(restart·UID·target 소실, 어댑터가 못 본 교체), 원본 불변(sha256)·CSV 열·CLI `--pod-evidence`. 기존 `test_collect_metrics.py`의 테스트 1개는 **엉뚱한 이유로 통과하던 것**(교체 시각·pod 식별이 없어
+  새 규칙에서는 `indeterminate`인데, 그 issue 문구에도 `probe_isolation_held`가 들어 있어 단언이 통과)이라 fixture(promotion 요청보다 앞선 교체 관측)와 단언(`promotion으로 설명되지 않는`)을 고쳐 원래 의도(unplanned 교체 + `prevented`)를 검증하게 했다.
+
+### 47.2 arm별 주입 노출 차이 해석 동결 (계약서 §5.10, §7)
+
+동일 stage schedule로 시작 / promotion은 처치 자체 / 검증된 promotion 뒤 남은 stage를 만들지 않는 현재 동작 **유지** / 그 뒤 stage는 `treatment-induced truncation` / promotion 이후 stage latency·누적 노출량 arm 간 직접 비교 금지 / 주 비교 지표
+`t_detection`·`t_decision`·`t_api_request`·`t_switch`·`t_recovery`·`outcome`·`action_stage` / stage별 SLO 곡선은 action 이전 공통 노출 구간에서만 / 전체 노출과 짧은 노출을 같은 dose로 해석 금지 / 본 실험 arm 순서 균형화(§7: 5개 묶음 x arm 3종, arm x 위치
+횟수의 최댓값-최솟값 <= 1, `order_seed`로 재현). 원문은 계약서 §5.10·§7.
+
+- **동결을 하다 발견한 것**: 주 비교 지표의 `action_stage`가 `network_degrade`에서는 **채워지지 않았다** - 어댑터에 `classify_stage`(선택 훅)가 없어 `slo_stage`/`detection_stage`/`action_stage`가 파일럿 3건 모두 null이었다(load_ramp만 구현돼 있었다). 이대로 동결하면 존재하지 않는 지표를
+  이름 붙이는 셈이라, `network_degrade_adapter.py`가 **실제로 만든** 각 stage 창(CR 생성 호출이 돌아온 시각 ~ 소멸 확인 시각, 양 끝 포함)을 기록해 기존 훅 `classify_stage`를 구현했다: stage 이름 / `baseline` / `inter_stage_tail` / `drain` / `unknown`(load_ramp와 같은 어휘, 절대 예외 없음,
+  근거 없으면 추정하지 않음). 만들어지지 않은 stage(truncation)는 창이 없어 그 뒤는 `drain`, 소멸을 확인하지 못한 창은 열린 채로 둔다. **새 `TrialResult` 필드 없음**, 파일럿 JSON은 소급 생성하지 않았다(null 그대로). 이 코드는 파일럿 **뒤에** 바뀐 어댑터라 파일럿 3건과 코드 버전이 다르고
+  오프라인 테스트로만 검증됐다(실클러스터 첫 사용은 다음 `network_degrade` 실행) - 실패해도 `run_once()`가 stage 분류 예외를 삼켜 판정은 바뀌지 않는다. 테스트 7개 추가(`test_network_degrade_adapter.py`: 순수 경계, 예외 없음·추정 없음, 정상 종료 4창, truncation 뒤 `drain`, cleanup 중단 창 닫힘,
+  소멸 미확인 창 열림, 기본 시계 aware UTC).
+- `run_all_scenarios.py`(arm 순서 생성기)는 **아직 없다** - §7 균형 조건을 여러 시드로 검증하는 테스트가 그 구현에 포함돼야 한다.
+
+### 47.3 검증과 하지 않은 것
+
+- 전체 오프라인 스위트 **533 passed**, 3 deselected(`live_cluster`) - 직전 501에서 +32(collect_metrics 승격 25 + 어댑터 stage 창 7).
+- **하지 않은 것**: 실클러스터 작업(재실행·flush 측정·live memory pressure 포함) 없음, `run_all_scenarios.py`·60회 본 실험 시작 없음, 결과 스키마 변경 없음, 이미지 빌드·배포 없음, force-push·rebase 없음. `claude/*` worktree는 손대지 않았다.
