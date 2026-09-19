@@ -4724,3 +4724,72 @@ trial 동안 target pod의 Ready·Endpoint·restart·kubelet probe 실패와 CR 
 
 - 전체 오프라인 스위트 **533 passed**, 3 deselected(`live_cluster`) - 직전 501에서 +32(collect_metrics 승격 25 + 어댑터 stage 창 7).
 - **하지 않은 것**: 실클러스터 작업(재실행·flush 측정·live memory pressure 포함) 없음, `run_all_scenarios.py`·60회 본 실험 시작 없음, 결과 스키마 변경 없음, 이미지 빌드·배포 없음, force-push·rebase 없음. `claude/*` worktree는 손대지 않았다.
+
+## 48. `memory_pressure` 재개 전 읽기 전용 점검 - 현재 자원 구성·headroom 실측 (2026-09-20)
+
+`fixed_threshold` 임계치 수정과 `memory_pressure` adapter 구현에 들어가기 전, 클러스터에 아무것도 만들지 않는 순수 조회(`kubectl get/top` + Prometheus 인스턴트 쿼리 2건, 조회 직후 포트포워드 종료)로 현재 자원 상태를 재확인했다. **CR 생성·삭제, 배포, 설정 변경 전혀 없음.**
+
+### 48.1 워크로드·클러스터 상태 - preflight 전부 정상
+
+- 노드 2개(`sj-control`/`sj-worker`) 모두 `Ready=True`, `MemoryPressure`/`DiskPressure`/`PIDPressure` 전부 `False`.
+- `vllm-serving` 네임스페이스: vLLM 단일 파드(`vllm-serving-6b9d88c96-64k7r`, `restartCount=0`, `Ready=true`)만 존재, Rollout `desired=current=up-to-date=available=1`(preview 없음, 단일 revision - §9.1과 같은 건강한 상태).
+- `kubectl get podchaos,networkchaos,stresschaos,workflow -n vllm-serving` → **CR 0건**(§9.4 삭제 이후 계속 깨끗한 상태 유지 확인).
+
+### 48.2 메모리 한도·현재 사용량 - Phase 5 이후 한도 자체는 불변
+
+- 파드 실제 `resources`(kubectl 직접 조회, `rollout.yaml`과 일치): `requests={cpu: 2, memory: 4Gi}`, `limits={cpu: 3, memory: 6Gi}`. **메모리 한도(6Gi)는 CPU 한도가 4→3코어로 바뀐 lab-cpu3-warm-v1 재구성(§11/§16)과 무관하게 Phase 5 조사 시점부터 지금까지 변경된 적이 없다** - `scenario-progressive-memory-pressure.yaml` 주석의 6Gi=6144Mi 기준 계산은 지금도 그대로 유효하다.
+- 현재 vLLM working set: `kubectl top` 3449Mi, Prometheus `container_memory_working_set_bytes`(cadvisor) 3616944128B(≈3449MiB, 측정 시점·경로 차이 안에서 일치) - Phase 5 §3 당시 baseline(~3287Mi)과 같은 자릿수, 유의미한 drift 없음.
+- Node `MemAvailable`(node-exporter `node_memory_MemAvailable_bytes`, 1회성 Prometheus 포트포워드로 조회 후 즉시 종료): `sj-worker` **8686387200B ≈ 8.09GiB**, `sj-control` **5591273472B ≈ 5.21GiB**. 지시된 즉시 중단 임계치(3GiB)까지 `sj-worker` 기준 약 5GiB 여유 - 최소 강도(500MB) smoke를 막을 자원 부족 없음.
+
+### 48.3 Phase 5 재해석 - 새 강도 후보(500~2000MB)가 실제 타임아웃 재현 구간을 포함함
+
+Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요청 타임아웃은 `stresschaos` 시작 3분 58초 경과 시점, `kubectl top` 기준 **총 사용량 5149Mi**에서 관측됐다 - 당시 baseline(~3287Mi) 대비 stress 순증분은 약 **1862MB**이고, 이는 6Gi(6144Mi) cgroup 한도에 **도달하기 전**이다. 즉 Phase 5가 이미 확인한 사실("메모리 압박으로 인한 서비스 저하는 cgroup 강제종료보다 먼저 온다")을 다시 확인한 것이며, 지시받은 새 후보 상한 500/1000/1500/2000MB는 이 실측 타임아웃 재현 구간(≈1862MB)을 포함한다 - 500MB 최소 강도부터 시작해 이 구간까지 단계적으로 calibration할 근거가 있다.
+
+반대로 기존 5000MB 단계(총 목표 ~8407Mi, 한도 37% 초과)는 Phase 5 §2에서 커널 OOM 로그로 이미 확정된 self-OOM 메커니즘(`memStress` 프로세스 자신이 `oom_score_adj:1000`으로 우선 종료 → chaos-daemon이 재시작 → 값이 baseline 근처로 떨어졌다 다시 오르는 순환)만 반복 유도할 뿐, vLLM 장애 강도를 안정적으로 표현하지 못한다는 지시된 판단과 일치한다 - 이번 점검은 그 판단을 뒤집을 새 증거를 찾지 못했다(기존 근거 재확인).
+
+### 48.4 결론 및 수행 범위
+
+- 지금 자원 상태로는 지시된 최소 강도(worker 1개, 500MB, 60초) live smoke를 진행할 자원적 장애물이 없다(MemAvailable·현재 working set 모두 중단 임계치 대비 충분한 여유).
+- 정확한 단계 강도(1000/1500/2000MB 각각의 실제 SLO 영향)는 지시대로 이번 점검에서 확정하지 않는다 - live smoke 이후 별도 calibration으로 넘긴다.
+- **수행한 것**: `kubectl get nodes/pods/rollout/chaos-CR`, `kubectl top node/pod`, `kubectl get pod -o json`(resources·restartCount 확인), Prometheus 인스턴트 쿼리 2건(1회성 포트포워드, 조회 직후 종료) - 전부 읽기 전용.
+- **하지 않은 것**: StressChaos·다른 어떤 CR도 생성하지 않음, 트래픽 발생 없음, 설정 변경 없음, 배포 없음.
+
+## 49. `memory_pressure` 최소 live smoke - 1차 시도에서 실측 버그 발견·수정, 2차 시도 PASS (2026-09-20)
+
+전체 오프라인 스위트(586 passed) 통과 확인 후, `native` / `--pilot` / worker 1개 / 500MB / 60초 단일 stage smoke를 실행했다. 사전 재확인: 노드 2개 Ready, `vllm-serving` 단일 파드(`vllm-serving-6b9d88c96-64k7r`, `restartCount=0`), chaos CR 0건 - §48과 같은 깨끗한 상태.
+
+### 49.1 1차 시도 - `injection_valid=False`로 `invalid_run`, 근본원인 확정 후 코드 수정
+
+`run_id=pilot-memory_pressure-native-01-20260919T183900Z` 실행 결과 `outcome=invalid_run`, `invalid_reason="주입이 시작됐는지/효과가 있었는지 확인 안 됨"`. 안전 로그(evidence)를 직접 대조해 **클러스터 이상이 아니라 하니스 자체의 판정 버그**임을 확정했다 - 같은 trial의 `safety_tick`이 working set이 baseline(~3.6GiB) 대비 실제로 ~500MB 오른 것(`t_injection` 관측 18초 뒤 4.12GiB)을 정상적으로 기록하고 있었고, Node MemAvailable(8GiB대)·restartCount(0)·OOMKilled(false)·Node conditions 전부 건강했다 - 즉 메모리 압박 자체는 정상 적용됐는데 하니스가 이를 "확인 안 됨"으로 오판정했다.
+
+**근본원인**: `run_once.py`는 `injector.is_started()`를 재시도 루프(`_wait_for`, 최대 `injection_started_timeout_sec`)로 기다리지만, `result.injection_valid = started and injector.is_effective()`에서 `is_effective()`는 그 직후 **단 한 번만** 확인한다. `memory_pressure_adapter.py`의 `is_effective()`가 "AllInjected와 working set 상승을 함께 확인"(명시 요구사항)을 이 단발 확인 쪽에 두고 있어서, StressChaos 자체는 즉시 적용돼도 kubelet→cAdvisor→Prometheus 스크레이프 경로의 실측 반영 지연(이번 실행 약 18초)을 흡수하지 못했다 - `is_started()`가 AllInjected만으로 먼저 latch해버려 그 직후의 단발 `is_effective()` 확인 시점엔 아직 Prometheus 지표가 갱신 전이었다.
+
+**수정**(`experiments/memory_pressure_adapter.py`, 실클러스터 작업 없음 - 코드만): working set 상승 확인 자체를 재시도되는 `is_started()` 쪽으로 옮겼다 - AllInjected가 확인돼도 working set이 아직 충분히 안 올랐으면 `is_started()`는 계속 `False`를 반환해 `_wait_for`가 계속 재시도한다(최대 `injection_started_timeout_sec`). `is_effective()`는 이제 `is_started()`와 같은 상태를 그대로 재사용한다. `run_memory_pressure_trial.py`도 `injection_started_timeout_sec`를 기본 30초에서 **60초**로 늘려 여유를 더 확보했다(이번 실측 지연 18초 대비 넉넉한 배수). 회귀 테스트: `test_memory_pressure_adapter.py`의 관련 4개 테스트를 새 아키텍처에 맞게 수정(`is_started`가 이제 재시도하며 두 조건을 함께 확인하도록, target replacement/classify_stage 테스트는 `is_started()`가 실제로 latch할 수 있도록 working set 상승을 시뮬레이션하는 fixture 추가) - 전체 스위트 재확인 586 passed(개수 불변, 내용만 수정). **`TrialResult` 스키마 변경 없음**.
+
+1차 시도의 `invalid_run` 결과 파일·안전 로그는 원본 그대로 보존한다(수정하지 않음) - 클러스터는 어댑터 자신의 `cleanup()`이 정상적으로 working set을 baseline까지 되돌리고 CR을 전부 제거한 것을 재확인했다(재실행 전 `kubectl top`으로 3451Mi 복귀, chaos CR 0건 확인).
+
+### 49.2 2차 시도 - PASS
+
+수정 후 같은 조건(`native`/`--pilot`/500MB/1 worker/60초)으로 재실행(`run_id=pilot-memory_pressure-native-01-20260919T184947Z`). 결과:
+
+| 항목 | 값 |
+|---|---|
+| `outcome` | `prevented`(`injection_valid=True`, `probe_valid=True`, `slo_evaluable_at_exit=True`) |
+| `injection_observation_error_sec` | 1.27초(수정 후 재시도 루프가 실제 지연을 흡수한 뒤의 관측 오차) |
+| `AllInjected` 확인 | 됨(`is_started()`가 latch) |
+| baseline → 최대 working set | 3.371GiB → 3.840GiB(약 478MB 상승, PASS 기준 400MiB 이상 충족) |
+| Node MemAvailable 범위 | 7.60~8.07GiB(중단 임계치 3GiB·PASS 기준 4GiB 모두 여유 있게 충족) |
+| restartCount / OOMKilled | 안전 tick 12건 전부 `0` / `false`(불변) |
+| Node conditions | 안전 tick 12건 전부 Ready=True, 4개 조건 이상 0건 |
+| working set 5GiB 미만 | 유지(최대 3.840GiB) |
+| CR 삭제 후 복귀 확인 | `recovered=true`, baseline 3619520512B -> 최종 3619565568B(차이 ~45KB, 허용오차 150MiB 대비 사실상 즉시 복귀), 30초 이내 |
+| 사후 클러스터 확인 | chaos CR 0건, probe pod 정리됨, vLLM 파드 동일 UID·restart 0·working set 3451Mi(baseline) 복귀, Node 2개 Ready, Rollout 단일 revision |
+
+**PASS 판정**: 지시된 7개 PASS 조건 전부 충족. 즉시 중단 조건(MemAvailable<3GiB, restart 증가, OOMKilled, working set>5GiB, Node 이상, CR 삭제·소멸 실패) 어느 것도 발동하지 않았다.
+
+`outcome=prevented`는 native에서 이상 신호일 수 있다는 계약서 §3 언급과 무관하지 않지만, 이 값이 나온 이유는 개입이 아니라 **500MB 강도 자체가 SLO 위반을 못 일으켰다**는 것뿐이다(probe가 trial 내내 유효했고 위반이 관측되지 않음, `slo_evaluable_at_exit=true`로 검증됨) - Phase 5 §3의 실제 타임아웃 관측(baseline 대비 순증분 약 1862MB)과 일치하는 결과로, 500MB는 애초에 "안전한 최소 강도" 후보였지 "SLO 위반을 보장하는 강도"로 설계된 적이 없다(§48.3에서 이미 "마지막 단계 SLO 위반 보장" 문구를 제거해뒀다). 이 결과 자체가 이상은 아니고, 강도 calibration(§4의 후속 작업)이 아직 필요하다는 것만 재확인한다.
+
+### 49.3 수행 범위
+
+- **수행한 것**: 오프라인 스위트 재검증(586 passed) → live smoke 2회(1차 invalid_run 진단, 2차 PASS) → `memory_pressure_adapter.py`/`run_memory_pressure_trial.py`/`test_memory_pressure_adapter.py` 실측 기반 정정.
+- **하지 않은 것**: 1GB 이상 탐색, 5단계 ramp, non-native arm, `run_all_scenarios.py`·본 실험(60회) - 전부 미실행. `claude/*` worktree 손대지 않음. force-push·rebase·hard reset 없음. 결과 스키마 변경 없음.

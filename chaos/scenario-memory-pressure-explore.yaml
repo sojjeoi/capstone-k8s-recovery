@@ -1,0 +1,39 @@
+# memory_pressure 강도 탐색 후보 설정(2026-09-20 추가) - Chaos Mesh CR이 아니라
+# experiments/memory_pressure_adapter.py가 순차 생성하는 StressChaos 단계들의
+# 참고용 데이터 목록이다(network_degrade_adapter.py가 Workflow 대신 NetworkChaos를
+# 직접 생성/삭제하는 것과 같은 방식 - scenario-progressive-memory-pressure.yaml의
+# Chaos Mesh Workflow CRD 방식을 대체한다).
+#
+# scenario-progressive-memory-pressure.yaml(원본)은 이력으로 그대로 보존하고
+# 수정하지 않는다 - 마지막 단계(5000MB, 총 ~8407Mi로 6Gi 한도 37% 초과)는
+# Phase 5 조사(docs/design/phase5-memory-pressure-investigation.md §2)에서
+# vLLM이 아니라 Chaos Mesh가 주입한 stress 프로세스 자신의 self-OOM(oom_score_
+# adj=1000으로 자폭 -> 재시작 -> 재상승 순환)만 반복 유도한다고 커널 로그로
+# 확정됐다 - vLLM 장애 강도를 안정적으로 표현하지 못해 본 실험 후보에서 제외한다.
+#
+# 아래 후보(500/1000/1500/2000MB)는 Phase 5 §3의 실제 요청 타임아웃 관측
+# (baseline 대비 순증분 약 1862MB, 6Gi 한도 도달 전)을 포함하는 범위다
+# (docs/design/phase8-blue-green-preflight-incident.md §48.3 재해석 참고).
+# **2500MB·5000MB는 이 탐색에서 제외한다.**
+#
+# 이 파일 자체는 아무것도 실행하지 않는다 - 단계 강도 확정(몇 단계를 쓸지,
+# 각 단계 지속시간을 얼마로 할지)은 최소 live smoke(worker 1개, 500MB, 60초)
+# 통과 이후 별도 calibration에서 결정한다. 그 전까지 1GB 이상 탐색·전체 ramp
+# 실행은 금지(계약서·incident 문서 §48 지시 사항).
+candidate_stages:
+  - name: stage-1-500mb
+    size_mb: 500
+    workers: 1
+    duration_sec: 60
+  - name: stage-2-1000mb
+    size_mb: 1000
+    workers: 1
+    duration_sec: 60
+  - name: stage-3-1500mb
+    size_mb: 1500
+    workers: 1
+    duration_sec: 60
+  - name: stage-4-2000mb
+    size_mb: 2000
+    workers: 1
+    duration_sec: 60

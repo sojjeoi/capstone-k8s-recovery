@@ -13,6 +13,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 from arm_controller import (
     _DETECTOR_SCRIPTS,
+    FIXED_THRESHOLD_CPU_LIMIT_CORES,
     _build_detector_command,
     _prometheus_reachable_and_fresh,
     _resolved_signal_url,
@@ -31,7 +32,10 @@ def test_make_detector_for_arm_native_returns_none():
 def test_make_detector_for_arm_fixed_threshold_dispatches_correct_script():
     cmd = _build_detector_command("fixed_threshold", "run-1")
     assert cmd is not None
-    assert cmd[-3] == "fixed_threshold.py" or cmd[-3].endswith("fixed_threshold.py"), cmd
+    # cmd[-3]은 --cpu-limit-cores 추가(2026-09-20) 이후 인자 개수가 arm마다
+    # 달라져 더 이상 안전하지 않다 - 스크립트 경로는 항상 cmd[1](sys.executable
+    # 다음 위치)에 고정이다.
+    assert cmd[1].endswith("fixed_threshold.py"), cmd
     assert "score_server.py" not in " ".join(cmd), "fixed_threshold arm인데 score_server.py가 섞이면 안 됨"
     detector = make_detector_for_arm("fixed_threshold", "run-1")
     assert detector.name == "fixed_threshold"
@@ -41,11 +45,29 @@ def test_make_detector_for_arm_fixed_threshold_dispatches_correct_script():
 def test_make_detector_for_arm_proposed_dispatches_correct_script():
     cmd = _build_detector_command("proposed", "run-1")
     assert cmd is not None
-    assert cmd[-3] == "score_server.py" or cmd[-3].endswith("score_server.py"), cmd
+    assert cmd[1].endswith("score_server.py"), cmd
     assert "fixed_threshold.py" not in " ".join(cmd), "proposed arm인데 fixed_threshold.py가 섞이면 안 됨"
     detector = make_detector_for_arm("proposed", "run-1")
     assert detector.name == "isolation_forest"
     print("OK - proposed arm은 score_server.py + detector.name='isolation_forest'만 반환")
+
+
+def test_fixed_threshold_command_carries_frozen_cpu_limit():
+    # 계약서 §6 동결값(2026-09-20 정정) - arm_controller가 fixed_threshold.py에게
+    # CPU limit을 암묵적 기본값 없이 명시적으로 전달해야 한다.
+    cmd = _build_detector_command("fixed_threshold", "run-1")
+    assert "--cpu-limit-cores" in cmd, cmd
+    idx = cmd.index("--cpu-limit-cores")
+    assert float(cmd[idx + 1]) == FIXED_THRESHOLD_CPU_LIMIT_CORES == 3.0, cmd
+    print("OK - fixed_threshold detector 커맨드에 동결값 3.0이 --cpu-limit-cores로 명시 전달됨")
+
+
+def test_proposed_command_has_no_cpu_limit_arg():
+    # score_server.py(Isolation Forest)는 CPU 임계치 개념이 없다 - 엉뚱하게
+    # 섞여 들어가면 안 된다.
+    cmd = _build_detector_command("proposed", "run-1")
+    assert "--cpu-limit-cores" not in cmd, cmd
+    print("OK - proposed(score_server.py) 커맨드에는 --cpu-limit-cores가 없음")
 
 
 def test_detector_script_dispatch_table_has_exactly_two_non_native_arms():
@@ -389,6 +411,8 @@ if __name__ == "__main__":
     test_make_detector_for_arm_native_returns_none()
     test_make_detector_for_arm_fixed_threshold_dispatches_correct_script()
     test_make_detector_for_arm_proposed_dispatches_correct_script()
+    test_fixed_threshold_command_carries_frozen_cpu_limit()
+    test_proposed_command_has_no_cpu_limit_arg()
     test_detector_script_dispatch_table_has_exactly_two_non_native_arms()
     test_run_id_propagated_into_detector_command()
     test_subprocess_detector_lifecycle_start_alive_stop()

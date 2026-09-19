@@ -14,6 +14,7 @@ kubeconfig*
 *.pkl
 experiments/results/*.csv
 experiments/results/*.json
+experiments/results/*.jsonl
 experiments/results/pilot/*.json
 experiments/results/headroom/*.json
 experiments/results/**/*.pre-reconcile.bak

@@ -43,6 +43,16 @@ _DETECTOR_SCRIPTS = {
     "proposed": {"script": "score_server.py", "name": "isolation_forest"},
 }
 
+# 계약서 §6 Phase 8 동결값(2026-09-20 정정) - fixed_threshold.py는 더 이상 CPU
+# limit을 스스로 추정하지 않고(fail-closed) 매 실행마다 --cpu-limit-cores를
+# 명시적으로 요구한다. 여기가 그 값의 유일한 소스 - gitops/apps/vllm-serving/
+# rollout.yaml resources.limits.cpu(lab-cpu3-warm-v1, docs/design/phase8-blue-
+# green-preflight-incident.md §11·§16)와 반드시 같아야 하고, 클러스터 자원이
+# 다시 재구성되면 여기와 계약서 §6을 함께 갱신해야 한다(그 전까지 이 정정
+# 이전에 하드코딩됐던 4.0/3.6코어와 같은 낡은 값 사고가 재발하지 않게 하는
+# 유일한 안전장치는 이 상수를 실제 rollout.yaml과 맞춰 유지하는 것뿐이다).
+FIXED_THRESHOLD_CPU_LIMIT_CORES = 3.0
+
 STOP_TIMEOUT_SEC = 10.0  # terminate() 이후 정상 종료 대기 - 넘기면 kill()
 # score_server.py(그리고 이를 import하는 fixed_threshold.py)는 원래
 # in-cluster DNS를 기본값으로 쓴다 - 로컬 서브프로세스로 돌릴 땐 이
@@ -112,11 +122,17 @@ def _prometheus_reachable_and_fresh(prom_url: str = LOCAL_PROMETHEUS_URL,
 def _build_detector_command(arm: str, run_id: str) -> Optional[list]:
     """순수 함수 - 실제 프로세스를 안 띄우고 커맨드만 조립한다(오프라인
     테스트용, run_id 전파를 코드 실행 없이 검증 가능). arm이 native거나
-    매핑에 없으면 None(detector 없음)."""
+    매핑에 없으면 None(detector 없음). fixed_threshold는 2026-09-20부터
+    --cpu-limit-cores(FIXED_THRESHOLD_CPU_LIMIT_CORES, 위 §6 동결값)를 반드시
+    같이 받는다 - fixed_threshold.py가 이 인자 없이는 즉시 fail-closed로
+    종료하므로, 여기서 안 붙이면 detector가 아예 시작을 못 한다."""
     spec = _DETECTOR_SCRIPTS.get(arm)
     if spec is None:
         return None
-    return [sys.executable, str(ANOMALY_DETECTION_DIR / spec["script"]), "--run-id", run_id]
+    cmd = [sys.executable, str(ANOMALY_DETECTION_DIR / spec["script"]), "--run-id", run_id]
+    if arm == "fixed_threshold":
+        cmd += ["--cpu-limit-cores", str(FIXED_THRESHOLD_CPU_LIMIT_CORES)]
+    return cmd
 
 
 def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None) -> Detector:

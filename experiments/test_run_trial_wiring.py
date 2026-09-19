@@ -28,8 +28,16 @@ RUNNERS = [
     pytest.param("run_load_ramp_trial", "make_load_ramp_injector", "load_ramp", id="load_ramp"),
     pytest.param("run_network_degrade_trial", "make_network_degrade_injector", "network_degrade",
                  id="network_degrade"),
+    pytest.param("run_memory_pressure_trial", "make_memory_pressure_injector", "memory_pressure",
+                 id="memory_pressure"),
 ]
 EXPECTED_DETECTOR = {"fixed_threshold": "fixed_threshold", "proposed": "isolation_forest"}
+# run_memory_pressure_trial.py는 --size-mb/--workers/--duration-sec이 필수라(우발적 기본 실행 방지,
+# memory_pressure_adapter.py의 stages 필수화와 같은 이유) 이 값들 없이는 argparse 단계에서부터
+# main()이 실패한다 - 다른 세 러너는 이런 필수 인자가 없으므로 빈 튜플(영향 없음).
+REQUIRED_EXTRA_ARGV = {
+    "run_memory_pressure_trial": ("--size-mb", "500", "--workers", "1", "--duration-sec", "60"),
+}
 
 
 def _run_main(module_name, injector_factory, arm, extra_argv=("--pilot",)):
@@ -49,7 +57,8 @@ def _run_main(module_name, injector_factory, arm, extra_argv=("--pilot",)):
             arm_controller, "make_detector_for_arm", wraps=arm_controller.make_detector_for_arm))
         if hasattr(mod, "_verify_probe_profile"):  # 실클러스터 pod의 probe 설정을 읽는 사전 검증 - 차단
             stack.enter_context(patch.object(mod, "_verify_probe_profile"))
-        stack.enter_context(patch.object(sys, "argv", [module_name, "--arm", arm, *extra_argv]))
+        argv = [module_name, "--arm", arm, *extra_argv, *REQUIRED_EXTRA_ARGV.get(module_name, ())]
+        stack.enter_context(patch.object(sys, "argv", argv))
         mod.main()
     assert mock_run_once.call_count == 1
     kwargs = mock_run_once.call_args.kwargs
