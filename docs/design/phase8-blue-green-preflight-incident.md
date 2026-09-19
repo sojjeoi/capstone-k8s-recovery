@@ -4616,7 +4616,7 @@ recovery-policy가 개입해 자동 promote한 일은 없다(context null·quies
 이벤트와 대조: native `Started` 15:48:46·`Applied` 15:48:47 ... stage 4 `Recovered` 15:54:51(`t_injection_end` 15:54:52.8), proposed `Started`/`Applied` 16:28:48·`Deleted`/`Recovered` 16:30:18. (c) `t_switch`를 Argo
 `SwitchService`/`RolloutCompleted` 이벤트와 대조: fixed_threshold 16:14:50Z(기록 16:14:50.857), proposed 16:29:50Z(기록 16:29:51.019 - 이벤트는 초 단위 절삭, `t_switch`는 관측 시각). (d) `t_detection`을
 Alertmanager와 대조: fixed_threshold의 idempotency key `startsAt` 16:14:35.297 + `group_wait` 10초 = 16:14:45.297 (기록 16:14:45.333). (e) 감사 4중 연결: 결과의 `audit_record_id`·`idempotency_key`·`commit_sha`가
-origin의 감사 커밋(`42ef66c`/`ad7257e`)의 `audit-log/<run_id>.jsonl` 레코드와 일치, `decided_at`이 `t_audit_write`와 일치. (f) 타임스탬프 순서 `t_injection < t_slo < t_detection <= t_decision <= t_api_request < t_switch < t_recovery` 두 non-native arm
+origin의 감사 커밋(`42ef66c`/`ad7257e`)의 `audit-log/<run_id>.jsonl` 레코드와 일치, `decided_at`이 `t_audit_write`와 일치, `reconcile_audit.py --dry-run`은 두 trial 모두 `changed: false`·`judgment_supplemented: false`. (f) 타임스탬프 순서 `t_injection < t_slo < t_detection <= t_decision <= t_api_request < t_switch < t_recovery` 두 non-native arm
 모두 성립. (g) `collect_metrics.py`: 세 행 이슈 0건(전체 이슈 1건은 기존 09-17 native pod_kill `prevented`). (h) `preview_prep_duration_sec`가 `t_preview_ready - t_preview_prep_start`와 일치. 필드 모순은 없었다.
 
 ### 46.5 관찰기(observer) 분석 - 계약서 5.8의 최종 표
