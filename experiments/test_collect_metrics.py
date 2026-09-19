@@ -43,7 +43,7 @@ def _base_row(**overrides) -> dict:
         "t_audit_push": "2026-01-01T00:03:10+00:00",
         "commit_sha": "abc123",
         "detected": True,
-        "detection_source": "isolation_forest",
+        "detection_source": "predictive",  # 2026-09-19부터 경로(predictive/reactive) - 예전 값("isolation_forest")은 detector 필드로 분리됨
         "action": "promote_preview",
         "promotion_verified": True,
         "outcome": "recovered",
@@ -156,7 +156,8 @@ def test_prevented_missing_t_slo_is_not_an_anomaly():
     # prevented, evaluable 미검증)이 같이 걸리지 않게 한다 - 그 둘은 별도
     # 테스트(test_native_arm_prevented_is_flagged 등)에서 확인한다.
     rows = [_base_row(arm="fixed_threshold", outcome="prevented", t_slo=None, t_recovery=None,
-                       action="promote_preview", detected=True, slo_evaluable_at_exit=True)]
+                       action="promote_preview", detected=True, slo_evaluable_at_exit=True,
+                       detector="fixed_threshold")]
     out_rows, issues = build_comparison(rows)
     r = out_rows[0]
     assert r["included_in_main_analysis"] is True
@@ -637,6 +638,104 @@ def test_live_state_row_requires_decision_and_switch_but_legacy_reconciled_does_
     print("OK - live_state는 t_decision/t_switch 필수, 보완된 과거 pilot의 null은 오류가 아님")
 
 
+def _detector_issue(issues, run_id):
+    return [i for i in issues if i.run_id == run_id and i.field == "detector"]
+
+
+def test_detector_matching_arm_is_ok_and_mismatch_is_flagged():
+    ok_proposed = _judged_row()  # proposed + predictive + isolation_forest
+    out, issues = build_comparison([ok_proposed])
+    assert out[0]["detector_check"] == "ok" and not _detector_issue(issues, ok_proposed["run_id"])
+
+    ok_fixed = _judged_row(arm="fixed_threshold", run_id="load_ramp-fixed_threshold-01-20260101T000000Z",
+                           detector="fixed_threshold")
+    out, issues = build_comparison([ok_fixed])
+    assert out[0]["detector_check"] == "ok" and not _detector_issue(issues, ok_fixed["run_id"])
+
+    wrong_proposed = _judged_row(detector="fixed_threshold")  # proposed arm인데 fixed_threshold가 신호를 냄
+    out, issues = build_comparison([wrong_proposed])
+    assert out[0]["detector_check"] == "mismatch"
+    assert any("isolation_forest" in i.problem for i in _detector_issue(issues, wrong_proposed["run_id"]))
+
+    wrong_fixed = _judged_row(arm="fixed_threshold", run_id="load_ramp-fixed_threshold-02-20260101T000000Z",
+                              detector="isolation_forest")
+    out, issues = build_comparison([wrong_fixed])
+    assert out[0]["detector_check"] == "mismatch" and _detector_issue(issues, wrong_fixed["run_id"])
+    print("OK - arm과 detector 일치는 ok, 불일치(proposed<-fixed_threshold, fixed_threshold<-isolation_forest)는 issue")
+
+
+def test_native_must_have_null_detector():
+    ok = _base_row(arm="native", detector=None)
+    out, issues = build_comparison([ok])
+    assert out[0]["detector_check"] == "ok" and not _detector_issue(issues, ok["run_id"])
+
+    bad = _base_row(arm="native", detector="isolation_forest")
+    out, issues = build_comparison([bad])
+    assert out[0]["detector_check"] == "mismatch" and _detector_issue(issues, bad["run_id"])
+    print("OK - native는 detector가 null이어야 함")
+
+
+def test_alertmanager_fallback_is_the_defined_exception_for_non_native_arms():
+    for arm in ("fixed_threshold", "proposed"):
+        row = _judged_row(arm=arm, run_id=f"load_ramp-{arm}-03-20260101T000000Z", detection_source="reactive",
+                          detector="alertmanager", idempotency_key="fp123:2026-01-01T00:01:30+00:00")
+        out, issues = build_comparison([row])
+        assert out[0]["detector_check"] == "reactive_fallback", arm
+        assert not _detector_issue(issues, row["run_id"]), "Alertmanager fallback은 오류가 아니라 정의된 예외"
+
+    wrong_name = _judged_row(detection_source="reactive", detector="isolation_forest")
+    out, issues = build_comparison([wrong_name])
+    assert out[0]["detector_check"] == "mismatch" and _detector_issue(issues, wrong_name["run_id"])
+
+    wrong_path = _judged_row(detection_source="predictive", detector="alertmanager")
+    out, issues = build_comparison([wrong_path])
+    assert out[0]["detector_check"] == "mismatch" and _detector_issue(issues, wrong_path["run_id"]),         "예측 경로 탐지인데 detector가 alertmanager면 예외가 아니라 오류"
+    print("OK - reactive+alertmanager만 fallback 예외로 허용, 그 외 조합은 issue")
+
+
+def test_predictive_detection_without_detector_and_detector_without_detection_are_flagged():
+    unknown = _judged_row(detector=None)
+    out, issues = build_comparison([unknown])
+    assert out[0]["detector_check"] == "missing" and _detector_issue(issues, unknown["run_id"])
+
+    no_source = _judged_row(detection_source=None)
+    out, issues = build_comparison([no_source])
+    assert out[0]["detector_check"] == "missing" and _detector_issue(issues, no_source["run_id"])
+
+    phantom = _judged_row(detected=False, t_detection=None, t_decision=None, t_api_request=None, t_switch=None,
+                          action="none", decision_outcome=None, promotion_verified=None, detection_source=None)
+    out, issues = build_comparison([phantom])  # 탐지가 없는데 detector가 남아 있음
+    assert out[0]["detector_check"] == "mismatch" and _detector_issue(issues, phantom["run_id"])
+
+    clean = _judged_row(detected=False, t_detection=None, t_decision=None, t_api_request=None, t_switch=None,
+                        action="none", decision_outcome=None, promotion_verified=None, detection_source=None,
+                        detector=None)
+    out, issues = build_comparison([clean])
+    assert out[0]["detector_check"] == "not_applicable" and not _detector_issue(issues, clean["run_id"])
+    print("OK - 예측 탐지인데 detector 불명/탐지 없는데 detector 있음은 issue, 미탐지+null은 not_applicable")
+
+
+def test_inferred_detector_is_marked_for_pilot_not_an_error_but_refused_for_main_data():
+    inferred = {"detector": "trial.detector_process(arm 배선값) - 2026-09-19 이전 기록이라 확인 불가"}
+    pilot = _judged_row(is_pilot=True, judgment_source="audit_reconcile",
+                        reconciliation={"inferred_fields": inferred})
+    out, issues = build_comparison([pilot])
+    assert out[0]["detector_check"] == "inferred_pilot", "provenance가 있는 과거 pilot은 오류가 아니라 별도 표시"
+    assert not _detector_issue(issues, pilot["run_id"])
+
+    main_data = _judged_row(is_pilot=False, judgment_source="audit_reconcile",
+                            reconciliation={"inferred_fields": inferred})
+    out, issues = build_comparison([main_data])
+    assert out[0]["detector_check"] == "mismatch"
+    assert any("추론" in i.problem for i in _detector_issue(issues, main_data["run_id"])), "본 실험 데이터의 detector 추론은 오류"
+
+    wrong_inferred = _judged_row(is_pilot=True, detector="fixed_threshold", judgment_source="audit_reconcile",
+                                 reconciliation={"inferred_fields": inferred})  # 추론값이 arm과 불일치
+    out, issues = build_comparison([wrong_inferred])
+    assert out[0]["detector_check"] == "mismatch" and _detector_issue(issues, wrong_inferred["run_id"])
+    print("OK - 과거 inferred pilot은 별도 표시(오류 아님), 본 실험 추론·arm 불일치 추론값은 오류")
+
+
 if __name__ == "__main__":
     import tempfile
     from pathlib import Path
@@ -689,4 +788,9 @@ if __name__ == "__main__":
     test_t_switch_requires_verified_promotion()
     test_no_promotion_requires_null_api_request_and_switch()
     test_live_state_row_requires_decision_and_switch_but_legacy_reconciled_does_not()
+    test_detector_matching_arm_is_ok_and_mismatch_is_flagged()
+    test_native_must_have_null_detector()
+    test_alertmanager_fallback_is_the_defined_exception_for_non_native_arms()
+    test_predictive_detection_without_detector_and_detector_without_detection_are_flagged()
+    test_inferred_detector_is_marked_for_pilot_not_an_error_but_refused_for_main_data()
     print("\n모두 통과")

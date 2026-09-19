@@ -252,6 +252,59 @@ def _check_judgment_consistency(row: dict, issues: list) -> None:
                 run_id, "promotion_verified", "action=promote_preview인데 promotion 검증 결과(promotion_verified) 없음"))
 
 
+# arm이 "실제로 띄우는" 예측 detector(계약서 §1) - native는 recovery-policy·detector 둘 다 없다.
+# fixed_threshold/proposed는 예측 모델만 다르고 공통 Alertmanager 반응형 fallback을 함께 가진다.
+EXPECTED_DETECTOR_BY_ARM = {"native": None, "fixed_threshold": "fixed_threshold", "proposed": "isolation_forest"}
+REACTIVE_FALLBACK_DETECTOR = "alertmanager"
+
+
+def _check_detector_consistency(row: dict, issues: list) -> str:
+    """arm과 실제 detector의 일치를 검증한다(2026-09-19 추가, 계약서 §5.7). 반환값은 comparison의
+    detector_check 컬럼: ok | reactive_fallback | inferred_pilot | not_applicable | mismatch | missing.
+    mismatch/missing만 validation issue이고 reactive_fallback/inferred_pilot은 오류가 아니라 별도 표시다.
+
+    규칙: native는 detector null. 예측 경로 탐지(detection_source=predictive)는 detector가 arm의 예측
+    detector와 같아야 한다(fixed_threshold->fixed_threshold, proposed->isolation_forest). 최초 유효 탐지가
+    Alertmanager fallback(detection_source=reactive)이면 detector=alertmanager가 정의된 예외로 허용된다
+    (두 non-native arm이 공통으로 가진 fallback - 다른 detector 이름이거나 predictive인데 alertmanager면
+    오류). 탐지가 없으면 detector도 null. 과거 pilot의 추론된 detector(reconciliation.inferred_fields.
+    detector)는 arm 기대와 일치하면 오류가 아니라 inferred_pilot으로 따로 표시하되, 본 실험(is_pilot=
+    false) 데이터의 추론은 허용되지 않아 오류이고 arm과 불일치하는 추론값도 오류다."""
+    arm = row.get("arm")
+    if arm not in EXPECTED_DETECTOR_BY_ARM:
+        return "not_applicable"
+    run_id = row.get("run_id", "?")
+    detector, source = row.get("detector"), row.get("detection_source")
+    expected = EXPECTED_DETECTOR_BY_ARM[arm]
+
+    def flag(problem: str, label: str) -> str:
+        issues.append(ValidationIssue(run_id, "detector", problem))
+        return label
+
+    if arm == "native":
+        if detector is not None:
+            return flag(f"arm=native인데 detector={detector!r} - native는 recovery-policy·detector 미개입(계약서 §1)", "mismatch")
+        return "ok"
+    if row.get("detected") is not True:
+        if detector is not None:
+            return flag(f"detected=false인데 detector={detector!r}", "mismatch")
+        return "not_applicable"
+    inferred = "detector" in ((row.get("reconciliation") or {}).get("inferred_fields") or {})
+    if inferred and row.get("is_pilot") is not True:
+        return flag("본 실험(is_pilot=false) 데이터에 추론된 detector가 있음 - 본 실험 데이터의 detector 추론은 허용되지 않음(계약서 §5.5)", "mismatch")
+    if source == "reactive":
+        if detector == REACTIVE_FALLBACK_DETECTOR:
+            return "reactive_fallback"
+        return flag(f"detection_source=reactive인데 detector={detector!r} - 반응형 fallback의 detector는 {REACTIVE_FALLBACK_DETECTOR!r}", "mismatch")
+    if source == "predictive":
+        if detector is None:
+            return flag(f"arm={arm}의 예측 탐지(detection_source=predictive)인데 detector를 알 수 없음(null)", "missing")
+        if detector != expected:
+            return flag(f"arm={arm}의 예측 detector는 {expected!r}이어야 하는데 detector={detector!r}", "mismatch")
+        return "inferred_pilot" if inferred else "ok"
+    return flag(f"detected=true인데 detection_source={source!r}(predictive/reactive 아님) - detector를 arm과 대조할 수 없음", "missing")
+
+
 def _check_decision_switch_consistency(row: dict, issues: list) -> None:
     """t_decision/t_switch의 존재 규칙(2026-09-19 추가, 계약서 §5.2/§5.5). 순서(t_detection <=
     t_decision <= t_api_request <= t_switch)는 CAUSAL_CHAIN이 timing anomaly로 이미 검증한다 - 여기서는
@@ -362,6 +415,7 @@ def build_comparison(rows: list) -> tuple:
         _check_tolerant_profile_prevented_misleading(row, issues)
         _check_judgment_consistency(row, issues)
         _check_decision_switch_consistency(row, issues)
+        detector_check = _check_detector_consistency(row, issues)
         audit_pending = _check_audit_status(row, issues)
         temporal_relation = _compute_temporal_relation(ts)
         restart_chain_observed, probe_isolation_held = _compute_profile_interpretation(row)
@@ -397,6 +451,7 @@ def build_comparison(rows: list) -> tuple:
             "detected": row.get("detected"),
             "detection_source": row.get("detection_source"),
             "detector": row.get("detector"),
+            "detector_check": detector_check,
             "action": row.get("action"),
             "decision_outcome": row.get("decision_outcome"),
             "idempotency_key": row.get("idempotency_key"),

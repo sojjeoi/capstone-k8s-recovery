@@ -3599,8 +3599,8 @@ native `prevented` 파일럿. native·fixed_threshold(재실행 recovered) 파�
   `decided_at`은 promotion 실행 **후**에 찍혀 그대로 `t_decision`으로 쓰면 오해의
   소지가 있어 별도 정의가 필요) -> **§38에서 서버 시각으로 정의·구현**.
 - 예측 경로 신호의 `detector`가 arm의 `detector_process`와 다른지(잘못된 detector가
-  신호를 냄)는 이제 두 필드로 비교할 수 있지만 자동 검출은 추가하지 않았다(요청
-  범위 밖).
+  신호를 냄)는 이 절 시점엔 두 필드로 비교할 수 있지만 자동 검출은 없었다 -> **§39에서
+  `collect_metrics.py` 검증으로 추가**.
 - 이 변경은 검토·승인(2026-09-19) 후 하나의 논리적 커밋으로 묶어 origin의 smoke 감사
   커밋(`8f6c4c1`, `ae6b8b0`)과 일반 merge로 통합해 푸시했다(force-push·rebase 없음).
   클러스터에 배포된 이미지(`8e19c41b…`)는 승인 반영 직전 워킹트리에서 빌드했고, 승인
@@ -3674,3 +3674,29 @@ non-native 파일럿).
 규칙 위반으로 드러낸다), 그 파일럿에서 네 timestamp의 순서와 값을 live로 검증한다. live
 smoke 테스트(`test_live_no_action_judgment_and_audit_fields_end_to_end`)에는 `t_decision is not
 None`/`t_switch is None` 단언을 추가해뒀다(새 이미지 배포 후에만 통과).
+
+## 39. arm↔실제 detector 불일치 검증 (`collect_metrics.py`, 2026-09-19)
+
+§38과 별도 커밋. §37에서 `detector`(최초 유효 탐지의 실제 source)를 권위 상태에서 기록하게 됐으므로,
+`detector_process`(arm 배선 - "무엇을 띄우려 했는가")와 대조해 잘못된 detector가 신호를 낸 trial을
+자동으로 드러낸다. 규칙은 계약서 §5.7:
+
+- native: `detector` null. fixed_threshold: `fixed_threshold`. proposed: `isolation_forest`(예측 경로
+  탐지 기준). 탐지가 없으면 null.
+- **Alertmanager fallback 예외**: 최초 유효 탐지가 반응형 fallback이면 `detection_source=reactive` +
+  `detector=alertmanager`를 두 non-native arm에 공통으로 허용(`detector_check=reactive_fallback`, 오류
+  아님). 반응 경로인데 다른 이름/예측 경로인데 `alertmanager`는 불일치.
+- **과거 inferred pilot**: `reconciliation.inferred_fields.detector` provenance가 있고 `is_pilot=true`이며
+  arm과 일치하면 오류가 아니라 `inferred_pilot`으로 **별도 표시**. 본 실험 데이터의 추론된 detector,
+  arm과 어긋나는 추론값은 오류.
+- 결과는 comparison `detector_check` 컬럼(`ok`/`reactive_fallback`/`inferred_pilot`/`not_applicable`/
+  `mismatch`/`missing`) + `mismatch`·`missing`만 validation issue.
+
+**실제 보존 pilot 데이터에 읽기 전용으로 적용해 확인**: `proposed` pilot = `inferred_pilot`(오류 아님,
+provenance 표시), `fixed_threshold` pilot 2건 = `not_applicable`(둘 다 미탐지), native 행은 detector
+null이라 `ok`, 새 validation issue 0건(남은 1건은 기존 2026-09-17 pod_kill native `prevented` 건).
+테스트 5개 추가(arm 일치/불일치, native, fallback 예외와 잘못된 조합, detector 불명/탐지 없는데
+detector 있음, inferred pilot 표시·본 실험 추론 거부·arm 불일치 추론값). 이 과정에서 기존
+fixture의 낡은 값(`detection_source="isolation_forest"` - 2026-09-19 이전 "누가" 의미)이 새
+의미와 충돌해 테스트 1건이 실패했고, fixture를 `predictive`로 정정하고 해당 non-native 행에
+arm에 맞는 detector를 명시했다(검증 로직 쪽 수정 아님).

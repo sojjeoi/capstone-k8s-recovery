@@ -339,7 +339,7 @@ proposed 파일럿 등)의 `t_decision`/`t_switch`는 추정으로 채우지 않
 `reconcile_audit.py`도 이 두 필드는 건드리지 않는다(감사기록의 `decided_at`은 promotion 실행
 **후**에 찍히므로 `t_decision`의 근거가 될 수 없다).
 
-**5. `collect_metrics.py`.** 새 필드를 comparison 행에 싣고, 모순을 issue로 남긴다:
+**5. `collect_metrics.py`.** 새 필드를 comparison 행에 싣고(arm↔detector 대조는 §5.7), 모순을 issue로 남긴다:
 non-native에서 `t_detection`은 있는데 `detected`가 true가 아님(또는 그 반대), `action=
 promote_preview`인데 `t_api_request` 또는 `promotion_verified`가 없음. 비동기 감사
 미완료(`audit_status=pending|failed`, 또는 판정 필드 전파 이전의 과거 promotion trial)는
@@ -375,6 +375,35 @@ promote_preview`인데 `t_api_request` 또는 `promotion_verified`가 없음. �
 5. live 경로에서는 primary가 authoritative 상태의 `idempotency_key`/`decision_outcome`과
    일치할 때만 `complete`로 인정한다 - 다른 기록이 이미 push됐어도 이 판정의 감사기록이
    아직 안 생겼으면 `pending`이다.
+
+### 5.7 arm별 기대 detector와 Alertmanager fallback 예외 (2026-09-19 추가)
+
+`detector`(§5 스키마 - 최초 유효 탐지의 **실제** source)가 arm이 띄우기로 한 detector와 다르면 그
+trial은 잘못된 detector(예: 정리 안 된 이전 arm의 프로세스)가 신호를 낸 것일 수 있다. `collect_metrics.py`의
+`_check_detector_consistency()`가 이를 validation issue로 검출하고 결과를 comparison의
+`detector_check` 컬럼에 남긴다.
+
+| arm | 예측 경로(`detection_source=predictive`) 기대 `detector` | 탐지 없음 |
+|---|---|---|
+| `native` | (탐지 자체가 없음 - `detector`는 항상 null) | null |
+| `fixed_threshold` | `fixed_threshold` | null |
+| `proposed` | `isolation_forest` | null |
+
+**Alertmanager fallback 예외**: §1대로 `fixed_threshold`/`proposed`는 공통 Alertmanager 반응형
+fallback을 함께 가지므로, 최초 유효 탐지가 그 fallback이면 `detection_source=reactive`,
+`detector=alertmanager`가 **정의된 예외로 허용**된다(`detector_check=reactive_fallback`, 오류 아님).
+반응 경로인데 다른 detector 이름이거나, 예측 경로인데 `alertmanager`이면 예외가 아니라 불일치다.
+`native`가 `detector`를 가지면 불일치(recovery-policy 미개입 - §1).
+
+`detector_check` 값: `ok`(예측 경로가 arm과 일치, native의 null) \| `reactive_fallback`(정의된 예외) \|
+`inferred_pilot`(아래) \| `not_applicable`(탐지 없음·검증 대상 아닌 arm) \| `mismatch`·`missing`(validation
+issue - 불일치, 또는 예측 탐지인데 `detector`를 알 수 없음/`detection_source`가 predictive·reactive가 아님).
+
+**과거 inferred pilot(§5.5)**: `reconciliation.inferred_fields`에 `detector`가 있고 `is_pilot=true`이며 추론값이
+arm 기대와 일치하면 오류가 아니라 `inferred_pilot`으로 **별도 표시**한다(provenance가 있으므로). 추론값이 arm과
+어긋나면 여전히 불일치다. **본 실험(`is_pilot=false`) 데이터에 추론된 detector가 있으면 허용되지 않아 불일치**로
+검출한다(재조정 도구가 본 실험 데이터의 detector를 추론하지 않으므로 정상 경로에서는 나타나지 않고,
+나타나면 절차 위반이다).
 
 ## 6. 안전장치 — `run_once()`가 매 trial마다 반드시 함
 
@@ -424,3 +453,4 @@ promote_preview`인데 `t_api_request` 또는 `promotion_verified`가 없음. �
 - 2026-09-19: `fixed_threshold`를 새 run_id로 재실행해 `outcome=recovered`로 검증 완료(`t_slo`/`t_recovery`를 원본 raw CSV에 미수정 `slo_judge.py`로 독립 재검증해 기록값과 일치 확인). 검증 중 두 번째 gap을 실측 발견 - preview 준비가 성공했는데 detector가 promote를 안 하면(미탐지 등) trial 종료 후에도 아무도 정리하지 않아 Rollout이 2-revision으로 방치됐다. `blue_green_prep.cleanup_unpromoted_preview()`(신규)를 추가해 `wrap_injector_with_preview_prep()`이 `injector.cleanup`도 감싸도록 일반화 - activeSelector가 준비 전 값 그대로면(=미promote) 그 preview만 abort+복원 재확인, 이미 promote됐으면 손대지 않는다. 회귀 테스트 8개 추가, 오프라인 스위트 226 passed. 이어서 `proposed`를 새 run_id로 1회 실행 - `outcome=recovered`, **이번 세션 최초로 recovery-policy가 실제 promotion을 실행·검증까지 완료**(K8s 이벤트+git 감사기록의 CLI stdout으로 authoritative하게 확인, run_id 정확히 일치, 중복 후속 신호는 idempotency로 정상 skip). stage 분류 3개 전부 원본 stage-boundary CSV와 대조해 정확함을 확인. 이 과정에서 **`detected`/`action`/`promotion_verified`/`detection_source`/`t_audit_write`가 `run_once.py` 어디에도 대입되는 코드가 없어 항상 기본값으로만 남는다는 것**을 발견했다(§5 스키마 표에 경고 추가, §36.3) - 실제 promotion이 검증까지 됐는데도 trial JSON은 `detected=false`/`action="none"`/`promotion_verified=null`로 기록됨. 이번 trial의 SLO 판정 자체에는 영향 없으나(독립 계산), 60회 본 실험의 arm별 탐지율·조치율 비교가 이 필드들로는 불가능하므로 본 실험 전 authoritative source를 확정해 채우는 작업이 필요하다 - 이번 턴 범위 밖이라 코드는 고치지 않고 발견 사실만 기록·공유한다. 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §35.8/§36 참고. `proposed` 1회로 3-arm 파일럿 전체 완료 - 60회 본 실험으로는 진행하지 않음(지시 대기).
 - 2026-09-19: `load_ramp` 3-arm 파일럿의 기능 검증 완료(승인)에 이어, 위에서 발견한 판정·조치·감사 필드 미기록을 본 실험 전에 고쳤다(§5.5/§5.6, 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §37). (1) recovery-policy를 판정·조치 필드의 authoritative source로 확정 - `ExperimentContext`에 `detection_source`(`predictive`/`reactive`)·`detector`·`action`·`decision_outcome`·`idempotency_key`를 락 안에서 기록(첫 탐지 정보는 중복·후속 신호로 덮어쓰지 않음, 실행된 조치가 observe-only·skip 기록보다 우선, `skipped_duplicate`는 primary 불가), `detected`·`promotion_verified`는 저장 없이 조회 시 파생. 같은 run_id 재등록이 기록된 상태를 지우던 잠재 결함도 수정하고 등록 요청 본문의 판정 필드는 무시. (2) `GET /admin/experiment-run/timing`(경로 유지, 상위 호환)이 위 필드를 함께 반환 - `run_once()`가 context clear 전에 회수해 `TrialResult`에 기록, 조회 실패·run_id 불일치는 기존과 동일하게 `invalid_run`, native는 기본값+null. (3) 비동기 감사 필드는 정책 결과와 분리 - 신규 읽기 전용 `GET /admin/audit/{run_id}`(audit-log + outbox 조인), trial 종료 후 bounded wait(20초)만 하고 미완료는 `audit_status=pending|failed`+사유·null 유지(outcome/action 불변), 신규 idempotent `experiments/reconcile_audit.py`로 나중에 재조정(원본 `.pre-reconcile.bak` 보존, provenance·보완 전 원래 값 기록). (4) 감사기록 evidence에 `experiment_run_id`/`detector`를 남기도록 변경(반응 경로 key엔 run_id가 없어 귀속 근거가 필요했고, detector 태그가 감사기록 어디에도 안 남던 문제도 해소) 후 primary 선택 규칙 고정(§5.6). (5) `collect_metrics.py`에 새 필드·모순 검출(non-native `t_detection`↔`detected`, promote 조치의 `t_api_request`/검증 누락)·`audit_pending`(timing anomaly와 분리) 추가. (6) `proposed` 파일럿은 재실행 없이 원본 timestamp·outcome을 보존한 채 감사기록 `16c8f08`(executed_verified)을 primary로, `39ace83`(skipped_duplicate)은 제외·보존으로 보완(`judgment_source=audit_reconcile`, `reconciliation`에 원래 값·제외 기록·추론 출처·재조정 시각). 회귀 테스트 50개 추가(`recovery-policy/test_main.py` 12, `test_reconcile_audit.py` 17, `test_run_once.py` 13, `test_collect_metrics.py` 8), 오프라인 스위트 276 passed(live_cluster 3개는 기본 deselect). 변경된 recovery-policy를 실클러스터에 배포하고(재시작 0회) 실제 `run_once()` 경로로 no-action live smoke(preview 없는 상태에서만 - promotion 불가) 통과. 실제 `load_ramp` 재실행·다른 시나리오 파일럿·60회 본 실험은 하지 않았다.
 - 2026-09-19: 위 판정·감사 필드 전파 커밋(승인 완료: primary 귀속은 예측=`"{run_id}:"` 접두어·반응=`evidence.experiment_run_id` 정확 일치·경로별 근거는 서로 대체 불가·근거 없으면 후보 제외, detector 추론은 과거 pilot 한정 + `inferred_fields` 표시·본 실험 데이터엔 추론 불가)에 이어 마지막 필수 timing gap을 별도 커밋으로 처리했다(§5.2/§5.5 4-1, 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §38). `t_decision` = 현재 run의 유효 신호에 대해 정책이 action을 확정한 직후의 recovery-policy 서버 시각(observe-only·조치 없는 판정도 기록), `t_switch` = promotion 후 active selector 검증이 처음 성공한 서버 시각(`rollouts_client.promote()`가 verify 루프 첫 성공 순간에 찍는 `verified_at`), `t_api_request`는 기존대로 실제 promotion 호출 직전. 셋 다 첫 값만 유지(중복·후속 신호로 덮어쓰지 않음), promotion이 없으면 `t_api_request`/`t_switch`는 null(검증 실패한 promotion도 `t_switch`는 null). `GET /admin/experiment-run/timing`(경로 유지)이 두 필드를 함께 반환하고 `run_once()`가 context clear 전에 회수해 `TrialResult`에 기록. `collect_metrics.py`는 `t_decision`/`t_api_request`/`t_switch` 컬럼을 노출하고(예전엔 comparison.csv에 이 셋이 없었다) 순서 `t_detection <= t_decision <= t_api_request <= t_switch`(기존 CAUSAL_CHAIN)에 더해 존재 규칙(promotion 없으면 `t_api_request`/`t_switch` null, `t_switch`는 검증된 promotion에만, `live_state` trial은 탐지 시 `t_decision`·검증된 promotion 시 `t_api_request`/`t_switch` 필수)을 검증한다. **기존 proposed 파일럿의 `t_decision`/`t_switch`는 추정해 채우지 않고 null로 보존**(`reconcile_audit.py`는 이 필드를 건드리지 않으며 `judgment_source=audit_reconcile` trial에는 존재 요구를 적용하지 않음). 회귀 테스트: `recovery-policy/test_main.py` 6·`test_rollouts_client.py`(신규) 3·`test_run_once.py`·`test_collect_metrics.py` 5. 오프라인 테스트까지만 수행 - **다음 실제 promotion 파일럿(`pod_kill` non-native)에서 live 검증**하며, 그 전에 변경된 recovery-policy 이미지를 재배포해야 한다(현재 배포 이미지는 `t_decision`/`t_switch` 이전 버전).
+- 2026-09-19: `collect_metrics.py`에 arm↔실제 detector 불일치를 validation issue로 추가(별도 커밋, §5.7, 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §39). native는 detector null, `fixed_threshold`는 `fixed_threshold`, `proposed`는 `isolation_forest`(예측 경로 탐지 기준). 최초 유효 탐지가 Alertmanager fallback이면 `detection_source=reactive` + `detector=alertmanager`를 계약에 정의된 예외로 허용(`detector_check=reactive_fallback`, 오류 아님). 과거 inferred pilot은 provenance(`reconciliation.inferred_fields.detector`)가 있고 `is_pilot=true`이며 arm과 일치하면 오류가 아니라 `inferred_pilot`으로 별도 표시하고, 본 실험 데이터의 추론된 detector·arm과 어긋나는 추론값은 오류. comparison에 `detector_check` 컬럼 추가. 보존된 실제 pilot 데이터에 적용해 확인: proposed pilot=`inferred_pilot`, fixed_threshold 2건=`not_applicable`(미탐지), 새 이슈 0건. 테스트 fixture의 낡은 값(`detection_source="isolation_forest"` - 2026-09-19 이전 "누가" 의미)을 새 의미(`predictive`)로 정정.
