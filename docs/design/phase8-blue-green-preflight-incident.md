@@ -4793,3 +4793,93 @@ Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요
 
 - **수행한 것**: 오프라인 스위트 재검증(586 passed) → live smoke 2회(1차 invalid_run 진단, 2차 PASS) → `memory_pressure_adapter.py`/`run_memory_pressure_trial.py`/`test_memory_pressure_adapter.py` 실측 기반 정정.
 - **하지 않은 것**: 1GB 이상 탐색, 5단계 ramp, non-native arm, `run_all_scenarios.py`·본 실험(60회) - 전부 미실행. `claude/*` worktree 손대지 않음. force-push·rebase·hard reset 없음. 결과 스키마 변경 없음.
+
+### 49.4 1차 invalid smoke의 본 분석 제외 확인
+
+지시에 따라 원본(`trial-pilot-memory_pressure-native-01-20260919T183900Z.json`·같은 이름의 `memory-pressure-safety-*.jsonl`)을 수정하지 않고 그대로 보존한다. 별도 필드 추가 없이도 이미 본 분석에서 제외됨을 `collect_metrics.py` 코드로 직접 확인했다 - `_classify_exclusion()`이 `row.get("is_pilot")`가 참이면 `outcome`과 무관하게 무조건 `"pilot"` 사유로 제외하고(§35에서 쓴 `included_in_main_analysis: false` 수동 표기는 이 함수가 이미 없던 시절의 레거시 주석이라 지금은 불필요), 이 trial은 `is_pilot=True`로 기록돼 있어 구조적으로 제외 대상이다. `run_id`에 `pilot-` 접두어가 있어 애초에 `results/pilot/` 아래(본 실험 디렉터리 `results/`와 물리적으로도 분리)에 저장돼 있다.
+
+## 50. `memory_pressure` 강도 탐색 - 사전 등록 (측정 전, 2026-09-20)
+
+500MB smoke PASS 승인에 이은 지시 - **1000MB·1500MB 두 강도만** 탐색한다(2000MB는 5GiB 안전 상한과 충돌해 영구 금지, non-native arm·전체 ramp·3-arm 파일럿·`run_all_scenarios.py`·본 실험은 이번 지시 범위 밖). 이 절은 **측정 전에** 규칙을 고정한다 - 측정 뒤 값·기준을 사후 조정하지 않는다(§42의 사전 등록 원칙과 동일). 아래 규칙을 커밋·푸시한 뒤에만 실제 측정을 시작한다.
+
+### 50.1 실행 조건 (모든 라운드 공통)
+
+| 항목 | 값 |
+|---|---|
+| arm | `native`만(preview·detector 배선 자체가 없는 경로 - `arm_controller` 호출 안 함) |
+| `is_pilot` | 개념상 `true`와 동등 - `TrialResult`/`run_once()`를 쓰지 않으므로(§50.3) 필드 자체가 없지만, 본 분석 제외·별도 디렉터리 저장이라는 실질은 동일하게 보장 |
+| probe profile | 기본 readiness/liveness profile(K8s 기본값) - network-tolerant 같은 overlay 없음 |
+| baseline 관찰 | **최소 60초**(기존 `slo_judge.find_baseline_ready()`의 30초 연속 안정 조건을 만족한 시점 이후에도, 라운드 시작(probe 기동)부터 최소 60초가 지나야 다음 단계로 진행 - 안정 조건과 60초 하한 중 늦게 만족되는 쪽을 기준으로 함). 180초 안에 못 채우면 그 라운드는 중단(안전 실패 아님, `baseline_timeout`으로 기록) |
+| 각 강도 유지시간 | **90초**(`memory_pressure_adapter.py`의 stage `duration_sec=90`, CR 자체 `duration`은 여기에 기존 안전 여유(`STAGE_DURATION_SAFETY_MARGIN_SEC`, 60초)가 그대로 더해짐 - 변경 없음) |
+| cleanup 후 회복 관찰 | **최소 60초**(어댑터 자신의 `cleanup_recovery_check`(30초, ±150MiB)는 그대로 두고, 그 뒤로 추가 30초를 더해 총 60초 이상 관찰 - 실제로는 recovery 구간 전체를 60초 이상으로 잡아 그 안에 30초 판정이 포함되게 한다) |
+| 실행 순서 | **1000MB를 먼저** 실행하고, §50.4의 PASS 기준을 **전부** 충족했을 때만 1500MB를 실행한다. 1000MB가 실패(중단 또는 PASS 기준 미충족)하면 1500MB는 실행하지 않고 즉시 보고한다 |
+| 2000MB | **실행 금지**(영구) - baseline 실측(§48.3, 약 3.4~3.6GiB)에 2000MB를 더하면 5.4~5.6GiB로 어댑터의 안전 상한(5GiB, `MAX_TARGET_WORKING_SET_BYTES`)을 이미 넘는다. `explore_memory_pressure_intensity.py`(§50.3)는 이 값을 CLI 레벨에서부터 거부한다(허용값은 1000·1500뿐) |
+| 라운드 간 간격 | 각 라운드 사이 **cooldown**(최소 120초 유휴 대기) + 클러스터 원상복구 확인(chaos CR 0건, 대상 pod 동일 UID·restartCount 불변, Node 2개 Ready, working set이 그 라운드 시작 전 baseline 근처) - 다음 라운드는 이 확인이 끝난 뒤에만 시작한다 |
+| 결과 취급 | 이 탐색의 모든 산출물(요약 JSON·raw CSV·안전 로그)은 **본 실험(60회) 분석에서 제외**한다 - `collect_metrics.py`가 절대 읽지 않는 위치(§50.3)에 저장 |
+
+**"완전히 통과"의 정의**(1000MB→1500MB 진행 여부 판단 기준): §50.4의 PASS 기준 9개 전부 충족 + 즉시 중단(§50.5) 미발동. SLO 위반 여부 자체는 진행 여부를 막지 않는다(§50.6 해석 참고 - SLO 위반은 오히려 유효한 신호) - 안전 기준만 게이트한다.
+
+### 50.2 baseline vs 2000MB 재확인(§48.3 실측값 기반 사전 경고)
+
+1000MB는 baseline(~3.4~3.6GiB) + 1000MB ≈ 4.4~4.6GiB로 5GiB 안전 상한에 여유가 있다. **1500MB는 baseline이 높은 쪽(3.6GiB대)이면 투영치가 5.1GiB대로 어댑터의 headroom 게이트(`prepare()`)에서 그 자체로 `TrialInvalid`(주입 시도조차 안 함)가 될 수 있다** - 이는 버그가 아니라 안전장치가 설계대로 작동한 것이며, 그 자체로 "이 baseline에서 1500MB는 안전 여유가 빠듯하다"는 유효한 calibration 정보로 취급한다(사후에 임계치를 조정하지 않는다).
+
+### 50.3 별도 탐색 도구 - `experiments/explore_memory_pressure_intensity.py`(신규, 이 절 이후 구현)
+
+- **`run_memory_pressure_trial.py`(smoke 전용)의 1GB 이상 차단은 그대로 둔다** - 해제하지 않는다. 이 도구는 완전히 별도 파일·별도 CLI다.
+- `memory_pressure_adapter.make_memory_pressure_injector()`를 그대로 재사용한다(안전 감시·headroom 게이트·duration 안전망·target replacement 규칙 전부 불변) - `run_once()`/`TrialResult`는 쓰지 않는다(`explore_ramp_intensity.py`와 같은 이유: 정상 trial 판정이 아니라 순수 탐색용이고, §50.1의 커스텀 타이밍(baseline 60초·recovery 60초)이 `run_once()`의 고정 상수(30초 스트릭 등 SLO 정의 상수)와 다른 예산을 요구하기 때문 - SLO 판정 상수 자체(`slo_judge.py`의 `LATENCY_PERSIST_SEC` 등)는 손대지 않고 그 위에 더 긴 관찰 시간만 얹는다).
+- target pod 이름·UID는 라운드 시작 시 한 번 고정하고(`active_pod_resolver.get_active_pods()`), baseline·recovery 구간(어댑터 자체 스레드가 안 도는 동안)에도 계속 재확인한다(즉시 중단 조건 "target UID 변경" - 어댑터의 `_check_target()`은 stage 시작 직전에만 확인하므로 이 구간은 탐색 스크립트가 직접 감시해야 함).
+- 각 라운드는 StressChaos 1개(`stages` 리스트 길이 1)만 생성 - 여러 강도를 한 프로세스에서 자동 이어 실행하지 않는다(1000MB 실행 자체가 별도 프로세스 호출, 1500MB 실행 여부는 사람이 §50.4 결과를 보고 판단해 별도로 다시 호출).
+- 산출물은 `experiments/results/`(top-level, **`results/pilot/`이 아님**) 아래 `explore-memory_pressure-native-{size_mb}mb-{timestamp}-summary.json` 이름으로 저장한다 - `collect_metrics.py`는 `results/`와 `results/pilot/`에서 `trial-*.json`만 glob하므로(코드 확인, §49.4) 이 파일명은 그 패턴에 전혀 안 걸린다. probe raw CSV(`probe-explore-memory_pressure-native-{size_mb}mb-...-native-1-raw.csv`)와 안전 로그(어댑터의 `log_fn` 콜백으로 요약 JSON에 그대로 포함)도 원본을 보존한다.
+- 예외(`TrialInvalid`/`HarnessCorrupted`/독자 정의 즉시중단 예외)나 `KeyboardInterrupt` 발생 시 `finally`에서 `injector.cleanup()`을 즉시 호출(idempotent) - CR을 남기지 않는다.
+- 실제 stage 시각은 어댑터의 기존 `classify_stage`/`stage_windows` 메커니즘이 그대로 기록한다(새 필드 추가 없음, §5.10과 같은 기존 훅 재사용).
+
+### 50.4 회차별 PASS 조건 (9개 전부 충족해야 "통과")
+
+1. `AllInjected=True`(어댑터 `is_started()`가 재시도 끝에 확정 - §49.1 정정 이후의 정의 그대로)
+2. working set이 **요청량의 최소 80%** 이상 증가(예: 1000MB 요청 시 baseline 대비 최소 800MB 상승 실측)
+3. Node MemAvailable **4GiB 이상**(라운드 전체에서 관측된 값 전부)
+4. target working set **5GiB 미만**(라운드 전체)
+5. restartCount **불변**
+6. OOMKilled **없음**
+7. Node Ready·pressure **이상 없음**(라운드 전체)
+8. cleanup 후 **30초 안에** baseline ±150MiB 복귀(어댑터의 기존 `cleanup_recovery_check` 그대로 재사용)
+9. CR·observer(probe pod)·context 완전 정리(잔존 시 어댑터/도구가 예외를 던짐 - 조용히 넘어가지 않음)
+
+### 50.5 즉시 중단 조건 (아래 중 하나라도 - 라운드 즉시 종료 + CR 삭제)
+
+- Node MemAvailable **3GiB 미만**
+- target working set **5GiB 이상**
+- restart **증가**
+- **OOMKilled**
+- Node 상태 이상(NotReady 또는 pressure)
+- **target UID 변경**(baseline·recovery 구간 포함 - §50.3)
+- CR 삭제·소멸 실패
+
+기존 어댑터의 안전 임계치(3GiB/5GiB)와 정확히 같은 값이다 - 새로 만들지 않는다. "target UID 변경"만 어댑터 자체 로직(`_check_target()`, stage 경계에서만 확인)을 보완하는 탐색 도구 자체 감시로 추가된다.
+
+### 50.6 SLO 분석 (각 강도에서 독립 계산, raw probe CSV 사후분석 - `slo_judge.py` 재사용)
+
+- baseline P95·availability(probe 60초+ 안정 구간 값)
+- `t_slo`, `t_recovery`(`slo_judge.find_t_slo(points, not_before=t_injection)`/`find_t_recovery()`)
+- 60초 rolling P95의 evaluable sample 수(주입 이후 구간, `latency_evaluable=True`인 point 수)
+- 위반 지속시간(`t_recovery - t_slo`, 미회복이면 null)
+- 요청 성공률(raw CSV 전체)
+- readiness/liveness 실패 횟수(대상 pod의 `Unhealthy` 이벤트, 라운드 시작 전/후 스냅샷 `count` 차분 - kind별(Readiness/Liveness) 집계)
+
+**해석 기준(사전 확정, 결과를 본 뒤 바꾸지 않음)**:
+
+| 관측 | 해석 |
+|---|---|
+| SLO 미위반 + 안전조건 충족(§50.4 전부 통과) | 안전한 낮은 단계 후보 |
+| SLO 위반 + restart/OOM 없음 | 본 실험의 높은 단계 후보(제안 방식이 선제 개입할 진짜 신호) |
+| restart 또는 OOM 관측 | 강도가 과도한 **collapse 경계** - 본 실험 후보에서 제외, 그 아래 강도로 재탐색 필요 |
+| 1500MB까지 SLO 위반이 없으면 | **2000MB로 자동 진행하지 않는다** - 탐색을 멈추고 사람에게 보고(2000MB는 §50.1대로 영구 금지이므로 "더 높여서 확인"이라는 선택지 자체가 없다 - 대신 §50.1의 baseline/강도 관계나 duration 연장 등 다른 축의 후속 calibration 필요성을 보고) |
+
+### 50.7 수행 순서 (이 절 커밋·푸시 이후)
+
+1. `experiments/explore_memory_pressure_intensity.py` 구현 + 오프라인 테스트(순수 함수만 - `explore_ramp_intensity.py`가 라이브 오케스트레이션 자체는 테스트하지 않는 것과 같은 관례).
+2. 전체 오프라인 스위트 재확인(존재하지 않는 KUBECONFIG).
+3. **1000MB** 1라운드 실행 → §50.4 판정.
+4. 통과 시에만 cooldown·클러스터 복원 확인 후 **1500MB** 1라운드 실행 → §50.4 판정(§50.2의 headroom 게이트 자체 거부 가능성 포함).
+5. 두 결과 비교, 다음 calibration 범위 제안.
+6. 문서화·커밋·푸시 후 정지 - memory_pressure 3-arm 파일럿·`run_all_scenarios.py`·본 실험은 시작하지 않는다.
