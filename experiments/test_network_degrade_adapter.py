@@ -16,10 +16,11 @@ get_active_pods_fn은 prepare() 때뿐 아니라 매 단계 전환 직전(_check
 세서 몇 번째 호출부터 다른 값을 주는 방식으로 "언제" 바뀌는지를 제어한다."""
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from network_degrade_adapter import make_network_degrade_injector
+from network_degrade_adapter import _classify_timestamp_against_windows, make_network_degrade_injector
 from run_once import TrialInvalid
 
 RUN_ID = "network_degrade-proposed-01-20260918T120000Z"
@@ -382,6 +383,181 @@ def test_cleanup_raises_if_residual_cr_remains():
     print("OK - cleanup 후 잔존 CR: 조용히 성공하지 않고 예외로 드러남")
 
 
+T0 = datetime(2026, 9, 20, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _at(sec):
+    return (T0 + timedelta(seconds=sec)).isoformat()
+
+
+def _win(name, start, end):
+    return {"name": name, "start": T0 + timedelta(seconds=start),
+            "end": None if end is None else T0 + timedelta(seconds=end)}
+
+
+class _StepClock:
+    """호출될 때마다 10초씩 앞선 시각을 돌려준다 - 어댑터는 stage 창의 시작/끝 기록에서만 now_fn을 부르므로
+    k번째 호출 = T0+10k초: s0=[0,10], s1=[20,30], s2=[40,50], s3=[60,70](정상 종료 시)."""
+
+    def __init__(self):
+        self.n = 0
+
+    def __call__(self):
+        t = T0 + timedelta(seconds=10 * self.n)
+        self.n += 1
+        return t
+
+
+def _injector_with_step_clock(get_active_pods_fn=lambda: [TARGET_POD], does_chaos_exist_fn=None, **kw):
+    existing = set()
+    calls = {"create": [], "delete": []}
+
+    def create_chaos_fn(*args):
+        calls["create"].append(args)
+        existing.add(args[0])
+
+    def delete_chaos_fn(cr_name):
+        calls["delete"].append(cr_name)
+        existing.discard(cr_name)
+
+    injector = make_network_degrade_injector(
+        RUN_ID, ARM, 1,
+        get_active_pods_fn=get_active_pods_fn,
+        is_stage_injected_fn=lambda cr_name: True,
+        does_chaos_exist_fn=does_chaos_exist_fn or (lambda cr_name: cr_name in existing),
+        create_chaos_fn=create_chaos_fn,
+        delete_chaos_fn=delete_chaos_fn,
+        stages=FAST_STAGES,
+        stage_delete_poll_interval_sec=0.01,
+        now_fn=_StepClock(),
+        **kw)
+    return injector, calls
+
+
+def test_classify_stage_pure_boundaries():
+    windows = [_win("s0", 10, 100), _win("s1", 103, 193)]
+    c = lambda sec, w=windows: _classify_timestamp_against_windows(_at(sec), w)
+    assert c(0) == "baseline", "첫 stage 시작 전"
+    assert c(10) == "s0" and c(100) == "s0", "창의 양 끝은 포함(load_ramp와 같은 규칙)"
+    assert c(101.5) == "inter_stage_tail", "두 stage 사이"
+    assert c(103) == "s1" and c(150) == "s1"
+    assert c(194) == "drain", "마지막 stage 창이 끝난 뒤"
+    assert _classify_timestamp_against_windows(_at(5), [_win("s0", 10, None)]) == "baseline"
+    assert _classify_timestamp_against_windows(_at(500), [_win("s0", 10, None)]) == "s0", \
+        "소멸을 확인하지 못한(열린) 창은 그 뒤 시각도 여전히 그 stage로 본다"
+    print("OK - classify_stage 순수 함수: baseline/stage(양끝 포함)/inter_stage_tail/drain/열린 창")
+
+
+def test_classify_stage_never_raises_and_never_guesses():
+    windows = [_win("s0", 10, 100)]
+    naive = (T0 + timedelta(seconds=50)).replace(tzinfo=None).isoformat()  # aware 창과 비교하면 TypeError
+    for bad in ("garbage", "", None, naive, 12345):
+        assert _classify_timestamp_against_windows(bad, windows) == "unknown", bad
+    assert _classify_timestamp_against_windows(_at(50), []) == "unknown", "창이 하나도 없으면 추정하지 않음"
+    assert _classify_timestamp_against_windows(_at(50), None) == "unknown"
+    injector, _ = _injector_with_step_clock()
+    assert injector.classify_stage is not None, "run_once가 slo/detection/action stage를 채우려면 훅이 있어야 함"
+    assert injector.classify_stage(_at(0)) == "unknown", "inject() 전(창 없음)에는 baseline이라 단정하지 않음"
+    assert injector.classify_stage("garbage") == "unknown"
+    print("OK - classify_stage: 파싱 불가/naive/창 없음은 예외 대신 unknown")
+
+
+def test_classify_stage_full_run_uses_recorded_windows():
+    injector, calls = _injector_with_step_clock()
+    injector.prepare()
+    injector.inject()
+    assert _wait_for(injector.is_done), "4단계가 다 끝나야 함"
+    assert len(calls["create"]) == 4
+    c = injector.classify_stage
+    assert c(_at(-5)) == "baseline"
+    assert [c(_at(5)), c(_at(25)), c(_at(45)), c(_at(65))] == ["s0", "s1", "s2", "s3"], "실제 기록된 창 기준"
+    assert c(_at(15)) == c(_at(35)) == c(_at(55)) == "inter_stage_tail"
+    assert c(_at(75)) == "drain"
+    injector.cleanup()
+    print("OK - 정상 종료: 실제 stage 창으로 baseline/s0~s3/inter_stage_tail/drain 분류")
+
+
+def test_classify_stage_after_truncation_is_drain_not_a_missing_stage():
+    # promotion 등으로 원래 target이 active가 아니게 되면 injector는 남은 stage를 만들지 않는다(계약서 §5.10,
+    # treatment-induced truncation). 만들어지지 않은 stage는 창이 없으므로 그 뒤 시각은 "drain"이다.
+    call_count = {"n": 0}
+
+    def get_active_pods_fn():
+        call_count["n"] += 1
+        return [TARGET_POD] if call_count["n"] <= 2 else [REPLACEMENT_POD]  # 1=prepare, 2=s0 진입 전
+
+    injector, calls = _injector_with_step_clock(get_active_pods_fn=get_active_pods_fn)
+    injector.prepare()
+    injector.inject()
+    assert _wait_for(injector.is_started)
+    assert _wait_for(injector.is_done), "대상 교체가 감지되면 is_done은 True(예외 아님)"
+    assert injector.get_target_replacement() is not None
+    assert len(calls["create"]) == 1, "s0만 만들어지고 남은 stage는 만들어지지 않음(truncation)"
+    c = injector.classify_stage
+    assert c(_at(5)) == "s0"
+    assert c(_at(25)) == "drain" and c(_at(65)) == "drain", "만들어지지 않은 s1~s3는 창이 없고 s0 뒤는 drain"
+    injector.cleanup()
+    print("OK - truncation: 만들어진 s0만 창이 있고 그 뒤는 drain(누락 stage로 오분류 안 함)")
+
+
+def test_classify_stage_window_closed_when_cleanup_interrupts():
+    slow_stages = [{"name": "s0", "latency": "500ms", "jitter": "50ms", "duration_sec": 5.0}]
+    existing = set()
+    injector = make_network_degrade_injector(
+        RUN_ID, ARM, 1,
+        get_active_pods_fn=lambda: [TARGET_POD],
+        is_stage_injected_fn=lambda cr_name: True,
+        does_chaos_exist_fn=lambda cr_name: cr_name in existing,
+        create_chaos_fn=lambda *args: existing.add(args[0]),
+        delete_chaos_fn=lambda cr_name: existing.discard(cr_name),
+        stages=slow_stages,
+        stage_delete_poll_interval_sec=0.01,
+        now_fn=_StepClock())
+    injector.prepare()
+    injector.inject()
+    assert _wait_for(injector.is_started)
+    injector.cleanup()  # s0(5초 대기) 도중 중단 - 창이 닫혀야 한다
+    assert injector.classify_stage(_at(5)) == "s0"
+    assert injector.classify_stage(_at(15)) == "drain", "중단된 창도 삭제 시각으로 닫혀 그 뒤는 drain"
+    print("OK - cleanup 중단: 진행 중이던 stage 창을 삭제 시각으로 닫음")
+
+
+def test_classify_stage_window_stays_open_when_deletion_not_confirmed():
+    injector, _ = _injector_with_step_clock(
+        does_chaos_exist_fn=lambda cr_name: True,  # 절대 안 사라짐(finalizer 잔존 등)
+        stage_recovery_timeout_sec=0.05)
+    injector.prepare()
+    injector.inject()
+    assert _wait_for(injector.is_started)
+    ok, exc = _raises_trial_invalid(injector.is_done)
+    assert ok, "소멸 미확인 시간초과가 TrialInvalid로 드러나야 함"
+    assert injector.classify_stage(_at(500)) == "s0", "소멸을 확인 못 했으니 창은 열린 채 - 끝났다고 추정하지 않음"
+    print("OK - 소멸 미확인: 창을 닫지 않음(끝났다고 추정 안 함)")
+
+
+def test_classify_stage_default_clock_is_timezone_aware():
+    # now_fn을 주입하지 않은 실제 시계 - TrialResult의 ISO 타임스탬프(+00:00)와 비교 가능해야 한다.
+    existing = set()
+    injector = make_network_degrade_injector(
+        RUN_ID, ARM, 1,
+        get_active_pods_fn=lambda: [TARGET_POD],
+        is_stage_injected_fn=lambda cr_name: True,
+        does_chaos_exist_fn=lambda cr_name: cr_name in existing,
+        create_chaos_fn=lambda *args: existing.add(args[0]),
+        delete_chaos_fn=lambda cr_name: existing.discard(cr_name),
+        stages=FAST_STAGES,
+        stage_delete_poll_interval_sec=0.01)
+    before = datetime.now(timezone.utc)
+    injector.prepare()
+    injector.inject()
+    assert _wait_for(injector.is_done)
+    after = datetime.now(timezone.utc)
+    assert injector.classify_stage(before.isoformat()) == "baseline"
+    assert injector.classify_stage(after.isoformat()) == "drain"
+    injector.cleanup()
+    print("OK - 기본 시계(aware UTC): 실제 ISO 타임스탬프와 비교돼 baseline/drain 분류")
+
+
 if __name__ == "__main__":
     test_normal_completion()
     test_no_target_found()
@@ -393,4 +569,11 @@ if __name__ == "__main__":
     test_uid_change_after_injection_effective_ambiguous_transition_recorded()
     test_stage_deletion_not_confirmed_raises()
     test_cleanup_raises_if_residual_cr_remains()
+    test_classify_stage_pure_boundaries()
+    test_classify_stage_never_raises_and_never_guesses()
+    test_classify_stage_full_run_uses_recorded_windows()
+    test_classify_stage_after_truncation_is_drain_not_a_missing_stage()
+    test_classify_stage_window_closed_when_cleanup_interrupts()
+    test_classify_stage_window_stays_open_when_deletion_not_confirmed()
+    test_classify_stage_default_clock_is_timezone_aware()
     print("\n모두 통과")

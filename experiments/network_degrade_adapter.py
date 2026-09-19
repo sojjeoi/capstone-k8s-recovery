@@ -148,6 +148,34 @@ def _sanitize_cr_name(run_id: str, stage_index: int) -> str:
     return f"netdelay-{safe}-s{stage_index}-{uuid.uuid4().hex[:6]}"[:253]
 
 
+def _classify_timestamp_against_windows(timestamp_iso, windows) -> str:
+    """timestamp_iso가 실제 stage 창 어디에 속하는지 분류하는 순수 함수(2026-09-20 추가 - network_degrade는
+    classify_stage가 없어 slo_stage/detection_stage/action_stage가 늘 None이었다. 계약서 §5.10의 주 비교 지표에
+    action stage가 들어 있어 채워야 한다. 어휘·경계 규칙(start <= t <= end)은 load_ramp의 classify_stage와 같다).
+    windows = 시간순 [{"name", "start", "end"}](aware datetime, 실제 CR 생성 호출이 돌아온 시각 ~ 소멸을 확인한
+    시각, end=None이면 아직 열려 있음). 반환: stage 이름 | "baseline"(첫 stage 시작 전) | "inter_stage_tail"(두
+    stage 창 사이) | "drain"(마지막 stage 창이 끝난 뒤 - promotion으로 injector가 남은 stage를 만들지 않은 뒤(
+    treatment-induced truncation)도 여기다) | "unknown". 절대 예외를 던지지 않고(run_once의 보조 정보),
+    근거가 없으면(창이 없음, timestamp 파싱 불가, naive/aware 혼용) 추정하지 않고 "unknown"이다."""
+    try:
+        t = datetime.fromisoformat(timestamp_iso)
+        if not windows:
+            return "unknown"
+        for w in windows:
+            if w["start"] <= t and (w["end"] is None or t <= w["end"]):
+                return w["name"]
+        if t < windows[0]["start"]:
+            return "baseline"
+        for a, b in zip(windows, windows[1:]):
+            if a["end"] is not None and a["end"] < t < b["start"]:
+                return "inter_stage_tail"
+        if windows[-1]["end"] is not None and t > windows[-1]["end"]:
+            return "drain"
+    except Exception:
+        return "unknown"
+    return "unknown"
+
+
 def make_network_degrade_injector(
     run_id: str, arm: str, rep: int,
     get_active_pods_fn: Callable[[], list] = get_active_pods,
@@ -159,13 +187,15 @@ def make_network_degrade_injector(
     stage_delete_poll_interval_sec: float = 1.0,
     stage_recovery_timeout_sec: float = STAGE_RECOVERY_TIMEOUT_SEC,
     cleanup_verify_timeout_sec: float = CLEANUP_VERIFY_TIMEOUT_SEC,
+    now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
 ) -> Injector:
     """*_fn 파라미터는 pod_kill_adapter.py와 같은 이유의 오프라인 테스트용
     의존성 주입 지점. get_active_pods_fn을 prepare() 때뿐 아니라 매 단계
     전환 직전에도 다시 불러 target이 여전히 그 pod인지 재확인한다(이름
     하나만으로는 "이름은 같지만 다른 pod"를 구분 못 하고, vllm-active
     Service가 지금 실제로 가리키는 pod을 다시 물어봐야 교체 시 새 pod의
-    이름/UID도 자연히 얻을 수 있다 - prepare()와 같은 메커니즘 재사용)."""
+    이름/UID도 자연히 얻을 수 있다 - prepare()와 같은 메커니즘 재사용).
+    now_fn은 stage 창(classify_stage용) 시각 기록에만 쓰는 시계 주입 지점이다."""
     cr_names = [_sanitize_cr_name(run_id, i) for i in range(len(stages))]
     target = {"name": None, "uid": None}
     injection_started_at = {"t": None}  # 첫 단계가 실제 적용됐음을 처음 관측한 시각
@@ -176,6 +206,10 @@ def make_network_degrade_injector(
     thread_ref = {"t": None}
     thread_exception = {"e": None}  # 백그라운드 스레드 예외를 메인 스레드(is_done 폴링)로 전달
     target_replacement = {"v": None}  # None 또는 {"replaced_at": iso, "pod": {"name","uid"}|None}
+    # 실제로 만들어진 stage의 창(CR 생성 호출이 돌아온 시각 ~ 소멸 확인 시각) - classify_stage()가 씀.
+    # _run_stages 스레드만 append/갱신하고 classify_stage는 스냅샷만 읽는다. promotion 등으로 남은 stage를
+    # 만들지 않으면 그 stage는 창 자체가 없다(명목 일정이 아니라 실제로 일어난 것만 기록).
+    stage_windows = []
 
     def prepare():
         pods = get_active_pods_fn()
@@ -238,10 +272,13 @@ def make_network_degrade_injector(
                     # 아니다). is_done()이 이 상태를 "주입 끝남"으로 본다.
                     return
                 create_chaos_fn(cr_names[i], run_id, arm, target["name"], stage)
+                window = {"name": stage["name"], "start": now_fn(), "end": None}
+                stage_windows.append(window)
                 current_stage_index["i"] = i
                 interrupted = stop_event.wait(stage["duration_sec"])
                 delete_chaos_fn(cr_names[i])
                 if interrupted:
+                    window["end"] = now_fn()
                     return
                 # 다음 단계 CR을 만들기 전에 이 단계가 실제로 소멸(복구)했는지
                 # 확인한다 - delete 요청 성공과 실제 tc 규칙 해제 완료는
@@ -249,6 +286,7 @@ def make_network_degrade_injector(
                 # 동일). 확인 없이 바로 다음 단계를 만들면 같은 대상 pod에
                 # 두 NetworkChaos가 순간적으로 겹칠 위험이 있다.
                 _wait_for_stage_gone(cr_names[i])
+                window["end"] = now_fn()  # 소멸 미확인 시간초과면 여기 못 오고 창은 열린 채(end=None)로 남는다
             all_stages_done["v"] = True
         except Exception as e:
             thread_exception["e"] = e
@@ -307,6 +345,9 @@ def make_network_degrade_injector(
             return None
         return {"replaced_at": v["replaced_at"], "replacement_pod": v["pod"]}
 
+    def classify_stage(timestamp_iso: str) -> str:
+        return _classify_timestamp_against_windows(timestamp_iso, [dict(w) for w in list(stage_windows)])
+
     def is_done() -> bool:
         # 백그라운드 스레드에서 난 예외(단계 소멸 확인 시간초과, 효과를 내기
         # 전 대상 교체 등)를 여기서 다시 던져 run_once.py의 OBSERVING 루프가
@@ -349,4 +390,5 @@ def make_network_degrade_injector(
                      get_actual_injection_time=get_actual_injection_time,
                      get_injection_observation_error_sec=get_injection_observation_error_sec,
                      get_last_seen_present_time=get_last_seen_present_time,
-                     get_target_replacement=get_target_replacement)
+                     get_target_replacement=get_target_replacement,
+                     classify_stage=classify_stage)

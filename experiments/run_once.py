@@ -154,14 +154,14 @@ class Injector:
     관측성 보완, §30에서 명목 stage 경계만 참고할 수 있었던 문제 수정).
     ISO8601 타임스탬프 문자열을 받아 그 시각이 실제 어느 실험 단계에
     속했는지 문자열로 분류해 반환한다(주입이 여러 "stage"로 나뉘는
-    시나리오, 지금은 load_ramp만 구현) - stage 이름, 또는 "baseline"/
+    시나리오, 지금은 load_ramp·network_degrade가 구현) - stage 이름, 또는 "baseline"/
     "inter_stage_tail"/"drain"/"unknown" 중 하나. 절대 예외를 던지면
     안 되고(run_once()가 t_slo/t_detection/t_api_request 각각에 대해
     호출해 slo_stage/detection_stage/action_stage를 채우는 보조 정보라
     핵심 판정에 영향을 주면 안 됨), 분류할 근거가 없으면(요약 fetch
     실패 등) "unknown"을 반환해야지 임의로 추정하면 안 된다. 미구현
     (None 필드)이면 run_once()가 아예 호출하지 않고 관련 필드는 None으로
-    남는다(pod_kill/network_degrade 등 stage 개념이 없는 시나리오)."""
+    남는다(pod_kill 등 stage 개념이 없는 시나리오)."""
     prepare: Callable[[], None]
     inject: Callable[[], None]
     is_started: Callable[[], bool]
@@ -383,8 +383,9 @@ class TrialResult:
     # injector.classify_stage()로 계산한 stage 분류(2026-09-18 추가 - stage
     # 관측성 보완). 대응하는 timestamp(t_slo/t_detection/t_api_request)가
     # None이면 이 필드도 None(사건 자체가 없었음 - "unknown"과는 다르다).
-    # 어댑터가 classify_stage 미구현이면 셋 다 None(하위호환, pod_kill/
-    # network_degrade 등). action_stage는 t_api_request(정책이 K8s API를
+    # 어댑터가 classify_stage 미구현이면 셋 다 None(하위호환, pod_kill 등;
+    # network_degrade는 2026-09-20부터 구현 - 그 전 pilot JSON 3건은 None).
+    # action_stage는 t_api_request(정책이 K8s API를
     # 실제로 호출해 조치를 실행한 시각) 기준으로 분류한다 - action 필드
     # 자체는 문자열(예: "promote_preview")이라 대응하는 타임스탬프가 없어,
     # 셋 중 "조치가 취해진 시각"에 가장 가까운 t_api_request를 썼다.
