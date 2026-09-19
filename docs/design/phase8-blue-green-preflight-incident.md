@@ -3700,3 +3700,261 @@ detector 있음, inferred pilot 표시·본 실험 추론 거부·arm 불일치 
 fixture의 낡은 값(`detection_source="isolation_forest"` - 2026-09-19 이전 "누가" 의미)이 새
 의미와 충돌해 테스트 1건이 실패했고, fixture를 `predictive`로 정정하고 해당 non-native 행에
 arm에 맞는 detector를 명시했다(검증 로직 쪽 수정 아님).
+
+## 40. `pod_kill` non-native 파일럿 - 러너 배선 결함, 배포 CRLF 결함, `fixed_threshold` 완료 (2026-09-19)
+
+`a064cdc`까지의 구현과 세 커밋 분리 승인 뒤의 첫 실제 검증이다. 지시: 공통 결과 스키마 동결(새 필드
+추가 금지), `t_decision`=최초 유효 신호의 첫 정책 판단 시각·`t_switch`=selector 전환을 처음 관측한
+시각이라는 현재 정의 유지, `pod_kill × fixed_threshold → proposed` 각 1회(`is_pilot=true`, 새 run_id),
+첫 arm에서 invalid_run·HarnessCorrupted·cleanup 실패·Node 이상·결과 필드 모순이 나오면 proposed로
+진행하지 않고 중단. `network_degrade`·본 실험으로는 넘어가지 않는다.
+
+### 40.1 pod_kill 러너의 arm 오케스트레이션 우회 결함 (로컬 커밋 `0ba88fa`)
+
+실행 전 `run_pod_kill_trial.py`를 점검하다 발견했다: `--arm`을 결과에 태깅만 할 뿐 `arm_controller`를
+전혀 쓰지 않아, `--arm fixed_threshold/proposed`로 돌려도 detector 기동·preview 준비·자동 rollback이 붙지
+않았다(§32에서 `run_load_ramp_trial.py`가 고친 것과 같은 결함 - 그대로 돌렸다면 detector 없는 trial이
+non-native로 잘못 라벨링됐을 것이다). `wrap_injector_with_preview_prep()`/`make_detector_for_arm()`을
+배선하고 `--rollout/--namespace`를 추가했다. `test_run_trial_wiring.py`(8개, 두 러너를 parametrize:
+non-native는 항상 정확한 단일 detector·preview 래퍼·`is_pilot`·run_id 접두어, native는 detector/래퍼
+없음, rollout/namespace 전달)를 추가했고 원본 러너에는 pod_kill 4개가 실패함을 확인했다(전체 303 passed).
+**`run_network_degrade_trial.py`에도 같은 배선이 없다**(`arm_controller`·detector 미사용, `run_once()`를
+detector 없이 호출) - 이번 범위 밖이라 고치지 않았다. `network_degrade` 파일럿 전에 같은 방식으로 반드시
+막아야 한다.
+
+### 40.2 recovery-policy `a064cdc` 배포 - CRLF 결함 발견·수정
+
+**1차 배포**(`git archive a064cdc recovery-policy` → 워커 `/tmp/recovery-policy-build-a064cdc` →
+`docker build` → containerd import → rollout)는 imageID `sha256:c856a5aa…`, restarts 0, `/healthz`·
+context/timing·audit API가 모두 정상이었다. 그러나 이 이미지의 `/app/git_askpass.sh`가 `#!/bin/sh\r`로
+시작해 모든 `git push`가 `fatal: cannot exec '/app/git_askpass.sh': No such file or directory`로
+실패했다(재시도 6회 후 outbox `failed`).
+
+**원인(바이트 단위로 확정)**: 이 PC는 `core.autocrlf=true`(시스템 gitconfig)이고 리포지토리에
+`.gitattributes`가 없다. `git archive`가 그 설정을 적용해 전 파일을 CRLF로 내보낸다.
+
+| 대상 | git_askpass.sh CR | Dockerfile | main.py | requirements.txt |
+|---|---|---|---|---|
+| 커밋 blob (`git show a064cdc:…`) | 0 | 0 | 0 | 0 |
+| 작업트리(autocrlf 체크아웃) | 0 | 0 | 481 | 0 |
+| `git archive`(autocrlf=true, 1차 배포 경로) | 11 | 21 | 481 | 5 |
+| `git -c core.autocrlf=false archive` | 0 | 0 | 0 | 0 |
+
+Python은 CRLF를 허용해 서비스는 정상 기동하고 셸 스크립트만 깨졌다 - 그래서 배포 검증(healthz·API)을
+통과했다. 1차 검증의 "파일 해시 일치"는 **내 추출본끼리** 비교한 것이라 이 결함을 잡을 수 없었다.
+측정 도구 문제도 겹쳤다: 로컬 `grep -c $'\r'`는 이 셸 래퍼가 이스케이프를 깨 0을 돌려줘 오판을 굳혔다 -
+이후 CR 카운트는 파이썬 `bytes([13])` 바이트 카운트로만 한다.
+
+**수정**: `git -c core.autocrlf=false archive`로 다시 내보내 새 빌드 디렉터리
+(`/tmp/recovery-policy-build-a064cdc-lf`)에서 재빌드했다. 이번에는 **커밋 blob 기준**으로 4단계 검증:
+
+1. 로컬 추출본 18개 sha256 == `git show a064cdc:recovery-policy/<f>` (불일치 0, CR 합계 0)
+2. 워커 빌드 디렉터리 `sha256sum -c` 18/18
+3. 빌드된 이미지 내부 `/app`(`docker run … sha256sum -c`, 롤아웃 **전**) 18/18, 셔뱅 LF, 실행비트 유지
+4. 실행 중 파드 `kubectl exec … sha256sum -c` 18/18
+
+새 imageID `sha256:4ddcadbf…`, pod `recovery-policy-69c5fb868f-tvf7b` restarts 0, `/healthz` ok, context
+null·timing 전 필드 null. **재발 방지 규칙(배포 절차)**: ① 소스는 항상 `git -c core.autocrlf=false
+archive`, ② 해시는 반드시 `git show <commit>:<path>` blob과 대조(자기 추출본이 아니라), ③ 롤아웃 전
+이미지 안에서·후 파드 안에서 각각 확인. (리포지토리 전체 대책인 `.gitattributes`(`*.sh text eol=lf`)는
+요청 범위 밖이라 적용하지 않았다.)
+
+**감사 레코드 복구**: outbox는 hostPath PV(`/data`, Retain)라 재시작 후에도 남았고, 시작 시
+`_requeue_unsent()`가 `failed` 2건(이 trial의 primary+duplicate)을 재큐잉해 06:14:02.80Z에 한 번에
+push됐다(`2536b98` primary 레코드 커밋 05:56:32Z, `36c10b7` duplicate 레코드 커밋 05:56:45Z).
+`commit_sha`는 push 직후 `git rev-parse HEAD`(`git_client.py`)라 batch의 모든 레코드가 같은 값
+(`36c10b7…`)을 가진다 - "그 레코드를 트리에 포함한 push된 HEAD"이지 레코드 자신의 커밋이 아니다
+(`git show 36c10b7:audit-log/<run_id>.jsonl`에 두 record_id가 모두 있음을 확인).
+
+### 40.3 `pod_kill × fixed_threshold` 1회 - `recovered`, 필드 모순 없음
+
+`run_id=pilot-pod_kill-fixed_threshold-01-20260919T054802Z`(05:48:02.80 → `t_run_end` 05:58:42.85),
+`state=completed`, `outcome=recovered`, `injection_valid`/`probe_valid`/`baseline_valid` 모두 true,
+`invalid_reason=null`. 클러스터 이벤트(워처 로그 원본)와 결과 JSON을 UTC로 대조한 타임라인:
+
+| 시각(UTC) | 클러스터 관측 | 결과 JSON / 정책 서버 |
+|---|---|---|
+| 05:48:03.42 | Rollout revision 27 생성, `SwitchService(vllm-preview)`→`76d5694878` | `t_preview_prep_start` |
+| 05:52:11.91 → 13.46 | preview pod Ready → `RolloutPaused(BlueGreenPause)` | `t_preview_ready` 05:52:14.13 (준비 250.7초, rollback 없음) |
+| 05:54:37.14 | (부하 probe pod 05:52:22 Running) | `t_baseline_ready` - 60표본, P95 0.332s, 가용성 1.0, valid |
+| 05:54:39.18 / .69 | PodChaos CR 생성(이벤트 05:54:39.69) | `t_injection_request` |
+| **05:54:41.43~.47** | **고정된 pod `…76769c989b-hwnpp`(UID `43db9075…`) Terminating → 삭제** | `t_injection` 05:54:41.817(마지막 미소멸 관측 05:54:40.738 ~ 첫 소멸 관측 사이, 오차 1.079s) |
+| 05:54:41.44 | **교체 pod `…-8jzcw`(UID `93048195…`) 생성** - 구 RS(`76769c989b`)가 자기 리비전으로 재생성, 05:54:52 Running, startup probe 실패 지속(Ready 안 됨) | (`target_replaced`는 40.6 참고) |
+| 05:54:43.04 | | `t_slo` |
+| 05:56:05.297 | Alertmanager `VLLMTargetDown` startsAt | idempotency key `e5f70323dc22832b:2026-09-19T05:56:05.297000+00:00` |
+| 05:56:15.354 | webhook 수신 | `t_detection`(주입 후 93.5초, 반응형 - startsAt과 10.06초 차이는 `group_wait` 10s와 일치) |
+| 05:56:15.384 | | `t_decision` 05:56:15.383822(+29.6ms), `t_api_request` 05:56:15.384078(+0.26ms) |
+| **05:56:29.646** | **Argo `SwitchService(vllm-active)` 76769c989b→76d5694878**, 05:56:30.108 `RolloutCompleted` | `t_switch` 05:56:30.135189(= 감사기록 `verified_at`, 이벤트보다 27ms 뒤 - 관측 시각이라는 정의와 일치) |
+| 05:57:00.14 | 구 RS scale-down(전환 30초 뒤 = `scaleDownDelaySeconds:30`), 교체 pod 삭제 | |
+| 05:57:36.26 | | `t_recovery` |
+| 05:58:08.86~42.02 | 부하 probe pod 종료 | |
+| 05:58:42.43~.79 | PodChaos `Deleted`→`Recovered`→finalizer 제거 | `t_run_end` 05:58:42.85 |
+
+세 사건이 서로 다른 시각의 서로 다른 객체임을 분리해 확인했다: **UID 소멸**(05:54:41.4, 대상 pod) ≠ **교체
+pod 생성**(05:54:41.44, 같은 리비전 재생성 - 끝내 Ready 안 됨) ≠ **promotion 전환**(05:56:29.65, 사전 준비된
+새 리비전 pod로 active 전환). 회복은 교체 pod가 아니라 promotion으로 이뤄졌다(`t_recovery`가 `t_switch`
+뒤).
+
+**판정·조치 필드(recovery-policy 서버 권위 상태, `judgment_source=live_state`)**: `detected=true`,
+`detection_source=reactive`, `detector=alertmanager`(§39 fallback 예외 → `detector_check=reactive_fallback`),
+`action=promote_preview`, `decision_outcome=executed_verified`, `promotion_verified=true`. 순서
+`t_injection < t_slo < t_detection ≤ t_decision ≤ t_api_request < t_switch < t_recovery` 성립 -
+§38의 "다음 실제 promotion 파일럿에서 live 검증" 항목 충족. **`fixed_threshold` detector는 신호를 내지
+않았다**: 사전 등록된 규칙이 "60초 평균 CPU > 3.6코어(한도 4코어의 90%)"인데(`fixed_threshold.py`) 대상
+pod가 죽으면 CPU가 0으로 떨어지므로 이 규칙은 pod_kill에서 구조적으로 발화할 수 없다(감사 API에도
+Alertmanager 기록 2건뿐). 최초 탐지가 반응형 fallback이 되는 것이 이 arm의 정상 동작이다.
+
+**감사 필드**: trial 종료 시점 bounded wait(20초)는 `audit_status=failed`(위 40.2의 CRLF 결함이 원인 -
+정책 필드·outcome·action은 영향 없음, 설계대로 "비동기 감사 실패"로만 표시)로 끝났고, 배포 수정·재큐잉 뒤
+`reconcile_audit.py`(멱등, 두 번째 실행 `changed:false`)로 06:17:07Z에 회수했다: `audit_status=complete`,
+`t_audit_write` 05:56:30.47, `t_audit_push` 06:14:02.80, `commit_sha=36c10b70…`, `audit_record_id`
+`1690cf7c…`(primary, `executed_verified`/`promote_preview`), 제외 `6f4d3e1a…`(`skipped_duplicate`, 같은
+idempotency key). `judgment_supplemented=false` - 판정 필드는 손대지 않았다. 원본은
+`.pre-reconcile.bak`(gitignore 대상, 로컬 보존)에 있다.
+
+**사후 상태(모두 확인)**: PodChaos·NetworkChaos 등 Chaos CR 없음, detector/probe/runner 프로세스 없음,
+context null·timing 전 필드 null, Rollout Healthy(`abort` 없음)·단일 리비전 `76d5694878`(구 RS 두 개
+desired 0), active/preview selector 동일 hash, Node 2개 Ready·pressure 없음(창 안 condition 전이·컨테이너
+재시작 0건 - 남은 재시작은 09-16 이전 것), vLLM pod restarts 0. `collect_metrics.py`: 이 행 이슈 0건
+(`detector_check=reactive_fallback`), 전체 14건 중 이슈 1건은 기존 09-17 native pod_kill `prevented`.
+
+**중단 조건 평가**: invalid_run 없음 · HarnessCorrupted 없음 · cleanup 실패 없음 · Node 이상 없음 ·
+결과 필드 모순 없음. 단 초기 `audit_status=failed`는 내 배포 결함(40.2)이었고, 이것이 "결과 필드 모순"
+에 해당하는지는 판단이 필요했다 - 필드들이 서로 어긋난 것이 아니라(정책 필드 일관·`audit_status`가 실패를
+정직하게 표시) 환경 결함이 비동기 감사 경로를 막은 것이라 중단 사유로 보지 않고, 원인을 고쳐 같은
+커밋(`a064cdc`) 코드를 바이트 동일하게 재배포한 뒤 proposed로 진행했다. 이 판단은 그대로 보고한다.
+
+### 40.4 `pod_kill × proposed` 1회 - `recovered`, 예측 경로가 최초 탐지
+
+`run_id=pilot-pod_kill-proposed-01-20260919T062317Z`(06:23:17.67 → `t_run_end` 06:31:13.09),
+`state=completed`, `outcome=recovered`, `injection_valid`/`probe_valid`/`baseline_valid` 모두 true,
+`invalid_reason=null`, `detector_process=isolation_forest`. preview 준비 152.9초(06:23:18.02 →
+06:25:50.89, rollback 없음), baseline 61표본·P95 0.342s·가용성 1.0(`t_baseline_ready` 06:28:11.40 -
+detector·주입은 baseline 이후). 워처 로그(원본)와 결과 JSON의 UTC 대조:
+
+| 시각(UTC) | 클러스터 관측 | 결과 JSON / 정책 서버 |
+|---|---|---|
+| 06:23:18.26~.39 | Rollout revision 28, `SwitchService(vllm-preview)`→`659795b9df`, 새 RS pod `…659795b9df-xzmkr` 생성 | `t_preview_prep_start` 06:23:18.02 |
+| 06:24:05.297 → 06:24:15.42 | preview 기동 중 Alertmanager `VLLMTargetDown` → context 미등록 → `adhoc` `observe_only/no_action`(`18303d7`) | (trial에 귀속되지 않음) |
+| 06:25:47.91 → .98 | preview Ready → `RolloutPaused(BlueGreenPause)`, 06:25:58 부하 probe pod Running | `t_preview_ready` 06:25:50.89 |
+| 06:28:11.40 | | `t_baseline_ready` |
+| 06:28:12.11 / .25 | PodChaos CR 생성(이벤트 06:28:12.249) | `t_injection_request` 06:28:12.106 |
+| **06:28:12.49~.52** | **고정된 pod `…76d5694878-tc5nd`(UID `f2528f5b…`) Terminating → 삭제**, chaos `Applied` 06:28:12.53 | `t_injection` 06:28:13.325(마지막 미소멸 관측 06:28:12.287 ~ 첫 소멸 관측, 오차 1.038s) |
+| 06:28:12.58 | **교체 pod `…76d5694878-k7pw7`(UID `d947d50c…`) 생성** - 구 RS가 같은 리비전으로 재생성, 06:28:23 Running, startup probe 실패 6회, Ready 안 됨 | |
+| 06:28:15.11 | | `t_slo`(주입 후 1.78초) |
+| **06:28:46.311** | | **`t_detection`(주입 후 33.0초)** - `detection_source=predictive`, `detector=isolation_forest`; `t_decision` +27.5ms, `t_api_request` +0.28ms |
+| **06:29:01.093** | **Argo `SwitchService(vllm-active)` 76d5694878→659795b9df**, 06:29:01.158 `RolloutCompleted` | `t_switch` 06:29:01.663(= 감사 `verified_at`; `RolloutCompleted`보다 0.505초 뒤 - 0.5초 폴링 간격 이내) |
+| 06:29:05.297 → 06:29:15.34 | 후속 Alertmanager `VLLMTargetDown`(반응 경로) → 정책 `observe_only/no_action`("preview 없음" - 전환 완료 뒤라 대기 preview가 없음) | 최초 탐지 정보 **유지**(덮어쓰기 없음) |
+| 06:29:31.00 | 구 RS scale-down(전환 29.9초 뒤 = `scaleDownDelaySeconds:30`), 교체 pod 삭제 | |
+| 06:30:07.26 | | `t_recovery`(전환 후 65.6초) |
+| 06:30:39.50 → 06:31:12.4 | 부하 probe pod 종료 | |
+| 06:31:12.83~.97 | PodChaos `Deleted`→`Recovered`→finalizer 제거 | `t_run_end` 06:31:13.09 |
+
+fixed_threshold와 같은 방식으로 세 사건이 분리됐다: **UID 소멸**(06:28:12.5) ≠ **교체 pod 생성**(06:28:12.58,
+같은 리비전 재생성, 끝내 Ready 안 됨) ≠ **promotion 전환**(06:29:01.09, 사전 준비된 새 리비전으로 active
+전환). 회복은 promotion으로 이뤄졌다(`t_recovery`가 `t_switch` 뒤).
+
+**판정·조치 필드(recovery-policy 권위 상태, `judgment_source=live_state`)**: `detected=true`,
+`detection_source=predictive`, `detector=isolation_forest`(`detector_check=ok` - arm 배선과 일치),
+`action=promote_preview`, `decision_outcome=executed_verified`, `promotion_verified=true`,
+`idempotency_key=pilot-pod_kill-proposed-01-20260919T062317Z:anomaly_risk`. 순서 `t_injection < t_slo <
+t_detection ≤ t_decision ≤ t_api_request < t_switch < t_recovery` 성립. 예측 탐지 지연 33.0초는 설계상의
+하한(`CONSECUTIVE_THRESHOLD=3` × `EVAL_INTERVAL_SEC=15` ≈ 30초 + 쿼리 지연)에 가깝다(개별 평가 tick은
+검증하지 않았다).
+
+**최초 탐지 보존과 primary 선택**(사용자 검증 항목): 이 run의 감사기록은 2건이다 - (1) 예측 `53f6d2f2…`
+(`anomaly`/`anomaly_risk`, `promote_preview`/`executed_verified`), (2) 그 뒤 반응 신호 `7e189221…`
+(`alertmanager`/`VLLMTargetDown`, `observe_only/no_action`, 06:29:15). 결과 JSON은 (1)의 탐지 정보
+(`predictive`/`isolation_forest`/`t_detection` 06:28:46.311)를 그대로 유지했고 후속 반응 신호가 덮어쓰지
+않았다. primary는 실제 조치가 실행된 (1)이며 observe-only인 (2)보다 우선한다(§5.6 3번 규칙). 귀속 근거는
+경로별로 다르다: (1)은 idempotency key가 정확히 `"{run_id}:"` 접두어, (2)는 key에 run_id가 없어
+`evidence.experiment_run_id` 정확 일치로 귀속됐다(§5.6 2번 규칙 - 서로 대체되지 않음).
+
+**감사 4중 연결(원본 대조)**: primary `53f6d2f2…` ↔ JSON `audit_record_id`; idempotency key ↔ JSON
+`idempotency_key`; `verified_at` 06:29:01.663129 ↔ JSON `t_switch`; outbox `commit_sha=05641c4a…`(bot,
+06:29:01Z) ↔ JSON `commit_sha`·`t_audit_push` 06:29:04.008 - 이 커밋은 origin/master의 조상이고 그 트리의
+`audit-log/<run_id>.jsonl`에 `53f6d2f2…`가 들어 있다(이번엔 push가 즉시라 레코드 자신의 커밋이다). (2)는
+커밋 `e1b99c9a…`(두 레코드 모두 포함)로 push됐다. `audit_status=complete`는 trial 종료 2분 전에 이미
+확정됐다(`t_audit_write` 06:29:01.666 → `t_audit_push` 06:29:04.008, 2.3초, attempts 0) - **40.2의 수정된
+배포에서 push 경로가 실측으로 정상 동작함**을 확인했다. `reconcile_audit.py --dry-run` → `changed:false`
+(두 trial 모두).
+
+**사후 상태**: 사용량 한도로 작업이 중단돼 아래 확인은 trial 종료 2시간 15분 뒤(08:46Z)에 했다 - Chaos CR 없음,
+detector/probe/runner 프로세스 없음, context null, Rollout Healthy(`abort` 없음)·단일 리비전
+`659795b9df`(구 RS 두 개 desired 0)·active/preview selector 동일 hash, Node 2개 Ready·pressure 없음,
+vLLM/recovery-policy pod restarts 0, 05:40Z 이후 컨테이너 재시작 0건·Node condition 전이 없음(두 arm 창
+전체와 그 뒤 포함). 워처 로그(`kubectl get -w`)가 두 trial 창을 끝까지(06:31:14) 덮는다. `collect_metrics.py`:
+이 행 이슈 0건(`detector_check=ok`), 전체 15건 중 이슈 1건은 기존 09-17 native pod_kill `prevented`.
+
+**중단 조건 평가**: invalid_run·HarnessCorrupted·cleanup 실패·Node 이상·결과 필드 모순 모두 없음.
+
+### 40.5 두 arm 비교와 종합 (n=1 파일럿 - 우열 결론 금지, 기능 검증용)
+
+| | `fixed_threshold` | `proposed` |
+|---|---|---|
+| 최초 탐지 | `reactive`/`alertmanager`(fixed_threshold detector는 신호 없음) | `predictive`/`isolation_forest` |
+| `t_injection → t_detection` | 93.5s | 33.0s |
+| `t_detection → t_switch` | 14.78s | 15.35s |
+| `t_injection → t_switch` | 108.3s | 48.3s |
+| `t_injection → t_recovery` | 174.4s | 113.9s |
+| `outcome` | `recovered` | `recovered` |
+| `detector_check` | `reactive_fallback` | `ok` |
+| 감사 | 초기 `failed`(배포 결함) → 수정·재큐잉·재조정 후 `complete` | 진행 중 `complete` |
+| preview 준비 | 250.7s | 152.9s |
+
+두 arm 모두 promotion이 실제로 실행·검증(`executed_verified`, `promotion_verified=true`)돼 §38.3의 "다음
+실제 promotion 파일럿에서 네 timestamp 순서·값을 live로 검증" 항목이 **두 경로(반응·예측)에서 모두
+충족**됐다. 이 표의 시간 차이는 각 1회의 기능 검증 값이지 통계적 근거가 아니다(반복 없음, 탐지기 동작
+방식·알림 경로 지연이 섞여 있음). `t_detection → t_switch`가 두 arm에서 14.8~15.4s로 거의 같은 것은
+탐지 이후 경로(정책 → promotion 호출 → 전환 검증)가 두 arm에서 같은 코드를 지나므로 예상되는 결과다
+(이 구간의 구성 요소별 분해는 하지 않았다).
+
+### 40.6 관찰·한계
+
+- **준비 단계의 `adhoc` 감사기록(두 arm에서 재현)**: preview pod가 뜨는 동안 `VLLMTargetDown` 알림이
+  발생하고(fixed_threshold 05:49:05, proposed 06:24:05 startsAt - 준비 시작 47~62초 뒤), 아직 experiment
+  context가 등록되기 전이라 `run_id=adhoc`, `observe_only/no_action`("preview 없음 - 관찰만")으로
+  처리됐다(`008fe41`, `18303d7`). 정책은 의도대로 동작했고 어느 trial에도 귀속되지 않았다. **모든 non-native
+  trial의 준비 단계마다 생기는 것으로 보이며** 본 실험 감사 로그 분석 시 `adhoc` 기록은 trial 밖 잡음으로
+  걸러야 한다.
+- **promotion 지연(두 번 재현)**: 요청(`t_api_request`) → Argo `SwitchService` 14.26초(fixed_threshold) /
+  14.75초(proposed), → `t_switch` 14.75초 / 15.32초. 실제 pod_kill에서 이 구간을 처음 측정했고 두 번 모두
+  약 14~15초다(구성 요소별 분해는 하지 않았다 - 본 실험에서 `action_delay_sec`를 해석할 때 이 고정 지연이
+  포함됨을 감안해야 한다).
+- **`target_replaced=false`의 의미(스키마 불변, 해석만 명시)**: 이 필드는 어댑터가 `get_target_replacement`를
+  구현할 때만 채워진다(`network_degrade_adapter.py`만 구현). pod_kill 어댑터는 구현하지 않아 항상
+  `false/null`이며, 이는 "교체 없음"이 아니라 "미측정"이다(실제로 교체 pod가 있었다). 분석에서 pod_kill의
+  `target_replaced`를 근거로 쓰면 안 된다.
+- **`commit_sha`의 의미**: 40.2 - push된 HEAD, 레코드 자신의 커밋이 아님.
+- **fixed_threshold의 `t_audit_write → t_audit_push` 1052초는 시스템 지연이 아니다**: 40.2의 배포 결함이
+  push를 막았다가 재배포·재큐잉으로 풀린 시간(17.5분)이다. proposed의 2.3초가 정상 push 지연에 해당한다.
+  둘 다 pilot이라 본 분석에서는 제외되지만 감사 지연을 볼 때 혼동하면 안 된다.
+- **Chaos Mesh 삭제 직후 이벤트**: proposed trial 끝(06:31:13)에 `Failed to update conditions: PodChaos
+  … not found`가 CR 삭제·finalizer 제거(06:31:12.8~.97) **뒤에** 한 번 남았다 - 이미 삭제된 CR에 대한 상태
+  갱신 경합이며 cleanup은 그 전에 끝났다(CR·finalizer 제거 이벤트, 사후 조회 모두 CR 없음).
+- **오프라인 테스트가 실제 클러스터에 NetworkChaos CR을 만든다(별도 후속 - 이번엔 고치지 않음)**: 워처
+  로그를 읽다 발견했다. `netdelay-network-degrade-proposed-01-20260918t120000z-s0-265a0f` CR(이름이
+  `test_network_degrade_adapter.py`의 `RUN_ID`와 stage `s0`에서 파생됨)의 이벤트(`Started` → `Failed to
+  select targets: no pod is selected` → `Deleted`)가 13회분 있었다 - 05시대에 13번 생성·삭제됐고(1시간 TTL
+  만료가 06:03·06:14·06:16·06:25·06:29·06:30에 묶음으로 찍힘), 마지막 사이클은 약 05:30Z라 두 trial 창
+  (05:48~05:58, 06:23~06:31)과 겹치지 않았다. 정적 분석: 그 파일의 3개 테스트
+  (`test_uid_change_before_injection_effective_is_invalid`, `test_stage_deletion_not_confirmed_raises`,
+  `test_cleanup_raises_if_residual_cr_remains`)가 `make_network_degrade_injector()`의
+  `create_chaos_fn`/`delete_chaos_fn`(기본값은 실제 `CustomObjectsApi` 호출)을 주입하지 않아, `live_cluster`
+  마커가 없는 오프라인 스위트가 실행될 때마다 실제 클러스터에 CR이 생기고 지워진다. 대상 pod 이름이 가짜
+  (`vllm-abc123`)라 CR이 아무 pod도 선택하지 못해 이번엔 무해했지만, 오프라인 테스트가 라이브 클러스터를
+  변경한다는 것 자체가 실험 무결성 위험이다. 이 판단은 정적 분석과 이벤트 증거에 근거하며 통제된 재현은
+  하지 않았다(재현 실행이 라이브 클러스터를 다시 바꾸기 때문). 후속: 세 테스트에 fake 주입(또는 테스트에서
+  kube client를 막는 가드) - `network_degrade` 파일럿 전에 처리.
+
+### 40.7 남은 항목
+
+- 로컬 커밋 `0ba88fa`(러너 배선 수정)와 이 문서·계약서 변경이 origin에 없다. origin에는
+  recovery-policy-bot의 감사 커밋 6건(`008fe41`, `2536b98`, `36c10b7`, `18303d7`, `05641c4`, `e1b99c9`)이
+  더 있어 일반 merge 후 push한다(force-push·rebase 없음).
+- `run_network_degrade_trial.py`의 arm 배선 결함(40.1)과 오프라인 테스트의 라이브 클러스터 변경(40.6)은
+  `network_degrade` 파일럿 전에 처리해야 한다 - "network_degrade·본 실험으로는 넘어가지 마세요" 지시에 따라
+  손대지 않았다.
+- 결과 JSON·raw CSV·`.pre-reconcile.bak`은 gitignore 대상이라 로컬(`experiments/results/pilot/`)에만
+  보존된다 - 이 절이 그 값들의 문서 기록이다.
+- 다음 단계는 사용자 지시 대기(`network_degrade` 파일럿 또는 본 실험 계획).
