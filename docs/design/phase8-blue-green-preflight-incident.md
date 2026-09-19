@@ -4526,3 +4526,34 @@ kubelet이 스스로 잰 probe 소요시간 히스토그램(증거용 - 판정�
 1. `network_degrade` 3-arm 파일럿 시작 승인. 시작하려면 overlay 적용(preview -> promote, `blue_green_prep.py` 경로)과 `--readiness-probe-timeout-sec 11`이 필요하다.
 2. teardown 인접 단발 readiness 실패를 파일럿·본 분석에서 어떻게 다룰지(stage-4 종료 직후를 별도 구간으로 표시할지 등) - 이번 사전 등록은 calibration 판정에만 적용됐다.
 3. (선택) §44.5의 flush 가설을 검증하는 별도 측정 - 지금은 미검증 가설이다.
+
+## 46. `transition_straddling` 정의 반영과 `network_degrade` 3-arm 파일럿 (2026-09-20)
+
+### 46.1 승인 내용과 정의 반영 (클러스터 변경 없음)
+
+사용자 승인: 후보 `timeoutSeconds = 11` 확정(§45). **flush 가설 검증은 진행하지 않는다.** §45.4의 stage-4 readiness 실패 두 건은 다음 정의로 분류한다:
+이벤트 시각만 보고 `teardown`으로 단정하지 않고, **추정 probe 실행 구간이 CR 삭제 시각을 가로지르면 `transition_straddling`**으로 분류한다. steady 실패에도
+순수 teardown 실패에도 넣지 않고 별도 집계하며, 무시하지 않고 최종 표에 횟수·Ready 전이·Endpoint 영향·restart 여부를 함께 적는다. 단발이고 Ready/Endpoint/
+restart에 영향이 없으면 network-tolerant profile 실패로 판정하지 않고, 연속 실패·Ready=False·Endpoint 제거·restart로 이어지면 그 trial은 실패다.
+**`TrialResult`에는 새 필드를 추가하지 않는다.**
+
+**반영 범위(최소)**: 계약서 §5.8(정의·판정·소급 적용) + 분석 코드 + 테스트.
+- `calibrate_network_tolerant_probe.py`: `classify_occurrence`/`classify_all`에 선택 인자 `probe_timeout_sec`(주면 timeout 유형 실패의 추정 실행 구간 `[이벤트 - timeout,
+  이벤트]`이 삭제 요청 + 1초보다 일찍 시작할 때 `transition_straddling_<i>`), `probe_event_findings`(단발 straddling 허용, 같은 전이 구간 2건·15초 이내는 H12, 순수 liveness는
+  여전히 H11), `judge_v2`의 `transition_straddling` 요약(횟수·Ready 전이·Endpoint 영향·restart·`not_a_profile_failure`), `reanalyze()`/`--reanalyze`(저장된 JSON을 원본
+  불변으로 다시 분류). 이후 calibration 실행은 `probe_timeout_sec = 후보 timeout`으로 이 분류를 쓴다.
+- `trial_observer.py`(신규, **읽기 전용** - `kubectl get`뿐이며 테스트가 고정): trial과 별도 프로세스로 target pod의 Ready·Endpoint·restart·kubelet probe 실패 이벤트와
+  NetworkChaos CR 단계 타임라인(생성·AllInjected·삭제 요청·소멸 - `kubectl get -w` 스트림으로 sub-second)을 JSONL로 기록하고(`watch`), 끝난 뒤 위 분류와 중단 조건(S1 steady
+  실패 / S2 Ready=False·순간 전이 / S3 Endpoint 제거 / S4 restart·승격 전 target 소멸 / S5 연속 전이 실패 / S6 Node 이상 / S7 로컬 port-forward 이상)을 판정한다(`analyze`).
+  promotion으로 selector가 바뀐 뒤의 Endpoint 이동·구 pod 삭제는 정상으로 본다. 결과 스키마와 무관한 별도 파일이다.
+- 테스트: 도구 150개(분류 경계 7 + 나머지, 두 회차 원본 JSON 재분류 검증·CLI 포함) + observer 18개. 전체 오프라인 **497 passed**(존재하지 않는 KUBECONFIG, 3 deselected).
+
+**소급 재분류(원본 JSON 불변, 파생 결과 `reanalysis-transition-straddling-*.json`을 증거 디렉터리에 추가)**:
+
+| calibration 회차 | 원본 분류(이벤트 시각만) | 재분류 | 삭제 요청 대비 | 횟수 | Ready 전이 | Endpoint 영향 | restart | profile 실패? |
+|---|---|---|---|---|---|---|---|---|
+| 1회차 `...t135919z` | `teardown_4` | **`transition_straddling_4`** | 이벤트 +5.21초 / 추정 probe 시작 **-5.79초** | 1 | 없음 | 없음(Ready 전이 0 = Endpoint 유지) | 없음 | 아님 |
+| 2회차 `...t142045z` | `teardown_4` | **`transition_straddling_4`** | 이벤트 +3.41초 / 추정 probe 시작 **-7.59초** | 1 | 없음 | 없음(Ready 전이 0 = Endpoint 유지) | 없음 | 아님 |
+
+두 회차 모두 steady 실패 0·순수 teardown 실패 0·liveness 실패 0이고 재판정도 `PASS`다(조건 위반 없음). §45.4의 "이 PASS는 이벤트 timestamp 기준에 민감하다"는 주의는
+분류 정의가 명시되면서 해소됐다 - 이제 그 실패는 steady도 순수 teardown도 아닌 별도 범주로 보고된다.

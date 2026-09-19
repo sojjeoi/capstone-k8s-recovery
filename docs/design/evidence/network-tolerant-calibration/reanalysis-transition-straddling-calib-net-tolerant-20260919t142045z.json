@@ -1,0 +1,412 @@
+{
+  "run_id": "calib-net-tolerant-20260919t142045z",
+  "candidate_sec": 11.0,
+  "probe_timeout_sec": 11.0,
+  "original_analysis_outcome": "PASS",
+  "probe_events": [
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:21:02Z",
+      "polled_at": 1789827663.940265,
+      "approx": false,
+      "t_pc": 1789827662.1570177,
+      "t_pc_iso": "2026-09-19T14:21:02.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:21:12Z",
+      "polled_at": 1789827675.224651,
+      "approx": false,
+      "t_pc": 1789827672.1570177,
+      "t_pc_iso": "2026-09-19T14:21:12.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:21:22Z",
+      "polled_at": 1789827682.840496,
+      "approx": false,
+      "t_pc": 1789827682.1570177,
+      "t_pc_iso": "2026-09-19T14:21:22.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:21:32Z",
+      "polled_at": 1789827694.16604,
+      "approx": false,
+      "t_pc": 1789827692.1570177,
+      "t_pc_iso": "2026-09-19T14:21:32.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:21:42Z",
+      "polled_at": 1789827705.50965,
+      "approx": false,
+      "t_pc": 1789827702.1570177,
+      "t_pc_iso": "2026-09-19T14:21:42.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:21:52Z",
+      "polled_at": 1789827713.092705,
+      "approx": false,
+      "t_pc": 1789827712.1570177,
+      "t_pc_iso": "2026-09-19T14:21:52.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:22:02Z",
+      "polled_at": 1789827724.472748,
+      "approx": false,
+      "t_pc": 1789827722.1570177,
+      "t_pc_iso": "2026-09-19T14:22:02.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:22:12Z",
+      "polled_at": 1789827735.774211,
+      "approx": false,
+      "t_pc": 1789827732.1570177,
+      "t_pc_iso": "2026-09-19T14:22:12.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:22:22Z",
+      "polled_at": 1789827743.273994,
+      "approx": false,
+      "t_pc": 1789827742.1570177,
+      "t_pc_iso": "2026-09-19T14:22:22.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:22:32Z",
+      "polled_at": 1789827754.549157,
+      "approx": false,
+      "t_pc": 1789827752.1570177,
+      "t_pc_iso": "2026-09-19T14:22:32.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:22:42Z",
+      "polled_at": 1789827765.941841,
+      "approx": false,
+      "t_pc": 1789827762.1570177,
+      "t_pc_iso": "2026-09-19T14:22:42.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:22:52Z",
+      "polled_at": 1789827773.491301,
+      "approx": false,
+      "t_pc": 1789827772.1570177,
+      "t_pc_iso": "2026-09-19T14:22:52.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:23:02Z",
+      "polled_at": 1789827784.765383,
+      "approx": false,
+      "t_pc": 1789827782.1570177,
+      "t_pc_iso": "2026-09-19T14:23:02.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:23:12Z",
+      "polled_at": 1789827796.14201,
+      "approx": false,
+      "t_pc": 1789827792.1570177,
+      "t_pc_iso": "2026-09-19T14:23:12.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:23:22Z",
+      "polled_at": 1789827803.694139,
+      "approx": false,
+      "t_pc": 1789827802.1570177,
+      "t_pc_iso": "2026-09-19T14:23:22.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:23:32Z",
+      "polled_at": 1789827815.022551,
+      "approx": false,
+      "t_pc": 1789827812.1570177,
+      "t_pc_iso": "2026-09-19T14:23:32.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:23:42Z",
+      "polled_at": 1789827822.597988,
+      "approx": false,
+      "t_pc": 1789827822.1570177,
+      "t_pc_iso": "2026-09-19T14:23:42.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:23:52Z",
+      "polled_at": 1789827834.215912,
+      "approx": false,
+      "t_pc": 1789827832.1570177,
+      "t_pc_iso": "2026-09-19T14:23:52.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Startup",
+      "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+      "worker_ts": "2026-09-19T14:24:02Z",
+      "polled_at": 1789827845.634952,
+      "approx": false,
+      "t_pc": 1789827842.1570177,
+      "t_pc_iso": "2026-09-19T14:24:02.157+00:00",
+      "segment": "startup",
+      "ambiguous": false,
+      "probe_start_est": null,
+      "probe_start_iso": null
+    },
+    {
+      "kind": "Readiness",
+      "message": "Readiness probe failed: Get \"http://10.244.36.41:8000/health\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+      "worker_ts": "2026-09-19T14:34:47Z",
+      "polled_at": 1789828491.928782,
+      "approx": false,
+      "t_pc": 1789828487.1570177,
+      "t_pc_iso": "2026-09-19T14:34:47.157+00:00",
+      "segment": "transition_straddling_4",
+      "ambiguous": false,
+      "probe_start_est": 1789828476.1570177,
+      "probe_start_iso": "2026-09-19T14:34:36.157+00:00"
+    },
+    {
+      "kind": "Readiness",
+      "message": "Readiness probe failed: Get \"http://10.244.36.41:8000/health\": dial tcp 10.244.36.41:8000: connect: connection refused",
+      "worker_ts": "2026-09-19T14:36:11Z",
+      "polled_at": 1789828580.477155,
+      "approx": true,
+      "t_pc": 1789828571.1570177,
+      "t_pc_iso": "2026-09-19T14:36:11.157+00:00",
+      "segment": "shutdown",
+      "ambiguous": false,
+      "probe_start_est": 1789828571.1570177,
+      "probe_start_iso": "2026-09-19T14:36:11.157+00:00"
+    },
+    {
+      "kind": "Readiness",
+      "message": "Readiness probe failed: Get \"http://10.244.36.41:8000/health\": dial tcp 10.244.36.41:8000: connect: connection refused",
+      "worker_ts": "2026-09-19T14:36:11Z",
+      "polled_at": 1789828580.477155,
+      "approx": true,
+      "t_pc": 1789828571.1570177,
+      "t_pc_iso": "2026-09-19T14:36:11.157+00:00",
+      "segment": "shutdown",
+      "ambiguous": false,
+      "probe_start_est": 1789828571.1570177,
+      "probe_start_iso": "2026-09-19T14:36:11.157+00:00"
+    },
+    {
+      "kind": "Readiness",
+      "message": "Readiness probe failed: Get \"http://10.244.36.41:8000/health\": dial tcp 10.244.36.41:8000: connect: invalid argument",
+      "worker_ts": "2026-09-19T14:36:16Z",
+      "polled_at": 1789828580.477155,
+      "approx": false,
+      "t_pc": 1789828576.1570177,
+      "t_pc_iso": "2026-09-19T14:36:16.157+00:00",
+      "segment": "shutdown",
+      "ambiguous": false,
+      "probe_start_est": 1789828576.1570177,
+      "probe_start_iso": "2026-09-19T14:36:16.157+00:00"
+    }
+  ],
+  "analysis": {
+    "run_outcome": "PASS",
+    "transition_straddling": {
+      "count": 1,
+      "events": [
+        "Readiness transition_straddling_4 @2026-09-19T14:34:47.157+00:00"
+      ],
+      "ready_transition": false,
+      "endpoint_impact": "없음(Ready 전이 0 = Endpoint 유지)",
+      "restart": false,
+      "not_a_profile_failure": true
+    },
+    "candidate_sec": 11.0,
+    "L_max": 8.6424,
+    "T_required": 10.803,
+    "T_min": 11,
+    "T_cap": 15.0,
+    "conditions": {
+      "C1_all_stages_allinjected": {
+        "ok": true,
+        "detail": "AllInjected 확인 stage [1, 2, 3, 4]"
+      },
+      "C2_completion_success_100pct": {
+        "ok": true,
+        "detail": "완료된 모든 창 100%(창마다 표본 1개 이상)"
+      },
+      "C3_no_steady_probe_failure": {
+        "ok": true,
+        "detail": "0건"
+      },
+      "C4_no_liveness_failure": {
+        "ok": true,
+        "detail": "0건(shutdown·transition_straddling 제외)"
+      },
+      "C5_no_ready_restart_uid_oom_evict_node": {
+        "ok": true,
+        "detail": "0건"
+      },
+      "C6_teardown_readiness_not_consecutive": {
+        "ok": true,
+        "detail": "순수 teardown readiness 실패 구간별 없음, transition_straddling 1건(비연속 단발 허용, 별도 집계)"
+      },
+      "C7_t_min_le_candidate": {
+        "ok": true,
+        "detail": "L_max=8.6424 T_required=10.803 T_min=11 후보=11.0"
+      },
+      "C8_cleanup_ok": {
+        "ok": true,
+        "detail": "정리 완전 성공"
+      },
+      "C9_no_hard_fail": {
+        "ok": true,
+        "detail": "없음"
+      },
+      "V1_clock_offset": {
+        "ok": true,
+        "detail": {
+          "start": {
+            "offset_sec": 0.3199913501739502,
+            "rtt_sec": 0.5299596786499023,
+            "measured_at": "2026-09-19T14:20:49.248+00:00"
+          },
+          "end": {
+            "offset_sec": 0.36597347259521484,
+            "rtt_sec": 0.6888902187347412,
+            "measured_at": "2026-09-19T14:36:22.390+00:00"
+          },
+          "used_sec": 0.3429824113845825,
+          "drift_sec": 0.04598212242126465
+        }
+      },
+      "V2_all_windows_complete": {
+        "ok": true,
+        "detail": "9개 창 모두 완료"
+      },
+      "V3_probe_counter_crosscheck": {
+        "ok": true,
+        "detail": {
+          "Readiness": {
+            "events_before": 1,
+            "counter_failed": 1,
+            "events_after": 1,
+            "successful_series": true
+          },
+          "Liveness": {
+            "events_before": 0,
+            "counter_failed": 0,
+            "events_after": 0,
+            "successful_series": true
+          }
+        }
+      },
+      "V4_l_max_usable": {
+        "ok": true,
+        "detail": "stage-4 창 데이터 사용 가능"
+      }
+    },
+    "failed_conditions": [],
+    "reasons": [],
+    "probe_event_counts": {
+      "shutdown/Readiness": 3,
+      "startup/Startup": 19,
+      "transition_straddling_4/Readiness": 1
+    }
+  }
+}

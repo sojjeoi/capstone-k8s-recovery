@@ -405,6 +405,36 @@ arm 기대와 일치하면 오류가 아니라 `inferred_pilot`으로 **별도 �
 검출한다(재조정 도구가 본 실험 데이터의 detector를 추론하지 않으므로 정상 경로에서는 나타나지 않고,
 나타나면 절차 위반이다).
 
+### 5.8 network_tolerant profile의 probe 실패 분류 - `transition_straddling` (2026-09-20 추가)
+
+`network_degrade`를 `network_tolerant` profile(readiness/liveness `timeoutSeconds` = calibration 확정값 11초)로 돌릴 때 kubelet의
+`Readiness/Liveness probe failed` 이벤트를 NetworkChaos CR 단계 타임라인(생성·`AllInjected=True` 확인·**삭제 요청**·소멸)에 대해 아래처럼
+분류한다. 이 분류는 분석·판정 코드(`calibrate_network_tolerant_probe.py`의 `classify_occurrence`/`judge_v2`, `trial_observer.py`의
+`analyze`)와 문서에만 있고 **`TrialResult`에는 새 필드가 없다**(스키마 동결 유지).
+
+**원칙: 이벤트 시각만 보고 `teardown`으로 단정하지 않는다.** probe의 **추정 실행 구간**을 쓴다 - timeout 유형 실패(`Client.Timeout exceeded`·
+`context deadline exceeded`·`i/o timeout`)는 `[이벤트 시각 - timeoutSeconds, 이벤트 시각]`, 그 밖의 실패(연결 거부 등)는 이벤트 시각 한 점이다.
+이벤트 시각은 worker 시계 - 오프셋 + 0.5초(§44.1).
+
+| 분류 | 조건 (삭제 요청 시각 = d) |
+|---|---|
+| `steady` | 이벤트가 d 이전(d +-1초 안이면 보수적으로 steady) - **중단 조건** |
+| `transition_straddling` | 이벤트가 d 이후 teardown 구간(삭제 요청 ~ 소멸 확인 + 15초)이고 추정 실행 구간의 시작이 d + 1초보다 이르다(= d를 **가로지름**) |
+| 순수 `teardown` | 같은 teardown 구간인데 추정 시작이 d + 1초 이후(삭제 뒤에 시작한 probe) |
+| 그 밖 | ramp·stage 사이·post_teardown·기동, pod 삭제 뒤 종료 아티팩트(`shutdown`) |
+
+`transition_straddling`은 **steady 실패에도 순수 teardown 실패에도 포함하지 않고 별도 집계**하며, 무시하지 않고 최종 표에 **횟수·Ready 전이·
+Endpoint 영향·restart 여부**를 함께 표시한다.
+
+**판정**: 단발(같은 전이 구간에 같은 종류 1건, 같은 종류의 다른 실패와 15초 초과 간격)이고 Ready=False·Endpoint 제거·restart 어느 쪽에도
+영향이 없으면 network-tolerant profile 실패로 판정하지 않는다(기록·보고만). **연속 실패**(같은 전이 구간 2건 이상 또는 15초 이내),
+**Ready=False**(폴링 사이 순간 전이 포함), **Endpoint 제거**, **restart·UID 변경(교체)** 중 하나로 이어지면 해당 trial은 실패다. Endpoint 영향은
+target pod가 Service 뒤에 있으면 Endpoints 객체로 직접 확인하고(promotion으로 selector가 바뀐 경우는 제외), Service 뒤가 아닌 격리
+calibration pod는 "Ready 전이 0 = Endpoint 유지"로 갈음한다(Endpoints 컨트롤러는 Ready pod만 등록한다).
+
+**소급 적용**: calibration 두 회차(§45)의 stage-4 readiness 실패는 원본 JSON을 그대로 두고 이 정의로 재분류했다 - 둘 다 `transition_straddling`(추정
+probe 시작이 삭제 요청 -5.8초/-7.6초), Ready 전이·Endpoint 영향·restart 없음 -> profile 실패 아님(상세 `phase8-blue-green-preflight-incident.md` §46).
+
 ## 6. 안전장치 — `run_once()`가 매 trial마다 반드시 함
 
 - 이전 trial의 firing 상태 Alertmanager 알림이 다음 `run_id`로 새지 않도록, trial 사이 **quiescence 대기**(모든 알림이 resolved 상태가 될 때까지) — §4 trial 종료조건③과 동일 개념
@@ -457,3 +487,4 @@ arm 기대와 일치하면 오류가 아니라 `inferred_pilot`으로 **별도 �
 - 2026-09-19: `pod_kill × fixed_threshold` / `pod_kill × proposed` 파일럿 각 1회 완료(승인된 스키마 동결에 따라 **필드 추가 없음**, 상세·타임라인은 `docs/design/phase8-blue-green-preflight-incident.md` §40). 둘 다 `recovered`, invalid_run·HarnessCorrupted·cleanup 실패·Node 이상·결과 필드 모순 없음(중단 조건 미충족). 실측으로 확정된 것: (1) §38.3의 live 검증 - promotion이 실제 실행된 두 경로(fixed_threshold=반응형 fallback `alertmanager`, proposed=예측 `isolation_forest`) 모두에서 `t_detection <= t_decision <= t_api_request <= t_switch` 순서가 성립하고 `t_switch`가 감사기록의 `verified_at`과 같다. (2) proposed에서 예측 신호가 먼저 promotion을 실행한 뒤 도착한 반응 신호(`observe_only`)는 최초 탐지 정보를 덮어쓰지 않았고, primary는 실제 실행된 promotion 기록이 선택됐다(§5.6); 귀속은 예측=idempotency key `"{run_id}:"` 접두어, 반응=`evidence.experiment_run_id` 정확 일치로 각각 실측에서 작동했다. (3) 감사 `commit_sha`는 push 직후의 HEAD라 같은 batch의 레코드가 공유하며 "그 레코드를 트리에 포함한 push된 커밋"이지 레코드 자신의 커밋과 같다는 보장은 없다(`git show <commit_sha>:audit-log/<run_id>.jsonl`에 record_id가 있는지로 연결을 검증). **해석 주의(스키마 불변)**: pod_kill의 `target_replaced=false`는 어댑터가 `get_target_replacement`를 구현하지 않아 "미측정"이지 "교체 없음"이 아니다(실제로는 교체 pod가 생겼다) - 분석에서 근거로 쓰지 않는다. `fixed_threshold` detector(CPU>90%)는 대상 pod가 죽으면 CPU가 0이 되므로 pod_kill에서 구조적으로 발화할 수 없어 최초 탐지가 반응형 fallback이 되는 것이 정상이다. non-native trial의 준비 단계(preview 기동 중)마다 `VLLMTargetDown` 알림이 `adhoc` 감사기록(`observe_only`)으로 남으므로 감사 로그 분석에서 trial 밖 잡음으로 거른다. 요청→전환 검증(`t_api_request`→`t_switch`)은 두 번 모두 약 14.8~15.3초다. 발견·수정: `run_pod_kill_trial.py`가 non-native arm의 detector·preview 오케스트레이션을 우회하던 결함(`0ba88fa`, `test_run_trial_wiring.py`로 두 러너를 고정), 배포 이미지에 CRLF가 들어간 결함(`git archive` + `core.autocrlf=true`; 이후 `git -c core.autocrlf=false archive`와 `git show` blob 해시 대조를 배포 절차로 규정 - §40.2). 미해결 후속(이번 지시 범위 밖): `run_network_degrade_trial.py`에 같은 arm 배선이 없고, `test_network_degrade_adapter.py`의 3개 테스트가 실제 클러스터에 NetworkChaos CR을 만든다 - 둘 다 `network_degrade` 파일럿 전에 처리해야 한다(§40.1, §40.6).
 - 2026-09-19: 바로 위 항목의 미해결 후속 2건과 CRLF 재발 방지를 처리했다(상세 `docs/design/phase8-blue-green-preflight-incident.md` §41 - **스키마 변경·새 필드 없음**, 실험·이미지 배포 없음): `run_network_degrade_trial.py`에 pod_kill 러너와 같은 arm 배선(detector·preview 준비/자동 rollback, `--rollout`/`--namespace`)을 추가하고 `test_run_trial_wiring.py`가 세 러너를 고정하며, 오프라인 테스트가 실제 클러스터에 접근하지 못하게 `experiments/conftest.py`에 `cluster_guard`를 추가했고(§40.6 정정: 실제 NetworkChaos CR 생성은 테스트 1개, 나머지는 존재하지 않는 CR에 대한 GET/DELETE), `.gitattributes`로 `recovery-policy/git_askpass.sh` 한 파일만 LF로 고정했다. 전체 오프라인 스위트는 존재하지 않는 KUBECONFIG에서 324 passed.
 - 2026-09-19: `network_degrade`의 network_tolerant probe `timeoutSeconds`를 격리 calibration pod(운영 Rollout·Service·recovery-policy와 무관, NetworkChaos는 그 pod에만)에서 실측해 확정했다(상세 `docs/design/phase8-blue-green-preflight-incident.md` §42~§45 - **스키마 변경·새 필드 없음**, calibration은 pilot이라 본 분석에서 제외). 10초 후보 1회 측정(§43)은 사전 등록 판정 `MARGINAL`/권고 `NONE`이었고, 사전 등록한 **후보 11초 독립 2회**(§44, 도구 v2 - 이벤트 timestamp 구간 분류·즉시 중단·kubelet 카운터 교차검증)가 모두 `PASS`(stage-4 `/health` 최대 지연 8.72/8.64초, `T_min` 11, steady 실패·liveness 실패·Ready 전이 0, cleanup 완전 성공)해 overlay `probe-timeout-patch.yaml`의 값을 10 -> 11로 바꾸고 원본 JSON을 `docs/design/evidence/network-tolerant-calibration/`에 보존했다. 해석 주의: stage-4 CR 삭제 직후 readiness probe 단발 실패가 2회 모두 관찰됐다(사전 등록상 teardown 구간의 단발로 허용되지만 역산한 probe 시작은 steady 구간이라 판정이 이벤트 timestamp 분류 기준에 민감). overlay는 파일만 바꿨고 클러스터에는 적용하지 않았으며 3-arm 파일럿·본 실험은 시작하지 않았다. 전체 오프라인 스위트는 존재하지 않는 KUBECONFIG에서 463 passed.
+- 2026-09-20: `timeoutSeconds = 11` 확정 승인. 위 항목의 stage-4 readiness 실패는 §5.8(신설)의 정의로 분류한다 - 이벤트 시각만으로 teardown 단정 금지, 추정 probe 실행 구간이 CR 삭제 시각을 가로지르면 `transition_straddling`(steady·순수 teardown과 별도 집계, 최종 표에 횟수·Ready 전이·Endpoint 영향·restart 표시, 단발이고 영향 없으면 profile 실패 아님, 연속·Ready=False·Endpoint 제거·restart면 trial 실패). **`TrialResult` 새 필드 없음**(분석 코드 `calibrate_network_tolerant_probe.py`·신규 읽기 전용 `trial_observer.py`와 문서에만 반영). calibration 두 회차를 원본 불변으로 재분류해 둘 다 `transition_straddling`(Ready 전이·Endpoint 영향·restart 없음)임을 확인(`phase8-blue-green-preflight-incident.md` §46). 전체 오프라인 스위트 497 passed.
