@@ -465,10 +465,25 @@ def timeline_boundaries(tl: dict) -> list:
     return sorted(bounds, key=lambda b: b[0])
 
 
-def classify_occurrence(occ: dict, tl: dict, offset_sec: float, bounds: Optional[list] = None) -> dict:
+TIMEOUT_MARKERS = ("Client.Timeout exceeded", "context deadline exceeded", "i/o timeout")
+STRADDLING = "transition_straddling_"
+
+
+def is_timeout_failure(message: str) -> bool:
+    """probe가 timeoutSeconds를 다 채우고 실패한 유형(Go http client timeout) - 실행 구간이 [이벤트 - timeout, 이벤트]다."""
+    return any(marker in message for marker in TIMEOUT_MARKERS)
+
+
+def classify_occurrence(occ: dict, tl: dict, offset_sec: float, bounds: Optional[list] = None,
+                        probe_timeout_sec: Optional[float] = None) -> dict:
     """발생 하나에 PC 시계 기준 시각 t_pc(epoch)·구간 segment·ambiguous를 붙여 새 dict로 돌려준다(§44.1).
     시각 = lastTimestamp(worker 시계, 초 단위 절삭) - 오프셋 + 0.5초(초 해상도의 중앙). steady 경계(AllInjected 확인·CR 삭제 요청)
-    +-1초 안이면 보수적으로 steady + ambiguous. 명목 stage 시간은 어디에도 쓰지 않는다."""
+    +-1초 안이면 보수적으로 steady + ambiguous. 명목 stage 시간은 어디에도 쓰지 않는다.
+
+    계약서 §5.8(2026-09-20): 이벤트 시각만 보고 teardown으로 단정하지 않는다. probe_timeout_sec를 주면 readiness/liveness 실패의
+    추정 실행 구간(timeout 유형 실패는 [이벤트 - timeout, 이벤트], 그 밖은 이벤트 시각 한 점)이 CR 삭제 요청 시각을 가로지르는
+    (= 시작이 삭제 요청 +1초보다 이른) teardown 시각의 실패를 `transition_straddling_<i>`로 분류한다. steady 실패에도 순수 teardown
+    실패에도 포함하지 않고 별도 집계한다."""
     bounds = timeline_boundaries(tl) if bounds is None else bounds
     t = parse_k8s_time(occ["worker_ts"]) - offset_sec + 0.5 if occ["worker_ts"] else occ["polled_at"]
     segment, ambiguous = "pre_start", False
@@ -479,33 +494,48 @@ def classify_occurrence(occ: dict, tl: dict, offset_sec: float, bounds: Optional
         if any(abs(t - edge) <= AMBIGUITY_SEC for edge in (st.get("allinjected"), st.get("delete_request"))
                if edge is not None):
             segment, ambiguous = f"steady_{i}", True
-    return {**occ, "t_pc": t, "t_pc_iso": iso(t), "segment": segment, "ambiguous": ambiguous}
+    probe_start = None
+    if probe_timeout_sec and occ["kind"] in ("Readiness", "Liveness"):
+        probe_start = t - probe_timeout_sec if is_timeout_failure(occ["message"]) else t
+        if segment.startswith("teardown_"):
+            index = segment.rsplit("_", 1)[1]
+            deleted = tl["stages"][int(index) - 1].get("delete_request")
+            if deleted is not None and probe_start < deleted + AMBIGUITY_SEC:
+                segment = STRADDLING + index
+    return {**occ, "t_pc": t, "t_pc_iso": iso(t), "segment": segment, "ambiguous": ambiguous,
+            "probe_start_est": probe_start, "probe_start_iso": iso(probe_start)}
 
 
-def classify_all(occurrences: list, tl: dict, offset_sec: float) -> list:
+def classify_all(occurrences: list, tl: dict, offset_sec: float, probe_timeout_sec: Optional[float] = None) -> list:
     bounds = timeline_boundaries(tl)
-    return [classify_occurrence(o, tl, offset_sec, bounds) for o in occurrences]
+    return [classify_occurrence(o, tl, offset_sec, bounds, probe_timeout_sec) for o in occurrences]
+
+
+def _in_transition(segment: str) -> bool:
+    return segment.startswith(("teardown_", STRADDLING))
 
 
 def probe_event_findings(classified: list) -> list:
     """§44.3 즉시 중단 조건 -> [(코드, 설명)]. `shutdown` 구간은 기록만 하고 제외한다.
-    H10 = steady injection window의 readiness/liveness 실패, H11 = liveness 실패(전체 실행), H12 = teardown readiness 실패가
-    연속(같은 전이 구간 2건 이상, 또는 teardown 실패가 다른 readiness 실패와 15초 이내)."""
+    H10 = steady injection window의 readiness/liveness 실패, H11 = liveness 실패(전체 실행 - 단 `transition_straddling`은 별도
+    집계라 제외, 계약서 §5.8), H12 = 전이 구간(teardown·transition_straddling)의 실패가 연속(같은 전이 구간에 같은 종류 2건 이상,
+    또는 전이 구간 실패가 같은 종류의 다른 실패와 15초 이내)."""
     live = [o for o in classified if o["segment"] != "shutdown"]
     out = []
     for o in live:
         where = f"{o['segment']} @{o['t_pc_iso']}" + (" (경계 모호)" if o["ambiguous"] else "")
         if o["kind"] in ("Readiness", "Liveness") and o["segment"].startswith("steady_"):
             out.append(("H10", f"steady injection window {o['kind']} probe 실패 {where}"))
-        if o["kind"] == "Liveness":
+        if o["kind"] == "Liveness" and not o["segment"].startswith(STRADDLING):
             out.append(("H11", f"liveness probe 실패 {where}"))
-    readiness = sorted((o for o in live if o["kind"] == "Readiness"), key=lambda o: o["t_pc"])
-    per_window = Counter(o["segment"] for o in readiness if o["segment"].startswith("teardown_"))
-    out += [("H12", f"{seg}에 readiness 실패 {n}건(연속)") for seg, n in per_window.items() if n >= 2]
-    for a, b in zip(readiness, readiness[1:]):
-        gap = b["t_pc"] - a["t_pc"]
-        if gap <= CONSECUTIVE_SEC and (a["segment"].startswith("teardown_") or b["segment"].startswith("teardown_")):
-            out.append(("H12", f"teardown readiness 실패 연속: {gap:.1f}초 간격 ({a['segment']} -> {b['segment']})"))
+    for kind in ("Readiness", "Liveness"):
+        failures = sorted((o for o in live if o["kind"] == kind), key=lambda o: o["t_pc"])
+        per_window = Counter(o["segment"].rsplit("_", 1)[1] for o in failures if _in_transition(o["segment"]))
+        out += [("H12", f"전이 구간 {w}에 {kind} 실패 {n}건(연속)") for w, n in per_window.items() if n >= 2]
+        for a, b in zip(failures, failures[1:]):
+            gap = b["t_pc"] - a["t_pc"]
+            if gap <= CONSECUTIVE_SEC and (_in_transition(a["segment"]) or _in_transition(b["segment"])):
+                out.append(("H12", f"전이 구간 {kind} 실패 연속: {gap:.1f}초 간격 ({a['segment']} -> {b['segment']})"))
     return out
 
 
@@ -554,14 +584,16 @@ def judge_v2(result: dict) -> dict:
     put("C2_completion_success_100pct", not bad, bad or "완료된 모든 창 100%(창마다 표본 1개 이상)")
     steady = [o for o in events if o["kind"] in ("Readiness", "Liveness") and o["segment"].startswith("steady_")]
     put("C3_no_steady_probe_failure", not steady, brief(steady) or "0건")
-    liveness = [o for o in events if o["kind"] == "Liveness"]
-    put("C4_no_liveness_failure", not liveness, brief(liveness) or "0건(shutdown 제외)")
+    liveness = [o for o in events if o["kind"] == "Liveness" and not o["segment"].startswith(STRADDLING)]
+    put("C4_no_liveness_failure", not liveness, brief(liveness) or "0건(shutdown·transition_straddling 제외)")
     ready_class = hard is not None and hard["code"] in ("H1", "H2", "H3")
     put("C5_no_ready_restart_uid_oom_evict_node", not ready_class, hard if ready_class else "0건")
     consecutive = [m for c, m in probe_event_findings(probe_events) if c == "H12"]
     teardown = Counter(o["segment"] for o in events if o["kind"] == "Readiness" and o["segment"].startswith("teardown_"))
+    straddling = [o for o in events if o["segment"].startswith(STRADDLING)]
     put("C6_teardown_readiness_not_consecutive", not consecutive,
-        consecutive or f"teardown readiness 실패 구간별 {dict(sorted(teardown.items())) or '없음'}(비연속 단발 허용)")
+        consecutive or f"순수 teardown readiness 실패 구간별 {dict(sorted(teardown.items())) or '없음'}, "
+                       f"transition_straddling {len(straddling)}건(비연속 단발 허용, 별도 집계)")
     tm = stage4_t_min(windows, candidate)
     put("C7_t_min_le_candidate", tm["T_min"] is None or tm["T_min"] <= candidate,
         f"L_max={tm['L_max']} T_required={tm['T_required']} T_min={tm['T_min']} 후보={candidate}")
@@ -576,7 +608,13 @@ def judge_v2(result: dict) -> dict:
     failed = sorted(k for k, v in cond.items() if not v["ok"])
     outcome = "FAIL" if any(k.startswith("C") for k in failed) else ("INVALID" if failed else "PASS")
     counts = Counter(f"{o['segment']}/{o['kind']}" for o in probe_events)
-    return {"run_outcome": outcome, "candidate_sec": candidate, "L_max": tm["L_max"], "T_required": tm["T_required"],
+    ready_transition = hard is not None and hard["code"] == "H2"
+    restarted = hard is not None and hard["code"] == "H1"
+    straddling_summary = {  # 계약서 §5.8 - 최종 표에 횟수·Ready 전이·Endpoint 영향·restart를 함께 표시한다
+        "count": len(straddling), "events": brief(straddling), "ready_transition": ready_transition,
+        "endpoint_impact": "있음(Ready 전이)" if ready_transition else "없음(Ready 전이 0 = Endpoint 유지)",
+        "restart": restarted, "not_a_profile_failure": not (ready_transition or restarted or consecutive)}
+    return {"run_outcome": outcome, "transition_straddling": straddling_summary, "candidate_sec": candidate, "L_max": tm["L_max"], "T_required": tm["T_required"],
             "T_min": tm["T_min"], "T_cap": T_CAP_SEC, "conditions": dict(sorted(cond.items())),
             "failed_conditions": failed, "reasons": [f"{k}: {cond[k]['detail']}" for k in failed],
             "probe_event_counts": dict(sorted(counts.items()))}
@@ -935,7 +973,8 @@ def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
         if d.clock() > deadline:
             raise CalibrationAbort("H9", f"하드 상한 {HARD_LIMIT_SEC:.0f}초 초과")
         violations = evaluate_violations(baseline, snap, state)
-        violations += probe_event_findings(classify_all(tracker.occurrences, tl, offset_start["offset_sec"]))
+        violations += probe_event_findings(classify_all(tracker.occurrences, tl, offset_start["offset_sec"],
+                                                        cfg.candidate_sec))
         if violations:
             raise CalibrationAbort(violations[0][0], "; ".join(f"{c}: {m}" for c, m in violations))
         return snap
@@ -1068,7 +1107,7 @@ def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
                               "drift_sec": abs(offset_end["offset_sec"] - offset_start["offset_sec"])
                               if offset_start and offset_end else None}
     result["timeline"] = timeline_iso(tl)
-    result["probe_events"] = classify_all(tracker.occurrences, tl, result["clock_offset"]["used_sec"])
+    result["probe_events"] = classify_all(tracker.occurrences, tl, result["clock_offset"]["used_sec"], cfg.candidate_sec)
     result["pod_events"] = result["cleanup"].pop("pod_events")
     result["ready_condition_since"] = state.ready_since
     result["analysis"] = judge_v2(result)
@@ -1080,6 +1119,44 @@ def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
 
 
 # ---- CLI ------------------------------------------------------------------------------------------
+def timeline_from_iso(tl_iso: dict) -> dict:
+    def epoch(value):
+        return datetime.fromisoformat(value).timestamp() if value else None
+    return {key: ([{k: epoch(v) for k, v in st.items()} for st in value] if key == "stages" else epoch(value))
+            for key, value in tl_iso.items()}
+
+
+def reanalyze(result: dict, probe_timeout_sec: Optional[float] = None) -> dict:
+    """저장된 결과 JSON을 계약서 §5.8 정의로 다시 분류·판정한다(원본 결과는 수정하지 않는다 - 측정 데이터는 그대로,
+    분류 정의만 바뀐 것이므로). probe_timeout_sec 기본은 그 회차의 후보 timeout이다."""
+    timeout = probe_timeout_sec or result["candidate_sec"]
+    keys = ("kind", "message", "worker_ts", "polled_at", "approx")
+    events = classify_all([{k: o[k] for k in keys} for o in result["probe_events"]],
+                          timeline_from_iso(result["timeline"]), result["clock_offset"]["used_sec"], timeout)
+    return {"run_id": result["run_id"], "candidate_sec": result["candidate_sec"], "probe_timeout_sec": timeout,
+            "original_analysis_outcome": result["analysis"]["run_outcome"], "probe_events": events,
+            "analysis": judge_v2({**result, "probe_events": events})}
+
+
+def print_reanalysis(out, re: dict, original_events: list) -> None:
+    def p(text=""):
+        print(text, file=out)
+    a = re["analysis"]
+    p(f"[재분류 계약서 5.8] run_id={re['run_id']} 후보={re['candidate_sec']:g}s probe timeout={re['probe_timeout_sec']:g}s "
+      f"(원본 판정 {re['original_analysis_outcome']} -> 재판정 {a['run_outcome']})")
+    for old, new in zip(original_events, re["probe_events"]):
+        if new["kind"] == "Startup" or old["segment"] == new["segment"] == "shutdown":
+            continue
+        start = f" probe 시작 추정 {new['probe_start_iso']}" if new.get("probe_start_est") else ""
+        p(f"  {new['kind']:9s} {old['segment']:18s} -> {new['segment']:24s} t_pc={new['t_pc_iso']}{start}")
+    ts = a["transition_straddling"]
+    p(f"  transition_straddling: {ts['count']}건 | Ready 전이 {'있음' if ts['ready_transition'] else '없음'} | "
+      f"Endpoint 영향 {ts['endpoint_impact']} | restart {'있음' if ts['restart'] else '없음'} | "
+      f"profile 실패 아님 = {ts['not_a_profile_failure']}")
+    p(f"  이벤트(구간/종류): {a['probe_event_counts']}")
+    p(f"  조건 위반: {a['failed_conditions'] or '없음'}")
+
+
 def load_probe_payload(path: Path = PROBE_CONFIG) -> dict:
     target = yaml.safe_load(path.read_text(encoding="utf-8"))["target"]
     return {"model": target["model"], "prompt": target["prompt"], "max_tokens": target["max_tokens"]}
@@ -1133,12 +1210,26 @@ def main(argv=None, deps_factory: Callable = default_deps) -> int:
     mode.add_argument("--dry-run", action="store_true", help="오프라인 계획·검증(클러스터 접근 없음)")
     mode.add_argument("--preflight-only", action="store_true", help="읽기 전용 클러스터 확인")
     mode.add_argument("--execute", action="store_true", help="실제 calibration 1회")
+    mode.add_argument("--reanalyze", metavar="RESULT_JSON",
+                      help="저장된 결과 JSON을 계약서 5.8(transition_straddling) 정의로 다시 분류·판정(클러스터 접근 없음, 원본 불변)")
     parser.add_argument("--candidate-timeout-sec", type=float, default=None,
                         help="후보 timeout(초) - calibration pod에만 적용한다. 기본은 overlay가 렌더한 값")
     parser.add_argument("--node-ssh", default=WORKER_SSH_HOST)
     parser.add_argument("--ssh", default="ssh")
     parser.add_argument("--output-dir", default=str(RESULTS_DIR))
     args = parser.parse_args(argv)
+
+    if args.reanalyze:  # 클러스터·kubectl 접근 없음 - 저장된 JSON만 읽고, 원본은 그대로 두고 재분류 결과를 옆에 저장한다
+        source = Path(args.reanalyze)
+        result = json.loads(source.read_text(encoding="utf-8"))
+        again = reanalyze(result, args.candidate_timeout_sec)
+        print_reanalysis(sys.stdout, again, result["probe_events"])
+        out_dir = Path(args.output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        target = out_dir / f"reanalysis-transition-straddling-{result['run_id']}.json"
+        target.write_text(json.dumps(again, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"재분류 결과 저장: {target}")
+        return 0
 
     try:
         rendered, base = render_overlay(), load_base()

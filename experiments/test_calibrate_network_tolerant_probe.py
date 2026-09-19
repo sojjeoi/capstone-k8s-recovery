@@ -837,11 +837,11 @@ class FakeWorld:
             return None
         return {"offset_sec": 0.0, "rtt_sec": 0.02, "measured_at": "fake"}
 
-    def probe_failure(self, kind, count=1, ago=0):
+    def probe_failure(self, kind, count=1, ago=0, error="context deadline exceeded"):
         """kubelet `Unhealthy` 이벤트를 지금(`ago`초 전) 시각(worker 시계 = PC 시계, 초 단위)으로 늘린다 - 같은 메시지는 count로
         합쳐진다. 실제로는 이벤트가 폴링에 잡히기 전에 발생하므로, 시간이 흐르지 않는 가짜 시계에서 발견 직후 정리로 넘어가는
         시나리오는 `ago`로 발생 시각을 앞당겨 표현한다."""
-        text = f'{kind} probe failed: Get "http://10.0.9.9:8000/health": context deadline exceeded'
+        text = f'{kind} probe failed: Get "http://10.0.9.9:8000/health": {error}'
         stamp = (self.now() - timedelta(seconds=ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
         for event in self.extra_events:
             if event["message"] == text:
@@ -1135,17 +1135,34 @@ def teardown_started(w):
     return any(c["delete_at"] is not None for c in w.chaos.values())
 
 
-def test_a_single_teardown_readiness_failure_is_recorded_and_the_run_still_passes(base):
+def test_a_timeout_failure_whose_probe_straddles_the_cr_deletion_is_recorded_separately_and_the_run_passes(base):
+    """계약서 5.8 - 삭제 직후에 찍힌 timeout 유형 실패는 11초 timeout으로 역산한 probe 시작이 삭제 요청보다 앞이므로 이벤트 시각만으로
+    teardown으로 단정하지 않고 transition_straddling으로 따로 센다. 단발이고 Ready·restart 영향이 없으면 실패가 아니다."""
     world, deps, cfg = build_run(base)
     world.hooks.append(counter_hook(teardown_started, lambda w: w.probe_failure("Readiness")))
     result = cal.run_calibration(deps, cfg, log=lambda *_: None)
     assert result["hard_fail"] is None
     (event,) = result["probe_events"]
-    assert (event["kind"], event["segment"]) == ("Readiness", "teardown_1"), "실제 timestamp로 teardown에 분류"
+    assert (event["kind"], event["segment"]) == ("Readiness", "transition_straddling_1")
+    delete_request = result["timeline"]["stages"][0]["delete_request"]
+    assert event["probe_start_iso"] < delete_request < event["t_pc_iso"], "추정 실행 구간이 삭제 요청 시각을 가로지른다"
     a = result["analysis"]
-    assert a["run_outcome"] == "PASS" and a["probe_event_counts"] == {"teardown_1/Readiness": 1}, a["reasons"]
+    assert a["run_outcome"] == "PASS" and a["probe_event_counts"] == {"transition_straddling_1/Readiness": 1}, a["reasons"]
+    assert a["transition_straddling"]["count"] == 1 and a["transition_straddling"]["not_a_profile_failure"] is True
+    assert (a["transition_straddling"]["ready_transition"], a["transition_straddling"]["restart"]) == (False, False)
     assert result["crosscheck"]["ok"] and result["crosscheck"]["detail"]["Readiness"]["counter_failed"] == 1
     assert_clean_after(world, result)
+
+
+def test_a_non_timeout_failure_after_the_deletion_is_a_pure_teardown_failure(base):
+    world, deps, cfg = build_run(base)
+    world.hooks.append(counter_hook(teardown_started,
+                                    lambda w: w.probe_failure("Readiness", error="dial tcp 10.0.9.9:8000: connection refused")))
+    result = cal.run_calibration(deps, cfg, log=lambda *_: None)
+    (event,) = result["probe_events"]
+    assert event["segment"] == "teardown_1" and event["probe_start_iso"] == event["t_pc_iso"],         "timeout 유형이 아니면 실행 구간이 이벤트 시각 한 점이라 삭제 뒤 실패는 순수 teardown"
+    assert result["analysis"]["run_outcome"] == "PASS" and result["analysis"]["transition_straddling"]["count"] == 0
+    assert result["analysis"]["probe_event_counts"] == {"teardown_1/Readiness": 1}
 
 
 def test_consecutive_teardown_readiness_failures_stop_the_run_h12(base):
@@ -1154,7 +1171,7 @@ def test_consecutive_teardown_readiness_failures_stop_the_run_h12(base):
     world.hooks.append(counter_hook(teardown_started, lambda w: w.probe_failure("Readiness", ago=2), at=2))
     result = cal.run_calibration(deps, cfg, log=lambda *_: None)
     assert result["hard_fail"]["code"] == "H12"
-    assert [e["segment"] for e in result["probe_events"]] == ["teardown_1", "teardown_1"]
+    assert [e["segment"] for e in result["probe_events"]] == ["transition_straddling_1", "transition_straddling_1"]
     assert result["analysis"]["run_outcome"] == "FAIL"
     assert "C6_teardown_readiness_not_consecutive" in result["analysis"]["failed_conditions"]
     assert_clean_after(world, result)
@@ -1360,6 +1377,110 @@ def test_preflight_only_checks_the_offset_and_the_prometheus_chain_without_chang
     world.start = lambda params: _DoneHandle()
     world.offset_missing_calls = {1}
     assert cal.main(["--preflight-only"], deps_factory=_cli_deps(world)) == 1
+
+
+# ---- J. 계약서 5.8 - transition_straddling 분류 ----------------------------------------------------
+TIMEOUT_MSG = 'probe failed: Get "http://x:8000/health": context deadline exceeded (Client.Timeout exceeded while awaiting headers)'
+
+
+def timeout_occ(t, kind="Readiness"):
+    return {"kind": kind, "message": f"{kind} {TIMEOUT_MSG}", "polled_at": t + 3.0, "approx": False,
+            "worker_ts": iso_z(math.floor(t))}
+
+
+@pytest.mark.parametrize("t,segment", [
+    (398.5, "steady_1"),                    # 삭제 요청(400) 전에 찍힌 실패는 steady
+    (399.5, "steady_1"),                    # 경계 +-1초는 보수적으로 steady
+    (405.5, "transition_straddling_1"),     # 추정 시작 394.5 < 삭제 요청 + 1 -> 가로지름
+    (411.5, "transition_straddling_1"),     # 추정 시작 400.5 - 경계 안쪽
+    (412.5, "teardown_1"),                  # 추정 시작 401.5 - 삭제 요청 뒤에 시작한 probe = 순수 teardown
+    (417.5, "teardown_1"),
+    (418.5, "between_stage_1"),             # teardown 구간 밖
+])
+def test_timeout_failures_split_into_steady_straddling_and_pure_teardown_by_the_estimated_probe_interval(t, segment):
+    c = cal.classify_occurrence(timeout_occ(t), make_tl(), 0.0, probe_timeout_sec=11)
+    assert c["segment"] == segment
+    assert c["probe_start_est"] == pytest.approx(c["t_pc"] - 11)
+
+
+def test_without_a_probe_timeout_the_old_event_time_classification_is_unchanged():
+    assert cal.classify_occurrence(timeout_occ(405.5), make_tl(), 0.0)["segment"] == "teardown_1"
+    assert cal.classify_occurrence(timeout_occ(405.5), make_tl(), 0.0)["probe_start_est"] is None
+
+
+def test_non_timeout_and_startup_failures_are_not_treated_as_straddling():
+    refused = {"kind": "Readiness", "message": "Readiness probe failed: dial tcp 10.0.0.5:8000: connect: connection refused",
+               "polled_at": 410.0, "approx": False, "worker_ts": iso_z(405)}
+    c = cal.classify_occurrence(refused, make_tl(), 0.0, probe_timeout_sec=11)
+    assert c["segment"] == "teardown_1" and c["probe_start_est"] == c["t_pc"], "timeout 유형이 아니면 실행 구간 = 이벤트 시각 한 점"
+    startup = {**refused, "kind": "Startup", "message": f"Startup {TIMEOUT_MSG}"}
+    assert cal.classify_occurrence(startup, make_tl(), 0.0, probe_timeout_sec=11)["probe_start_est"] is None
+
+
+def test_a_liveness_timeout_failure_is_classified_like_readiness():
+    assert cal.classify_occurrence(timeout_occ(405.5, "Liveness"), make_tl(), 0.0, probe_timeout_sec=11)["segment"] == "transition_straddling_1"
+
+
+def test_findings_allow_a_single_straddling_failure_but_not_consecutive_ones_or_pure_liveness_failures():
+    def codes(*events):
+        return {c for c, _ in cal.probe_event_findings(list(events))}
+    assert codes(ev("Readiness", "transition_straddling_4", 850.0)) == set()
+    assert codes(ev("Liveness", "transition_straddling_4", 850.0)) == set(), "단발 straddling liveness도 별도 집계 - H11 아님"
+    assert codes(ev("Liveness", "teardown_4", 855.0)) == {"H11"}, "순수 teardown liveness 실패는 여전히 실패"
+    assert codes(ev("Readiness", "transition_straddling_4", 850.0), ev("Readiness", "transition_straddling_4", 856.0)) == {"H12"}
+    assert codes(ev("Readiness", "transition_straddling_4", 850.0), ev("Readiness", "teardown_4", 858.0)) == {"H12"}
+    assert codes(ev("Liveness", "transition_straddling_4", 850.0), ev("Liveness", "transition_straddling_4", 860.0)) == {"H12"}
+    assert codes(ev("Readiness", "transition_straddling_1", 405.0), ev("Readiness", "transition_straddling_2", 555.0)) == set(),         "서로 다른 전이 구간에 각 1건은 비연속"
+    assert codes(ev("Readiness", "transition_straddling_4", 850.0), ev("Readiness", "steady_4", 845.0)) == {"H10", "H12"},         "steady 실패는 straddling으로 흡수되지 않는다"
+
+
+def test_judge_reports_the_straddling_row_and_a_ready_transition_makes_the_trial_fail():
+    result = clean_result()
+    result["probe_events"].append(ev("Readiness", "transition_straddling_4", 850.0))
+    a = cal.judge_v2(result)
+    ts = a["transition_straddling"]
+    assert a["run_outcome"] == "PASS" and (ts["count"], ts["ready_transition"], ts["restart"]) == (1, False, False)
+    assert ts["not_a_profile_failure"] is True and "Endpoint 유지" in ts["endpoint_impact"]
+    assert "steady" not in json.dumps(a["conditions"]["C3_no_steady_probe_failure"], ensure_ascii=False).replace("steady 구간", "")
+    result["hard_fail"] = {"code": "H2", "detail": "Ready 전이"}
+    a = cal.judge_v2(result)
+    assert a["run_outcome"] == "FAIL" and a["transition_straddling"]["ready_transition"] is True
+    assert a["transition_straddling"]["not_a_profile_failure"] is False and "있음" in a["transition_straddling"]["endpoint_impact"]
+
+
+EVIDENCE = cal.REPO_ROOT / "docs" / "design" / "evidence" / "network-tolerant-calibration"
+V2_RUNS = ["calibration-network-tolerant-calib-net-tolerant-20260919t135919z.json",
+           "calibration-network-tolerant-calib-net-tolerant-20260919t142045z.json"]
+
+
+@pytest.mark.parametrize("name", V2_RUNS)
+def test_reanalysis_of_the_two_v2_runs_classifies_their_stage4_readiness_failure_as_transition_straddling(name):
+    result = json.loads((EVIDENCE / name).read_text(encoding="utf-8"))
+    original = [e["segment"] for e in result["probe_events"] if e["kind"] == "Readiness" and e["segment"] != "shutdown"]
+    assert original == ["teardown_4"], "원본 분류는 이벤트 시각만 본 결과다(원본 JSON은 수정하지 않는다)"
+    again = cal.reanalyze(result)
+    kept = [e for e in again["probe_events"] if e["kind"] == "Readiness" and e["segment"] != "shutdown"]
+    assert [e["segment"] for e in kept] == ["transition_straddling_4"] and kept[0]["ambiguous"] is False
+    deleted = cal.timeline_from_iso(result["timeline"])["stages"][3]["delete_request"]
+    assert kept[0]["probe_start_est"] < deleted < kept[0]["t_pc"], "추정 probe 실행 구간이 CR 삭제 요청 시각을 가로지른다"
+    a = again["analysis"]
+    assert a["run_outcome"] == "PASS" and a["failed_conditions"] == []
+    ts = a["transition_straddling"]
+    assert (ts["count"], ts["ready_transition"], ts["restart"], ts["not_a_profile_failure"]) == (1, False, False, True)
+    assert a["probe_event_counts"]["transition_straddling_4/Readiness"] == 1 and not any(
+        k.startswith(("steady_", "teardown_")) for k in a["probe_event_counts"])
+    assert result["analysis"]["run_outcome"] == "PASS" and result["probe_events"][-4]["segment"] != "transition_straddling_4"
+
+
+def test_reanalyze_cli_reads_the_saved_json_only_and_writes_a_separate_derived_file(tmp_path, capsys):
+    source = EVIDENCE / V2_RUNS[0]
+    before = source.read_bytes()
+    assert cal.main(["--reanalyze", str(source), "--output-dir", str(tmp_path)], deps_factory=boom) == 0
+    out = capsys.readouterr().out
+    assert "transition_straddling: 1건" in out and "Ready 전이 없음" in out and "restart 없음" in out
+    (derived,) = list(tmp_path.glob("reanalysis-transition-straddling-*.json"))
+    assert json.loads(derived.read_text(encoding="utf-8"))["analysis"]["transition_straddling"]["count"] == 1
+    assert source.read_bytes() == before, "원본 증거 JSON은 그대로"
 
 
 # ---- I. 어댑터 duration·결과 파일 구조적 제외 ----------------------------------------------------
