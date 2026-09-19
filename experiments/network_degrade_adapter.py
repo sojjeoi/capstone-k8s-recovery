@@ -66,7 +66,11 @@ STAGE_RECOVERY_TIMEOUT_SEC = 30  # 삭제 요청 후 실제 소멸(recover) 확�
 CLEANUP_VERIFY_TIMEOUT_SEC = 30
 
 
-def create_network_chaos(cr_name: str, run_id: str, arm: str, target_pod_name: str, stage: dict) -> None:
+def create_network_chaos(cr_name: str, run_id: str, arm: str, target_pod_name: str, stage: dict,
+                         duration: Optional[str] = None) -> None:
+    """duration(예: "160s")을 주면 Chaos Mesh가 그 시간 뒤 스스로 복구한다 - 하니스가 죽어도 지연이 남지
+    않게 하는 안전망(calibrate_network_tolerant_probe.py가 씀). 기본 None이면 본문이 그대로라서 기존
+    trial 동작(명시적 삭제 전까지 유지)은 바뀌지 않는다."""
     load_kube_config()
     body = {
         "apiVersion": f"{CHAOS_GROUP}/{CHAOS_VERSION}",
@@ -86,6 +90,8 @@ def create_network_chaos(cr_name: str, run_id: str, arm: str, target_pod_name: s
             "delay": {"latency": stage["latency"], "jitter": stage["jitter"]},
         },
     }
+    if duration is not None:
+        body["spec"]["duration"] = duration
     client.CustomObjectsApi().create_namespaced_custom_object(
         CHAOS_GROUP, CHAOS_VERSION, NAMESPACE, CHAOS_PLURAL, body)
 
