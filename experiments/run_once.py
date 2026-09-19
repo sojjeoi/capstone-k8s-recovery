@@ -56,6 +56,8 @@ from typing import Callable, Optional
 
 import requests
 
+import reconcile_audit
+
 RESULTS_DIR = Path(__file__).parent / "results"
 RECOVERY_POLICY_URL = "http://localhost:8080"  # 로컬 실행 전제 - kubectl port-forward -n vllm-serving svc/recovery-policy 8080:8080
 ADMIN_TIMEOUT_SEC = 10
@@ -64,6 +66,15 @@ INJECTION_STARTED_TIMEOUT_SEC = 30
 QUIESCENCE_TIMEOUT_SEC = 60
 QUIESCENCE_POLL_SEC = 3
 BASELINE_TIMEOUT_SEC = 120  # 주입 전 baseline 관찰 단계 상한(2026-09-18 추가) - 이 안에 조건이 안 채워지면 invalid_run
+# trial 종료 시 감사 필드(Git push 완료) 회수의 bounded wait(2026-09-19 추가) - 넘기면
+# audit_status=pending/failed로 남기고 그대로 진행한다(Git 지연이 outcome/action을 바꾸지 않음).
+# 나중에 reconcile_audit.py로 다시 채울 수 있다.
+AUDIT_WAIT_SEC = 20
+AUDIT_POLL_SEC = 2
+# 탐지는 됐는데 판정이 아직 기록 전(recovery-policy가 process_signal 진행 중 - 예: promote()의
+# CLI 호출·selector 검증)인 순간에 trial이 끝난 경우 판정이 확정되길 잠시 기다린다.
+STATE_SETTLE_SEC = 10
+STATE_SETTLE_POLL_SEC = 1
 
 
 class TrialState(str, Enum):
@@ -386,10 +397,39 @@ class TrialResult:
     t_audit_write: Optional[str] = None
     t_audit_push: Optional[str] = None
     commit_sha: Optional[str] = None
+    # 판정·조치 필드(2026-09-19 정정) - 예전엔 run_once.py 어디서도 대입하지 않아 항상
+    # 기본값이었다(proposed 파일럿에서 실제 promotion이 검증까지 됐는데도
+    # detected=false/action="none"으로 남아 발견). 이제 non-native trial은 trial 종료 시
+    # (context clear 전) recovery-policy의 authoritative 상태에서 회수해 채운다 -
+    # judgment_source="live_state". native는 recovery-policy 미개입이라 기본값 그대로
+    # (detected=false, action="none", 나머지 null). 과거 trial은 reconcile_audit.py가
+    # 감사기록으로 보완하고 judgment_source="audit_reconcile" + reconciliation에
+    # provenance(원래 값 포함)를 남긴다.
+    #   detected: 현재 run의 유효 신호가 idempotency/stale/run_id 검사를 통과했는가
+    #   detection_source: 최초 유효 탐지의 경로("predictive"/"reactive")
+    #   detector: 그 탐지의 실제 source("isolation_forest"/"fixed_threshold"/"alertmanager")
+    #   action/decision_outcome/idempotency_key: primary 판정(실행된 조치 > 최초 유효 탐지의
+    #     판정, skipped_duplicate 제외 - 계약서 §5.6)
+    #   promotion_verified: promotion을 실행했을 때의 selector 검증 결과(실행 안 했으면 null)
     detected: bool = False
     detection_source: Optional[str] = None
+    detector: Optional[str] = None
     action: str = "none"
+    decision_outcome: Optional[str] = None
+    idempotency_key: Optional[str] = None
     promotion_verified: Optional[bool] = None
+    judgment_source: Optional[str] = None
+    # 비동기 감사 필드는 정책 결과와 분리한다(2026-09-19) - t_audit_write/t_audit_push/
+    # commit_sha의 원천은 recovery-policy의 outbox/audit 상태이고, Git 지연·실패는
+    # outcome이나 실제 action을 바꾸지 않고 audit_status로만 남는다.
+    #   audit_status: "complete" | "pending" | "failed" | "not_applicable"(탐지·판정이
+    #     없어 감사기록 대상 아님) | null(native 또는 아직 시도 안 함)
+    #   미완료(pending/failed)면 t_audit_push/commit_sha는 null 유지 + audit_status_reason.
+    audit_status: Optional[str] = None
+    audit_status_reason: Optional[str] = None
+    audit_record_id: Optional[str] = None  # 선택된 primary 감사기록의 record_id
+    audit_reconciled_at: Optional[str] = None
+    reconciliation: Optional[dict] = None  # reconcile_audit.py가 과거 trial을 보완할 때만 채움(provenance)
     outcome: Optional[str] = None
     injection_valid: bool = False
     probe_valid: bool = False
@@ -512,20 +552,33 @@ def _clear_experiment_context(run_id: str, arm: str) -> None:
     resp.raise_for_status()
 
 
-def _get_experiment_timing(arm: str) -> Optional[dict]:
-    """t_detection/t_api_request의 authoritative source(2026-09-19 추가) -
-    recovery-policy가 신호를 수락하거나 promotion을 시도한 실제 시각을
-    process_signal() 내부에서 동기적으로 기록해둔 admin 엔드포인트를 읽는다.
-    detector 프로세스 stdout이나 비동기 Git 감사기록(git_client.py)은
-    지연·실패가 있어도 그 함수의 반환을 막지 않게 설계돼 있어 timestamp
-    원천으로 쓸 수 없다(지시) - 이 엔드포인트 값만 신뢰한다. native는
-    recovery-policy 자체가 안 떠있으므로(계약서 §1) 호출하지 않고 None -
-    다른 admin 헬퍼들과 동일한 관례."""
+def _get_experiment_state(arm: str, settle_sec: float = STATE_SETTLE_SEC,
+                          poll_sec: float = STATE_SETTLE_POLL_SEC) -> Optional[dict]:
+    """t_detection/t_api_request와 판정·조치 필드(detected/detection_source/detector/
+    action/decision_outcome/idempotency_key/promotion_verified)의 authoritative
+    source(2026-09-19 추가, 판정 필드는 같은 날 확장) - recovery-policy가 신호를 수락하거나
+    promotion을 시도한 실제 사건을 process_signal() 내부에서 동기적으로 기록해둔 admin
+    엔드포인트를 읽는다(경로는 처음 만든 /timing 그대로). detector 프로세스 stdout이나
+    비동기 Git 감사기록(git_client.py)은 지연·실패가 있어도 그 함수의 반환을 막지 않게
+    설계돼 있어 원천으로 쓸 수 없다(지시) - 이 엔드포인트 값만 신뢰한다. native는
+    recovery-policy 자체가 안 떠있으므로(계약서 §1) 호출하지 않고 None - 다른 admin
+    헬퍼들과 동일한 관례.
+
+    탐지는 됐는데 판정(decision_outcome)이 아직 없는 상태는 recovery-policy가 그 신호를
+    처리하는 도중(promote() 진행 중 등)이라는 뜻이다 - 이 순간을 그대로 기록하면 실제로는
+    조치가 나가는 중인데 action="none"으로 남으므로 settle_sec 안에서 확정될 때까지
+    기다린다. 그래도 안 끝나면 마지막 값을 그대로 돌려주고 호출자가 notes에 남긴다."""
     if arm == "native":
         return None
-    resp = requests.get(f"{RECOVERY_POLICY_URL}/admin/experiment-run/timing", timeout=ADMIN_TIMEOUT_SEC)
-    resp.raise_for_status()
-    return resp.json()
+    deadline = time.monotonic() + settle_sec
+    while True:
+        resp = requests.get(f"{RECOVERY_POLICY_URL}/admin/experiment-run/timing", timeout=ADMIN_TIMEOUT_SEC)
+        resp.raise_for_status()
+        state = resp.json()
+        in_flight = bool(state.get("detected")) and state.get("decision_outcome") is None
+        if not in_flight or time.monotonic() >= deadline:
+            return state
+        time.sleep(poll_sec)
 
 
 def run_once(
@@ -534,6 +587,9 @@ def run_once(
     probe_ready_timeout_sec: float = PROBE_READY_TIMEOUT_SEC,
     injection_started_timeout_sec: float = INJECTION_STARTED_TIMEOUT_SEC,
     baseline_timeout_sec: float = BASELINE_TIMEOUT_SEC,
+    audit_wait_sec: float = AUDIT_WAIT_SEC,
+    audit_poll_sec: float = AUDIT_POLL_SEC,
+    state_settle_sec: float = STATE_SETTLE_SEC,
     detector: Optional[Detector] = None,
     run_id: Optional[str] = None,
     is_pilot: bool = False,
@@ -786,24 +842,46 @@ def run_once(
         # null로 남기지 않고 이 trial을 명시적으로 invalid_run 처리한다 -
         # 단, 이미 다른 사유로 invalid_run이 확정된 trial의 기존 사유는
         # 덮어쓰지 않는다(더 구체적인 원인을 보존).
+        #
+        # 같은 응답에서 판정·조치 필드(detected/detection_source/detector/action/
+        # decision_outcome/idempotency_key/promotion_verified)도 함께 회수한다
+        # (2026-09-19) - 예전엔 이 필드들을 채우는 코드가 없어 항상 기본값이었다.
+        # detected는 기본값을 유지하지 않고 권위 상태에서 채운다. 조회 실패·run_id
+        # 불일치는 위 timing과 같은 규칙(invalid_run)이다 - 이때 judgment_source는
+        # null로 남아 "권위 있는 값이 아님"을 표시한다.
+        authoritative_state = None
         if arm != "native" and context_registered:
             try:
-                timing = _get_experiment_timing(arm)
-                if timing is not None and timing.get("run_id") == run_id:
-                    result.t_detection = timing.get("t_detection")
-                    result.t_api_request = timing.get("t_api_request")
+                state = _get_experiment_state(arm, settle_sec=state_settle_sec)
+                if state is not None and state.get("run_id") == run_id:
+                    authoritative_state = state
+                    result.t_detection = state.get("t_detection")
+                    result.t_api_request = state.get("t_api_request")
+                    result.detected = bool(state.get("detected"))
+                    result.detection_source = state.get("detection_source")
+                    result.detector = state.get("detector")
+                    result.action = state.get("action") or "none"
+                    result.decision_outcome = state.get("decision_outcome")
+                    result.idempotency_key = state.get("idempotency_key")
+                    result.promotion_verified = state.get("promotion_verified")
+                    result.judgment_source = "live_state"
+                    if result.detected and result.decision_outcome is None:
+                        result.notes += (
+                            f"trial 종료 시점에 판정이 {state_settle_sec}초 안에 확정되지 않음"
+                            f"(recovery-policy가 신호를 처리하는 도중) - action/decision_outcome은 미확정 | "
+                        )
                 elif result.outcome != "invalid_run":
                     result.outcome = "invalid_run"
                     result.invalid_reason = (
                         "recovery-policy에 이 run_id의 experiment context가 없음 - "
-                        "t_detection/t_api_request 회수 불가"
+                        "t_detection/t_api_request 및 판정·조치 필드 회수 불가"
                     )
-                    result.notes += "timing 조회 결과 run_id 불일치 또는 context 없음 | "
+                    result.notes += "상태 조회 결과 run_id 불일치 또는 context 없음 | "
             except Exception as e:
                 if result.outcome != "invalid_run":
                     result.outcome = "invalid_run"
-                    result.invalid_reason = f"recovery-policy timing 엔드포인트 조회 실패: {e}"
-                result.notes += f"t_detection/t_api_request 회수 실패 - {e} | "
+                    result.invalid_reason = f"recovery-policy 상태(timing) 엔드포인트 조회 실패: {e}"
+                result.notes += f"t_detection/t_api_request/판정 필드 회수 실패 - {e} | "
 
         # stage 분류(2026-09-18 추가) - cleanup()으로 pod가 삭제되기 전,
         # injector가 아직 살아있는 이 시점에 수행한다. classify_stage()
@@ -870,6 +948,37 @@ def run_once(
         result.t_run_end = _now()
         result.state = _FINAL_STATE_BY_OUTCOME.get(result.outcome, result.state).value
         _write_result(result, results_dir)
+
+        # 비동기 감사 필드 회수(2026-09-19 추가) - 정책 결과(위에서 이미 확정·기록됨)와
+        # 분리된 단계다. t_audit_write/t_audit_push/commit_sha의 원천은 recovery-policy의
+        # 기존 outbox/audit 상태이고, Git push 완료를 기다리도록 recovery 실행 경로를
+        # 바꾸지 않았다(git_client.enqueue는 파일 기록+큐잉만). 여기서는 cleanup이
+        # 끝난 뒤 짧은 bounded wait만 하고, 못 끝나면 audit_status=pending/failed와
+        # 사유를 남기고 null을 유지한다 - 어떤 경우에도 outcome/action을 바꾸거나
+        # invalid_run/HarnessCorrupted로 번지지 않는다(예외도 삼킴). 못 끝낸 건 나중에
+        # reconcile_audit.py로 다시 채울 수 있다. 판정이 있었을 때만(실제로 감사기록이
+        # 생겼어야 할 때만) 기다린다 - 없으면 not_applicable로 바로 끝.
+        if authoritative_state is not None:
+            try:
+                if not result.detected:
+                    result.audit_status = "not_applicable"
+                    result.audit_status_reason = "탐지·판정이 없어 감사기록 대상 아님"
+                else:
+                    audit, _ = reconcile_audit.wait_for_primary_audit(
+                        run_id, result.idempotency_key, result.decision_outcome,
+                        timeout_sec=audit_wait_sec, poll_sec=audit_poll_sec, base_url=RECOVERY_POLICY_URL,
+                    )
+                    result.t_audit_write = audit["t_audit_write"]
+                    result.t_audit_push = audit["t_audit_push"]
+                    result.commit_sha = audit["commit_sha"]
+                    result.audit_status = audit["audit_status"]
+                    result.audit_status_reason = audit["audit_status_reason"]
+                    result.audit_record_id = audit["audit_record_id"]
+                    result.audit_reconciled_at = _now()
+            except Exception as e:
+                result.audit_status = "pending"
+                result.audit_status_reason = f"감사 필드 회수 중 예외(outcome에는 영향 없음): {type(e).__name__}: {e}"
+            _write_result(result, results_dir)
 
     if critical_failures:
         result_path = (results_dir / "pilot" if is_pilot else results_dir) / f"trial-{run_id}.json"

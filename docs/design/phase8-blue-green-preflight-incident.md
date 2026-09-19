@@ -3438,3 +3438,171 @@ clear(`{"current":null}`), 양쪽 Node Ready, recovery-policy pod
 재시작 0회(154분 무중단), 신규 active pod 재시작 0회 전부 확인.
 `proposed`는 위 절차 안에서 1회만 실행했고, `60회 본 실험으로는
 진행하지 않는다`(지시 그대로).
+
+## 37. 판정·조치 필드 전파 수정 + 비동기 감사 필드 분리 + `proposed`
+파일럿 보완 (2026-09-19)
+
+`load_ramp` 3-arm 파일럿의 기능 검증 완료 승인 후, §36.3에서 발견한
+"`detected`/`action`/`promotion_verified` 등이 `run_once.py`에서 전혀
+기록되지 않음"을 60회 본 실험 전에 수정했다. 실제 `load_ramp` 재실행,
+다른 시나리오 파일럿, 60회 본 실험은 하지 않았다. 중지·실패로 통지된
+백그라운드 port-forward 2건은 재실행하지 않았고(클러스터 최종 상태는
+clean), live smoke에 필요한 port-forward 1개만 새로 열었다가 종료했다.
+
+### 37.1 설계 결정
+
+- **authoritative source = recovery-policy 실시간 상태.** `ExperimentContext`에
+  `detection_source`(`predictive`/`reactive`)·`detector`·`action`·
+  `decision_outcome`·`idempotency_key`를 추가했다. `detected`(=`t_detection`
+  존재)와 `promotion_verified`(=`decision_outcome`에서 파생)는 저장하지
+  않고 조회 시 계산한다(원천 단일화). `process_signal()`은 sync 라우트라
+  스레드풀에서 동시에 돌 수 있어 상태 변경을 전부 락 안에서 하고,
+  `promote()`처럼 오래 걸리는 호출은 락 밖에서 한다.
+- **첫 탐지 정보는 덮어쓰지 않는다**(`t_detection`+`detection_source`+
+  `detector`를 같은 락 안에서 한 번에 확정). **primary 판정**(`action`/
+  `decision_outcome`/`idempotency_key`)은 우선순위 `executed_verified` >
+  `executed_unverified` > 첫 유효 판정, `skipped_duplicate` 불가, 같은
+  등급이면 먼저 기록된 것 - 그래서 실행된 조치가 observe-only·skip
+  기록보다 우선하고, 실행 뒤의 cooldown-skip이 그것을 내리지 못한다.
+- **상태 기록을 감사 큐잉보다 먼저 한다**(`_finish`): 상태 갱신은 실패할 수
+  없는 인메모리 동작이고 `enqueue`는 파일 I/O라 실패할 수 있다 - 순서가
+  반대면 `enqueue` 예외 시 이미 실행된 promotion이 상태에서 빠진다.
+- **기존 경로 `GET /admin/experiment-run/timing`을 상위 호환으로 확장**
+  (URL 유지, 기존 3필드 무변경). 신규 읽기 전용 `GET /admin/audit/{run_id}`가
+  audit-log 레코드에 outbox 전송 상태를 조인해 돌려준다(run_id 형식 검증 +
+  audit-log 밖 경로 차단).
+- **감사기록 `evidence`에 `experiment_run_id`/`detector`를 남긴다.** 이유:
+  (a) Alertmanager 경로의 idempotency key(`{fingerprint}:{startsAt}`)에는
+  run_id가 없어, 지시의 "선택한 기록의 idempotency key에 run_id가 정확히
+  포함"을 문자 그대로 적용하면 **반응형 fallback 기록이 전부 primary
+  자격을 잃는다**(회귀 테스트 목록의 "reactive fallback"과 모순). 그래서
+  자격 조건을 "예측 경로는 key가 `{run_id}:`로 시작(접두어+콜론 - `run-1`이
+  `run-11`을 가져가지 않게), 반응 경로는 `evidence.experiment_run_id`
+  정확히 일치, 어느 근거도 없으면 primary 후보에서 제외(fail-closed)"로
+  구현했다(계약서 §5.6). **이 해석은 지시 원문과 문자 그대로는 달라 승인을
+  요청했고 2026-09-19에 승인됐다** - 승인 시 "경로별 근거는 서로 대체되지
+  않는다"를 엄격히 적용하기로 확정했다(예측 기록이 evidence만, 반응 기록이 key
+  접두어만 맞는 경우는 인정 안 함; `record_attribution()`을 이에 맞게 조였다).
+  (b) §34.6에서 별도 발견으로 남겨둔 "detector 태그가 감사기록 어디에도 안
+  남음"도 함께 해소된다.
+- **감사 필드 분리**: recovery 실행 경로는 Git 완료를 기다리지 않는다(기존
+  그대로). `run_once()`는 cleanup·context clear **뒤** bounded wait(20초/2초)로
+  primary 감사기록이 authoritative 판정과 일치한 채 push까지 끝나길 기다리고,
+  못 끝나면 `audit_status=pending|failed`+사유, `t_audit_push`/`commit_sha`는
+  null 유지 - outcome/action 불변, `invalid_run`/`HarnessCorrupted`로도 번지지
+  않는다(감사 조회 실패조차 pending). 상태 조회 실패는 기존 timing과 동일하게
+  `invalid_run`.
+- **판정이 "처리 중"인 순간 trial이 끝나는 경우**: 탐지(`t_detection`)는 있는데
+  `decision_outcome`이 아직 없으면(recovery-policy가 `promote()` 진행 중) 그대로
+  기록하면 조치가 나가는 중인데 `action="none"`이 된다 - 최대 10초 기다려
+  확정 후 기록하고, 그래도 미확정이면 추측하지 않고 `notes`에 남긴다.
+- **같은 run_id 재등록이 기록된 상태를 지우던 잠재 결함 수정**(새 ctx로 통째
+  교체) + 등록 요청 본문의 판정 필드는 무시(process_signal만 채울 수 있음).
+
+### 37.2 구현·테스트
+
+변경 파일: `recovery-policy/main.py`·`git_client.py`(`read_audit`),
+`experiments/run_once.py`(`TrialResult` 필드 9개·상태 회수·bounded wait),
+신규 `experiments/reconcile_audit.py`(선택 규칙·감사 필드 계산·idempotent CLI를
+`run_once.py`와 공유), `experiments/collect_metrics.py`, `.gitignore`(원본 백업
+`*.pre-reconcile.bak`). 회귀 테스트 50개 추가 - `recovery-policy/test_main.py`
+12(예측 promotion 성공/반응 fallback promotion/observe-only/미탐지/중복 후 첫 값
+보존/실행 조치 우선+첫 탐지 유지/unverified/다른 run_id·stale 배제/clear 후 다음
+trial 격리/재등록 보존+위조 필드 무시/감사 조회), `test_reconcile_audit.py` 17
+(primary 선택 규칙 전부(경로별 귀속 엄격 적용 포함), detector 추론 pilot 한정, 감사 상태 4종, 과거 trial 보완+provenance+원본 보존,
+idempotency, push pending 후 재조정, audit 실패, 귀속 없는 기록 제외, native,
+bounded wait), `test_run_once.py` 13(위 시나리오의 run_once 통합 + 회수가
+context clear 전, 미확정 판정 대기, 감사 조회 실패, 다음 trial 격리, native
+기본값), `test_collect_metrics.py` 8. `experiments`+`recovery-policy` 통합
+오프라인 스위트 **276 passed**(이전 226), 4개 테스트 파일은 직접 실행(`__main__`)도
+전부 통과.
+
+### 37.3 배포
+
+워커에서 §34.2와 동일 절차로 재빌드(`/tmp/recovery-policy-build-20260919b`,
+17개 파일, 의존성 레이어 캐시 재사용) -> `ctr import` -> `rollout restart`.
+이미지 `sha256:634e974e...` -> `sha256:8e19c41b4e106ecbfaf5fd25262ee5ee1eefe77a59045f7de02db55235d3270e`,
+새 pod `recovery-policy-6976894d79-gtrfl` RESTARTS 0, `/healthz`·`/admin/quiescent`·
+`/admin/experiment-run` 정상, 신규 상태·감사 엔드포인트 응답 확인. **재시작 후에도
+과거 proposed 파일럿의 감사기록 2건이 PVC에서 그대로 조회됨**(`ec8d6b5d`
+executed_verified·`16c8f08f`, `418c665a` skipped_duplicate·`39ace83b`).
+
+### 37.4 no-action live smoke (`test_live_no_action_judgment_and_audit_fields_end_to_end`)
+
+**안전 조건**: 실행 직전 Rollout `Healthy`, `previewSelector==activeSelector`,
+`pauseConditions=[]`, replica가 있는 ReplicaSet 1개, 활성 context 없음 -
+`is_paused_pre_promotion()`이 False라 어떤 신호도 promotion을 낼 수 없다.
+실제 배포된 recovery-policy를 상대로 `run_once(arm=proposed)` 전체 경로(가짜
+injector/prober)를 돌리며 한 trial 안에서 신호 4개를 보냈다(첫 예측 신호 ·
+같은 key의 중복(다른 detector 태그) · 다른 run_id의 예측 신호 · run 시작 이후의
+반응형 alert). `run_id=smoke-judgment-20260919T045405Z`, 5.2초 통과:
+`detected=true`, `detection_source=predictive`, `detector=isolation_forest`(중복의
+`fixed_threshold` 태그·뒤이은 반응 alert가 첫 값을 덮어쓰지 않음), `action=
+observe_only`/`decision_outcome=no_action`/`promotion_verified=null`/
+`t_api_request=null`, `judgment_source=live_state`, `audit_status=complete`(commit
+`8f6c4c1b`), clear 뒤 상태 전부 null(다음 trial 격리). 감사기록은 `[no_action,
+skipped_duplicate, no_action]` 순서로 3건(primary = 첫 기록 `8a6002ac`, evidence
+`{"experiment_run_id":...,"detector":"isolation_forest"}`; 반응 기록은 evidence에
+`experiment_run_id`만), 다른 run은 자기 `-other.jsonl`에만 1건. origin에서 커밋
+`8f6c4c1`·`ae6b8b0`(recovery-policy-bot, 설계된 비동기 감사 커밋)와 위 레코드 내용을
+직접 대조. **smoke 후**: Node 둘 다 Ready·pressure 없음, Rollout `Healthy` 단일
+revision·preview 없음(무변경), recovery-policy·vLLM pod RESTARTS 0, Chaos CR/부하 pod/
+detector 프로세스/experiment context 없음.
+
+### 37.5 `proposed` 파일럿 보완 (재실행 없음)
+
+`pilot-load_ramp-proposed-01-20260918T181524Z`를 `reconcile_audit.py`로 보완
+(dry-run 확인 후 적용, 재조정 시각 `2026-09-19T04:55:13.292359+00:00`).
+primary = `ec8d6b5d-...`(`executed_verified`, commit `16c8f08`), 제외 =
+`418c665a-...`(`skipped_duplicate`, commit `39ace83`, 삭제 없이
+`reconciliation.excluded_records`에 보존).
+
+| 필드 | 보완 전(원본) | 보완 후 |
+|---|---|---|
+| `detected` | false | true |
+| `detection_source` | null | predictive |
+| `detector` | null | isolation_forest (**추론** - 아래) |
+| `action` | none | promote_preview |
+| `decision_outcome` | null | executed_verified |
+| `idempotency_key` | null | `pilot-load_ramp-proposed-01-20260918T181524Z:anomaly_risk` |
+| `promotion_verified` | null | true |
+| `t_audit_write` / `t_audit_push` | null | `2026-09-18T18:22:33.376277+00:00` / `2026-09-18T18:22:35.957036+00:00` |
+| `commit_sha` | null | `16c8f08f4b20399f12e838503078c9f1e43e51e1` (`git rev-parse 16c8f08`과 40자 일치) |
+| `audit_status` / `audit_record_id` | null | complete / `ec8d6b5d-...` |
+| `judgment_source` | null | audit_reconcile |
+
+**원본 증거 보존 확인**: 변경·추가된 키는 위 15개(`reconciliation` 객체 포함)뿐,
+나머지 56개 키와 모든 타임스탬프(`t_injection`/`t_detection`/`t_api_request`/
+`t_slo`/`t_recovery`/`t_run_end`/`t_baseline_ready`/`t_preview_ready`)·`outcome`·
+`state`·stage 분류(`detection_stage`/`action_stage`/`slo_stage`)는 원본과 동일.
+첫 수정 전 원본을 `*.pre-reconcile.bak`으로 바이트 그대로 보존했고, 재실행 시
+`changed=false`, 파일·백업 SHA-256이 그대로임을 확인(idempotent). `reconciliation`에
+보완 전 원래 값(`original_values`)·제외 기록·재조정 시각·추론 출처를 남겼다.
+**`detector`는 감사기록 자체로는 확인 불가**(이 기록은 evidence가 `{}`인
+2026-09-19 이전 기록) - arm 배선값 `detector_process=isolation_forest`와
+`signal_source=anomaly`·key 형식(`{run_id}:anomaly_risk`는 `--run-id`로 뜬 detector만
+만듦)으로 채웠고 그 사실을 `reconciliation.inferred_fields`에 명시했다. **이
+추론은 pilot 한정으로 승인됐다(2026-09-19)** - 표시(`inferred_fields`)는 유지하고,
+앞으로 생성되는 본 실험(`is_pilot=false`) 데이터에는 detector 추론을 허용하지 않는다
+(재조정 도구는 본 실험 데이터의 detector를 추론하지 않고 null로 남긴다, 계약서 §5.5).
+`collect_metrics.py`: 보완 전엔 `t_detection이 있는데 detected=False` 모순으로
+검출됐고, 보완 후엔 이 행의 이슈가 없다(`comparison.csv`에서 `detected=True`/
+`promote_preview`/`executed_verified`/`audit_pending=False`/`timing_anomaly=False`,
+stage 필드는 원본 그대로). 남은 이슈 1건은 이번과 무관한 기존 2026-09-17 pod_kill
+native `prevented` 파일럿. native·fixed_threshold(재실행 recovered) 파일럿 JSON은
+손대지 않았다(기본값이 이미 정확: 각각 recovery-policy 미개입·미탐지) - 새 필드만
+없을 뿐이다.
+
+### 37.6 남은 항목
+
+- `t_decision`/`t_switch`는 여전히 항상 null이다(이번 범위 밖 - 감사기록의
+  `decided_at`은 promotion 실행 **후**에 찍혀 그대로 `t_decision`으로 쓰면 오해의
+  소지가 있어 별도 정의가 필요).
+- 예측 경로 신호의 `detector`가 arm의 `detector_process`와 다른지(잘못된 detector가
+  신호를 냄)는 이제 두 필드로 비교할 수 있지만 자동 검출은 추가하지 않았다(요청
+  범위 밖).
+- 이 변경은 검토·승인(2026-09-19) 후 하나의 논리적 커밋으로 묶어 origin의 smoke 감사
+  커밋(`8f6c4c1`, `ae6b8b0`)과 일반 merge로 통합해 푸시했다(force-push·rebase 없음).
+  클러스터에 배포된 이미지(`8e19c41b…`)는 승인 반영 직전 워킹트리에서 빌드했고, 승인
+  반영분(`reconcile_audit.py`의 경로별 귀속 엄격화·detector 추론 pilot 한정)은
+  실험 클라이언트(로컬) 쪽 변경이라 recovery-policy 이미지와 무관하다.

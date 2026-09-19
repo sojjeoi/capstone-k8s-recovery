@@ -467,6 +467,112 @@ def test_stage_fields_preserved_through_comparison():
     print("OK - stage 3개 필드가 comparison.csv 행까지 보존됨, 미구현 결과는 None으로 안전하게 읽힘")
 
 
+def _fields(issues, run_id=None):
+    return [(i.run_id, i.field) for i in issues if run_id is None or i.run_id == run_id]
+
+
+def _judged_row(**overrides):
+    """non-native trial의 정상적으로 채워진(live_state) 판정·감사 필드 fixture."""
+    fields = dict(
+        arm="proposed", run_id="load_ramp-proposed-01-20260101T000000Z", detected=True,
+        detection_source="predictive", detector="isolation_forest", action="promote_preview",
+        decision_outcome="executed_verified", idempotency_key="load_ramp-proposed-01-20260101T000000Z:anomaly_risk",
+        promotion_verified=True, judgment_source="live_state", audit_status="complete",
+        audit_record_id="rec-1", audit_reconciled_at="2026-01-01T00:03:20+00:00")
+    fields.update(overrides)
+    return _base_row(**fields)
+
+
+def test_judgment_and_audit_fields_preserved_through_comparison():
+    out_rows, issues = build_comparison([_judged_row()])
+    row = out_rows[0]
+    assert row["detector"] == "isolation_forest" and row["detection_source"] == "predictive"
+    assert row["decision_outcome"] == "executed_verified" and row["promotion_verified"] is True
+    assert row["idempotency_key"].endswith(":anomaly_risk") and row["judgment_source"] == "live_state"
+    assert row["audit_status"] == "complete" and row["audit_record_id"] == "rec-1"
+    assert row["t_audit_write"] and row["t_audit_push"] and row["commit_sha"] == "abc123"
+    assert row["audit_pending"] is False and row["timing_anomaly"] is False
+    assert issues == [] or all(i.field not in ("detected", "audit_status") for i in issues), issues
+
+    legacy, _ = build_comparison([_base_row()])  # 새 필드가 아예 없는 과거 결과도 오류 없이 None
+    assert legacy[0]["detector"] is None and legacy[0]["audit_status"] is None
+    print("OK - 새 판정·감사 필드가 comparison 행까지 보존되고 과거 결과도 안전하게 읽힘")
+
+
+def test_t_detection_with_detected_false_is_flagged_for_non_native():
+    row = _judged_row(detected=False)  # 이번에 발견된 실제 회귀: t_detection은 있는데 detected가 기본값
+    _, issues = build_comparison([row])
+    assert (row["run_id"], "detected") in _fields(issues)
+    print("OK - non-native에서 t_detection이 있는데 detected=false면 모순으로 검출")
+
+
+def test_detected_true_without_t_detection_is_flagged():
+    row = _judged_row(t_detection=None)
+    _, issues = build_comparison([row])
+    assert (row["run_id"], "t_detection") in _fields(issues)
+    print("OK - detected=true인데 t_detection이 없으면 모순으로 검출")
+
+
+def test_promote_action_without_t_api_request_or_verification_is_flagged():
+    row = _judged_row(t_api_request=None, promotion_verified=None)
+    _, issues = build_comparison([row])
+    flagged = _fields(issues, row["run_id"])
+    assert (row["run_id"], "t_api_request") in flagged and (row["run_id"], "promotion_verified") in flagged
+    print("OK - action=promote_preview인데 t_api_request/promotion 검증 결과가 없으면 모순으로 검출")
+
+
+def test_unverified_promotion_is_not_a_contradiction():
+    # 실행했지만 selector 검증이 실패한 것(promotion_verified=false)은 "검증 결과 없음"이 아니다
+    row = _judged_row(promotion_verified=False, decision_outcome="executed_unverified")
+    _, issues = build_comparison([row])
+    assert (row["run_id"], "promotion_verified") not in _fields(issues)
+    print("OK - promotion_verified=false는 결과가 있는 것이라 모순이 아님")
+
+
+def test_native_arm_is_not_subject_to_judgment_contradiction_checks():
+    row = _base_row(arm="native", detected=False, t_detection="2026-01-01T00:01:30+00:00")
+    _, issues = build_comparison([row])
+    assert (row["run_id"], "detected") not in _fields(issues)
+    print("OK - native는 recovery-policy 미개입이라 판정 모순 검사 대상이 아님")
+
+
+def test_audit_pending_is_separate_from_timing_anomaly():
+    row = _judged_row(audit_status="pending", audit_status_reason="Git push 대기 중(outbox status=pushing)",
+                      t_audit_push=None, commit_sha=None)
+    out_rows, issues = build_comparison([row])
+    assert out_rows[0]["audit_pending"] is True
+    assert out_rows[0]["timing_anomaly"] is False, "promotion_verified=true + audit pending은 timing anomaly가 아님"
+    audit_issues = [i for i in issues if i.field == "audit_status"]
+    assert len(audit_issues) == 1 and "timing anomaly 아님" in audit_issues[0].problem
+    assert "promotion 자체는 검증됨" in audit_issues[0].problem
+    assert not [i for i in issues if i.field in ("t_audit_push", "commit_sha")]
+    print("OK - promotion 검증 + audit pending은 timing anomaly가 아니라 audit pending으로 별도 표시")
+
+
+def test_audit_failed_is_flagged_as_pending_category_with_reason():
+    row = _judged_row(audit_status="failed", audit_status_reason="Git push 실패: 403", commit_sha=None, t_audit_push=None)
+    out_rows, issues = build_comparison([row])
+    assert out_rows[0]["audit_pending"] is True
+    assert any("403" in i.problem for i in issues if i.field == "audit_status")
+    print("OK - audit failed도 사유와 함께 audit pending 범주로 표시")
+
+
+def test_unreconciled_legacy_promotion_is_flagged_but_reconciled_one_is_not():
+    legacy = _base_row(arm="proposed", run_id="legacy-proposed-01", detected=False, action="none",
+                       t_audit_write=None, t_audit_push=None, commit_sha=None)
+    # 과거 proposed 파일럿과 같은 상태: 실제 promotion(t_api_request 있음)이 있었는데 판정 필드는 기본값
+    _, issues = build_comparison([legacy])
+    assert ("legacy-proposed-01", "detected") in _fields(issues), "reconcile 전 과거 trial은 모순으로 드러나야 함"
+
+    fixed = _judged_row(run_id="legacy-proposed-01", judgment_source="audit_reconcile",
+                        audit_reconciled_at="2026-09-19T12:00:00+00:00")
+    out_rows, issues = build_comparison([fixed])
+    assert ("legacy-proposed-01", "detected") not in _fields(issues)
+    assert out_rows[0]["judgment_source"] == "audit_reconcile"
+    assert out_rows[0]["audit_reconciled_at"] == "2026-09-19T12:00:00+00:00"
+    print("OK - reconcile 전 과거 trial은 모순으로 검출, 보완 후엔 provenance와 함께 정상")
+
+
 if __name__ == "__main__":
     import tempfile
     from pathlib import Path
@@ -505,4 +611,13 @@ if __name__ == "__main__":
     test_slo_version_v3_preserved_through_comparison()
     test_baseline_fields_preserved_through_comparison()
     test_stage_fields_preserved_through_comparison()
+    test_judgment_and_audit_fields_preserved_through_comparison()
+    test_t_detection_with_detected_false_is_flagged_for_non_native()
+    test_detected_true_without_t_detection_is_flagged()
+    test_promote_action_without_t_api_request_or_verification_is_flagged()
+    test_unverified_promotion_is_not_a_contradiction()
+    test_native_arm_is_not_subject_to_judgment_contradiction_checks()
+    test_audit_pending_is_separate_from_timing_anomaly()
+    test_audit_failed_is_flagged_as_pending_category_with_reason()
+    test_unreconciled_legacy_promotion_is_flagged_but_reconciled_one_is_not()
     print("\n모두 통과")

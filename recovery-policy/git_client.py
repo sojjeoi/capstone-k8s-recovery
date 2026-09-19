@@ -136,6 +136,34 @@ def enqueue(signal: NormalizedSignal, record: DecisionRecord) -> None:
     _queue.put((record.record_id, run_id))
 
 
+def read_audit(run_id: str) -> list[dict]:
+    """run_id의 감사기록(audit-log/{run_id}.jsonl)을 outbox 전송 상태와 조인해
+    돌려준다(2026-09-19 추가, 읽기 전용). Phase 8 오케스트레이터가 trial 종료 시
+    t_audit_write/t_audit_push/commit_sha를 "기존 outbox/audit 상태"에서 그대로
+    회수하기 위한 것 - 별도 상태를 새로 만들지 않는다. 기록이 아직 없으면 [].
+    호출자는 신뢰된 오케스트레이터뿐이지만 run_id가 파일 경로가 되므로 audit-log
+    디렉터리 밖을 가리키는 값은 거부한다(main.py가 형식 검증도 함)."""
+    path = AUDIT_LOG_DIR / f"{run_id}.jsonl"
+    if path.resolve().parent != AUDIT_LOG_DIR.resolve():
+        raise ValueError(f"audit-log 밖을 가리키는 run_id: {run_id!r}")
+    if not path.exists():
+        return []
+    with _outbox_lock:
+        outbox = _load_outbox()
+    records = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        entry = outbox.get(record.get("record_id"), {})
+        record["outbox"] = {
+            key: entry.get(key)
+            for key in ("status", "t_audit_write", "t_audit_push", "commit_sha", "attempts", "last_error")
+        }
+        records.append(record)
+    return records
+
+
 # ---- 백그라운드 워커 ----
 
 def _process_batch(items: list[tuple[str, str]]) -> None:

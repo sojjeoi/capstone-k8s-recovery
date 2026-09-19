@@ -153,13 +153,22 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 | `t_slo` | ISO8601 UTC \| null | `outcome=prevented`면 null. `timing_schema_version=v2`부터는 실패가 확정된 **완료 시각**(`sent_at+latency`) 기준 - 요청을 보낸 시각(`sent_at`)이 아니다(2026-09-18 정정 - pod_kill 파일럿에서 `t_slo`가 `t_injection`보다 앞서는 사례 발견, 원인은 전송 시각을 판정 시각으로 오용한 것). |
 | `slo_stage` | str \| null | `t_slo`가 실제로 어느 실험 단계에 속했는지(2026-09-18 추가) - `injector.classify_stage()`가 `ramp.py --summary-out`이 기록한 실제(명목 아님) `stage_start_utc`/`stage_end_utc`로 판정한다. 값은 stage 이름(예: `stage-3-0.20rps`) 또는 `baseline`(첫 stage 시작 전)/`inter_stage_tail`(stage 사이 straggler 대기 구간)/`drain`(마지막 stage 종료 후)/`unknown`(summary fetch·파싱 실패 - 임의 추정 안 함). `t_slo`가 null이거나 어댑터가 `classify_stage` 미구현이면 null(스키마 §6.1 참고) |
 | `t_recovery` | ISO8601 UTC \| null | timeout이면 null |
-| `t_audit_write` | ISO8601 UTC \| null | **(2026-09-19 확인) `run_once.py`가 채우는 코드 자체가 없어 항상 null - §36.3 참고, 60회 본 실험 전 authoritative source 확정 필요** |
-| `t_audit_push` | ISO8601 UTC \| null | **복구시간 계산에 포함 안 함**. 비동기라 trial 종료 시점엔 비어있을 수 있음(§6 reconcile) - **reconcile 단계 자체가 아직 코드로 구현 안 됨(2026-09-19 확인, §36.3)** |
-| `commit_sha` | str \| null | 위와 동일한 이유로 reconcile 단계에서 채워질 수 있음(**단, 그 reconcile 코드가 아직 없음**) |
-| `detected` | bool | **(2026-09-19 확인) `run_once.py`가 대입하는 코드가 없어 항상 기본값(false) - §36.3 참고, 실제 탐지 여부와 무관하게 신뢰 불가** |
-| `detection_source` | enum \| null | `fixed_threshold` \| `isolation_forest` \| `alertmanager` \| `none` — 실제로 무엇이 먼저 반응했는지. **위와 동일하게 항상 null(§36.3)** |
-| `action` | enum | `promote_preview` \| `none`. **위와 동일하게 항상 `"none"`(§36.3)** |
-| `promotion_verified` | bool \| null | `native`는 항상 null. **non-native도 `run_once.py`가 안 채워 항상 null(§36.3)** |
+| `t_audit_write` | ISO8601 UTC \| null | **원천: recovery-policy의 outbox 상태**(2026-09-19 확정, §5.5). 감사기록을 PVC에 동기로 쓴 시각이라 push 전에도 알 수 있으면 채운다. 판정이 없으면(`audit_status=not_applicable`)·native는 null |
+| `t_audit_push` | ISO8601 UTC \| null | **복구시간 계산에 포함 안 함**. 원천은 outbox의 push 완료 시각 - push가 끝나기 전(`audit_status=pending/failed`)엔 null을 유지한다(§5.5) |
+| `commit_sha` | str \| null | 원천은 outbox의 push 후 HEAD SHA - `t_audit_push`와 같은 이유로 push 완료 전엔 null. 선택된 **primary 감사기록**의 것이다(§5.6) |
+| `detected` | bool | **authoritative source: recovery-policy**(2026-09-19 확정, §5.5). 현재 run의 유효 신호가 idempotency/stale/run_id 검사를 통과했는지(= `t_detection`이 찍혔는지). 기본값을 유지하지 않고 trial 종료 시 recovery-policy 상태에서 채운다. native는 항상 false |
+| `detection_source` | enum \| null | **의미 변경(2026-09-19)** - `predictive`(예측 경로 `/signal`) \| `reactive`(Alertmanager fallback) : **최초 유효 탐지의 경로**. 예전 정의("무엇이 먼저 반응했는지" - detector 이름 enum)는 아래 `detector`로 분리했다(이 필드는 그때까지 한 번도 채워진 적이 없어 과거 데이터와의 충돌 없음). 중복·후속 신호로 절대 덮어쓰지 않는다. 미탐지·native는 null |
+| `detector` | str \| null | **신규(2026-09-19)** - 최초 유효 탐지의 **실제 source**: 예측 경로는 신호 payload의 detector 태그(`isolation_forest` \| `fixed_threshold`), 반응 경로는 `alertmanager`. `detector_process`(arm 배선이 "무엇을 띄우려 했는가")와 다른 값이다 - 예측 경로인데 `detector != detector_process`면 잘못된 detector가 신호를 낸 것. 미탐지·native는 null |
+| `action` | enum | `promote_preview` \| `observe_only` \| `none`(2026-09-19 확장) - **정책이 실제로 선택한 조치**(primary 판정의 것, §5.6). `observe_only`는 탐지는 했으나 조치 없이 관찰만 하기로 한 판정. 조치 기록이 없으면(미탐지·rule-out·native) `none` |
+| `decision_outcome` | str \| null | **신규(2026-09-19)** - primary 판정의 결과(`executed_verified` \| `executed_unverified` \| `no_action` \| `skipped_rule_out` \| `skipped_cooldown` \| `skipped_unknown_signal`). `skipped_duplicate`는 primary가 될 수 없어 이 값으로 나오지 않는다. 미탐지·native는 null |
+| `idempotency_key` | str \| null | **신규(2026-09-19)** - primary 판정의 idempotency key(예측 경로는 `{run_id}:{signal_type}`, 반응 경로는 `{fingerprint}:{startsAt}`) |
+| `promotion_verified` | bool \| null | promotion을 **실제로 실행했을 때**의 selector 검증 결과(`rollouts_client.promote()`의 `verified` - active selector가 preview와 일치하는가): `executed_verified`면 true, `executed_unverified`면 false, 실행하지 않았으면 null. native는 항상 null |
+| `judgment_source` | str \| null | **신규(2026-09-19, provenance)** - 위 판정·조치 필드의 출처: `live_state`(trial 종료 시 recovery-policy 실시간 상태에서 회수) \| `audit_reconcile`(판정 필드가 기록되기 전에 만들어진 과거 trial을 `reconcile_audit.py`가 감사기록으로 보완) \| null(native, 또는 상태 조회 실패로 권위 없는 기본값 - 그 trial은 `invalid_run`) |
+| `audit_status` | str \| null | **신규(2026-09-19)** - 비동기 감사 필드의 상태: `complete`(primary 감사기록이 push까지 끝남) \| `pending`(Git push 대기·기록 미확인·조회 실패) \| `failed`(push 실패) \| `not_applicable`(판정이 없어 감사기록 대상 아님) \| null(native). **정책 결과와 분리** - 어떤 값이어도 `outcome`/`action`은 바뀌지 않는다(§5.5) |
+| `audit_status_reason` | str \| null | `pending`/`failed`의 사유(예: `Git push 대기 중(outbox status=pushing)`, outbox `last_error`, `audit 조회 실패: ...`) |
+| `audit_record_id` | str \| null | 선택된 primary 감사기록의 `record_id`(§5.6) |
+| `audit_reconciled_at` | ISO8601 UTC \| null | 감사 필드를 마지막으로 회수·재조정한 시각 |
+| `reconciliation` | object \| null | **신규(2026-09-19, provenance)** - `reconcile_audit.py`가 과거 trial의 판정 필드를 보완했을 때만: `tool`, `source`, `primary_record_id`, `first_detection_record_id`, `excluded_records`(제외된 기록과 사유 - 예: `skipped_duplicate`), `supplemented_fields`, `inferred_fields`(감사기록 자체로는 확인 못 해 추론한 값의 출처), **`original_values`(보완 전 원래 값)**, `reconciled_at` |
 | `outcome` | enum | `prevented` \| `recovered` \| `timeout` \| `invalid_run`. `arm=native`에서 `prevented`가 나오면 그 자체로 이상(§3 마지막 줄) - `collect_metrics.py`가 검출 |
 | `slo_evaluable_at_exit` | bool \| null | `outcome=prevented`로 종료한 시점에 probe가 "위반 없음"을 신뢰할 만큼 유효한 표본을 확보했었는지(2026-09-17 추가). `prevented`가 아니거나 어댑터가 `is_slo_evaluable()`을 구현 안 했으면 null - null은 "검증 안 함"이지 "위반 없음이 확인됨"이 아니다. 본 실험(`is_pilot=false`)의 `prevented`는 이 값이 `true`가 아니면 `collect_metrics.py`가 검증 오류로 취급 |
 | `injection_valid` | bool | 장애가 실제 대상에 적용됐는지 |
@@ -172,7 +181,7 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 
 ### 비동기 감사기록 reconcile
 
-`git_client.py`의 push는 비동기라 trial row를 처음 쓰는 시점엔 `t_audit_push`/`commit_sha`가 비어있을 수 있다. 전체 실험(또는 각 시나리오) 종료 후, recovery-policy의 `outbox.json`을 다시 읽어 각 `run_id`에 대응하는 결과 row에 `t_audit_push`/`commit_sha`를 채워 넣는 **reconcile 단계**를 실험 절차에 명시한다(`collect_metrics.py` 실행 전에 반드시 거침).
+`git_client.py`의 push는 비동기라 trial row를 처음 쓰는 시점엔 `t_audit_push`/`commit_sha`가 비어있을 수 있다. 전체 실험(또는 각 시나리오) 종료 후, recovery-policy의 outbox/audit 상태를 다시 읽어 각 `run_id`에 대응하는 결과 row의 감사 필드를 채워 넣는 **reconcile 단계**를 실험 절차에 명시한다(`collect_metrics.py` 실행 전에 반드시 거침). 2026-09-19부터 이 단계는 `experiments/reconcile_audit.py`(idempotent CLI)로 구현돼 있다 - 상세 규칙은 §5.5/§5.6.
 
 ### 5.1 stage 분석은 참고용이며 본 실험에서 필수가 아니다 (2026-09-18 추가)
 
@@ -207,7 +216,13 @@ GET /admin/experiment-run/timing
 -> {"run_id": str | null, "t_detection": ISO8601 | null, "t_api_request": ISO8601 | null}
 ```
 
-활성 experiment context가 없으면 셋 다 null. `run_once()`는 이 값을
+**(2026-09-19 확장, §5.5)** 같은 경로(URL 유지 - `run_once.py`가 이미 쓰는 경로)가 이제
+timing뿐 아니라 판정·조치 필드까지 담는 "현재 실험 상태" 조회다:
+`detected`, `detection_source`, `detector`, `action`, `decision_outcome`,
+`idempotency_key`, `promotion_verified`가 추가됐고(위 스키마 표의 정의 그대로),
+기존 세 필드는 무변경이라 이전 클라이언트와 호환된다.
+
+활성 experiment context가 없으면 전부 null. `run_once()`는 이 값을
 읽을 때 응답의 `run_id`가 자기 trial의 `run_id`와 일치하는지 반드시
 확인한다 - 불일치(레이스, 등록 유실 등)나 조회 자체의 실패(네트워크
 오류 등)는 조용히 null로 남기지 않고 **명시적으로 `invalid_run`**
@@ -249,6 +264,100 @@ preview 준비가 **성공**했는데 detector가 끝내 promote를 안 하고 t
 `cleanup_unpromoted_preview()`가 activeSelector가 여전히 준비 전
 값이면(=promote 안 됨) 그 preview만 abort하고 복원을 재확인한다.
 이미 promote됐으면(activeSelector가 전환됨) 손대지 않는다(§35.8).
+
+### 5.5 판정·조치 필드와 비동기 감사 필드의 전파 (2026-09-19 추가)
+
+**배경**: `detected`/`detection_source`/`action`/`promotion_verified`/`t_audit_*`/`commit_sha`는
+스키마에만 있고 `run_once.py`가 채우는 코드가 없어, 실제 promotion이 검증까지 된
+`proposed` 파일럿(§36)의 결과 JSON에도 기본값(`detected=false`, `action="none"`)으로만
+남았다. 아래 원칙으로 전파를 고정한다.
+
+**1. 판정·조치 필드의 authoritative source는 recovery-policy다.** `process_signal()`이
+`_current_experiment`(§5.2)에 동기로 기록한다(스레드풀에서 동시 처리될 수 있어 락 안에서):
+- `t_detection` + `detection_source` + `detector`: 현재 run에 속하는 유효 신호가
+  idempotency/stale/run_id 검사를 **처음 통과한 순간** 한 번에 확정하고 **절대 덮어쓰지
+  않는다**(중복·후속 신호 무관).
+- `action`/`decision_outcome`/`idempotency_key`: primary 판정(§5.6과 같은 우선순위 -
+  실행된 조치 `executed_verified` > `executed_unverified` > 최초 유효 탐지의 판정)만
+  기록한다. `skipped_duplicate`는 절대 primary가 될 수 없고, 같은 등급이면 먼저
+  기록된 것이 유지된다. 즉 실제로 실행된 조치는 observe-only·skip 기록보다 우선하지만
+  (예: 예측 경로가 observe-only로 첫 탐지한 뒤 반응 경로가 promotion을 실행하면
+  `detection_source=predictive`, `action=promote_preview`), 실행된 조치 뒤의
+  observe-only/cooldown-skip 기록이 그것을 내리지 못한다.
+- `detected`(=`t_detection` 존재)와 `promotion_verified`(=`decision_outcome`에서 파생)는
+  저장하지 않고 조회 시 계산한다 - 원천을 하나로 유지한다.
+- 등록 요청 본문의 판정·조치 필드는 무시하고(식별 필드만 옮김), 같은 `run_id` 재등록은
+  이미 기록된 상태를 지우지 않는다(진짜 idempotent).
+
+**2. 회수.** `run_once()`는 trial `finally`에서 **context clear 전에** §5.2 엔드포인트를
+읽어 `TrialResult`에 기록한다(`judgment_source="live_state"`). 조회 실패·`run_id` 불일치는
+timing과 동일하게 `invalid_run`이고 `judgment_source`는 null로 남는다(권위 없는 기본값
+표시). 탐지는 됐는데 판정이 아직 없는 순간(recovery-policy가 `promote()` 진행 중)에
+trial이 끝났다면 확정될 때까지 최대 10초 기다린다 - 그래도 미확정이면 추측하지 않고
+`notes`에 남긴다. native는 recovery-policy를 조회하지 않고 `detected=false`,
+`action="none"`, 나머지는 전부 null이다(§1).
+
+**3. 비동기 감사 필드는 정책 결과와 분리한다.** 원천은 recovery-policy의 기존
+outbox/audit 상태이고(읽기 전용 `GET /admin/audit/{run_id}` = audit-log 레코드 + outbox
+전송 상태 조인), recovery 실행 경로는 Git 완료를 기다리지 않는다(`git_client.enqueue`는
+파일 기록+큐잉만). `run_once()`는 cleanup·context clear가 끝난 **뒤** 짧은 bounded wait
+(기본 20초, 2초 간격)로 primary 감사기록(§5.6)이 authoritative 판정(`idempotency_key`/
+`decision_outcome`)과 일치하는 채로 push까지 끝나길 기다린다. 못 끝나면 `audit_status=
+pending|failed` + `audit_status_reason`을 남기고 `t_audit_push`/`commit_sha`는 null을
+유지한다 - **Git 지연·실패·감사 조회 실패는 `outcome`이나 실제 `action`을 바꾸지
+않고 `invalid_run`/`HarnessCorrupted`로도 번지지 않는다.** 판정이 없으면 감사 조회 없이
+`not_applicable`. 그때 못 끝낸 것은 나중에 `reconcile_audit.py`로 채운다.
+
+**4. `reconcile_audit.py`(idempotent).** 감사·판정 필드와 provenance만 건드리고
+타임스탬프·`outcome`·`state`는 절대 수정하지 않는다(`collect_metrics.py`의 "원본 수정 금지"
+원칙의 유일한 공인 예외). 첫 수정 전에 원본을 `*.pre-reconcile.bak`으로 한 번만 보존하고
+(`.gitignore` 대상), 같은 입력으로 다시 돌리면 파일을 다시 쓰지 않는다. `judgment_source=
+live_state`인 trial의 판정 필드는 덮어쓰지 않는다(감사 필드만 갱신). 판정 필드가 기록되기
+전의 과거 trial은 primary 감사기록으로 보완하고 `judgment_source="audit_reconcile"` +
+`reconciliation`(제외된 기록·**보완 전 원래 값**·추론한 값의 출처·재조정 시각)을 남긴다.
+`t_detection`은 있는데 귀속 가능한 감사기록이 없으면 판정 필드를 추측해 채우지 않는다.
+`detector`는 2026-09-19 이전 감사기록의 `evidence`에 없다 - 그 경우 **pilot(`is_pilot=true`)에
+한해**(2026-09-19 승인, 과거 proposed 파일럿 1건) trial의 `detector_process`(arm 배선값)로 채우고
+`reconciliation.inferred_fields`에 그 사실을 반드시 명시한다. **앞으로 생성되는 본 실험
+(`is_pilot=false`) 데이터에는 detector 추론을 허용하지 않는다** - live 경로는 recovery-policy
+상태의 값만 쓰고, 재조정 도구도 본 실험 데이터의 detector를 추론하지 않고 null로 남긴다.
+
+**5. `collect_metrics.py`.** 새 필드를 comparison 행에 싣고, 모순을 issue로 남긴다:
+non-native에서 `t_detection`은 있는데 `detected`가 true가 아님(또는 그 반대), `action=
+promote_preview`인데 `t_api_request` 또는 `promotion_verified`가 없음. 비동기 감사
+미완료(`audit_status=pending|failed`, 또는 판정 필드 전파 이전의 과거 promotion trial)는
+**timing anomaly가 아니라** `audit_pending` 컬럼과 별도 issue로 표시한다 -
+`promotion_verified=true`여도 마찬가지다.
+
+### 5.6 primary 감사기록 선택 규칙 (2026-09-19 고정)
+
+한 trial(`run_id`)의 감사기록(`audit-log/{run_id}.jsonl`)이 여러 개일 수 있다(예: 실제
+조치 기록 + 이후 중복 신호의 `skipped_duplicate`, 또는 예측·반응 경로가 각각 남긴 기록).
+결과 row의 `audit_record_id`/`commit_sha`/`t_audit_*`가 가리키는 **primary** 기록은 다음 순서로
+고른다(`reconcile_audit.select_records()`가 유일한 구현이며 `run_once()`와 CLI가 공유):
+
+1. **`skipped_duplicate`는 primary가 될 수 없다.** 제외하되 지우지 않고
+   `reconciliation.excluded_records`에 사유와 함께 보존한다.
+2. **run_id 귀속 근거가 있는 기록만 자격이 있다(2026-09-19 승인).** 근거는 신호 경로(`signal_source`)별로
+   정해져 있고 **서로 대체되지 않는다**. 예측 경로(`anomaly`) 기록은 `idempotency_key`가
+   정확히 `"{run_id}:"` 접두어를 가져야 한다 - 접두어+콜론으로 비교하므로 `run-1`이
+   `run-11`의 기록을 가져가지 않는다. 반응 경로(`alertmanager`)의 key는
+   `{fingerprint}:{startsAt}`라 run_id를 담을 수 없으므로(key에 run_id 포함을 문자 그대로 적용하면
+   반응 경로 기록이 전부 탈락한다), recovery-policy가 2026-09-19부터 감사기록
+   `evidence.experiment_run_id`에 귀속 근거를 남기고(`evidence.detector`도 함께 - 예전엔
+   detector 태그가 감사기록 어디에도 안 남았다) 이 값이 현재 `run_id`와 **정확히 일치**해야 자격을
+   인정한다. 예측 기록이 evidence만 맞는 경우(예: run_id 없이 보낸 예측 신호가 ambient로 태깅된
+   경우 - 이 trial의 detector 프로세스가 보낸 신호가 아니다)나 반응 기록이 key 접두어만 맞는
+   경우, 경로를 알 수 없는 기록, 어느 근거도 없는 기록(다른 run, 2026-09-19 이전의 근거 없는
+   반응 기록)은 **primary 후보에서 제외**(fail-closed)하고 사유를 남긴다.
+3. **우선순위: `executed_verified` > `executed_unverified` > 최초 유효 탐지의 decision 기록.**
+   조치 기록이 없으면 자격 있는 기록 중 audit-log 순서(=recovery-policy 처리 순서)로 가장 먼저인
+   기록이 primary다. 같은 등급이 여럿이면 먼저 기록된 것.
+4. `detection_source`/`detector`는 primary가 아니라 **최초 유효 탐지 기록**(자격 있는 첫
+   기록)의 것이다 - 둘이 다를 수 있다(§5.5 예시).
+5. live 경로에서는 primary가 authoritative 상태의 `idempotency_key`/`decision_outcome`과
+   일치할 때만 `complete`로 인정한다 - 다른 기록이 이미 push됐어도 이 판정의 감사기록이
+   아직 안 생겼으면 `pending`이다.
 
 ## 6. 안전장치 — `run_once()`가 매 trial마다 반드시 함
 
@@ -296,3 +405,4 @@ preview 준비가 **성공**했는데 detector가 끝내 promote를 안 하고 t
 - 2026-09-19: 위 항목의 "부수 발견"(test_main.py patch 누수)을 승인받은 authoritative source·전파 구조와 함께 수정 지시받아 완료했다. `test_main.py`의 module-level `patch(...).start()` 2개를 함수 스코프 autouse fixture(`with patch(...): yield`)로 교체 - 재현 확인 결과 원인이 두 겹이었다(①patch 미해제 ②`test_git_client.py`가 env var를 `git_client` import 전에 설정해야 하는데 다른 파일이 먼저 import하면 `sys.modules` 캐싱으로 무효화됨, pytest 기본 알파벳 수집 순서에서는 ②가 안 걸림). 수정 후 `pytest experiments recovery-policy -q -m "not live_cluster"` 206 passed(§34.1에 before/after 전체 기록). 변경된 recovery-policy를 워커 노드에서 재빌드(`docker build` → `docker save | ctr import`, 기존과 동일한 브리지 방식) 후 `kubectl rollout restart`로 실클러스터에 배포 - RESTARTS=0, `/healthz`·기존 admin API·신규 `GET /admin/experiment-run/timing` 전부 정상. 실제 chaos 없이 조치가 발생할 수 없는 조건(Rollout에 준비된 preview 없음을 사전 확인)에서 timing 신호 전파 smoke 7개 항목(등록 전 null/등록 후 올바른 조회/다른 run_id 배제/유효 신호 시 t_detection 기록/무조치 시 t_api_request null 유지/clear 후 제거/정리 확인) 전부 실측 통과, smoke 후 Node·Rollout·Chaos CR·context·양쪽 pod 재시작 0회까지 재확인. 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §34 참고. 3-arm 파일럿(다음 지시 대상)은 아직 시작하지 않음.
 - 2026-09-19: 3-arm 파일럿을 native → fixed_threshold 순으로 시작 - native는 전 항목 정상 통과(§34.6에서 이미 확정된 감사기록 귀속과 함께), `fixed_threshold` 01회는 preview가 180초 timeout보다 늦게(235초) Ready된 채 `invalid_run`으로 종료됐다(`wrap_injector_with_preview_prep()`의 fail-closed가 설계대로 작동해 chaos 주입·detector 시작 둘 다 없었음). `kubectl describe`+Prometheus 실측으로 근본원인을 확정/관찰/미확정으로 구분했다 - active pod·Node 자원 포화는 배제(확정), preview 자신의 CFS throttle 36회는 관찰됐으나 지연에 대한 정량적 기여는 미확정(§35.2). 방치된 preview/Paused Rollout은 `kubectl argo rollouts abort`와 동일한 효과(`status.abort=true`, `kubernetes` 파이썬 클라이언트로 직접 패치)로 수동 정리하고 active/Node 정상을 재확인했다(§35.3). 재발 방지로 두 가지를 구현했다 - (1) `wrap_injector_with_preview_prep()`에 자동 rollback 추가: 이번 호출이 만든 preview만 대상으로 삼고(activeSelector 사전 스냅샷으로 구분, 예상 밖 변경 시 fail-closed로 아무 것도 안 건드림), rollback 성공은 `TrialInvalid` 그대로, rollback 실패는 `HarnessCorrupted`로 승격(§5.4). (2) preview 준비 timeout을 180초→480초로 상향(§35.5, 기존 실측 176.1/350.3/163.7초 + 이번 235초 근거). `run_once.py`에 `except HarnessCorrupted` 절을 추가해 `injector.prepare()`가 직접 던진 경우도 기존 `critical_failures`→배치중단 경로(§6, action cooldown 초기화 실패와 동일 패턴)를 타도록 했다. 신규 `test_blue_green_prep.py`(6개) + `test_arm_controller.py`/`test_run_once.py` 추가 테스트, 통합 오프라인 스위트 218 passed, 2 deselected(live_cluster). 01회 invalid_run 결과 파일은 원본 그대로 보존하고 `included_in_main_analysis: false`만 추가했다. 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §35 참고. `proposed`는 아직 실행하지 않음 - 클러스터 preflight 재확인 후 `fixed_threshold`를 새 run_id로 재실행할 예정.
 - 2026-09-19: `fixed_threshold`를 새 run_id로 재실행해 `outcome=recovered`로 검증 완료(`t_slo`/`t_recovery`를 원본 raw CSV에 미수정 `slo_judge.py`로 독립 재검증해 기록값과 일치 확인). 검증 중 두 번째 gap을 실측 발견 - preview 준비가 성공했는데 detector가 promote를 안 하면(미탐지 등) trial 종료 후에도 아무도 정리하지 않아 Rollout이 2-revision으로 방치됐다. `blue_green_prep.cleanup_unpromoted_preview()`(신규)를 추가해 `wrap_injector_with_preview_prep()`이 `injector.cleanup`도 감싸도록 일반화 - activeSelector가 준비 전 값 그대로면(=미promote) 그 preview만 abort+복원 재확인, 이미 promote됐으면 손대지 않는다. 회귀 테스트 8개 추가, 오프라인 스위트 226 passed. 이어서 `proposed`를 새 run_id로 1회 실행 - `outcome=recovered`, **이번 세션 최초로 recovery-policy가 실제 promotion을 실행·검증까지 완료**(K8s 이벤트+git 감사기록의 CLI stdout으로 authoritative하게 확인, run_id 정확히 일치, 중복 후속 신호는 idempotency로 정상 skip). stage 분류 3개 전부 원본 stage-boundary CSV와 대조해 정확함을 확인. 이 과정에서 **`detected`/`action`/`promotion_verified`/`detection_source`/`t_audit_write`가 `run_once.py` 어디에도 대입되는 코드가 없어 항상 기본값으로만 남는다는 것**을 발견했다(§5 스키마 표에 경고 추가, §36.3) - 실제 promotion이 검증까지 됐는데도 trial JSON은 `detected=false`/`action="none"`/`promotion_verified=null`로 기록됨. 이번 trial의 SLO 판정 자체에는 영향 없으나(독립 계산), 60회 본 실험의 arm별 탐지율·조치율 비교가 이 필드들로는 불가능하므로 본 실험 전 authoritative source를 확정해 채우는 작업이 필요하다 - 이번 턴 범위 밖이라 코드는 고치지 않고 발견 사실만 기록·공유한다. 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §35.8/§36 참고. `proposed` 1회로 3-arm 파일럿 전체 완료 - 60회 본 실험으로는 진행하지 않음(지시 대기).
+- 2026-09-19: `load_ramp` 3-arm 파일럿의 기능 검증 완료(승인)에 이어, 위에서 발견한 판정·조치·감사 필드 미기록을 본 실험 전에 고쳤다(§5.5/§5.6, 상세는 `docs/design/phase8-blue-green-preflight-incident.md` §37). (1) recovery-policy를 판정·조치 필드의 authoritative source로 확정 - `ExperimentContext`에 `detection_source`(`predictive`/`reactive`)·`detector`·`action`·`decision_outcome`·`idempotency_key`를 락 안에서 기록(첫 탐지 정보는 중복·후속 신호로 덮어쓰지 않음, 실행된 조치가 observe-only·skip 기록보다 우선, `skipped_duplicate`는 primary 불가), `detected`·`promotion_verified`는 저장 없이 조회 시 파생. 같은 run_id 재등록이 기록된 상태를 지우던 잠재 결함도 수정하고 등록 요청 본문의 판정 필드는 무시. (2) `GET /admin/experiment-run/timing`(경로 유지, 상위 호환)이 위 필드를 함께 반환 - `run_once()`가 context clear 전에 회수해 `TrialResult`에 기록, 조회 실패·run_id 불일치는 기존과 동일하게 `invalid_run`, native는 기본값+null. (3) 비동기 감사 필드는 정책 결과와 분리 - 신규 읽기 전용 `GET /admin/audit/{run_id}`(audit-log + outbox 조인), trial 종료 후 bounded wait(20초)만 하고 미완료는 `audit_status=pending|failed`+사유·null 유지(outcome/action 불변), 신규 idempotent `experiments/reconcile_audit.py`로 나중에 재조정(원본 `.pre-reconcile.bak` 보존, provenance·보완 전 원래 값 기록). (4) 감사기록 evidence에 `experiment_run_id`/`detector`를 남기도록 변경(반응 경로 key엔 run_id가 없어 귀속 근거가 필요했고, detector 태그가 감사기록 어디에도 안 남던 문제도 해소) 후 primary 선택 규칙 고정(§5.6). (5) `collect_metrics.py`에 새 필드·모순 검출(non-native `t_detection`↔`detected`, promote 조치의 `t_api_request`/검증 누락)·`audit_pending`(timing anomaly와 분리) 추가. (6) `proposed` 파일럿은 재실행 없이 원본 timestamp·outcome을 보존한 채 감사기록 `16c8f08`(executed_verified)을 primary로, `39ace83`(skipped_duplicate)은 제외·보존으로 보완(`judgment_source=audit_reconcile`, `reconciliation`에 원래 값·제외 기록·추론 출처·재조정 시각). 회귀 테스트 50개 추가(`recovery-policy/test_main.py` 12, `test_reconcile_audit.py` 17, `test_run_once.py` 13, `test_collect_metrics.py` 8), 오프라인 스위트 276 passed(live_cluster 3개는 기본 deselect). 변경된 recovery-policy를 실클러스터에 배포하고(재시작 0회) 실제 `run_once()` 경로로 no-action live smoke(preview 없는 상태에서만 - promotion 불가) 통과. 실제 `load_ramp` 재실행·다른 시나리오 파일럿·60회 본 실험은 하지 않았다.

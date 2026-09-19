@@ -18,7 +18,15 @@ t_detection -> t_decision -> t_api_request -> t_switch, t_slo -> t_recovery는
 시각)를 그 자리에 쓴다.
 
 원본 JSON은 절대 수정하지 않는다(읽기 전용) - trial 결과는 실험의 1차
-증거라 사후 수정 흔적이 남으면 안 된다.
+증거라 사후 수정 흔적이 남으면 안 된다. (유일한 공인 예외는 reconcile_audit.py -
+감사·판정 필드와 provenance만 보완하고 원본을 .pre-reconcile.bak으로 보존한다.
+그렇게 보완된 결과는 judgment_source/audit_reconciled_at 컬럼으로 구분된다.)
+
+판정·조치 필드(2026-09-19): detected/detection_source/detector/action/
+decision_outcome/promotion_verified는 recovery-policy 권위 상태에서 채워진 값이어야
+하고, 그렇지 않은 흔적(t_detection은 있는데 detected=false 등)은
+_check_judgment_consistency()가 모순으로 남긴다. 비동기 감사 미완료(audit_status=
+pending/failed)는 timing anomaly와 분리해 audit_pending 컬럼과 별도 issue로 표시한다.
 
 outcome=prevented는 그 자체로 신뢰하지 않는다(2026-09-17 pod_kill 오판정
 사건 이후 추가) - native arm은 계약서 §3상 애초에 prevented가 나올 수 없고,
@@ -221,6 +229,51 @@ def _check_tolerant_profile_prevented_misleading(row: dict, issues: list) -> Non
             "설정이 열화를 견딘 것으로 오해할 수 있음"))
 
 
+def _check_judgment_consistency(row: dict, issues: list) -> None:
+    """판정·조치 필드끼리의 모순을 검출한다(2026-09-19 추가). 이 필드들은 예전에 어디서도
+    채워지지 않아 실제 탐지·promotion과 무관하게 기본값이었다 - 그 회귀(또는 아직
+    reconcile 안 된 과거 trial)를 조용히 지나치지 않기 위한 검사다. native는
+    recovery-policy 미개입이라 대상이 아니다."""
+    if row.get("arm") == "native":
+        return
+    run_id = row.get("run_id", "?")
+    if row.get("t_detection") is not None and row.get("detected") is not True:
+        issues.append(ValidationIssue(
+            run_id, "detected",
+            f"t_detection이 있는데 detected={row.get('detected')!r} - 판정 필드가 권위 상태에서 채워지지 않음"
+            f"(judgment_source={row.get('judgment_source')!r}, reconcile_audit.py 필요 여부 확인)"))
+    if row.get("detected") is True and row.get("t_detection") is None:
+        issues.append(ValidationIssue(run_id, "t_detection", "detected=true인데 t_detection 없음"))
+    if row.get("action") == "promote_preview":
+        if row.get("t_api_request") is None:
+            issues.append(ValidationIssue(run_id, "t_api_request", "action=promote_preview인데 t_api_request 없음"))
+        if row.get("promotion_verified") is None:
+            issues.append(ValidationIssue(
+                run_id, "promotion_verified", "action=promote_preview인데 promotion 검증 결과(promotion_verified) 없음"))
+
+
+def _check_audit_status(row: dict, issues: list) -> bool:
+    """비동기 감사 미완료(pending/failed)를 timing anomaly와 분리해 표시한다(2026-09-19
+    추가) - Git push가 늦은 것은 실험 측정의 결함이 아니라 감사기록 후처리가 안 끝난 것이다
+    (promotion 자체가 검증됐어도 마찬가지). 반환값은 audit_pending 컬럼. audit_status가
+    아예 없는 과거 trial도 non-native에서 실제 조치가 있었는데 commit_sha가 없으면
+    reconcile 전(pending)으로 본다."""
+    run_id = row.get("run_id", "?")
+    status = row.get("audit_status")
+    unreconciled_legacy = (
+        status is None and row.get("arm") != "native"
+        and row.get("action") == "promote_preview" and row.get("commit_sha") is None
+    )
+    if status not in ("pending", "failed") and not unreconciled_legacy:
+        return False
+    verified = " - promotion 자체는 검증됨" if row.get("promotion_verified") is True else ""
+    reason = row.get("audit_status_reason") or "audit_status 미기록(reconcile 전 과거 trial)"
+    issues.append(ValidationIssue(
+        run_id, "audit_status",
+        f"audit {status or 'unreconciled'}{verified} - timing anomaly 아님, reconcile_audit.py로 재조정 필요: {reason}"))
+    return True
+
+
 def _compute_temporal_relation(ts: dict) -> str:
     """t_slo가 실제 주입 구간에 비해 언제 일어났다고 볼 수 있는지 분류한다
     (2026-09-18 추가 - t_slo가 이제 observed_at 기준이라도, 주입 구간 자체가
@@ -273,6 +326,8 @@ def build_comparison(rows: list) -> tuple:
         _check_prevented_validity(row, issues)
         _check_injection_timestamps_consistency(row, ts, issues)
         _check_tolerant_profile_prevented_misleading(row, issues)
+        _check_judgment_consistency(row, issues)
+        audit_pending = _check_audit_status(row, issues)
         temporal_relation = _compute_temporal_relation(ts)
         restart_chain_observed, probe_isolation_held = _compute_profile_interpretation(row)
 
@@ -306,8 +361,19 @@ def build_comparison(rows: list) -> tuple:
             "state": row.get("state"),
             "detected": row.get("detected"),
             "detection_source": row.get("detection_source"),
+            "detector": row.get("detector"),
             "action": row.get("action"),
+            "decision_outcome": row.get("decision_outcome"),
+            "idempotency_key": row.get("idempotency_key"),
             "promotion_verified": row.get("promotion_verified"),
+            "judgment_source": row.get("judgment_source"),
+            "audit_status": row.get("audit_status"),
+            "audit_status_reason": row.get("audit_status_reason"),
+            "audit_record_id": row.get("audit_record_id"),
+            "audit_pending": audit_pending,
+            "audit_reconciled_at": row.get("audit_reconciled_at"),
+            "t_audit_write": row.get("t_audit_write"),
+            "t_audit_push": row.get("t_audit_push"),
             "injection_valid": row.get("injection_valid"),
             "probe_valid": row.get("probe_valid"),
             "invalid_reason": row.get("invalid_reason"),

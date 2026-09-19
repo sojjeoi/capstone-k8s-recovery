@@ -462,8 +462,260 @@ def test_timing_endpoint_null_when_no_active_experiment():
     if current is not None:
         client.post("/admin/experiment-run/clear", params={"run_id": current["run_id"]})
     timing = client.get("/admin/experiment-run/timing").json()
-    assert timing == {"run_id": None, "t_detection": None, "t_api_request": None}
-    print("OK - 활성 실험이 없으면 timing 엔드포인트가 전부 null")
+    assert timing == {
+        "run_id": None, "t_detection": None, "t_api_request": None, "detected": None,
+        "detection_source": None, "detector": None, "action": None, "decision_outcome": None,
+        "idempotency_key": None, "promotion_verified": None,
+    }
+    print("OK - 활성 실험이 없으면 상태 엔드포인트가 전부 null(2026-09-19 확장 필드 포함)")
+
+
+def _register_run(run_id, arm="proposed", started_at="2026-09-19T10:00:00+00:00", extra=None):
+    ctx = {"run_id": run_id, "scenario": "load_ramp", "arm": arm, "rep": 1, "started_at": started_at}
+    ctx.update(extra or {})
+    assert client.post("/admin/experiment-run", json=ctx).status_code == 200
+
+
+def _state():
+    return client.get("/admin/experiment-run/timing").json()
+
+
+def _clear_run(run_id):
+    client.post("/admin/experiment-run/clear", params={"run_id": run_id})
+
+
+def _predictive_payload(run_id, ts="2026-09-19T10:00:05+00:00", detector="isolation_forest",
+                         signal_type="anomaly_risk"):
+    return {"signal_type": signal_type, "score": -0.05, "timestamp": ts,
+            "experiment_run_id": run_id, "detector": detector}
+
+
+def _alert_payload(fingerprint, alertname="VLLMTargetDown", starts_at="2026-09-19T10:00:07Z"):
+    return {"status": "firing", "alerts": [{
+        "status": "firing", "labels": {"alertname": alertname}, "annotations": {},
+        "startsAt": starts_at, "fingerprint": fingerprint,
+    }]}
+
+
+_PROMOTE_OK = {"method": "cli", "requested": True, "verified": True}
+
+
+def test_state_predictive_promotion_success():
+    _reset_state()
+    _register_run("state-pred-promote-01")
+    before = _state()
+    assert before["run_id"] == "state-pred-promote-01"
+    assert before["detected"] is False
+    assert before["detection_source"] is None and before["action"] is None and before["promotion_verified"] is None
+
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", return_value=_PROMOTE_OK):
+        client.post("/signal", json=_predictive_payload("state-pred-promote-01"))
+
+    state = _state()
+    assert state["detected"] is True
+    assert state["detection_source"] == "predictive"
+    assert state["detector"] == "isolation_forest"
+    assert state["action"] == "promote_preview"
+    assert state["decision_outcome"] == "executed_verified"
+    assert state["idempotency_key"] == "state-pred-promote-01:anomaly_risk"
+    assert state["promotion_verified"] is True
+    assert state["t_detection"] is not None and state["t_api_request"] is not None
+
+    record = mock_enqueue.call_args.args[1]
+    assert record.evidence == {"experiment_run_id": "state-pred-promote-01", "detector": "isolation_forest"}, \
+        "감사기록 evidence에 run 귀속 근거와 detector가 남아야 함"
+    print("OK - 예측 경로 promotion 성공 시 판정·조치 필드가 authoritative 상태에 기록됨")
+    _clear_run("state-pred-promote-01")
+
+
+def test_state_reactive_fallback_promotion():
+    _reset_state()
+    _register_run("state-reactive-promote-01")
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", return_value=_PROMOTE_OK):
+        client.post("/webhooks/alertmanager", json=_alert_payload("fp-reactive-promote"))
+
+    state = _state()
+    assert state["detected"] is True
+    assert state["detection_source"] == "reactive"
+    assert state["detector"] == "alertmanager"
+    assert state["action"] == "promote_preview"
+    assert state["decision_outcome"] == "executed_verified"
+    assert state["idempotency_key"].startswith("fp-reactive-promote:"), \
+        "반응형 alert의 idempotency_key는 fingerprint:startsAt 형식(run_id 없음)"
+    assert state["promotion_verified"] is True
+
+    record = mock_enqueue.call_args.args[1]
+    assert record.evidence == {"experiment_run_id": "state-reactive-promote-01"}, \
+        "run_id를 못 담는 반응형 key 대신 evidence로 귀속 근거를 남겨야 함(detector 태그는 없음)"
+    print("OK - 반응형 fallback promotion도 detection_source=reactive/detector=alertmanager로 기록됨")
+    _clear_run("state-reactive-promote-01")
+
+
+def test_state_observe_only():
+    _reset_state()
+    _register_run("state-observe-01")
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json=_predictive_payload("state-observe-01", detector="fixed_threshold"))
+    state = _state()
+    assert state["detected"] is True
+    assert state["detector"] == "fixed_threshold"
+    assert state["action"] == "observe_only"
+    assert state["decision_outcome"] == "no_action"
+    assert state["promotion_verified"] is None, "조치를 실행하지 않았으면 promotion_verified는 null"
+    assert state["t_api_request"] is None
+    print("OK - observe-only는 탐지·판정만 기록하고 promotion 필드는 null")
+    _clear_run("state-observe-01")
+
+
+def test_state_no_detection_stays_default():
+    _reset_state()
+    _register_run("state-nodetect-01")
+    state = _state()
+    assert state["run_id"] == "state-nodetect-01"
+    assert state["detected"] is False, "신호가 없으면 detected=false(기본값이 아니라 authoritative 상태)"
+    for key in ("detection_source", "detector", "action", "decision_outcome", "idempotency_key",
+                "promotion_verified", "t_detection", "t_api_request"):
+        assert state[key] is None, key
+    print("OK - 미탐지: detected=false, 나머지 판정 필드는 전부 null")
+    _clear_run("state-nodetect-01")
+
+
+def test_state_duplicate_preserves_first_values():
+    _reset_state()
+    _register_run("state-dup-01")
+    payload = _predictive_payload("state-dup-01")
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json=payload)
+        first = _state()
+        dup = client.post("/signal", json={**payload, "detector": "fixed_threshold"})  # 같은 key, 다른 detector 태그
+    assert dup.json()["outcome"] == "skipped_duplicate"
+    assert _state() == first, "중복 신호가 최초 탐지·판정 정보(detector 포함)를 덮어쓰면 안 됨"
+    print("OK - 중복 신호 후에도 최초 값 전부 보존(skipped_duplicate는 primary 아님)")
+    _clear_run("state-dup-01")
+
+
+def test_state_executed_action_takes_priority_over_observe_only_but_keeps_first_detection():
+    _reset_state()
+    _register_run("state-priority-01")
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json=_predictive_payload("state-priority-01"))  # 1) preview 없음 -> observe_only
+    first = _state()
+    assert first["action"] == "observe_only"
+
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", return_value=_PROMOTE_OK):
+        client.post("/webhooks/alertmanager", json=_alert_payload("fp-priority"))  # 2) 이번엔 실제 promotion
+    second = _state()
+    assert second["action"] == "promote_preview"
+    assert second["decision_outcome"] == "executed_verified"
+    assert second["promotion_verified"] is True
+    assert second["idempotency_key"].startswith("fp-priority:")
+    # 최초 유효 탐지 정보는 그대로(먼저 온 건 예측 경로였다)
+    assert second["detection_source"] == "predictive" and second["detector"] == "isolation_forest"
+    assert second["t_detection"] == first["t_detection"]
+
+    # 3) 이후 observe-only/cooldown-skip 기록이 와도 실행된 조치 정보를 내리지 않는다
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", return_value=_PROMOTE_OK):
+        later = client.post("/webhooks/alertmanager", json=_alert_payload("fp-priority-later"))
+    assert later.json()["processed"][0]["outcome"] == "skipped_cooldown"
+    assert _state() == second, "실행된 조치 뒤의 skipped_cooldown 기록이 primary를 대체하면 안 됨"
+    print("OK - 실행된 action이 observe-only보다 우선하고, 최초 탐지 정보는 유지됨")
+    _clear_run("state-priority-01")
+
+
+def test_state_unverified_promotion_reported_as_false():
+    _reset_state()
+    _register_run("state-unverified-01")
+    with patch("main.is_paused_pre_promotion", return_value=True), \
+         patch("main.promote", return_value={"method": "cli", "requested": True, "verified": False}):
+        client.post("/signal", json=_predictive_payload("state-unverified-01"))
+    state = _state()
+    assert state["action"] == "promote_preview"
+    assert state["decision_outcome"] == "executed_unverified"
+    assert state["promotion_verified"] is False, "실행했지만 selector 검증 실패는 null이 아니라 false"
+    print("OK - promotion 실행 + selector 검증 실패는 promotion_verified=false")
+    _clear_run("state-unverified-01")
+
+
+def test_state_excludes_other_run_and_stale_signals():
+    _reset_state()
+    _register_run("state-isolation-01", started_at="2026-09-19T11:00:00+00:00")
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", return_value=_PROMOTE_OK):
+        client.post("/signal", json=_predictive_payload("some-other-run", ts="2026-09-19T11:00:05+00:00"))
+        client.post("/webhooks/alertmanager", json=_alert_payload("fp-stale", starts_at="2026-09-19T10:59:00Z"))
+    state = _state()
+    assert state["detected"] is False
+    assert state["detector"] is None and state["action"] is None and state["decision_outcome"] is None
+    print("OK - 다른 run_id·stale alert는 판정·조치 필드에 전혀 반영되지 않음")
+    _clear_run("state-isolation-01")
+
+
+def test_state_not_carried_into_next_trial_after_clear():
+    _reset_state()
+    _register_run("state-carry-01")
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", return_value=_PROMOTE_OK):
+        client.post("/signal", json=_predictive_payload("state-carry-01"))
+    assert _state()["action"] == "promote_preview"
+    _clear_run("state-carry-01")
+
+    _register_run("state-carry-02", started_at="2026-09-19T12:00:00+00:00")
+    state = _state()
+    assert state["run_id"] == "state-carry-02"
+    assert state["detected"] is False
+    for key in ("detection_source", "detector", "action", "decision_outcome", "idempotency_key",
+                "promotion_verified", "t_detection", "t_api_request"):
+        assert state[key] is None, f"이전 trial의 {key}가 다음 trial로 새면 안 됨"
+    print("OK - context clear 뒤 다음 trial엔 이전 판정·조치 상태가 남지 않음")
+    _clear_run("state-carry-02")
+
+
+def test_reregister_same_run_id_preserves_detection_state_and_ignores_forged_fields():
+    _reset_state()
+    _register_run("state-rereg-01", extra={"detector": "forged", "action": "promote_preview",
+                                             "decision_outcome": "executed_verified"})
+    forged = _state()
+    assert forged["detector"] is None and forged["action"] is None and forged["decision_outcome"] is None, \
+        "등록 요청 본문의 판정·조치 필드는 무시돼야 함(process_signal만이 채울 수 있는 authoritative 값)"
+
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json=_predictive_payload("state-rereg-01"))
+    recorded = _state()
+    _register_run("state-rereg-01")  # 같은 run_id 재등록(idempotent)
+    assert _state() == recorded, "재등록이 이미 기록된 첫 탐지·판정 상태를 지우면 안 됨"
+    print("OK - 같은 run_id 재등록은 상태를 보존하고, 클라이언트가 보낸 판정 필드는 무시됨")
+    _clear_run("state-rereg-01")
+
+
+def test_audit_endpoint_joins_outbox_and_rejects_bad_run_id(tmp_path):
+    import json as _json
+    import git_client
+
+    audit_dir = tmp_path / "audit-log"
+    audit_dir.mkdir()
+    record = {"record_id": "rec-1", "decided_at": "2026-09-19T10:00:06+00:00", "signal_source": "anomaly",
+              "signal_type": "anomaly_risk", "idempotency_key": "audit-run-01:anomaly_risk",
+              "evidence": {}, "action": "promote_preview", "outcome": "executed_verified",
+              "result": {"verified": True}, "reasoning": "x"}
+    (audit_dir / "audit-run-01.jsonl").write_text(_json.dumps(record) + "\n", encoding="utf-8")
+    (tmp_path / "outbox.json").write_text(_json.dumps({"rec-1": {
+        "status": "pushed", "run_id": "audit-run-01", "t_audit_write": "2026-09-19T10:00:06+00:00",
+        "commit_sha": "abc123", "t_audit_push": "2026-09-19T10:00:09+00:00", "attempts": 0,
+        "last_error": None,
+    }}), encoding="utf-8")
+
+    with patch.object(git_client, "AUDIT_LOG_DIR", audit_dir), patch.object(git_client, "OUTBOX_PATH", tmp_path / "outbox.json"):
+        body = client.get("/admin/audit/audit-run-01").json()
+        assert body["run_id"] == "audit-run-01" and len(body["records"]) == 1
+        outbox = body["records"][0]["outbox"]
+        assert outbox["status"] == "pushed" and outbox["commit_sha"] == "abc123"
+        assert outbox["t_audit_push"] == "2026-09-19T10:00:09+00:00"
+        assert client.get("/admin/audit/no-such-run").json()["records"] == [], "기록 없는 run은 빈 목록"
+        assert client.get("/admin/audit/bad%20id").status_code == 400, "허용되지 않는 형식은 거부"
+        try:
+            git_client.read_audit("../escape")
+            raise AssertionError("audit-log 밖을 가리키는 run_id는 거부돼야 함")
+        except ValueError:
+            pass
+    print("OK - 감사 조회 엔드포인트: outbox 상태 조인, 빈 결과, 형식 검증, 경로 이탈 차단")
 
 
 if __name__ == "__main__":
@@ -495,5 +747,19 @@ if __name__ == "__main__":
         test_promotion_sets_t_api_request_after_t_detection()
         test_context_clear_removes_timing_for_next_trial()
         test_timing_endpoint_null_when_no_active_experiment()
+        test_state_predictive_promotion_success()
+        test_state_reactive_fallback_promotion()
+        test_state_observe_only()
+        test_state_no_detection_stays_default()
+        test_state_duplicate_preserves_first_values()
+        test_state_executed_action_takes_priority_over_observe_only_but_keeps_first_detection()
+        test_state_unverified_promotion_reported_as_false()
+        test_state_excludes_other_run_and_stale_signals()
+        test_state_not_carried_into_next_trial_after_clear()
+        test_reregister_same_run_id_preserves_detection_state_and_ignores_forged_fields()
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as _d:
+            test_audit_endpoint_joins_outbox_and_rejects_bad_run_id(Path(_d))
         _reset_state()
         print("모두 통과")

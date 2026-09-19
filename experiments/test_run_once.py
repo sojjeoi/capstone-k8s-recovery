@@ -179,13 +179,24 @@ def _fake_detector(name="fake_detector", dies_after_calls=None, event_log=None):
 
 
 @contextmanager
-def _mock_admin_endpoints(timing_response=None, timing_raises=None):
+def _mock_admin_endpoints(timing_response=None, timing_raises=None, audit_records=None, audit_raises=None,
+                          call_log=None):
     """t_detection/t_api_request 회수 로직(2026-09-19 추가) 검증용 - non-native
     arm의 run_once() 전체 흐름이 recovery-policy 없이도 오프라인으로 돌게
     quiescence/active-context/cooldown/register/clear는 전부 "정상 진행"
-    고정 응답을 주고, 신규 timing 엔드포인트만 테스트가 원하는 응답(또는
-    예외)을 내도록 열어둔다."""
+    고정 응답을 주고, 상태(timing) 엔드포인트와 감사 조회 엔드포인트만 테스트가
+    원하는 응답(또는 예외)을 내도록 열어둔다. timing_response는 이제 판정·조치
+    필드까지 담는 "현재 실험 상태" 응답이다(_state_response() 참고).
+    audit_records: GET /admin/audit/{run_id}의 records - 리스트면 항상 그 값,
+    호출 횟수별로 다른 응답을 주려면 "리스트의 리스트"를 넘긴다(순서대로 소비).
+    call_log: 주어지면 ("GET"|"POST", 경로)를 호출 순서대로 append한다."""
+    audit_iter = iter(audit_records) if (audit_records and isinstance(audit_records[0], list)) else None
+    # timing_response가 리스트면 호출마다 순서대로 소비하고 마지막 값을 반복한다("판정 진행 중 -> 확정" 시나리오용)
+    timing_seq = list(timing_response) if isinstance(timing_response, list) else None
+
     def fake_get(url, timeout=None, **kwargs):
+        if call_log is not None:
+            call_log.append(("GET", url.split("localhost:8080")[-1]))
         resp = MagicMock()
         resp.raise_for_status.return_value = None
         if url.endswith("/admin/quiescent"):
@@ -193,7 +204,15 @@ def _mock_admin_endpoints(timing_response=None, timing_raises=None):
         elif url.endswith("/admin/experiment-run/timing"):
             if timing_raises is not None:
                 raise timing_raises
-            resp.json.return_value = timing_response
+            if timing_seq is not None:
+                resp.json.return_value = timing_seq.pop(0) if len(timing_seq) > 1 else timing_seq[0]
+            else:
+                resp.json.return_value = timing_response
+        elif "/admin/audit/" in url:
+            if audit_raises is not None:
+                raise audit_raises
+            records = next(audit_iter, []) if audit_iter is not None else (audit_records or [])
+            resp.json.return_value = {"run_id": url.rsplit("/", 1)[-1], "records": records}
         elif url.endswith("/admin/experiment-run"):
             resp.json.return_value = {"current": None}
         else:
@@ -201,6 +220,8 @@ def _mock_admin_endpoints(timing_response=None, timing_raises=None):
         return resp
 
     def fake_post(url, timeout=None, **kwargs):
+        if call_log is not None:
+            call_log.append(("POST", url.split("localhost:8080")[-1]))
         resp = MagicMock()
         resp.raise_for_status.return_value = None
         if url.endswith("/admin/reset-cooldown"):
@@ -216,6 +237,53 @@ def _mock_admin_endpoints(timing_response=None, timing_raises=None):
     with patch("run_once.requests.get", side_effect=fake_get), \
          patch("run_once.requests.post", side_effect=fake_post):
         yield
+
+
+def _state_response(run_id, **over):
+    """recovery-policy GET /admin/experiment-run/timing의 "미탐지" 기본 응답 - over로 덮어쓴다."""
+    state = {
+        "run_id": run_id, "t_detection": None, "t_api_request": None, "detected": False,
+        "detection_source": None, "detector": None, "action": None, "decision_outcome": None,
+        "idempotency_key": None, "promotion_verified": None,
+    }
+    state.update(over)
+    return state
+
+
+def _promoted_state(run_id, **over):
+    """예측 경로 promotion 성공(executed_verified)한 trial의 상태 응답."""
+    fields = dict(
+        t_detection="2026-09-19T00:00:05+00:00", t_api_request="2026-09-19T00:00:05.030000+00:00",
+        detected=True, detection_source="predictive", detector="isolation_forest", action="promote_preview",
+        decision_outcome="executed_verified", idempotency_key=f"{run_id}:anomaly_risk", promotion_verified=True)
+    fields.update(over)
+    return _state_response(run_id, **fields)
+
+
+def _audit_record(run_id, outcome="executed_verified", status="pushed", key=None, action="promote_preview",
+                  record_id="rec-primary", **outbox_over):
+    outbox = {"status": status, "t_audit_write": "2026-09-19T00:00:06+00:00",
+              "t_audit_push": "2026-09-19T00:00:09+00:00" if status == "pushed" else None,
+              "commit_sha": "abc123def" if status == "pushed" else None, "attempts": 0, "last_error": None}
+    outbox.update(outbox_over)
+    return {"record_id": record_id, "decided_at": "2026-09-19T00:00:06+00:00", "signal_source": "anomaly",
+            "signal_type": "anomaly_risk", "idempotency_key": key or f"{run_id}:anomaly_risk",
+            "evidence": {"experiment_run_id": run_id, "detector": "isolation_forest"},
+            "action": action, "outcome": outcome, "result": None, "reasoning": "", "outbox": outbox}
+
+
+_FAST_AUDIT = dict(audit_wait_sec=0.3, audit_poll_sec=0.02, state_settle_sec=0.3)
+
+
+def _run_non_native(tmp_path, run_id, arm="proposed", **admin):
+    injector, _ = _fake_injector(is_done_after_calls=1)
+    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
+    with _mock_admin_endpoints(**admin):
+        return run_once(
+            scenario="dry_run", arm=arm, rep=1, sequence_index=1, order_seed=1,
+            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
+            run_id=run_id, results_dir=tmp_path, **_FAST_AUDIT,
+        )
 
 
 def test_normal_completion(tmp_path):
@@ -1018,23 +1086,16 @@ def test_detector_none_leaves_detector_process_null(tmp_path):
 
 def test_non_native_timing_fetch_populates_fields(tmp_path):
     run_id = "test-timing-fixed_threshold-01"
-    injector, icalls = _fake_injector(is_done_after_calls=1)
-    prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
-    timing_response = {
-        "run_id": run_id,
-        "t_detection": "2026-09-19T00:00:05+00:00",
-        "t_api_request": "2026-09-19T00:00:06+00:00",
-    }
-    with _mock_admin_endpoints(timing_response=timing_response):
-        result = run_once(
-            scenario="dry_run", arm="fixed_threshold", rep=1, sequence_index=1, order_seed=1,
-            injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
-            run_id=run_id, results_dir=tmp_path,
-        )
+    state = _state_response(
+        run_id, t_detection="2026-09-19T00:00:05+00:00", t_api_request="2026-09-19T00:00:06+00:00",
+        detected=True, detection_source="predictive", detector="fixed_threshold", action="promote_preview",
+        decision_outcome="executed_verified", idempotency_key=f"{run_id}:anomaly_risk", promotion_verified=True)
+    result = _run_non_native(tmp_path, run_id, arm="fixed_threshold", timing_response=state,
+                             audit_records=[_audit_record(run_id)])
     assert result.t_detection == "2026-09-19T00:00:05+00:00"
     assert result.t_api_request == "2026-09-19T00:00:06+00:00"
     assert result.outcome != "invalid_run", result.invalid_reason
-    print("OK - non-native trial이 recovery-policy timing 엔드포인트에서 t_detection/t_api_request를 회수함")
+    print("OK - non-native trial이 recovery-policy 상태 엔드포인트에서 t_detection/t_api_request를 회수함")
 
 
 def test_non_native_timing_fetch_failure_marks_invalid_run(tmp_path):
@@ -1109,7 +1170,14 @@ def test_native_arm_never_calls_recovery_policy(tmp_path):
         )
     assert result.t_detection is None and result.t_api_request is None
     assert result.outcome != "invalid_run"
-    print("OK - native arm은 recovery-policy·detector·preview 전부 비활성(계약서 §1 재확인)")
+    # 2026-09-19 - 판정·조치 필드도 native는 계약서 §1대로 기본값(detected=false, action=none)이고
+    # 나머지는 전부 null이다(recovery-policy를 조회하지도 감사 조회를 하지도 않음).
+    assert result.detected is False and result.action == "none"
+    for field in ("detection_source", "detector", "decision_outcome", "idempotency_key", "promotion_verified",
+                  "judgment_source", "audit_status", "audit_status_reason", "audit_record_id", "audit_reconciled_at",
+                  "reconciliation", "t_audit_write", "t_audit_push", "commit_sha"):
+        assert getattr(result, field) is None, field
+    print("OK - native arm은 recovery-policy·detector·preview 전부 비활성, 판정 필드는 기본값(계약서 §1 재확인)")
 
 
 def test_detection_and_action_stage_computed_from_recovered_timing(tmp_path):
@@ -1125,18 +1193,172 @@ def test_detection_and_action_stage_computed_from_recovered_timing(tmp_path):
 
     injector, icalls = _fake_injector(is_done_after_calls=1, classify_stage_fn=classify_stage_fn)
     prober, _ = _fake_prober(violates_after_calls=1, recovers_after_slo_calls=1)
-    timing_response = {"run_id": run_id, "t_detection": t_detection_iso, "t_api_request": t_api_request_iso}
+    state = _promoted_state(run_id, t_detection=t_detection_iso, t_api_request=t_api_request_iso)
 
-    with _mock_admin_endpoints(timing_response=timing_response):
+    with _mock_admin_endpoints(timing_response=state, audit_records=[_audit_record(run_id)]):
         result = run_once(
             scenario="dry_run", arm="fixed_threshold", rep=1, sequence_index=1, order_seed=1,
             injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.05,
-            run_id=run_id, results_dir=tmp_path,
+            run_id=run_id, results_dir=tmp_path, **_FAST_AUDIT,
         )
 
     assert result.detection_stage == "stage-2-0.05rps"
     assert result.action_stage == "stage-3-0.20rps"
     print("OK - 회수된 t_detection/t_api_request로 detection_stage/action_stage가 정상 계산됨")
+
+
+def test_predictive_promotion_fields_populated_from_authoritative_state(tmp_path):
+    run_id = "test-judgment-predictive-01"
+    result = _run_non_native(tmp_path, run_id, timing_response=_promoted_state(run_id),
+                             audit_records=[_audit_record(run_id)])
+    assert result.detected is True
+    assert result.detection_source == "predictive" and result.detector == "isolation_forest"
+    assert result.action == "promote_preview" and result.decision_outcome == "executed_verified"
+    assert result.idempotency_key == f"{run_id}:anomaly_risk" and result.promotion_verified is True
+    assert result.judgment_source == "live_state"
+    assert result.audit_status == "complete" and result.commit_sha == "abc123def"
+    assert result.t_audit_write and result.t_audit_push and result.audit_record_id == "rec-primary"
+    assert result.audit_reconciled_at is not None
+    assert result.outcome == "recovered", "판정·감사 필드 회수가 outcome을 바꾸면 안 됨"
+    written = json.loads(next(tmp_path.rglob(f"trial-{run_id}.json")).read_text(encoding="utf-8"))
+    assert written["detected"] is True and written["commit_sha"] == "abc123def"
+    print("OK - 예측 경로 promotion 성공: 판정·조치·감사 필드가 authoritative 상태에서 채워지고 파일에 기록됨")
+
+
+def test_reactive_fallback_fields_populated(tmp_path):
+    run_id = "test-judgment-reactive-01"
+    key = "fp999:2026-09-19T00:00:05+00:00"
+    state = _promoted_state(run_id, detection_source="reactive", detector="alertmanager", idempotency_key=key)
+    record = _audit_record(run_id, key=key)
+    record.update(signal_source="alertmanager", evidence={"experiment_run_id": run_id})
+    result = _run_non_native(tmp_path, run_id, arm="fixed_threshold", timing_response=state, audit_records=[record])
+    assert result.detection_source == "reactive" and result.detector == "alertmanager"
+    assert result.idempotency_key == key
+    assert result.audit_status == "complete", \
+        "run_id를 못 담는 반응형 key여도 evidence.experiment_run_id로 귀속된 기록은 primary가 될 수 있어야 함"
+    print("OK - 반응형 fallback: detection_source=reactive/detector=alertmanager, evidence로 귀속된 감사기록 연결")
+
+
+def test_observe_only_fields_populated(tmp_path):
+    run_id = "test-judgment-observe-01"
+    state = _state_response(
+        run_id, t_detection="2026-09-19T00:00:05+00:00", detected=True, detection_source="predictive",
+        detector="fixed_threshold", action="observe_only", decision_outcome="no_action",
+        idempotency_key=f"{run_id}:anomaly_risk")
+    result = _run_non_native(tmp_path, run_id, arm="fixed_threshold", timing_response=state,
+                             audit_records=[_audit_record(run_id, outcome="no_action", action="observe_only")])
+    assert result.detected is True and result.action == "observe_only" and result.decision_outcome == "no_action"
+    assert result.promotion_verified is None and result.t_api_request is None
+    assert result.audit_status == "complete"
+    print("OK - observe-only: 탐지·판정은 기록되고 promotion_verified/t_api_request는 null")
+
+
+def test_no_detection_is_recorded_as_authoritative_default_and_needs_no_audit(tmp_path):
+    run_id = "test-judgment-nodetect-01"
+    call_log = []
+    result = _run_non_native(tmp_path, run_id, timing_response=_state_response(run_id), call_log=call_log)
+    assert result.detected is False and result.action == "none"
+    assert result.judgment_source == "live_state", "미탐지도 기본값이 아니라 authoritative 상태에서 확인된 값"
+    assert result.audit_status == "not_applicable" and result.commit_sha is None
+    assert result.outcome == "recovered", "무탐지·무조치여도 SLO 궤적에 따라 outcome을 판정(임의 실패 처리 안 함)"
+    assert not any("/admin/audit/" in path for _, path in call_log), "판정이 없으면 감사 조회를 하지 않음"
+    print("OK - 미탐지: detected=false를 authoritative로 기록, 감사 조회 없이 not_applicable, outcome 불변")
+
+
+def test_audit_push_pending_keeps_outcome_and_action_and_leaves_nulls(tmp_path):
+    run_id = "test-audit-pending-01"
+    result = _run_non_native(tmp_path, run_id, timing_response=_promoted_state(run_id),
+                             audit_records=[_audit_record(run_id, status="pushing")])
+    assert result.audit_status == "pending" and "pushing" in result.audit_status_reason
+    assert result.t_audit_write is not None
+    assert result.t_audit_push is None and result.commit_sha is None, "미완료는 null 유지"
+    assert result.action == "promote_preview" and result.promotion_verified is True
+    assert result.outcome == "recovered", "Git 지연이 outcome/action을 바꾸면 안 됨"
+    print("OK - Git push 지연: audit_status=pending+사유, t_audit_push/commit_sha는 null, outcome/action 불변")
+
+
+def test_audit_push_completes_during_bounded_wait(tmp_path):
+    run_id = "test-audit-late-01"
+    pending, pushed = [_audit_record(run_id, status="pushing")], [_audit_record(run_id)]
+    result = _run_non_native(tmp_path, run_id, timing_response=_promoted_state(run_id),
+                             audit_records=[pending, pending, pushed])
+    assert result.audit_status == "complete" and result.commit_sha == "abc123def"
+    print("OK - bounded wait 도중 push가 끝나면 complete로 기록")
+
+
+def test_audit_failed_recorded_with_reason_without_invalidating_trial(tmp_path):
+    run_id = "test-audit-failed-01"
+    result = _run_non_native(
+        tmp_path, run_id, timing_response=_promoted_state(run_id),
+        audit_records=[_audit_record(run_id, status="failed", last_error="non-fast-forward 재조정 실패", attempts=6)])
+    assert result.audit_status == "failed" and "non-fast-forward" in result.audit_status_reason
+    assert result.commit_sha is None
+    assert result.outcome == "recovered" and result.action == "promote_preview"
+    print("OK - audit 실패: audit_status=failed+사유만 남고 trial은 유효 그대로")
+
+
+def test_audit_query_failure_is_pending_not_invalid_run(tmp_path):
+    run_id = "test-audit-unreachable-01"
+    result = _run_non_native(tmp_path, run_id, timing_response=_promoted_state(run_id),
+                             audit_raises=ConnectionError("감사 조회 접속 실패 시뮬레이션"))
+    assert result.audit_status == "pending" and "조회 실패" in result.audit_status_reason
+    assert result.outcome == "recovered", "감사 조회 실패는 상태(timing) 조회 실패와 달리 invalid_run이 아님"
+    print("OK - 감사 조회 실패는 pending+사유(상태 조회 실패와 달리 invalid_run 아님)")
+
+
+def test_state_fetched_before_context_clear(tmp_path):
+    run_id = "test-order-01"
+    call_log = []
+    _run_non_native(tmp_path, run_id, timing_response=_promoted_state(run_id),
+                    audit_records=[_audit_record(run_id)], call_log=call_log)
+    paths = [f"{method} {path}" for method, path in call_log]
+    state_idx = paths.index("GET /admin/experiment-run/timing")
+    clear_idx = next(i for i, p in enumerate(paths) if p.startswith("POST /admin/experiment-run/clear"))
+    assert state_idx < clear_idx, f"상태 회수는 context clear 전이어야 함: {paths}"
+    print("OK - 판정·조치 상태는 context clear 전에 회수됨")
+
+
+def test_in_flight_decision_settles_before_being_recorded(tmp_path):
+    run_id = "test-inflight-01"
+    in_flight = _state_response(run_id, t_detection="2026-09-19T00:00:05+00:00", detected=True,
+                                detection_source="predictive", detector="isolation_forest",
+                                t_api_request="2026-09-19T00:00:05.030000+00:00")
+    result = _run_non_native(tmp_path, run_id, timing_response=[in_flight, _promoted_state(run_id)],
+                             audit_records=[_audit_record(run_id)])
+    assert result.action == "promote_preview" and result.decision_outcome == "executed_verified"
+    assert result.promotion_verified is True, "promote() 진행 중에 trial이 끝나도 확정될 때까지 기다려 기록"
+    print("OK - 판정이 처리 중일 때 trial이 끝나도 확정 후 기록(action=none으로 오기록 안 함)")
+
+
+def test_in_flight_decision_never_settling_is_noted_not_guessed(tmp_path):
+    run_id = "test-inflight-stuck-01"
+    stuck = _state_response(run_id, t_detection="2026-09-19T00:00:05+00:00", detected=True,
+                            detection_source="predictive", detector="isolation_forest")
+    result = _run_non_native(tmp_path, run_id, timing_response=stuck)
+    assert result.detected is True and result.decision_outcome is None
+    assert "판정이" in result.notes and "확정되지 않음" in result.notes
+    assert result.audit_status == "pending"
+    print("OK - 끝내 확정 안 되면 추측하지 않고 notes에 남김")
+
+
+def test_state_query_failure_leaves_judgment_non_authoritative(tmp_path):
+    run_id = "test-judgment-unavailable-01"
+    result = _run_non_native(tmp_path, run_id, timing_raises=ConnectionError("상태 엔드포인트 접속 실패"))
+    assert result.outcome == "invalid_run"
+    assert result.judgment_source is None, "조회 실패 시 detected=false는 authoritative가 아님을 표시"
+    assert result.audit_status is None
+    print("OK - 상태 조회 실패: invalid_run + judgment_source=null(권위 없는 기본값 표시)")
+
+
+def test_next_trial_does_not_inherit_previous_judgment(tmp_path):
+    first = _run_non_native(tmp_path, "test-iso-01", timing_response=_promoted_state("test-iso-01"),
+                            audit_records=[_audit_record("test-iso-01")])
+    second = _run_non_native(tmp_path, "test-iso-02", arm="fixed_threshold",
+                             timing_response=_state_response("test-iso-02"))
+    assert first.action == "promote_preview" and first.commit_sha == "abc123def"
+    assert second.detected is False and second.action == "none"
+    assert second.detector is None and second.commit_sha is None and second.audit_status == "not_applicable"
+    print("OK - 다음 trial은 이전 trial의 판정·감사 필드를 물려받지 않음")
 
 
 @pytest.mark.live_cluster
@@ -1159,6 +1381,73 @@ def test_real_experiment_context_registration_non_native_arm(tmp_path):
     assert result.outcome == "recovered", result.outcome
     assert "실패" not in result.notes, result.notes
     print("OK - non-native arm의 실제 quiescence/experiment-run 등록/clear 성공:", result.run_id)
+
+
+@pytest.mark.live_cluster
+def test_live_no_action_judgment_and_audit_fields_end_to_end(tmp_path):
+    """실제 배포된 recovery-policy를 상대로 run_once() 전체 경로(등록 -> 신호 -> 상태 회수 ->
+    감사 회수 -> clear)를 검증하는 no-action smoke(2026-09-19). **preview가 없는(Rollout이
+    단일 revision, pauseConditions 비어 있음) 상태에서만 실행할 것** - 그래야
+    is_paused_pre_promotion()이 False라 anomaly_risk/VLLMTargetDown 신호가 observe_only만
+    낼 수 있고 promotion이 절대 나가지 않는다. injector/prober는 가짜라 클러스터에 chaos·부하는
+    없고, 실제로 일어나는 부작용은 recovery-policy의 설계된 비동기 감사 커밋(audit-log/
+    {run_id}.jsonl)뿐이다. 로컬에서 kubectl port-forward -n vllm-serving svc/recovery-policy
+    8080:8080이 켜져 있어야 한다.
+
+    한 trial 안에서 신호 4개를 보낸다: (1) 첫 예측 신호(isolation_forest) (2) 같은 key의 중복
+    신호(다른 detector 태그 - 첫 값이 보존돼야 함) (3) 다른 run_id의 예측 신호(배제돼야 함)
+    (4) run 시작 이후의 반응형 alert(첫 탐지를 덮어쓰면 안 됨)."""
+    from datetime import datetime, timezone
+
+    run_id = "smoke-judgment-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    other_run_id = run_id + "-other"
+
+    def _now_iso():
+        return datetime.now(timezone.utc).isoformat()
+
+    def inject():
+        def signal(rid, detector):
+            requests.post(f"{RECOVERY_POLICY_URL}/signal", timeout=10, json={
+                "signal_type": "anomaly_risk", "score": -0.05, "timestamp": _now_iso(),
+                "experiment_run_id": rid, "detector": detector}).raise_for_status()
+        signal(run_id, "isolation_forest")
+        signal(run_id, "fixed_threshold")  # 중복(같은 idempotency_key) - 첫 값 보존 확인용
+        signal(other_run_id, "isolation_forest")  # 다른 run - 상태에 반영되면 안 됨
+        requests.post(f"{RECOVERY_POLICY_URL}/webhooks/alertmanager", timeout=10, json={
+            "status": "firing", "alerts": [{
+                "status": "firing", "labels": {"alertname": "VLLMTargetDown"}, "annotations": {},
+                "startsAt": _now_iso(), "fingerprint": f"smoke-fp-{run_id}"}]}).raise_for_status()
+
+    injector = Injector(prepare=lambda: None, inject=inject, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True, cleanup=lambda: None)
+    prober, _ = _fake_prober()
+
+    result = run_once(
+        scenario="dry_run", arm="proposed", rep=1, sequence_index=1, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=15, poll_interval_sec=0.2,
+        run_id=run_id, is_pilot=True, results_dir=tmp_path, audit_wait_sec=90, audit_poll_sec=2,
+    )
+
+    assert result.outcome == "recovered", (result.outcome, result.invalid_reason, result.notes)
+    assert result.detected is True and result.judgment_source == "live_state"
+    assert result.detection_source == "predictive" and result.detector == "isolation_forest", \
+        "중복 신호(fixed_threshold 태그)나 뒤이은 반응형 alert가 첫 탐지 정보를 덮어쓰면 안 됨"
+    assert result.action == "observe_only" and result.decision_outcome == "no_action"
+    assert result.promotion_verified is None and result.t_api_request is None
+    assert result.idempotency_key == f"{run_id}:anomaly_risk"
+    assert result.audit_status == "complete", (result.audit_status, result.audit_status_reason)
+    assert result.commit_sha and result.t_audit_push and result.t_audit_write and result.audit_record_id
+    state = requests.get(f"{RECOVERY_POLICY_URL}/admin/experiment-run/timing", timeout=10).json()
+    assert state["run_id"] is None and state["detected"] is None, "clear 뒤 다음 trial엔 상태가 남지 않아야 함"
+
+    records = requests.get(f"{RECOVERY_POLICY_URL}/admin/audit/{run_id}", timeout=10).json()["records"]
+    assert [r["outcome"] for r in records] == ["no_action", "skipped_duplicate", "no_action"], records
+    assert records[0]["record_id"] == result.audit_record_id, "primary는 skipped_duplicate가 아니라 첫 판정 기록"
+    assert records[0]["evidence"] == {"experiment_run_id": run_id, "detector": "isolation_forest"}
+    assert records[2]["evidence"] == {"experiment_run_id": run_id}, "반응형 기록은 evidence로 run에 귀속"
+    other = requests.get(f"{RECOVERY_POLICY_URL}/admin/audit/{other_run_id}", timeout=10).json()["records"]
+    assert len(other) == 1 and other[0]["evidence"]["experiment_run_id"] == other_run_id
+    print("OK - live no-action smoke:", run_id, "commit", result.commit_sha[:8])
 
 
 @pytest.mark.live_cluster
@@ -1239,9 +1528,23 @@ if __name__ == "__main__":
         test_timing_fetch_failure_does_not_override_existing_invalid_reason,
         test_native_arm_never_calls_recovery_policy,
         test_detection_and_action_stage_computed_from_recovered_timing,
+        test_predictive_promotion_fields_populated_from_authoritative_state,
+        test_reactive_fallback_fields_populated,
+        test_observe_only_fields_populated,
+        test_no_detection_is_recorded_as_authoritative_default_and_needs_no_audit,
+        test_audit_push_pending_keeps_outcome_and_action_and_leaves_nulls,
+        test_audit_push_completes_during_bounded_wait,
+        test_audit_failed_recorded_with_reason_without_invalidating_trial,
+        test_audit_query_failure_is_pending_not_invalid_run,
+        test_state_fetched_before_context_clear,
+        test_in_flight_decision_settles_before_being_recorded,
+        test_in_flight_decision_never_settling_is_noted_not_guessed,
+        test_state_query_failure_leaves_judgment_non_authoritative,
+        test_next_trial_does_not_inherit_previous_judgment,
     )
     live_cluster_tests = (
         test_real_experiment_context_registration_non_native_arm,
+        test_live_no_action_judgment_and_audit_fields_end_to_end,
         test_active_context_blocks_new_trial_start,
     )
 
