@@ -4195,3 +4195,43 @@ recovery-policy pod의 UID·restarts·Ready, Chaos CR 0개, 신규 pod 0개, con
 NetworkChaos delay는 대상 pod의 **송신** 지연이라 HTTP GET 하나에 최소 두 번 적용된다(SYN-ACK, 응답). stage-4
 (4000±400ms)의 `/health` 지연은 대략 7.2~8.8초로 예상하고, 그렇다면 `T_req ≈ 11초`라 후보 10초는 통과하더라도 마진 부족
 (`RAISE`)으로 분류될 가능성이 높다. 이 예측은 틀릴 수 있고 규칙은 측정값만 쓴다.
+
+### 42.9 오프라인 검증·dry-run·preflight (측정 전 addendum - 규칙·상수 불변)
+
+도구는 `calibrate_network_tolerant_probe.py`(재작성)와 `calibration_node_probe.py`(신규)로 구현했다(커밋 `a6cfabb`).
+§42.4~§42.6의 상수·규칙은 코드에 그대로 옮겼고 바꾸지 않았다.
+
+**구현·검증 중 발견해 측정 전에 고친 것 2건(규칙 불변)**
+
+1. **kubelet probe 실패 집계 누락(도구 결함)**: 창 "시작 시점 대비"로 세면 CR 생성·`AllInjected` 대기 같은 **창 사이 공백**에
+   생긴 실패가 어느 창에도 귀속되지 않는다 - "허용 실패 0" 규칙에서 과소 집계는 위험하다. 오프라인 테스트가 잡았고, "이전 창이
+   끝난 시점 대비 누적 차"로 바꿔 공백의 실패는 다음 창에 귀속한다(§42.5의 "누적 횟수"와 같은 의미, 누락만 제거).
+2. **라이브 template 충실도 검사가 기본값을 차이로 잡음**: 읽기 전용 preflight가 라이브 Rollout template과 base의 차이로
+   `ports[0].protocol: <없음> -> TCP` 하나를 보고했다. API 서버가 채우는 의미 동일한 기본값이라 양쪽에서 지우도록 정규화했다
+   (`UDP` 등 다른 값은 여전히 차이). 이 실측으로 라이브 template이 base와 image·args·resources·probe·volumes까지 동일함(annotation
+   제외)이 확인돼 calibration pod의 충실도가 검증됐다.
+
+**안전망**: `network_degrade_adapter.create_network_chaos()`에 선택 인자 `duration`을 추가했다(기본 None이면 본문이 그대로라
+기존 trial 동작 불변, 테스트로 고정). 도구는 CR에 `spec.duration = 90 + 30 + 60 + 60 = 240s` 자동 만료를 걸어 하니스가
+죽어도 Chaos Mesh가 스스로 복구한다.
+
+**오프라인 검증**(존재하지 않는 KUBECONFIG, 클러스터 접근 없음): 신규 68개(도구 63 + 노드 프로브 5), 전체 스위트
+**392 passed, 3 deselected**(이전 324).
+
+| 항목 | 확인 |
+|---|---|
+| overlay 렌더 diff | 실제 `kubectl kustomize`가 Rollout의 readiness/liveness `timeoutSeconds` 2경로만 바꿈. CPU limit·모델 인자·startupProbe·이미지·readiness period·liveness failureThreshold·Service selector 변경과 리소스 집합 변화는 전부 거부(테스트 6+2) |
+| calibration pod | base template과 `nodeSelector`·두 timeout 외 동일, 어떤 Service·Rollout·ServiceMonitor selector에도 안 걸림, 소유자 없음, 후보 override는 두 timeout만 바꿈 |
+| 판정 | 권고 표 전 행(RAISE/KEEP/LOWER/상한 경계 15초/INSUFFICIENT), stage-4 미완료·표본 부족·하드 실패·측정 불일치는 NONE, kubelet/클라이언트 실패는 MARGINAL |
+| 즉시 실패 | H1(재시작·UID·삭제·종료)·H2(Ready 상실)·H3(Node)·H4(운영 pod)·H5(Rollout·Service·신규 pod)·H6·H7·H9(남의 CR·context·probe 오류·하드 상한) 각각 |
+| 예외·중단·timeout | 재시작(측정 도중)·Ready 미달 600초·`AllInjected` 30초 timeout·CR 생성 예외·`KeyboardInterrupt`·하드 상한·CR/pod 소멸 실패(H8)에서도 **CR과 calibration pod를 삭제하고 소멸을 확인**, 부분 데이터 보존 |
+| 실패 시 active 유지 | 어느 실패 경로에서도 사후 Rollout·Service·운영 pod·Chaos CR이 시작 상태와 동일. 외부 변경이 생기면 H5와 사후 불일치로 드러남. `KubectlCluster`의 공개 메서드는 `snapshot`·`rollout_template`·`create_pod`·`delete_pod`·`pod_exists`뿐이고, 정상 실행의 변경 호출은 pod 생성·삭제와 NetworkChaos 생성·삭제뿐 |
+| 결과 파일 | `results/pilot/calibration-network-tolerant-<run_id>.json` - `collect_metrics.load_all_results`가 읽지 않음(테스트) |
+
+**dry-run**(`--dry-run`, 클러스터 접근 없음): 렌더된 9개 리소스 중 Rollout만 2경로(없음 -> 10), 후보 10초(현재 운영 1초),
+calibration pod 충실도 검증, 4단계 × 90초 + baseline 60초 + 단계별 회복 30초 계획 출력.
+
+**읽기 전용 preflight**(`--preflight-only`, 10:28Z경, 실제 클러스터): Node 2개 Ready·pressure 없음, Rollout Healthy·
+`659795b9df` 단일 revision·preview 없음, vLLM·recovery-policy Ready·restarts 0, Chaos CR 없음, context `null`, 라이브 template ==
+base(annotation·TCP 기본값 제외), **worker ssh 프로브 체인 동작**(active pod `/health` 3/3 성공). 이 preflight는 아무것도
+만들지 않았다.
