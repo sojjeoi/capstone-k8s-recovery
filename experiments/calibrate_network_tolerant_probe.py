@@ -15,12 +15,18 @@ promote_preview를 유발할 수 있다(policy.py). 그래서 Rollout과 무관�
   돈다. probe 동등 요청은 worker 노드에서 ssh로 보낸다(calibration_node_probe.py).
 - Rollout·Service·운영 vLLM pod·recovery-policy를 바꾸는 호출이 이 파일에 없다(테스트가 고정).
 
+v2(2026-09-19, 사전 등록 §44): 후보 timeout(`--candidate-timeout-sec 11`) 독립 2회 측정용 판정으로 바뀌었다. kubelet probe 실패
+이벤트를 **실제 event timestamp**로 구간(steady injection / teardown transition / 그 밖)에 분류하고, 회차별 PASS 조건
+(§44.2)을 `judge_v2`로 판정하며, steady·liveness·연속 teardown 실패는 측정 도중 즉시 중단한다(§44.3). 이벤트 유실은
+Prometheus `prober_probe_total`과 교차검증한다. v1(§42.6 KEEP/LOWER/RAISE) 판정은 §43의 기록으로만 남는다.
+
 사용법(정확히 하나):
   --dry-run         오프라인 - overlay 렌더 diff·pod 매니페스트 검증·계획 출력. 클러스터 접근 없음.
-  --preflight-only  읽기 전용 클러스터 확인(Node·Rollout·pod·Chaos CR·context·라이브 template·worker ssh 체인).
+  --preflight-only  읽기 전용 클러스터 확인(Node·Rollout·pod·Chaos CR·context·라이브 template·worker ssh 체인·시계 오프셋·
+                    Prometheus probe 카운터).
   --execute         실제 calibration 1회(이 pod·CR만 만들고 반드시 지운다).
-종료 코드: 0 = 측정 완료(PASS/MARGINAL), 1 = 사전 확인·사용법 문제, 2 = FAIL(하드 실패 - 부분 데이터는 저장),
-3 = 정리 실패(H8), 130 = 중단(정리 후).
+종료 코드: 0 = PASS, 1 = 사전 확인·사용법 문제, 2 = FAIL/INVALID(판정 불가 - 부분 데이터는 저장), 3 = 정리 실패(H8),
+130 = 중단(정리 후).
 """
 import argparse
 import copy
@@ -30,6 +36,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -69,8 +77,16 @@ CR_EXPIRY_SLACK_SEC = 60.0
 MARGIN_RATIO = 1.25
 MARGIN_ABS_SEC = 1.5
 T_CAP_SEC = 15.0
-MIN_WORST_COMPLETED_FRACTION = 0.8
 MIN_WORST_OK_SAMPLES = 30
+# ---- v2(§44) 상수 ---------------------------------------------------------------------------------
+TEARDOWN_TAIL_SEC = 15.0        # teardown transition window = CR 삭제 요청 ~ 삭제 완료(첫 소멸 확인) + 15초
+AMBIGUITY_SEC = 1.0             # steady 경계 ±1초 안의 이벤트는 보수적으로 steady + ambiguous
+CONSECUTIVE_SEC = 15.0          # readiness 실패 두 건이 이 안이면 "연속"
+CROSSCHECK_WAIT_SEC = 45.0      # 마지막 창 뒤 Prometheus 스크랩(30초 간격) 한 번 + 여유
+CROSSCHECK_ATTEMPTS = 3
+CLOCK_SAMPLES = 5
+PROM_NAMESPACE = "monitoring"
+PROM_SERVICE = "kube-prom-kube-prometheus-prometheus:9090"
 NODE_BAD_CONDITIONS = ("MemoryPressure", "DiskPressure", "PIDPressure", "NetworkUnavailable")
 ROLLOUT_KEY = ("Rollout", "vllm-serving")
 EXPECTED_OVERLAY_CHANGES = {
@@ -251,50 +267,27 @@ def required_timeout(l_max: float) -> float:
     return max(MARGIN_RATIO * l_max, l_max + MARGIN_ABS_SEC)
 
 
-def recommend(windows: list, candidate_sec: float, hard_fail: Optional[dict]) -> dict:
-    """§42.6 판정 규칙 그대로. n=1이므로 모든 권고는 잠정(provisional)이다."""
+def stage4_t_min(windows: list, candidate_sec: float) -> dict:
+    """§44.2 조건 8 - stage-4 steady 측정 창의 성공 /health 최대 지연 L_max로 T_req=max(1.25 x L_max, L_max+1.5), T_min=올림.
+    데이터가 없거나(창 없음·미완료·성공 표본 30개 미만) 창에 실패한 probe 동등 요청이 있으면 L_max를 믿을 수 없어 `usable=False`
+    (fail-closed: 조건 8을 충족한 것으로 보지 않는다)."""
     worst_name = STAGES[-1]["name"]
     worst = next((w for w in windows if w["name"] == worst_name), None)
-    kubelet_failures = sum(w["kubelet"]["probe_failures"] for w in windows)
-    client_failures = sum(w["health"]["errors"] for w in windows)
-    if hard_fail:
-        outcome = "FAIL"
-    elif kubelet_failures or client_failures:
-        outcome = "MARGINAL"
-    else:
-        outcome = "PASS"
-    out = {"run_outcome": outcome, "candidate_sec": candidate_sec, "worst_stage": worst_name,
-           "kubelet_probe_failures": kubelet_failures, "client_health_failures": client_failures,
-           "L_max": None, "T_required": None, "T_min": None, "T_cap": T_CAP_SEC,
-           "recommendation": "NONE", "reason": "", "provisional": True}
-    if hard_fail:
-        out["reason"] = f"하드 실패({hard_fail.get('code')}) - 권고 없음, 원인 보고"
+    out = {"usable": False, "L_max": None, "T_required": None, "T_min": None, "T_cap": T_CAP_SEC, "note": ""}
+    if worst is None or not worst["complete"]:
+        out["note"] = "stage-4 창이 없거나 끝까지 측정되지 않음"
         return out
-    if worst is None or worst["completed_fraction"] < MIN_WORST_COMPLETED_FRACTION \
-            or worst["health"]["ok"] < MIN_WORST_OK_SAMPLES:
-        out["reason"] = "stage-4 창이 80% 미만 완료이거나 성공 /health가 30개 미만 - 권고 없음"
+    if worst["health"]["ok"] < MIN_WORST_OK_SAMPLES:
+        out["note"] = f"stage-4 창의 성공 /health가 {MIN_WORST_OK_SAMPLES}개 미만({worst['health']['ok']})"
         return out
     l_max = worst["health"]["max"]
-    out["L_max"] = l_max
-    if kubelet_failures and l_max < candidate_sec:
-        out["reason"] = (f"kubelet probe 실패가 있는데 probe 동등 요청의 L_max({l_max}s)가 후보({candidate_sec}s) "
-                         "미만 - 측정 불일치, 권고 없음")
-        return out
     t_req = required_timeout(l_max)
-    t_min = math.ceil(t_req - 1e-9)
-    out["T_required"], out["T_min"] = _r(t_req), t_min
-    if t_min > T_CAP_SEC:
-        out["recommendation"] = "INSUFFICIENT"
-        out["reason"] = f"T_min {t_min}s > 상한 {T_CAP_SEC}s - timeout만으로는 불가(failureThreshold/period 재설계 필요)"
-    elif t_min > candidate_sec:
-        out["recommendation"] = "RAISE"
-        out["reason"] = f"후보 {candidate_sec}s는 마진 부족 - 권고 {t_min}s"
-    elif t_min == candidate_sec:
-        out["recommendation"] = "KEEP"
-        out["reason"] = f"후보 {candidate_sec}s가 규칙의 최소값과 같음"
-    else:
-        out["recommendation"] = "LOWER"
-        out["reason"] = f"후보 {candidate_sec}s는 과도 - 권고 {t_min}s"
+    out.update(L_max=l_max, T_required=_r(t_req), T_min=math.ceil(t_req - 1e-9))
+    stage_errors = sum(w["health"]["errors"] for w in windows if w["name"] in {s["name"] for s in STAGES})
+    if stage_errors:
+        out["note"] = f"stage 창에 실패한 probe 동등 /health 요청 {stage_errors}건 - L_max를 신뢰할 수 없음"
+        return out
+    out["usable"] = True
     return out
 
 
@@ -313,10 +306,14 @@ def parse_snapshot(ns_items: list, node_items: list, context) -> dict:
         if kind == "Pod":
             st = item.get("status", {})
             cs = (st.get("containerStatuses") or [{}])[0]
+            ready = next((c for c in st.get("conditions", []) if c.get("type") == "Ready"), {})
+            last_terminated = (cs.get("lastState") or {}).get("terminated")
+            terminated = last_terminated or (cs.get("state") or {}).get("terminated") or {}
             snap["pods"][md["name"]] = {
                 "uid": md["uid"], "labels": md.get("labels", {}), "phase": st.get("phase"),
-                "ready": any(c.get("type") == "Ready" and c.get("status") == "True" for c in st.get("conditions", [])),
-                "restarts": cs.get("restartCount", 0), "terminated": bool((cs.get("lastState") or {}).get("terminated")),
+                "ready": ready.get("status") == "True", "ready_since": ready.get("lastTransitionTime"),
+                "restarts": cs.get("restartCount", 0), "terminated": bool(last_terminated),
+                "terminated_reason": terminated.get("reason"), "evicted": st.get("reason") == "Evicted",
                 "deleting": "deletionTimestamp" in md, "node": item.get("spec", {}).get("nodeName"),
                 "ip": st.get("podIP")}
         elif kind == "Service":
@@ -331,15 +328,10 @@ def parse_snapshot(ns_items: list, node_items: list, context) -> dict:
             snap["chaos"].append(md["name"])
         elif kind == "Event" and item.get("involvedObject", {}).get("kind") == "Pod":
             snap["events"].append({"pod": item["involvedObject"]["name"], "reason": item.get("reason"),
-                                   "message": item.get("message", ""), "count": item.get("count", 1)})
+                                   "message": item.get("message", ""), "count": item.get("count", 1),
+                                   "uid": md.get("uid"), "first": item.get("firstTimestamp"),
+                                   "last": item.get("lastTimestamp"), "type": item.get("type")})
     return snap
-
-
-def unhealthy_count(snap: dict, pod_name: str) -> int:
-    """Readiness/Liveness probe 실패 이벤트 누적 횟수(Startup probe 실패는 제외)."""
-    return sum(e["count"] for e in snap["events"]
-               if e["pod"] == pod_name and e["reason"] == "Unhealthy"
-               and e["message"].startswith(("Readiness probe failed", "Liveness probe failed")))
 
 
 @dataclass
@@ -348,6 +340,7 @@ class RunState:
     created: bool = False
     pod_uid: Optional[str] = None
     ready_seen: bool = False
+    ready_since: Optional[str] = None   # Ready 조건 lastTransitionTime(첫 Ready 관측 시점 값) - 바뀌면 순간 전이
     chaos_names: set = field(default_factory=set)
 
 
@@ -389,14 +382,203 @@ def evaluate_violations(baseline: dict, snap: dict, state: RunState) -> list:
                 state.pod_uid = pod["uid"]
             elif pod["uid"] != state.pod_uid:
                 v.append(("H1", f"calibration pod UID 변경 {state.pod_uid}->{pod['uid']}"))
-            if pod["restarts"] > 0 or pod["terminated"] or pod["phase"] in ("Failed", "Unknown"):
-                v.append(("H1", f"calibration pod 재시작/종료: restarts={pod['restarts']} "
-                                f"terminated={pod['terminated']} phase={pod['phase']}"))
+            if pod["restarts"] > 0 or pod["terminated"] or pod["evicted"] or pod["phase"] in ("Failed", "Unknown"):
+                v.append(("H1", f"calibration pod 재시작/종료/OOM/eviction: restarts={pod['restarts']} "
+                                f"terminated={pod['terminated']} reason={pod['terminated_reason']} "
+                                f"evicted={pod['evicted']} phase={pod['phase']}"))
             if pod["ready"]:
                 state.ready_seen = True
+                if state.ready_since is None:
+                    state.ready_since = pod["ready_since"]
+                elif pod["ready_since"] != state.ready_since:
+                    v.append(("H2", f"Ready 조건 lastTransitionTime 변경 {state.ready_since} -> {pod['ready_since']}"
+                                    " (폴링 사이의 순간 Ready 전이 - Endpoint 제거 포함)"))
             elif state.ready_seen:
                 v.append(("H2", "calibration pod가 Ready를 잃음(readiness probe 실패)"))
     return v
+
+
+# ---- probe 이벤트 추적·구간 분류(§44.1)·즉시 중단(§44.3)·카운터 교차검증(§44.2)·회차 판정 -----------------------
+PROBE_KINDS = (("Readiness probe failed", "Readiness"), ("Liveness probe failed", "Liveness"),
+               ("Startup probe failed", "Startup"))
+
+
+def probe_kind(message: str) -> Optional[str]:
+    for prefix, kind in PROBE_KINDS:
+        if message.startswith(prefix):
+            return kind
+    return None
+
+
+def parse_k8s_time(text: str) -> float:
+    """K8s 타임스탬프(초 해상도 `...Z`) -> epoch 초."""
+    return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+
+
+def iso(t: Optional[float]) -> Optional[str]:
+    return None if t is None else datetime.fromtimestamp(t, timezone.utc).isoformat(timespec="milliseconds")
+
+
+class EventTracker:
+    """kubelet `Unhealthy`(Readiness/Liveness/Startup probe failed) 이벤트를 폴링 사이 `count` 증가분 하나하나의 발생으로 푼다.
+    같은 메시지는 `count`로 합쳐지고 `lastTimestamp`만 갱신되므로 증가분마다 그 시점의 lastTimestamp를 부여한다(한 폴링에서 2건
+    이상 늘면 모두 같은 시각 + approx 표시 - §44.1)."""
+
+    def __init__(self, pod_name: str):
+        self.pod_name, self.counts, self.occurrences = pod_name, {}, []
+
+    def update(self, snap: dict, polled_at: float) -> list:
+        new = []
+        for e in snap["events"]:
+            kind = probe_kind(e["message"]) if e["pod"] == self.pod_name and e["reason"] == "Unhealthy" else None
+            if kind is None:
+                continue
+            key = e.get("uid") or e["message"]
+            seen = self.counts.get(key, 0)
+            delta = e["count"] - seen
+            self.counts[key] = max(seen, e["count"])
+            new += [{"kind": kind, "message": e["message"], "worker_ts": e.get("last") or e.get("first"),
+                     "polled_at": polled_at, "approx": delta > 1} for _ in range(max(0, delta))]
+        self.occurrences += new
+        return new
+
+    def totals(self) -> dict:
+        counted = Counter(o["kind"] for o in self.occurrences)
+        return {kind: counted.get(kind, 0) for _, kind in PROBE_KINDS}
+
+
+def timeline_boundaries(tl: dict) -> list:
+    """[(시작 epoch, 구간 이름)] 시간순 - 아직 모르는 경계는 빠진다. 구간은 §44.1 표 그대로."""
+    bounds = []
+
+    def add(t, name):
+        if t is not None:
+            bounds.append((t, name))
+    add(tl.get("pod_created"), "startup")
+    add(tl.get("ready"), "baseline")
+    for i, st in enumerate(tl.get("stages", []), 1):
+        add(st.get("create"), f"injection_ramp_{i}")
+        add(st.get("allinjected"), f"steady_{i}")
+        add(st.get("delete_request"), f"teardown_{i}")
+        add(st.get("teardown_end"), "post_teardown" if i == len(STAGES) else f"between_stage_{i}")
+    add(tl.get("pod_delete_request"), "shutdown")
+    return sorted(bounds, key=lambda b: b[0])
+
+
+def classify_occurrence(occ: dict, tl: dict, offset_sec: float, bounds: Optional[list] = None) -> dict:
+    """발생 하나에 PC 시계 기준 시각 t_pc(epoch)·구간 segment·ambiguous를 붙여 새 dict로 돌려준다(§44.1).
+    시각 = lastTimestamp(worker 시계, 초 단위 절삭) - 오프셋 + 0.5초(초 해상도의 중앙). steady 경계(AllInjected 확인·CR 삭제 요청)
+    +-1초 안이면 보수적으로 steady + ambiguous. 명목 stage 시간은 어디에도 쓰지 않는다."""
+    bounds = timeline_boundaries(tl) if bounds is None else bounds
+    t = parse_k8s_time(occ["worker_ts"]) - offset_sec + 0.5 if occ["worker_ts"] else occ["polled_at"]
+    segment, ambiguous = "pre_start", False
+    for start, name in bounds:
+        if t >= start:
+            segment = name
+    for i, st in enumerate(tl.get("stages", []), 1):
+        if any(abs(t - edge) <= AMBIGUITY_SEC for edge in (st.get("allinjected"), st.get("delete_request"))
+               if edge is not None):
+            segment, ambiguous = f"steady_{i}", True
+    return {**occ, "t_pc": t, "t_pc_iso": iso(t), "segment": segment, "ambiguous": ambiguous}
+
+
+def classify_all(occurrences: list, tl: dict, offset_sec: float) -> list:
+    bounds = timeline_boundaries(tl)
+    return [classify_occurrence(o, tl, offset_sec, bounds) for o in occurrences]
+
+
+def probe_event_findings(classified: list) -> list:
+    """§44.3 즉시 중단 조건 -> [(코드, 설명)]. `shutdown` 구간은 기록만 하고 제외한다.
+    H10 = steady injection window의 readiness/liveness 실패, H11 = liveness 실패(전체 실행), H12 = teardown readiness 실패가
+    연속(같은 전이 구간 2건 이상, 또는 teardown 실패가 다른 readiness 실패와 15초 이내)."""
+    live = [o for o in classified if o["segment"] != "shutdown"]
+    out = []
+    for o in live:
+        where = f"{o['segment']} @{o['t_pc_iso']}" + (" (경계 모호)" if o["ambiguous"] else "")
+        if o["kind"] in ("Readiness", "Liveness") and o["segment"].startswith("steady_"):
+            out.append(("H10", f"steady injection window {o['kind']} probe 실패 {where}"))
+        if o["kind"] == "Liveness":
+            out.append(("H11", f"liveness probe 실패 {where}"))
+    readiness = sorted((o for o in live if o["kind"] == "Readiness"), key=lambda o: o["t_pc"])
+    per_window = Counter(o["segment"] for o in readiness if o["segment"].startswith("teardown_"))
+    out += [("H12", f"{seg}에 readiness 실패 {n}건(연속)") for seg, n in per_window.items() if n >= 2]
+    for a, b in zip(readiness, readiness[1:]):
+        gap = b["t_pc"] - a["t_pc"]
+        if gap <= CONSECUTIVE_SEC and (a["segment"].startswith("teardown_") or b["segment"].startswith("teardown_")):
+            out.append(("H12", f"teardown readiness 실패 연속: {gap:.1f}초 간격 ({a['segment']} -> {b['segment']})"))
+    return out
+
+
+def crosscheck_probe_counters(e1: dict, e2: dict, metrics: dict) -> dict:
+    """§44.2 측정 유효성 전제 - kubelet probe 카운터(Prometheus `prober_probe_total`)와 이벤트 집계의 교차검증.
+    Readiness·Liveness 각각 E1 <= C(failed) <= E2 이고, `successful` series가 존재해야 한다(스크랩됐다는 양성 증거).
+    kubelet 이벤트 스팸 필터가 초과분을 조용히 버려도(E < C) 여기서 드러난다."""
+    problems, detail = [], {}
+    for kind in ("Readiness", "Liveness"):
+        failed = int(round(metrics["counters"].get(f"{kind}/failed", 0.0)))
+        has_success = f"{kind}/successful" in metrics["counters"]
+        detail[kind] = {"events_before": e1[kind], "counter_failed": failed, "events_after": e2[kind],
+                        "successful_series": has_success}
+        if not has_success:
+            problems.append(f"{kind} successful series 없음(Prometheus가 이 pod를 스크랩하지 못함)")
+        if not e1[kind] <= failed <= e2[kind]:
+            problems.append(f"{kind}: 이벤트 {e1[kind]}..{e2[kind]} vs kubelet 카운터 {failed} 불일치(이벤트 유실 가능)")
+    return {"ok": not problems, "problems": problems, "detail": detail}
+
+
+def judge_v2(result: dict) -> dict:
+    """§44.2 회차별 PASS 조건 1~9 + 측정 유효성 전제. 판정 조건(C*) 위반 = FAIL, 측정 유효성(V*) 위반 = INVALID(판정 불가).
+    INVALID도 PASS가 아니므로 FAIL과 같이 취급한다(동결하지 않고 멈춘다)."""
+    candidate = result["candidate_sec"]
+    windows = result.get("windows", [])
+    by_name = {w["name"]: w for w in windows}
+    probe_events = result.get("probe_events", [])
+    events = [o for o in probe_events if o["segment"] != "shutdown"]
+    stages = result.get("timeline", {}).get("stages", [])
+    hard, cleanup = result.get("hard_fail"), result.get("cleanup") or {}
+    cond = {}
+
+    def put(key, ok, detail):
+        cond[key] = {"ok": bool(ok), "detail": detail}
+
+    def brief(occurrences):
+        return [f"{o['kind']} {o['segment']} @{o['t_pc_iso']}" + (" 경계모호" if o["ambiguous"] else "") for o in occurrences]
+
+    injected = [i for i, st in enumerate(stages, 1) if st.get("allinjected")]
+    put("C1_all_stages_allinjected", len(injected) == len(STAGES), f"AllInjected 확인 stage {injected}")
+    incomplete = [n for n in ["baseline"] + [x for s in STAGES for x in (s["name"], f"recovery-{s['name']}")]
+                  if n not in by_name or not by_name[n]["complete"]]
+    put("V2_all_windows_complete", not incomplete, incomplete or "9개 창 모두 완료")
+    bad = [f"{w['name']} {w['completion']['ok']}/{w['completion']['n']}" for w in windows
+           if w["complete"] and (w["completion"]["n"] < 1 or w["completion"]["ok"] != w["completion"]["n"])]
+    put("C2_completion_success_100pct", not bad, bad or "완료된 모든 창 100%(창마다 표본 1개 이상)")
+    steady = [o for o in events if o["kind"] in ("Readiness", "Liveness") and o["segment"].startswith("steady_")]
+    put("C3_no_steady_probe_failure", not steady, brief(steady) or "0건")
+    liveness = [o for o in events if o["kind"] == "Liveness"]
+    put("C4_no_liveness_failure", not liveness, brief(liveness) or "0건(shutdown 제외)")
+    ready_class = hard is not None and hard["code"] in ("H1", "H2", "H3")
+    put("C5_no_ready_restart_uid_oom_evict_node", not ready_class, hard if ready_class else "0건")
+    consecutive = [m for c, m in probe_event_findings(probe_events) if c == "H12"]
+    teardown = Counter(o["segment"] for o in events if o["kind"] == "Readiness" and o["segment"].startswith("teardown_"))
+    put("C6_teardown_readiness_not_consecutive", not consecutive,
+        consecutive or f"teardown readiness 실패 구간별 {dict(sorted(teardown.items())) or '없음'}(비연속 단발 허용)")
+    tm = stage4_t_min(windows, candidate)
+    put("C7_t_min_le_candidate", tm["T_min"] is None or tm["T_min"] <= candidate,
+        f"L_max={tm['L_max']} T_required={tm['T_required']} T_min={tm['T_min']} 후보={candidate}")
+    put("V4_l_max_usable", tm["usable"], tm["note"] or "stage-4 창 데이터 사용 가능")
+    put("C8_cleanup_ok", cleanup.get("ok") is True, cleanup.get("problems") or "정리 완전 성공")
+    put("C9_no_hard_fail", hard is None, hard or "없음")
+    cross = result.get("crosscheck")
+    put("V3_probe_counter_crosscheck", bool(cross and cross["ok"]), (cross or {}).get("problems") or "교차검증 미수행")
+    offset = result.get("clock_offset")
+    put("V1_clock_offset", bool(offset and offset.get("used_sec") is not None), offset or "시계 오프셋 없음")
+    failed = sorted(k for k, v in cond.items() if not v["ok"])
+    outcome = "FAIL" if any(k.startswith("C") for k in failed) else ("INVALID" if failed else "PASS")
+    counts = Counter(f"{o['segment']}/{o['kind']}" for o in probe_events)
+    return {"run_outcome": outcome, "candidate_sec": candidate, "L_max": tm["L_max"], "T_required": tm["T_required"],
+            "T_min": tm["T_min"], "T_cap": T_CAP_SEC, "conditions": dict(sorted(cond.items())),
+            "failed_conditions": failed, "reasons": [f"{k}: {cond[k]['detail']}" for k in failed],
+            "probe_event_counts": dict(sorted(counts.items()))}
 
 
 def preflight_problems(snap: dict) -> list:
@@ -482,6 +664,27 @@ class KubectlCluster:
 
     def rollout_template(self) -> dict:
         return self._json(["get", "rollout", ROLLOUT_KEY[1], "-n", NAMESPACE, "-o", "json"])["spec"]["template"]
+
+    def _prom(self, promql: str) -> list:
+        path = (f"/api/v1/namespaces/{PROM_NAMESPACE}/services/{PROM_SERVICE}/proxy/api/v1/query?query="
+                + urllib.parse.quote(promql, safe=""))
+        body = self._json(["get", "--raw", path])
+        if body.get("status") != "success":
+            raise RuntimeError(f"Prometheus 질의 실패: {str(body)[:200]}")
+        return body["data"]["result"]
+
+    def prober_metrics(self, pod_name: str) -> dict:
+        """읽기 전용 - Prometheus가 스크랩한 kubelet probe 카운터(`prober_probe_total`)와 소요시간 히스토그램(증거용).
+        pod가 **살아 있을 때** 조회해야 한다(삭제 뒤에는 시계열이 stale이라 비어 나온다)."""
+        selector = f'{{namespace="{NAMESPACE}",pod="{pod_name}"}}'
+        counters = {}
+        for r in self._prom(f"prober_probe_total{selector}"):
+            key = f"{r['metric'].get('probe_type')}/{r['metric'].get('result')}"
+            counters[key] = counters.get(key, 0.0) + float(r["value"][1])
+        buckets = [{"probe_type": r["metric"].get("probe_type"), "result": r["metric"].get("result"),
+                    "le": r["metric"].get("le"), "value": float(r["value"][1])}
+                   for r in self._prom(f"prober_probe_duration_seconds_bucket{selector}")]
+        return {"counters": counters, "duration_buckets": buckets}
 
     def create_pod(self, manifest: dict) -> None:
         r = self._kubectl(["create", "-f", "-"], input_text=json.dumps(manifest))
@@ -577,6 +780,33 @@ class SshNodeProbe:
         return _SshHandle(proc, script)
 
 
+class SshClock:
+    """worker 시계 - PC 시계 오프셋(worker - PC) 측정. `ssh worker date +%s.%N`을 여러 번 왕복해 RTT가 가장 짧은 표본을 쓴다
+    (오프셋 = worker 시각 - 왕복 중간 PC 시각, 불확실성 <= RTT/2). kubelet 이벤트 시각은 worker 시계라 PC 시계로 옮기는 데 쓴다."""
+
+    def __init__(self, host: str = WORKER_SSH_HOST, ssh: str = "ssh", run: Callable = subprocess.run,
+                 now: Callable = time.time, samples: int = CLOCK_SAMPLES):
+        self.host, self.ssh, self._run, self._now, self.samples = host, ssh, run, now, samples
+
+    def measure(self) -> Optional[dict]:
+        best = None
+        for _ in range(self.samples):
+            t0 = self._now()
+            try:
+                r = self._run([self.ssh, "-o", "BatchMode=yes", "-o", "LogLevel=ERROR", self.host, "date", "+%s.%N"],
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+                t1 = self._now()
+                worker = float(r.stdout.strip())
+            except (OSError, ValueError, subprocess.SubprocessError):
+                continue
+            if r.returncode != 0:
+                continue
+            sample = {"offset_sec": worker - (t0 + t1) / 2.0, "rtt_sec": t1 - t0, "measured_at": iso((t0 + t1) / 2.0)}
+            if best is None or sample["rtt_sec"] < best["rtt_sec"]:
+                best = sample
+        return best
+
+
 @dataclass
 class Deps:
     cluster: object
@@ -584,7 +814,8 @@ class Deps:
     probe: object
     clock: Callable = time.monotonic
     sleep: Callable = time.sleep
-    now_iso: Callable = lambda: datetime.now(timezone.utc).isoformat()
+    now: Callable = lambda: datetime.now(timezone.utc)
+    clock_offset: Callable = lambda: None
 
 
 @dataclass
@@ -610,8 +841,25 @@ def _wait(d: Deps, predicate: Callable, timeout: float, poll: float = 2.0) -> bo
         d.sleep(poll)
 
 
-def _cleanup(d: Deps, cfg: Config, state: RunState, baseline: dict) -> dict:
-    out = {"chaos_deleted": {}, "pod_deleted": None, "problems": [], "ok": False}
+def compact_samples(samples: list) -> dict:
+    """원본 표본을 증거로 남길 만큼만 줄인다: [seq, 창 시작 대비 발행 시각, 지연, HTTP status(, 오류)]."""
+    out = {"health": [], "completion": []}
+    for s in sorted(samples, key=lambda s: (s["kind"], s["seq"])):
+        row = [s["seq"], round(s["t"], 3), round(s["latency"], 4), s.get("status")]
+        if s.get("error"):
+            row.append(str(s["error"])[:120])
+        out[s["kind"]].append(row)
+    return out
+
+
+def timeline_iso(tl: dict) -> dict:
+    return {key: ([{k: iso(v) for k, v in st.items()} for st in value] if key == "stages" else iso(value))
+            for key, value in tl.items()}
+
+
+def _cleanup(d: Deps, cfg: Config, state: RunState, baseline: dict, tracker: Optional[EventTracker] = None,
+             tl: Optional[dict] = None) -> dict:
+    out = {"chaos_deleted": {}, "pod_deleted": None, "problems": [], "pod_events": [], "ok": False}
     for name in sorted(state.chaos_names):
         try:
             d.chaos.delete(name)
@@ -622,6 +870,8 @@ def _cleanup(d: Deps, cfg: Config, state: RunState, baseline: dict) -> dict:
         if not gone:
             out["problems"].append(f"CR {name}이(가) {CHAOS_GONE_TIMEOUT_SEC:.0f}초 내 소멸하지 않음")
     if state.created:
+        if tl is not None:
+            tl["pod_delete_request"] = d.now().timestamp()   # 이 시각 이후는 shutdown 구간(기록만, 판정 제외)
         try:
             d.cluster.delete_pod(state.pod_name)
         except Exception as e:
@@ -632,6 +882,9 @@ def _cleanup(d: Deps, cfg: Config, state: RunState, baseline: dict) -> dict:
             out["problems"].append(f"calibration pod가 {POD_GONE_TIMEOUT_SEC:.0f}초 내 소멸하지 않음")
     try:
         final = d.cluster.snapshot()
+        if tracker is not None:
+            tracker.update(final, d.now().timestamp())   # 종료 아티팩트도 shutdown 구간으로 기록
+        out["pod_events"] = [e for e in final["events"] if e["pod"] == state.pod_name]
         residual = evaluate_violations(baseline, final, RunState(pod_name=state.pod_name))
         out["problems"] += [f"사후 스냅샷 불일치 {c}: {m}" for c, m in residual]
         if state.pod_name in final["pods"]:
@@ -644,34 +897,44 @@ def _cleanup(d: Deps, cfg: Config, state: RunState, baseline: dict) -> dict:
 
 def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
     d = deps
+    stamp = lambda: d.now().timestamp()  # noqa: E731 - PC 시계 epoch(구간 경계·이벤트 분류 기준)
     started = d.clock()
     deadline = started + HARD_LIMIT_SEC
     name = cfg.pod_manifest["metadata"]["name"]
-    result = {"run_id": cfg.run_id, "tool": "calibrate_network_tolerant_probe", "preregistration": "§42",
-              "started_at": d.now_iso(), "candidate_sec": cfg.candidate_sec,
+    result = {"run_id": cfg.run_id, "tool": "calibrate_network_tolerant_probe", "preregistration": "§44",
+              "started_at": iso(stamp()), "candidate_sec": cfg.candidate_sec,
               "candidate_source": cfg.candidate_source, "stages": [dict(s) for s in STAGES],
-              "windows": [], "hard_fail": None, "cleanup": None, "analysis": None}
+              "windows": [], "hard_fail": None, "cleanup": None, "timeline": {"stages": []},
+              "clock_offset": None, "probe_events": [], "crosscheck": None, "prometheus": None, "analysis": None}
     baseline = d.cluster.snapshot()
     problems = preflight_problems(baseline)
+    offset_start = None if problems else d.clock_offset()
+    if not problems and offset_start is None:
+        problems.append("worker-PC 시계 오프셋을 측정하지 못함(이벤트 시각을 PC 시계로 옮길 수 없음)")
     if problems:
         result["hard_fail"] = {"code": "PREFLIGHT", "detail": "; ".join(problems)}
-        result["analysis"] = recommend([], cfg.candidate_sec, result["hard_fail"])
-        result["finished_at"] = d.now_iso()
+        result["analysis"] = judge_v2(result)
+        result["finished_at"] = iso(stamp())
         return result
     result["baseline"] = {"pods": {n: {k: p[k] for k in ("uid", "restarts", "ready")}
                                    for n, p in baseline["pods"].items()},
                           "rollout": baseline["rollout"], "services": baseline["services"]}
     state = RunState(pod_name=name)
+    tracker = EventTracker(name)
+    tl = {"stages": []}   # epoch 초 - 구간 경계(§44.1). 결과에는 ISO로 저장한다.
     interrupted = None
-    # kubelet probe 실패의 누적 기준선 - 창 "시작 시점 대비"가 아니라 "이전 창이 끝난 시점 대비"로 세서, 창 사이 공백
-    # (CR 생성·AllInjected 대기 중)에 생긴 실패도 다음 창에 귀속시킨다(허용 실패 0인데 과소 집계되면 위험).
-    unhealthy = {"last": 0}
+
+    def snap_now() -> dict:
+        snap = d.cluster.snapshot()
+        tracker.update(snap, stamp())
+        return snap
 
     def check() -> dict:
-        snap = d.cluster.snapshot()
+        snap = snap_now()
         if d.clock() > deadline:
             raise CalibrationAbort("H9", f"하드 상한 {HARD_LIMIT_SEC:.0f}초 초과")
         violations = evaluate_violations(baseline, snap, state)
+        violations += probe_event_findings(classify_all(tracker.occurrences, tl, offset_start["offset_sec"]))
         if violations:
             raise CalibrationAbort(violations[0][0], "; ".join(f"{c}: {m}" for c, m in violations))
         return snap
@@ -685,11 +948,10 @@ def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
     def run_window(window_name: str, duration: float, stage: Optional[dict]):
         snap0 = check()
         ip = snap0["pods"][name]["ip"]
-        before = unhealthy["last"]
         params = {"ip": ip, "port": 8000, "duration_sec": duration, "health_interval_sec": HEALTH_INTERVAL_SEC,
                   "completion_interval_sec": COMPLETION_INTERVAL_SEC, "health_timeout_sec": HEALTH_TIMEOUT_SEC,
                   "completion_timeout_sec": COMPLETION_TIMEOUT_SEC, "completion_payload": cfg.probe_payload}
-        t0 = d.clock()
+        t0, began = d.clock(), stamp()
         log(f"[window] {window_name} {duration:.0f}s 시작 (pod ip {ip})")
         handle = d.probe.start(params)
         complete = False
@@ -705,18 +967,17 @@ def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
                 handle.abort()
             samples = handle.result()
             try:
-                snap1 = d.cluster.snapshot()
+                snap1 = snap_now()
             except Exception:
                 snap1 = None
             pod1 = (snap1 or {}).get("pods", {}).get(name, {})
-            after = unhealthy_count(snap1, name) if snap1 else before
-            unhealthy["last"] = after
             result["windows"].append({
                 "name": window_name, "stage": stage, "duration_sec": duration, "complete": complete,
+                "started_at": iso(began), "ended_at": iso(stamp()),
                 "completed_fraction": round(min(1.0, (d.clock() - t0) / duration), 3) if duration else 1.0,
                 "health": summarize_health(samples), "completion": summarize_completion(samples),
-                "kubelet": {"probe_failures": after - before,
-                            "restarts": pod1.get("restarts"), "uid": pod1.get("uid"), "ready": pod1.get("ready"),
+                "samples": compact_samples(samples),
+                "kubelet": {"restarts": pod1.get("restarts"), "uid": pod1.get("uid"), "ready": pod1.get("ready"),
                             "phase": pod1.get("phase")},
                 "nodes": (snap1 or {}).get("nodes")})
         err = handle.error()
@@ -724,6 +985,7 @@ def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
             raise CalibrationAbort("H9", f"probe 클라이언트 오류: {err}")
 
     try:
+        tl["pod_created"] = stamp()
         d.cluster.create_pod(cfg.pod_manifest)
         state.created = True
         log(f"[pod] {name} 생성 - Ready 대기(<= {POD_READY_TIMEOUT_SEC:.0f}s)")
@@ -731,19 +993,22 @@ def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
         while True:
             snap = check()
             if snap["pods"].get(name, {}).get("ready"):
-                unhealthy["last"] = unhealthy_count(snap, name)  # Ready 시점 기준선
                 break
             if d.clock() > ready_deadline:
                 raise CalibrationAbort("H7", f"calibration pod가 {POD_READY_TIMEOUT_SEC:.0f}초 내 Ready 안 됨")
             d.sleep(POLL_INTERVAL_SEC)
-        result["t_ready"] = d.now_iso()
+        tl["ready"] = stamp()
+        result["t_ready"] = iso(tl["ready"])
         log(f"[pod] Ready - warmup settle {WARMUP_SETTLE_SEC:.0f}s")
         hold(WARMUP_SETTLE_SEC)
         run_window("baseline", BASELINE_SEC, None)
         for i, stage in enumerate(STAGES):
             cr = f"netdelay-calib-{cfg.run_id.rsplit('-', 1)[-1]}-s{i}"
+            st = {}
+            tl["stages"].append(st)
             state.chaos_names.add(cr)  # 생성 호출이 중간에 실패해도 정리 대상에 들어가게 먼저 등록
             expiry = int(stage["duration_sec"] + INJECTED_TIMEOUT_SEC + COMPLETION_TIMEOUT_SEC + CR_EXPIRY_SLACK_SEC)
+            st["create"] = stamp()
             d.chaos.create(cr, cfg.run_id, "calibration", name, stage, f"{expiry}s")
             wait_end = d.clock() + INJECTED_TIMEOUT_SEC
             while not d.chaos.injected(cr):
@@ -751,12 +1016,36 @@ def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
                     raise CalibrationAbort("H6", f"{cr}이(가) {INJECTED_TIMEOUT_SEC:.0f}초 내 AllInjected 안 됨")
                 check()
                 d.sleep(1.0)
+            st["allinjected"] = stamp()   # steady injection window 시작 = AllInjected=True 확인 후
             log(f"[chaos] {stage['name']} AllInjected")
             run_window(stage["name"], float(stage["duration_sec"]), stage)
+            st["delete_request"] = stamp()   # steady 끝 = CR 삭제 요청 전 / teardown 시작
             d.chaos.delete(cr)
             if not _wait(d, lambda c=cr: not d.chaos.exists(c), CHAOS_GONE_TIMEOUT_SEC):
                 raise CalibrationAbort("H8", f"{cr}이(가) {CHAOS_GONE_TIMEOUT_SEC:.0f}초 내 소멸하지 않음")
+            st["gone"] = stamp()   # 삭제 완료 = CR 소멸 첫 확인
+            st["teardown_end"] = st["gone"] + TEARDOWN_TAIL_SEC
             run_window(f"recovery-{stage['name']}", RECOVERY_SEC, None)
+        # 이벤트 유실 교차검증(§44.2) - pod가 살아 있는 동안 스크랩 1회 이상을 기다린 뒤 카운터를 읽는다
+        check()
+        before = tracker.totals()
+        log(f"[crosscheck] kubelet probe 카운터 교차검증 - {CROSSCHECK_WAIT_SEC:.0f}s 대기(Prometheus 스크랩)")
+        hold(CROSSCHECK_WAIT_SEC)
+        metrics, failure = None, None
+        for _attempt in range(CROSSCHECK_ATTEMPTS):
+            try:
+                metrics = d.cluster.prober_metrics(name)
+                break
+            except Exception as e:
+                failure = f"{type(e).__name__}: {e}"
+                d.sleep(10.0)
+        check()
+        after = tracker.totals()
+        if metrics is None:
+            result["crosscheck"] = {"ok": False, "problems": [f"Prometheus 조회 실패: {failure}"], "detail": {}}
+        else:
+            result["crosscheck"] = crosscheck_probe_counters(before, after, metrics)
+            result["prometheus"] = metrics
     except CalibrationAbort as e:
         result["hard_fail"] = {"code": e.code, "detail": e.detail}
     except BaseException as e:  # KeyboardInterrupt 포함 - 정리는 반드시 한다
@@ -764,14 +1053,25 @@ def run_calibration(deps: Deps, cfg: Config, log: Callable = print) -> dict:
         if isinstance(e, (KeyboardInterrupt, SystemExit)):
             interrupted = e
     finally:
-        result["cleanup"] = _cleanup(d, cfg, state, baseline)
+        result["cleanup"] = _cleanup(d, cfg, state, baseline, tracker, tl)
     if not result["cleanup"]["ok"]:
         if result["hard_fail"] is None:
             result["hard_fail"] = {"code": "H8", "detail": "; ".join(result["cleanup"]["problems"])}
         else:
             result["hard_fail"]["also_cleanup_failed"] = result["cleanup"]["problems"]
-    result["analysis"] = recommend(result["windows"], cfg.candidate_sec, result["hard_fail"])
-    result["finished_at"] = d.now_iso()
+    # 종료 오프셋으로 시계 보정을 확정하고(시작·종료 평균) 모든 이벤트를 다시 분류한다
+    offset_end = d.clock_offset()
+    used = [o["offset_sec"] for o in (offset_start, offset_end) if o]
+    result["clock_offset"] = {"start": offset_start, "end": offset_end,
+                              "used_sec": sum(used) / len(used) if used else None,
+                              "drift_sec": abs(offset_end["offset_sec"] - offset_start["offset_sec"])
+                              if offset_start and offset_end else None}
+    result["timeline"] = timeline_iso(tl)
+    result["probe_events"] = classify_all(tracker.occurrences, tl, result["clock_offset"]["used_sec"])
+    result["pod_events"] = result["cleanup"].pop("pod_events")
+    result["ready_condition_since"] = state.ready_since
+    result["analysis"] = judge_v2(result)
+    result["finished_at"] = iso(stamp())
     if interrupted is not None:
         interrupted.calibration_result = result
         raise interrupted
@@ -789,7 +1089,7 @@ def print_plan(out, rollout_changes: list, candidate: dict, cfg: Config, source:
         print(s, file=out)
 
     p("=== calibration 계획 (dry-run - 클러스터 접근 없음) ===")
-    p(f"사전 등록: docs/design/phase8-blue-green-preflight-incident.md §42 | run_id 예시: {cfg.run_id}")
+    p(f"사전 등록: docs/design/phase8-blue-green-preflight-incident.md §42(절차·정리)·§44(v2 판정) | run_id 예시: {cfg.run_id}")
     p("\n[overlay 렌더 diff] 렌더된 9개 리소스 중 Rollout만, 정확히 아래 2경로만 base와 다름 (나머지는 동일):")
     for path, old, new in rollout_changes:
         p(f"  {path}: {old} -> {new}")
@@ -809,24 +1109,31 @@ def print_plan(out, rollout_changes: list, candidate: dict, cfg: Config, source:
         p(f"  {sec:>5.0f}s  {label}")
     p(f"  (pod Ready 대기 <= {POD_READY_TIMEOUT_SEC:.0f}s, 하드 상한 {HARD_LIMIT_SEC / 60:.0f}분, 폴링 {POLL_INTERVAL_SEC:.0f}s)")
     p(f"\n[측정] /health {HEALTH_INTERVAL_SEC}s 간격 + completion {COMPLETION_INTERVAL_SEC}s 간격(payload {cfg.probe_payload}) - worker ssh에서")
-    p("\n[판정] 즉시 실패 H1~H9 / 허용 probe 실패 0 / T_req=max(1.25*L_max, L_max+1.5), T_min=올림, 상한 "
-      f"{T_CAP_SEC:.0f}s / 권고 KEEP·LOWER·RAISE·INSUFFICIENT·NONE, n=1이므로 잠정")
+    p("\n[구간 §44.1] steady = AllInjected 확인 후 ~ CR 삭제 요청 전 / teardown = 삭제 요청 ~ 삭제 완료 + "
+      f"{TEARDOWN_TAIL_SEC:.0f}s / 그 밖 startup·baseline·injection_ramp·between_stage·post_teardown / shutdown(판정 제외)")
+    p("        이벤트는 실제 event timestamp(worker 시계 - 오프셋 + 0.5s)로 분류, steady 경계 +-1s는 보수적으로 steady")
+    p(f"[판정 §44.2] 후보 {cfg.candidate_sec:g}s PASS = 4 stage AllInjected / completion 100% / steady probe 실패 0 / liveness 실패 0 / "
+      "Ready 전이·restart·UID·OOM·eviction·Node pressure 0 / teardown readiness 실패는 구간당 비연속 단발 <=1 / "
+      f"T_min<={cfg.candidate_sec:g}(T_req=max(1.25*L_max, L_max+1.5), 올림) / cleanup 완전 성공 + 측정 유효성(시계 오프셋·창 완료·"
+      "kubelet 카운터 교차검증)")
+    p("[즉시 중단 §44.3] H1~H9 + H10 steady 실패 / H11 liveness 실패 / H12 연속 teardown readiness 실패 -> 정리 후 FAIL 기록")
     p("\n[클러스터 변경(실행 시)] calibration pod 1개 생성·삭제, NetworkChaos CR 4개 생성·삭제(spec.duration 자동 만료 안전망). "
       "Rollout·Service·운영 pod·recovery-policy 변경 없음.")
 
 
 def default_deps(args) -> Deps:
-    return Deps(cluster=KubectlCluster(), chaos=ChaosOps(), probe=SshNodeProbe(host=args.node_ssh, ssh=args.ssh))
+    return Deps(cluster=KubectlCluster(), chaos=ChaosOps(), probe=SshNodeProbe(host=args.node_ssh, ssh=args.ssh),
+                clock_offset=SshClock(host=args.node_ssh, ssh=args.ssh).measure)
 
 
 def main(argv=None, deps_factory: Callable = default_deps) -> int:
-    parser = argparse.ArgumentParser(description="network_tolerant probe timeout calibration(격리 pod) - 사전 등록 §42")
+    parser = argparse.ArgumentParser(description="network_tolerant probe timeout calibration(격리 pod) - 사전 등록 §42·§44")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="오프라인 계획·검증(클러스터 접근 없음)")
     mode.add_argument("--preflight-only", action="store_true", help="읽기 전용 클러스터 확인")
     mode.add_argument("--execute", action="store_true", help="실제 calibration 1회")
     parser.add_argument("--candidate-timeout-sec", type=float, default=None,
-                        help="후속 측정용 - 기본은 overlay가 렌더한 값(10초)을 그대로 쓴다")
+                        help="후보 timeout(초) - calibration pod에만 적용한다. 기본은 overlay가 렌더한 값")
     parser.add_argument("--node-ssh", default=WORKER_SSH_HOST)
     parser.add_argument("--ssh", default="ssh")
     parser.add_argument("--output-dir", default=str(RESULTS_DIR))
@@ -882,6 +1189,18 @@ def main(argv=None, deps_factory: Callable = default_deps) -> int:
             print(f"[preflight] worker ssh 프로브 체인: /health {len(ok)}/{len(samples)} 성공 err={err}")
             if err or not ok:
                 problems.append(f"worker ssh 프로브 체인 실패: {err} samples={samples[:2]}")
+        offset = deps.clock_offset()
+        print(f"[preflight] worker-PC 시계 오프셋: {offset}")
+        if offset is None:
+            problems.append("worker-PC 시계 오프셋을 측정하지 못함")
+        if vllm:
+            try:
+                metrics = deps.cluster.prober_metrics(vllm[0][0])
+                print(f"[preflight] Prometheus prober_probe_total(운영 pod {vllm[0][0]}): {metrics['counters']}")
+                if not any(k.endswith("/successful") for k in metrics["counters"]):
+                    problems.append("Prometheus에 운영 pod의 probe 카운터가 없음(교차검증 불가)")
+            except Exception as e:
+                problems.append(f"Prometheus probe 카운터 조회 실패: {type(e).__name__}: {e}")
         for problem in problems:
             print(f"[preflight] 문제: {problem}")
         print("PREFLIGHT " + ("OK" if not problems else "FAIL"))
@@ -899,9 +1218,11 @@ def main(argv=None, deps_factory: Callable = default_deps) -> int:
         path.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
         a = res["analysis"]
         print(f"\n결과 파일: {path}")
-        print(f"run_outcome={a['run_outcome']} recommendation={a['recommendation']} L_max={a['L_max']} "
-              f"T_required={a['T_required']} T_min={a['T_min']} (후보 {a['candidate_sec']}s, 상한 {a['T_cap']}s, 잠정)")
-        print(f"이유: {a['reason']}")
+        print(f"run_outcome={a['run_outcome']} L_max={a['L_max']} T_required={a['T_required']} T_min={a['T_min']} "
+              f"(후보 {a['candidate_sec']}s)")
+        for key, cond in a["conditions"].items():
+            print(f"  [{'OK' if cond['ok'] else '위반'}] {key}: {cond['detail']}")
+        print(f"probe 이벤트(구간/종류): {a['probe_event_counts']}")
         if res["hard_fail"]:
             print(f"하드 실패: {res['hard_fail']}")
         if res["cleanup"]:
@@ -915,7 +1236,9 @@ def main(argv=None, deps_factory: Callable = default_deps) -> int:
     save(res)
     if res["cleanup"] and not res["cleanup"]["ok"]:
         return 3
-    return 2 if res["analysis"]["run_outcome"] == "FAIL" else 0
+    if res["hard_fail"] and res["hard_fail"]["code"] == "PREFLIGHT":
+        return 1
+    return 0 if res["analysis"]["run_outcome"] == "PASS" else 2
 
 
 if __name__ == "__main__":
