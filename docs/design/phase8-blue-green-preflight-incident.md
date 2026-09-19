@@ -4408,3 +4408,37 @@ network-tolerant overlay의 readiness/liveness `timeoutSeconds`를 11로 바꾸�
   이 판정은 규칙 그대로 적용한다. 이런 FAIL이 나오면 그 사실(구간·시각)을 그대로 보고하고 규칙 조정은 사용자 결정으로 남긴다.
 - `T_min <= 11`(= `L_max <= 8.8초`)은 이론 상한(`2 x (4.0 + 0.4) = 8.8초`)에 정확히 걸쳐 있어 표본 하나가 오버헤드(수 ms)로 8.8초를 넘으면
   `T_min = 12`가 된다(추정 1% 안팎/회). 그 경우도 규칙대로 FAIL로 판정한다.
+
+### 44.6 도구 v2 구현 확정 - 측정 전 addendum (2026-09-19)
+
+§44 규칙을 `experiments/calibrate_network_tolerant_probe.py`에 구현하고 오프라인 검증·dry-run·preflight를 마쳤다(측정 전, 클러스터 변경 없음).
+구현하면서 §44가 명시하지 않은 세부를 **측정 전에** 아래처럼 고정한다. 모두 판정을 완화하지 않는 쪽(fail-closed)이거나 기록 방식이다.
+
+1. **판정 표기**: §44.2의 판정 조건(1~9) 위반 = `FAIL`, 측정 유효성(시계 오프셋·창 완료·카운터 교차검증·`L_max` 사용 가능) 위반 = `INVALID`(판정 불가).
+   둘이 함께 있으면 `FAIL`. `INVALID`도 PASS가 아니므로 FAIL과 같이 취급한다(§44.3: 동결하지 않고 멈춘다). 종료 코드: 0 = PASS뿐, 2 = FAIL/INVALID,
+   3 = 정리 실패, 1 = 시작 전 사전 확인 실패(시계 오프셋 측정 실패 포함 - pod·CR을 만들지 않는다), 130 = 중단.
+2. **즉시 중단 코드**: H1 = restart·UID 변경·OOM(`terminated_reason`)·eviction(`Evicted`·phase `Failed`), H2 = Ready 전이(NotReady 관측 또는 Ready 조건
+   `lastTransitionTime` 변화 - 폴링 사이의 순간 전이 포함), H3 = Node 이상, **H10 = steady injection window의 readiness/liveness 실패, H11 = liveness 실패
+   (전체 실행, shutdown 제외), H12 = 연속 teardown readiness 실패**(같은 전이 구간 2건 이상, 또는 teardown 실패가 다른 readiness 실패와 15초 이내).
+   3초 폴링마다 평가하고 첫 발견 시 정리 후 FAIL로 기록한다.
+3. **구간 경계 시각(PC 시계)**: `create` = CR 생성 호출 직전, `allinjected` = `AllInjected=True` 첫 확인 직후, `delete_request` = CR 삭제 호출 직전, `gone` = CR 소멸
+   첫 확인(2초 폴링), `teardown_end` = `gone` + 15초, `ready` = 최초 Ready 관측, `pod_delete_request` = 정리에서 pod 삭제 호출 직전. 이벤트 시각 =
+   `lastTimestamp` - 오프셋 + 0.5초. 측정 중 분류는 시작 시 오프셋으로, **종료 뒤에는 시작·종료 오프셋 평균으로 모든 이벤트를 다시 분류**한다(종료 오프셋 측정에
+   실패하면 시작 값만 쓴다). 최종 판정은 재분류 결과를 쓴다.
+4. **그 밖 구간의 readiness 실패**(startup·baseline·injection_ramp·between_stage·post_teardown): §44.2의 조건 3(steady)·6(teardown)이 다루지 않으므로
+   **기록만 하고 판정에는 쓰지 않는다**(단 teardown 실패와 15초 이내면 조건 6의 "연속"). Startup probe 실패는 기동 중 정상 현상이라 판정하지 않는다.
+5. **`T_min` 사용 가능 조건(V4, fail-closed)**: stage-4 창이 끝까지 측정됐고 성공 `/health`가 30개 이상(§42.6의 기존 하한)이며, 어느 stage 창에도 실패한 probe 동등
+   `/health` 요청(client 측 오류)이 없어야 `L_max`를 신뢰한다. 아니면 `INVALID`.
+6. **교차검증 절차(V3)**: 마지막 창(`recovery-stage-4`) 뒤 `E1` -> **45초 대기(폴링 유지)** -> Prometheus 조회(실패 시 10초 간격 3회) -> `E2`. `E1 <= C <= E2`
+   (Readiness·Liveness 각각)와 `successful` series 존재를 요구한다. 조회 실패·불일치는 `INVALID`.
+7. **증거 저장**(결과 JSON, 로컬 gitignore): 창별 원본 표본(compact), `probe_events`(구간·모호 여부·PC 시각), K8s 원본 pod 이벤트(`count`·`first`·`last`), 구간
+   경계 시각(ISO), 시계 오프셋(시작/종료/사용/드리프트), Prometheus 카운터·소요시간 히스토그램, Ready 조건 `lastTransitionTime`. §44.4대로 회차 뒤
+   `docs/design/evidence/network-tolerant-calibration/`에 복사해 커밋한다.
+8. **사전 확인 추가**: `--preflight-only`는 시계 오프셋과 운영 pod의 Prometheus probe 카운터도 확인한다. `--execute`는 오프셋을 못 재면 시작하지 않는다.
+
+**검증(측정 전)**: 전체 오프라인 테스트 **463 passed**(존재하지 않는 KUBECONFIG, `RUN_LIVE_TESTS` 없음, 3 deselected). 도구 테스트 134개 - 구간 분류 경계·모호성
+(steady 경계 +-1초)·오프셋 보정, 이벤트 추적(`count` 증가분), 즉시 중단 H10~H12, 조건별 판정 뒤집기(FAIL/INVALID), 교차검증, fake 세계 오케스트레이션(정상 PASS,
+후보 10초는 `T_min` 11로 FAIL, steady·liveness·연속 teardown 즉시 중단, 단발 teardown 실패는 기록 후 PASS, Ready 순간 전이, 이벤트 유실 INVALID, 예외·중단·
+정리 실패 시 CR·pod 정리). `--dry-run --candidate-timeout-sec 11` OK. `--preflight-only` OK: Node 2개 Ready, Rollout gen 30 Healthy 단일 revision
+`659795b9df`, 운영 pod 2개 restarts 0, Chaos CR 없음, context null, worker ssh 체인 `/health` 3/3, **시계 오프셋 +0.293초(RTT 0.66초)** - §44.1의
+사전 측정(+0.285 +-0.28)과 일치, Prometheus 운영 pod 카운터 존재(Readiness successful 5406, Liveness successful 2703, failed series 없음).
