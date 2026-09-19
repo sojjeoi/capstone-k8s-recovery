@@ -4235,3 +4235,89 @@ calibration pod 충실도 검증, 4단계 × 90초 + baseline 60초 + 단계별 
 `659795b9df` 단일 revision·preview 없음, vLLM·recovery-policy Ready·restarts 0, Chaos CR 없음, context `null`, 라이브 template ==
 base(annotation·TCP 기본값 제외), **worker ssh 프로브 체인 동작**(active pod `/health` 3/3 성공). 이 preflight는 아무것도
 만들지 않았다.
+
+## 43. `network_degrade` probe timeout calibration 1회 결과 - 사전 등록 규칙상 `MARGINAL` / 권고 `NONE` (2026-09-19)
+
+§42의 규칙으로 격리 calibration pod 방식을 **1회** 실행했다(원자료: `experiments/results/pilot/calibration-network-tolerant-
+calib-net-tolerant-20260919t103257z.json`, gitignore·로컬 보존 - 아래 표가 그 값의 문서 기록이다). 결과는 pilot이며 본 분석에서 제외한다.
+실행 뒤 값·규칙을 바꾸거나 반복하지 않았다.
+
+### 43.1 실행
+
+`run_id=calib-net-tolerant-20260919t103257z`, 10:32:56Z → 10:46:20Z(13분 24초), 종료 코드 0. calibration pod
+`vllm-calib-…`가 10:32:59Z에 스케줄돼 **10:35:25Z Ready**(콜드스타트 146.5초, startupProbe의 합성 completion 통과 = warmup 완료) →
+30초 settle → baseline 60초 → stage 4개(각 `AllInjected` 확인 후 90초 측정) → 단계마다 CR 삭제·소멸 확인 후 회복 30초.
+후보 timeout은 overlay 렌더값 **10초**(readiness·liveness). NetworkChaos는 calibration pod에만 걸렸고(`duration 240s` 자동 만료 안전망
+확인), 지연은 이름 지정 selector라 운영 pod에 닿지 않았다.
+
+### 43.2 결과 (probe 동등 요청은 worker 노드에서 - kubelet과 같은 네트워크 위치)
+
+| 창 | `/health` n | min / p50 / p95 / **max** (초) | completion p50 / max (성공률) | kubelet 실패 / 재시작 / Ready |
+|---|---|---|---|---|
+| baseline | 60 | 0.002 / 0.004 / 0.010 / 0.013 | 0.259 / 0.667 (100%) | 0 / 0 / True |
+| stage-1 500±50ms | 90 | 0.914 / 1.008 / 1.092 / **1.125** | 1.269 / 1.439 (100%) | 0 / 0 / True |
+| 회복 1 | 30 | 0.002 / 0.003 / 0.009 / 0.012 | 0.257 / 0.334 (100%) | 0 / 0 / True |
+| stage-2 1000±100ms | 90 | 1.835 / 1.996 / 2.166 / **2.226** | 2.277 / 2.478 (100%) | 0 / 0 / True |
+| 회복 2 | 30 | 0.003 / 0.004 / 0.009 / 0.009 | 0.300 / 0.328 (100%) | 0 / 0 / True |
+| stage-3 2000±200ms | 90 | 3.680 / 3.974 / 4.285 / **4.364** | 4.231 / 4.655 (100%) | 0 / 0 / True |
+| 회복 3 | 30 | 0.002 / 0.004 / 0.007 / 0.010 | 0.302 / 0.331 (100%) | 0 / 0 / True |
+| **stage-4 4000±400ms** | 90 | 7.393 / 7.972 / 8.431 / **8.632** | 8.276 / 8.979 (100%) | 0 / 0 / True |
+| 회복 4 | 30 | 0.002 / 0.004 / 0.009 / 0.009 | 0.310 / 0.413 (100%) | **1** / 0 / True |
+
+- **예측(§42.8)이 맞았다**: `/health` 지연은 stage 지연의 정확히 **2배**다(p50: 1.01·2.00·3.97·7.97초 ≈ 2×0.5·1·2·4초). 송신 지연이 SYN-ACK와
+  응답에 두 번 걸리기 때문이고, 최대값은 uniform jitter의 이론 상한 `2×(4.0+0.4) = 8.8초` 안이다(측정 8.632초).
+- completion 성공률은 전 창 100%. completion 지연은 `/health` + 약 0.28초.
+- **하드 실패 없음**(H1~H9): calibration pod restarts 0·Ready 유지·UID 불변, Node 2개 Ready·pressure 없음, 운영 vLLM·recovery-policy
+  pod restarts 0·UID 불변, Rollout·Service 불변, `AllInjected` 4회 모두 30초 내, 남의 CR·context 이상 없음.
+- **kubelet probe 실패 이벤트는 정확히 1건**: 10:45:36Z `Readiness probe failed: … context deadline exceeded (Client.Timeout exceeded while
+  awaiting headers)`(회복 4 창). 그 외 `Unhealthy`는 기동 중 Startup probe 10건(집계 제외)과, 도구가 pod 삭제를 시작한(10:46:06Z
+  `Killing`) **뒤**의 종료 아티팩트 2건(connection refused - 마지막 창 밖이라 집계 안 됨). stage 4개의 창 안 kubelet 실패는 0건이다.
+
+### 43.3 사전 등록 규칙 적용 (구속력 있는 판정)
+
+`run_outcome = MARGINAL`(kubelet 실패 1건), `recommendation = NONE` - §42.6 표의 "**kubelet 실패가 있는데 `L_max`(8.632초) < 후보(10초)
+= 측정 불일치**" 행이다. **이 run만으로 후보 10초의 유지·변경을 확정하지 않는다.**
+
+### 43.4 해석 (탐색적·비구속 - 규칙 판정을 바꾸지 않는다)
+
+- **그 1건은 stage-4 CR 삭제 5초 뒤에 났다.** stage-4 CR은 10:43:45Z 적용 → **10:45:31Z 삭제**(Chaos Mesh `Recovered`), 실패 이벤트는
+  10:45:36Z다. probe timeout이 10초라 그 probe는 약 10:45:26Z에 시작해 **지연이 걸려 있는 동안** 진행 중이었다. 가장 그럴듯한
+  설명은 teardown 아티팩트다: 삭제 시 netem qdisc가 제거되며 지연 큐에 있던 응답 패킷이 버려지고, RTT 추정이 지연(≈4초)으로 부풀어 있어
+  서버 TCP 재전송이 10초를 넘겼다. 근거 - ① 4개 stage 창(총 360초 - stage-4 창은 probe 1회가 ≈8초라 readiness 약 10회·liveness 약
+  9회로 추정, 실측 아님)에서 kubelet 실패 0건 ② stage-4 readiness probe는 한 번에 ≈8초라 삭제 시점에 **거의 항상 진행 중**이다(stage 1~3 종료에서는 실패 없음)
+  ③ 정상 상태 최대 지연 8.632초는 10초 미만. **다만 이 메커니즘은 검증하지 않은 가설**이고, n=1이라 정상 상태 꼬리가 10초를 넘은 경우를
+  배제하지 못한다.
+- **탐색적 재계산(규칙을 사후에 바꾼 것이 아님 - 채택하지 않음)**: teardown 인접 실패를 제외하면 `PASS`, `L_max = 8.632`,
+  `T_req = max(1.25×8.632, 8.632+1.5) = 10.79초` → `T_min = 11초` → 분류 `RAISE(10 → 11)`. 후보 10초의 여유는 1.37초(15.8%)로
+  규칙의 마진(25% 또는 1.5초)에 못 미치고, 이론 상한(8.8초) 기준으로도 1.2초(12%)다. 상한 15초 안이라 timeout 조정으로 해결 가능해 보인다
+  (`INSUFFICIENT` 아님).
+- **실전 함의**: 그 단발 실패도 `failureThreshold=3` 때문에 Ready를 잃지 않았다(Ready 유지·재시작 0). 실제 `network_degrade` trial은 stage
+  전환이 4번 있어 같은 종류의 단발 실패가 날 수 있지만, 연속 3회 실패로 이어질 구조는 아니다(진행 중 probe는 하나뿐).
+- **규칙 설계의 약점(사후 발견)**: "kubelet 실패 1건이면 MARGINAL, `L_max < 후보`면 NONE" 규칙은 이런 teardown 인접 단발 실패 하나로 run 전체를
+  판정 불가로 만든다. 다음 측정 전에 실패를 "지연이 걸린 정상 상태 창"과 "CR 삭제 직후 전이 구간"으로 나눠 기록하도록 사전 등록을
+  보강해야 한다(아래 추가 측정안).
+- 부수 관찰: stage-1(500ms)만으로도 completion p50이 1.27초라 SLO v3 지연 기준(0.648초)을 넘는다 - `network_degrade` trial의 SLO 위반은
+  첫 stage에서 바로 시작된다.
+
+### 43.5 정리·복원 검증 (종료 후 10:48Z, 필수 항목 전부 충족)
+
+Chaos CR 4개 삭제·소멸 확인(`chaos_deleted` 전부 True, 사후 조회 전 namespace 0개), calibration pod 삭제·소멸(`pod_deleted` True), 사후 스냅샷이 사전과
+동일: Rollout Healthy·`generation 30` 불변·`current = stable = active = preview = 659795b9df` 단일 revision(desired>0 RS 1개),
+두 Service selector 불변, 운영 vLLM(UID `b1cfad9f…`)·recovery-policy(UID `95d64e6a…`) restarts 0, Node 2개 Ready·pressure 없음, context `null`,
+실험 pod·ramp-probe·detector·port-forward 없음, Rollout template annotation 불변, worker의 잔여 probe 클라이언트 없음.
+`cleanup.ok = true`, `problems = []`. **HarnessCorrupted·Node 이상·pod 재시작/교체·cleanup 실패·예상 밖 manifest 변경은 발생하지 않았다.**
+
+### 43.6 권고와 추가 측정안 (제시만 - 자동 실행하지 않는다)
+
+**권고(잠정)**: 후보 timeout은 **아직 미확정**이다. 사전 등록 판정은 `NONE`이고, 탐색적 해석은 "10초는 정상 상태에서 통과하지만 여유가
+얇아 11~12초가 규칙의 여유 기준에 맞고(readiness/liveness 판정 지연 33~36초, 상한 45초 이내), 단발 kubelet 실패는 stage 종료 인접 아티팩트일
+가능성이 높다"이다. 어느 쪽도 이 1회로 확정하지 않는다.
+
+| 안 | 내용 | 얻는 것 | 비용 |
+|---|---|---|---|
+| **A (권장)** | 측정 전에 §42.6을 보강(kubelet 실패를 **정상 상태 창**과 **CR 삭제 후 15초 전이 구간**으로 분리 기록 - 전이 구간 실패는 별도 카운트하고 MARGINAL/불일치 판정에서 제외, H1/H2는 그대로)한 뒤 **후보 11초로 동일 절차 2회** | 가설(teardown 아티팩트) 검증, 11초의 정상 상태 무실패·재현성, `T_min` 재현 | 회당 약 14분, 클러스터 변경은 이번과 동일(pod·CR만) |
+| B | 후보 12초로 1회(규칙의 여유 기준 충족 확인) | 12초의 정상 상태 무실패와 36% 여유 확인 | 14분 |
+| C | 추가 측정 없이 결정 - 10초 유지(정상 상태 통과·여유 얇음) 또는 12초 채택(이론 상한 8.8초 대비 36% 여유) | 시간 절약 | 확정 근거가 n=1 + 이론값 |
+
+`probe-timeout-patch.yaml`의 TODO는 "미검증 후보" 상태 그대로 두었다(이 결과가 확정이 아니므로 변경하지 않음). `network_degrade` 3-arm 파일럿과 본
+실험은 시작하지 않았다.
