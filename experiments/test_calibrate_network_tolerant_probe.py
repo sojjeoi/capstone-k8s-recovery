@@ -1483,6 +1483,15 @@ def test_reanalyze_cli_reads_the_saved_json_only_and_writes_a_separate_derived_f
     assert source.read_bytes() == before, "원본 증거 JSON은 그대로"
 
 
+def test_events_after_the_pods_own_termination_are_shutdown_even_when_later_stage_boundaries_follow():
+    """trial에서는 promotion 뒤 Argo scale-down이 stage 도중에 target을 종료시킨다 - 그 뒤 실패는 다음 stage 경계가 있어도 종료 아티팩트."""
+    tl = make_tl()
+    tl["pod_delete_request"] = 430.0   # stage 1 teardown(418) 뒤, stage 2 시작(450) 전에 종료 시작
+    assert cal.classify_occurrence(timeout_occ(455.5), tl, 0.0, probe_timeout_sec=11)["segment"] == "shutdown"
+    assert cal.classify_occurrence(timeout_occ(425.5), tl, 0.0, probe_timeout_sec=11)["segment"] == "between_stage_1"
+    assert cal.classify_occurrence(timeout_occ(405.5), tl, 0.0, probe_timeout_sec=11)["segment"] == "transition_straddling_1"
+
+
 # ---- I. 어댑터 duration·결과 파일 구조적 제외 ----------------------------------------------------
 def test_create_network_chaos_sets_spec_duration_only_when_requested():
     api = MagicMock()

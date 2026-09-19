@@ -120,6 +120,26 @@ def test_parse_watch_stream_reads_pretty_printed_objects():
     assert [e["type"] for e in events] == ["ADDED", "DELETED"] and events[0]["object"]["metadata"]["name"] == "a"
 
 
+def test_parse_watch_stream_reads_the_one_line_compact_objects_kubectl_really_prints():
+    """실측: `kubectl get -w --output-watch-events -o json`은 이벤트마다 한 줄짜리 compact JSON을 낸다(처음 구현이 이 형식을 놓쳐
+    native 파일럿의 CR 스트림이 비었다)."""
+    text = "".join(json.dumps({"type": kind, "object": {"metadata": {"name": "cr", "labels": {"k": "{}"}}}},
+                               separators=(",", ":")) + "\n" for kind in ("ADDED", "MODIFIED", "DELETED"))
+    assert [e["type"] for e in obs.parse_watch_stream(io.StringIO(text))] == ["ADDED", "MODIFIED", "DELETED"]
+    mixed = io.StringIO(text + json.dumps({"type": "ADDED", "object": {"x": {"y": 1}}}, indent=2) + "\n")
+    assert len(list(obs.parse_watch_stream(mixed))) == 4
+
+
+def test_chaos_summary_marks_allinjected_even_though_chaos_mesh_conditions_have_no_transition_time():
+    def item(conds):
+        return {"metadata": {"name": "cr", "creationTimestamp": "c"}, "spec": {"selector": {"pods": {"vllm-serving": [TARGET]}}},
+                "status": {"conditions": conds}}
+    assert obs.chaos_summary(item([{"type": "AllInjected", "status": "True", "reason": ""}]))["injected_since"] is True
+    assert obs.chaos_summary(item([{"type": "AllInjected", "status": "False"}]))["injected_since"] is None
+    with_time = [{"type": "AllInjected", "status": "True", "lastTransitionTime": "2026-09-19T00:00:00Z"}]
+    assert obs.chaos_summary(item(with_time))["injected_since"] == "2026-09-19T00:00:00Z"
+
+
 class _Recorder:
     def __init__(self):
         self.records = []
@@ -260,6 +280,26 @@ def test_a_promotion_switch_is_not_an_endpoint_removal_and_the_old_pod_deletion_
                  pods={"vllm-serving-b": pod(uid="u-b", hash="B")})
     a = analyze([(T0, state()), (D4 - 60, switched), (D4 - 20, gone)])
     assert a["verdict"] == "PASS" and a["promotion_observed"] is not None and a["target_lost_before_promotion"] is None
+
+
+def test_probe_failures_after_the_targets_own_termination_by_scale_down_are_shutdown_artifacts():
+    """fixed_threshold 실측(2026-09-20): promotion 뒤 Argo가 구 pod(=chaos target)를 scale-down했고, 그 종료 중(Killing 이벤트 뒤)에
+    readiness 실패 3건이 찍혔다 - CR 삭제(같은 시각대)와 겹쳐도 순수 teardown/straddling이 아니라 종료 아티팩트다."""
+    killing = {"pod": TARGET, "reason": "Killing", "message": "Stopping container vllm", "count": 1, "uid": "ev-k",
+               "first": iso_z(D4 - 5), "last": iso_z(D4 - 5)}
+    fails = [kubelet_event(D4 + 1, TIMEOUT, uid="ev-1", count=1), kubelet_event(D4 + 5, "dial tcp: connection refused", uid="ev-2"),
+             kubelet_event(D4 + 16, TIMEOUT, uid="ev-3")]
+    switched = dict(services={"vllm-active": {"app": "vllm-serving", "rollouts-pod-template-hash": "B"}},
+                    endpoints={"vllm-active": {"ready": ["vllm-serving-b"], "not_ready": []}},
+                    rollout={"phase": "Healthy", "abort": False, "current_hash": "B", "stable_rs": "B", "active_selector": "B",
+                             "preview_selector": "B"})
+    terminating = state(**switched, pods={TARGET: pod(deleting=True), "vllm-serving-b": pod(uid="u-b", hash="B")}, events=[killing])
+    after = state(**switched, pods={"vllm-serving-b": pod(uid="u-b", hash="B")}, events=[killing, *fails])
+    a = analyze([(T0, state()), (D4 - 30, state(**switched, pods={TARGET: pod(), "vllm-serving-b": pod(uid="u-b", hash="B")})),
+                 (D4 - 4, terminating), (D4 + 20, after)])
+    assert {p["segment"] for p in a["probe_events"]} == {"shutdown"} and a["counts"]["shutdown"] == 3
+    assert a["verdict"] == "PASS" and a["stop_conditions"] == [] and a["row"]["transition_straddling"] == 0
+    assert a["target_termination_start"] is not None and a["promotion_observed"] is not None
 
 
 def test_the_target_disappearing_without_a_promotion_is_a_replacement():

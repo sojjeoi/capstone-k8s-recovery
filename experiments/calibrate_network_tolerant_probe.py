@@ -494,6 +494,11 @@ def classify_occurrence(occ: dict, tl: dict, offset_sec: float, bounds: Optional
         if any(abs(t - edge) <= AMBIGUITY_SEC for edge in (st.get("allinjected"), st.get("delete_request"))
                if edge is not None):
             segment, ambiguous = f"steady_{i}", True
+    terminated = tl.get("pod_delete_request")
+    if terminated is not None and t >= terminated:
+        # pod 자신의 종료가 시작된 뒤의 실패는 (그 뒤에 다른 stage 경계가 있어도) 종료 아티팩트 - trial에서는 promotion 뒤 Argo
+        # scale-down이 stage 도중에 target을 종료시킬 수 있다(calibration은 항상 마지막 경계 뒤라 결과가 같다).
+        segment, ambiguous = "shutdown", False
     probe_start = None
     if probe_timeout_sec and occ["kind"] in ("Readiness", "Liveness"):
         probe_start = t - probe_timeout_sec if is_timeout_failure(occ["message"]) else t

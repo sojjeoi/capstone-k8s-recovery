@@ -29,3 +29,6 @@ experiments/loadgen-runner/ramp.py
 # OS
 .DS_Store
 Thumbs.db
+experiments/results/pilot/*.jsonl
+experiments/results/pilot/*.log
+experiments/results/pilot/*.stop

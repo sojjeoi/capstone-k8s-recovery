@@ -51,9 +51,11 @@ def chaos_summary(item: dict) -> dict:
     injected = conds.get("AllInjected") or {}
     targets = (((item.get("spec") or {}).get("selector") or {}).get("pods") or {}).get(NAMESPACE) or []
     md = item.get("metadata", {})
+    # Chaos Mesh의 status.conditions에는 lastTransitionTime이 없다(실측 2026-09-20) - 없으면 True로 "주입됨"만 표시하고, 시각은
+    # chaos watch 스트림의 수신 시각이 대신한다.
+    injected_since = (injected.get("lastTransitionTime") or True) if injected.get("status") == "True" else None
     return {"target": targets[0] if targets else None, "created": md.get("creationTimestamp"),
-            "deleting": md.get("deletionTimestamp"),
-            "injected_since": injected.get("lastTransitionTime") if injected.get("status") == "True" else None}
+            "deleting": md.get("deletionTimestamp"), "injected_since": injected_since}
 
 
 def build_state(items: list) -> dict:
@@ -100,18 +102,19 @@ def build_state(items: list) -> dict:
 
 
 def parse_watch_stream(lines: Iterable[str]):
-    """`kubectl get -w -o json --output-watch-events`의 (여러 줄로 pretty-print된) JSON 객체 스트림을 하나씩 돌려준다."""
+    """`kubectl get -w -o json --output-watch-events`의 JSON 객체 스트림을 하나씩 돌려준다. 실측(2026-09-20)상 kubectl은 이벤트마다
+    **한 줄짜리 compact JSON**을 내보내지만(여러 줄 pretty-print 가정으로 처음 짜서 CR 스트림이 비었다), 여러 줄이어도 받도록
+    `}`로 끝나는 줄마다 지금까지 쌓은 버퍼가 완결된 객체인지 시도한다."""
     decoder, buffer = json.JSONDecoder(), ""
     for line in lines:
         buffer += line
-        if not line.startswith("}"):
-            continue  # 최상위 객체는 열 0의 `}`로 끝난다
-        text = buffer.strip()
-        buffer = ""
-        try:
-            obj, _ = decoder.raw_decode(text)
-        except ValueError:
+        if not line.rstrip().endswith("}"):
             continue
+        try:
+            obj, _ = decoder.raw_decode(buffer.strip())
+        except ValueError:
+            continue  # 아직 완결되지 않은 여러 줄 객체
+        buffer = ""
         yield obj
 
 
@@ -319,6 +322,15 @@ def analyze(records: list, probe_timeout_sec: float, offset_sec: Optional[float]
         for pod in {e["pod"] for e in st["events"]}:
             trackers.setdefault(pod, cal.EventTracker(pod)).update({"events": st["events"]}, t)
     tl = {"stages": [{k: s[k] for k in ("create", "allinjected", "delete_request", "gone", "teardown_end")} for s in stages]}
+    # target pod 자신의 종료(promotion 뒤 Argo scale-down 등)가 시작된 뒤의 probe 실패는 종료 아티팩트(shutdown)다 - 기록만 하고 판정
+    # 에서 제외한다(계약서 5.8 표·§44.1과 같은 규칙). 시작 시각 = target의 kubelet `Killing` 이벤트(worker 시계 -> PC) 또는 target이
+    # deleting으로 처음 관찰된 시각 중 이른 쪽.
+    kills = [cal.parse_k8s_time(e["first"] or e["last"]) - offset + 0.5 for _, st in states for e in st["events"]
+             if e["pod"] == target and e["reason"] == "Killing" and (e["first"] or e["last"])]
+    deleting = [t for t, st in states if target in st["pods"] and st["pods"][target]["deleting"]]
+    if kills or deleting:
+        tl["pod_delete_request"] = min(kills + deleting[:1])
+    out["target_termination_start"] = cal.iso(tl.get("pod_delete_request"))
     classified = cal.classify_all(trackers[target].occurrences, tl, offset, probe_timeout_sec) if target in trackers else []
     kubelet = [o for o in classified if o["kind"] in ("Readiness", "Liveness")]
     out["probe_events"] = [{"kind": o["kind"], "segment": o["segment"], "ambiguous": o["ambiguous"], "t_pc_iso": o["t_pc_iso"],
@@ -400,8 +412,9 @@ def print_analysis(out, a: dict) -> None:
     p(f"  최종 행: transition_straddling {r['transition_straddling']}건 | Ready 전이 {'있음' if r['ready_transition'] else '없음'} | "
       f"Endpoint 영향 {'있음' if r['endpoint_impact'] else '없음'} | restart {'있음' if r['restart'] else '없음'} | "
       f"steady {r['steady']} | 순수 teardown {r['pure_teardown']}")
-    p(f"  target 소멸(승격 전) {a['target_lost_before_promotion']} / 승격 관찰 {a['promotion_observed']} / 다른 pod probe 실패 "
-      f"{a['other_pod_probe_failures']}")
+    p(f"  target 소멸(승격 전) {a['target_lost_before_promotion']} / 승격 관찰 {a['promotion_observed']} / target 종료 시작 "
+      f"{a['target_termination_start']} (그 뒤 probe 실패 = shutdown 아티팩트, 판정 제외) / 종료 아티팩트 {a['counts']['shutdown']}건 / "
+      f"다른 pod probe 실패 {a['other_pod_probe_failures']}")
     for code, text in a["stop_conditions"]:
         p(f"  중단 조건 {code}: {text}")
     for note in a["notes"]:
