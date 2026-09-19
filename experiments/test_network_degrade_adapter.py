@@ -6,6 +6,11 @@ pod 교체 3가지(주입 효과 전=invalid, 효과 후=실험 결과로 기록
 (test_pod_kill_adapter.py와 같은 assert+print 스타일). 백그라운드 스레드가
 실제로 도는 부분만 테스트용 초단기 duration_sec/timeout으로 오버라이드한다.
 
+클러스터를 만지는 *_fn 훅(create/delete/does_chaos_exist/is_stage_injected)은 테스트가 쓰는 만큼
+전부 명시적으로 주입해야 한다 - 빠뜨리면 기본값이 실제 Kubernetes를 호출한다(2026-09-19 발견:
+4개 테스트가 오프라인 스위트를 돌릴 때마다 실제 NetworkChaos CR을 만들고 지웠다, docs/design/
+phase8-blue-green-preflight-incident.md §40.6, §41). conftest.py의 cluster_guard가 이를 실패로 만든다.
+
 get_active_pods_fn은 prepare() 때뿐 아니라 매 단계 전환 직전(_check_target)
 에도 다시 불린다(2026-09-18 2차 리뷰) - 대상 교체 테스트들은 호출 횟수를
 세서 몇 번째 호출부터 다른 값을 주는 방식으로 "언제" 바뀌는지를 제어한다."""
@@ -136,13 +141,14 @@ def test_multiple_targets_found():
 def test_injection_never_effective():
     # CR은 계속 생성되지만 status가 끝까지 AllInjected를 안 준 상황
     # (예: chaos-daemon 문제로 tc 규칙이 실제로 안 걸림).
-    calls = {"create": []}
+    calls = {"create": [], "delete": []}
     injector = make_network_degrade_injector(
         RUN_ID, ARM, 1,
         get_active_pods_fn=lambda: [TARGET_POD],
         is_stage_injected_fn=lambda cr_name: False,
         does_chaos_exist_fn=lambda cr_name: False,  # delete가 항상 즉시 반영된다고 가정(이 테스트의 관심사 아님)
         create_chaos_fn=lambda *args: calls["create"].append(args),
+        delete_chaos_fn=lambda cr_name: calls["delete"].append(cr_name),  # 기본값은 실제 클러스터 호출
         stages=FAST_STAGES,
         stage_delete_poll_interval_sec=0.01)
 
@@ -214,10 +220,14 @@ def test_uid_change_before_injection_effective_is_invalid():
             return [TARGET_POD]  # prepare()가 고정하는 첫 조회
         return [REPLACEMENT_POD]  # stage-0 진입 직전 재확인부터 바뀜
 
+    calls = {"create": [], "delete": []}
     injector = make_network_degrade_injector(
         RUN_ID, ARM, 1,
         get_active_pods_fn=get_active_pods_fn,
         is_stage_injected_fn=lambda cr_name: True,
+        does_chaos_exist_fn=lambda cr_name: False,  # 애초에 만든 CR이 없음 - cleanup 검증이 바로 끝남
+        create_chaos_fn=lambda *args: calls["create"].append(args),
+        delete_chaos_fn=lambda cr_name: calls["delete"].append(cr_name),  # 기본값은 실제 클러스터 호출
         stages=FAST_STAGES,
         stage_delete_poll_interval_sec=0.01)
 
@@ -229,6 +239,7 @@ def test_uid_change_before_injection_effective_is_invalid():
     assert "효과를 내기 전" in str(exc) and "오염" in str(exc)
     assert injector.get_target_replacement() is None, "invalid 처리된 경우 target_replaced는 기록하지 않음"
     injector.cleanup()
+    assert calls["create"] == [], "효과 전 대상 변경은 stage-0 CR을 만들기 전에 걸러야 함"
     print("OK - 효과 전 대상 변경: invalid_run(외부 오염 가능성) - stage-0 CR도 안 만듦")
 
 
@@ -322,11 +333,14 @@ def test_uid_change_after_injection_effective_ambiguous_transition_recorded():
 def test_stage_deletion_not_confirmed_raises():
     # delete_chaos_fn은 불리지만 does_chaos_exist_fn이 절대 False를 안 줌
     # (예: Chaos Mesh finalizer가 걸려 실제 소멸이 안 되는 상황).
+    calls = {"create": [], "delete": []}
     injector = make_network_degrade_injector(
         RUN_ID, ARM, 1,
         get_active_pods_fn=lambda: [TARGET_POD],
         is_stage_injected_fn=lambda cr_name: True,
         does_chaos_exist_fn=lambda cr_name: True,  # 절대 안 사라짐
+        create_chaos_fn=lambda *args: calls["create"].append(args),  # 기본값은 실제 NetworkChaos CR 생성
+        delete_chaos_fn=lambda cr_name: calls["delete"].append(cr_name),
         stages=FAST_STAGES,
         stage_delete_poll_interval_sec=0.01,
         stage_recovery_timeout_sec=0.05)
@@ -338,15 +352,21 @@ def test_stage_deletion_not_confirmed_raises():
     ok, exc = _raises_trial_invalid(injector.is_done)
     assert ok, "단계 소멸 시간초과가 TrialInvalid로 드러나야 함"
     assert "소멸" in str(exc) or "복구" in str(exc)
+    assert len(calls["create"]) == 1 and len(calls["delete"]) == 1, \
+        "첫 단계 CR만 만들고 삭제를 요청한 뒤 소멸 미확인으로 멈춰야 함(다음 단계로 안 넘어감)"
     print("OK - 단계 소멸 미확인: 다음 단계로 안 넘어가고 시간초과로 TrialInvalid")
 
 
 def test_cleanup_raises_if_residual_cr_remains():
     # delete_chaos_fn을 불러도 does_chaos_exist_fn이 계속 True(예: 잔존 finalizer).
+    calls = {"create": [], "delete": []}
     injector = make_network_degrade_injector(
         RUN_ID, ARM, 1,
         get_active_pods_fn=lambda: [TARGET_POD],
+        is_stage_injected_fn=lambda cr_name: False,  # inject() 안 하므로 안 불림 - 실제 호출로 새지 않게 명시
         does_chaos_exist_fn=lambda cr_name: True,
+        create_chaos_fn=lambda *args: calls["create"].append(args),
+        delete_chaos_fn=lambda cr_name: calls["delete"].append(cr_name),  # 기본값은 실제 클러스터 호출
         stages=FAST_STAGES,
         stage_delete_poll_interval_sec=0.01,
         cleanup_verify_timeout_sec=0.05)
@@ -357,6 +377,8 @@ def test_cleanup_raises_if_residual_cr_remains():
         assert False, "잔존 CR이 있으면 cleanup()이 예외를 던져야 함"
     except RuntimeError as e:
         assert "남아있는" in str(e)
+    assert calls["create"] == [], "inject() 없이는 CR을 만들면 안 됨"
+    assert len(calls["delete"]) == len(FAST_STAGES), "cleanup은 (미리 계산한) 모든 단계 CR 이름에 삭제를 요청한 뒤에도 잔존을 확인함"
     print("OK - cleanup 후 잔존 CR: 조용히 성공하지 않고 예외로 드러남")
 
 
