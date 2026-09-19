@@ -569,7 +569,8 @@ def judge_v2(result: dict) -> dict:
     put("C8_cleanup_ok", cleanup.get("ok") is True, cleanup.get("problems") or "정리 완전 성공")
     put("C9_no_hard_fail", hard is None, hard or "없음")
     cross = result.get("crosscheck")
-    put("V3_probe_counter_crosscheck", bool(cross and cross["ok"]), (cross or {}).get("problems") or "교차검증 미수행")
+    put("V3_probe_counter_crosscheck", bool(cross and cross["ok"]),
+        "교차검증 미수행" if cross is None else cross["problems"] or cross.get("detail") or "교차검증 통과")
     offset = result.get("clock_offset")
     put("V1_clock_offset", bool(offset and offset.get("used_sec") is not None), offset or "시계 오프셋 없음")
     failed = sorted(k for k, v in cond.items() if not v["ok"])

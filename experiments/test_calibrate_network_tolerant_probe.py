@@ -69,7 +69,7 @@ def make_snapshot():
 def test_real_overlay_render_changes_only_the_two_timeouts(base):
     changes = cal.verify_overlay(cal.render_overlay(), base)
     assert {p for p, _, _ in changes} == cal.EXPECTED_OVERLAY_CHANGES
-    assert all(new == 10 for _, _, new in changes), "이번 overlay 후보는 10초"
+    assert all(new == 11 for _, _, new in changes), "calibration 독립 2회 PASS로 확정된 값(§45) - 임의로 바꾸지 말 것"
 
 
 def test_verify_overlay_accepts_exactly_the_two_paths(base):
@@ -216,13 +216,19 @@ def clean_result(candidate=11.0):
     return {"candidate_sec": candidate, "windows": windows,
             "timeline": {"stages": [{"allinjected": "x"} for _ in cal.STAGES]}, "probe_events": [],
             "hard_fail": None, "cleanup": {"ok": True, "problems": []},
-            "crosscheck": {"ok": True, "problems": []}, "clock_offset": {"used_sec": 0.285}}
+            "crosscheck": {"ok": True, "problems": [], "detail": {"Readiness": {"events_before": 1, "counter_failed": 1,
+                                                                                 "events_after": 1, "successful_series": True}}},
+            "clock_offset": {"used_sec": 0.285}}
 
 
 def test_a_clean_run_passes_every_condition():
     a = cal.judge_v2(clean_result())
     assert a["run_outcome"] == "PASS" and a["failed_conditions"] == [] and a["reasons"] == []
     assert (a["L_max"], a["T_min"]) == (8.02, 11)
+    assert a["conditions"]["V3_probe_counter_crosscheck"]["detail"]["Readiness"]["counter_failed"] == 1,         "교차검증이 통과했을 때도 실제 값을 detail에 남긴다(통과했는데 '미수행'으로 표시되던 문구 버그 - 판정에는 영향 없었음)"
+    result = clean_result()
+    result["crosscheck"] = None
+    assert cal.judge_v2(result)["conditions"]["V3_probe_counter_crosscheck"]["detail"] == "교차검증 미수행"
 
 
 def test_the_same_data_fails_a_lower_candidate():
