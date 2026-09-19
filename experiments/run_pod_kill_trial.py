@@ -23,6 +23,7 @@ import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 
+import arm_controller
 import slo_judge
 from load_ramp_adapter import make_load_ramp_prober
 from pod_kill_adapter import make_pod_kill_injector
@@ -43,6 +44,8 @@ def main():
     parser.add_argument("--pilot", action="store_true",
                          help="파일럿 실행 표시 - run_id에 pilot- 접두어를 붙이고 "
                               "is_pilot=True로 기록해 results/pilot/ 아래 구조적으로 분리")
+    parser.add_argument("--rollout", default="vllm-serving", help="non-native arm의 preview 준비 대상 Rollout 이름")
+    parser.add_argument("--namespace", default="vllm-serving", help="non-native arm의 preview 준비 대상 namespace")
     args = parser.parse_args()
 
     scenario = "pod_kill"
@@ -50,14 +53,21 @@ def main():
     run_id = f"{prefix}{scenario}-{args.arm}-{args.rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
     injector = make_pod_kill_injector(run_id, args.arm, args.rep)
+    # non-native arm은 이 배선을 절대 우회할 수 없다(fail-closed, 2026-09-19 추가) - 예전엔 --arm
+    # 이름만 결과에 태깅될 뿐 detector 기동·preview 준비·자동 rollback이 전혀 안 돼서, 그대로
+    # fixed_threshold/proposed로 돌리면 detector 없는 trial이 잘못 라벨링됐다(run_load_ramp_trial.py가
+    # 2026-09-18에 고친 것과 같은 결함). native면 두 함수 모두 원본/None을 그대로 돌려준다.
+    injector = arm_controller.wrap_injector_with_preview_prep(injector, args.arm, args.rollout, args.namespace)
+    detector = arm_controller.make_detector_for_arm(args.arm, run_id)
     prober = make_load_ramp_prober(args.probe_config, run_id, scenario, args.arm, args.rep, args.timeout_sec)
 
-    print(f"run_id: {run_id}")
+    print(f"run_id: {run_id}" + (f" / detector: {detector.name}" if detector is not None else ""))
     try:
         result = run_once(
             scenario=scenario, arm=args.arm, rep=args.rep,
             sequence_index=args.sequence_index, order_seed=args.order_seed,
             injector=injector, prober=prober, timeout_sec=args.timeout_sec,
+            detector=detector,
             run_id=run_id, is_pilot=args.pilot,
             latency_slo_sec=slo_judge.LATENCY_THRESHOLD, slo_version=slo_judge.SLO_VERSION,
             min_observation_sec=slo_judge.WINDOW_SEC,
