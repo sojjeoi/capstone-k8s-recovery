@@ -252,6 +252,40 @@ def _check_judgment_consistency(row: dict, issues: list) -> None:
                 run_id, "promotion_verified", "action=promote_preview인데 promotion 검증 결과(promotion_verified) 없음"))
 
 
+def _check_decision_switch_consistency(row: dict, issues: list) -> None:
+    """t_decision/t_switch의 존재 규칙(2026-09-19 추가, 계약서 §5.2/§5.5). 순서(t_detection <=
+    t_decision <= t_api_request <= t_switch)는 CAUSAL_CHAIN이 timing anomaly로 이미 검증한다 - 여기서는
+    "있어야 할 때 있고 없어야 할 때 없는가"만 본다:
+    - promotion이 없으면(action이 promote_preview가 아니면) t_api_request/t_switch는 null.
+    - t_switch는 selector 검증이 성공한 promotion(promotion_verified=true)에서만 있다.
+    - recovery-policy 실시간 상태(judgment_source=live_state)에서 회수한 trial은 탐지했으면 t_decision이,
+      검증된 promotion이면 t_api_request/t_switch도 반드시 있다. 이 필드들이 채워지기 시작하기 전의
+      trial(audit_reconcile로 보완된 과거 pilot 등)의 t_decision/t_switch는 추정으로 채우지 않고 null로
+      보존하므로 이 존재 요구를 적용하지 않는다."""
+    if row.get("arm") == "native":
+        return
+    run_id = row.get("run_id", "?")
+    verified = row.get("promotion_verified") is True
+    if row.get("t_switch") is not None and not verified:
+        issues.append(ValidationIssue(
+            run_id, "t_switch", f"t_switch가 있는데 promotion_verified={row.get('promotion_verified')!r} - "
+                                f"selector 검증에 성공한 promotion에서만 기록돼야 함"))
+    if row.get("action") != "promote_preview":
+        for field in ("t_api_request", "t_switch"):
+            if row.get(field) is not None:
+                issues.append(ValidationIssue(
+                    run_id, field, f"action={row.get('action')!r}(promotion 없음)인데 {field}가 있음 - "
+                                   f"promotion이 없으면 null이어야 함"))
+    if row.get("judgment_source") == "live_state":
+        if row.get("detected") is True and row.get("t_decision") is None:
+            issues.append(ValidationIssue(run_id, "t_decision", "detected=true인데 t_decision 없음(live_state)"))
+        if verified:
+            for field in ("t_api_request", "t_switch"):
+                if row.get(field) is None:
+                    issues.append(ValidationIssue(
+                        run_id, field, f"promotion_verified=true인데 {field} 없음(live_state)"))
+
+
 def _check_audit_status(row: dict, issues: list) -> bool:
     """비동기 감사 미완료(pending/failed)를 timing anomaly와 분리해 표시한다(2026-09-19
     추가) - Git push가 늦은 것은 실험 측정의 결함이 아니라 감사기록 후처리가 안 끝난 것이다
@@ -327,6 +361,7 @@ def build_comparison(rows: list) -> tuple:
         _check_injection_timestamps_consistency(row, ts, issues)
         _check_tolerant_profile_prevented_misleading(row, issues)
         _check_judgment_consistency(row, issues)
+        _check_decision_switch_consistency(row, issues)
         audit_pending = _check_audit_status(row, issues)
         temporal_relation = _compute_temporal_relation(ts)
         restart_chain_observed, probe_isolation_held = _compute_profile_interpretation(row)
@@ -388,6 +423,9 @@ def build_comparison(rows: list) -> tuple:
             "timing_schema_version": row.get("timing_schema_version"),
             "temporal_relation": temporal_relation,
             "t_detection": row.get("t_detection"),
+            "t_decision": row.get("t_decision"),
+            "t_api_request": row.get("t_api_request"),
+            "t_switch": row.get("t_switch"),
             "detection_stage": row.get("detection_stage"),
             "t_slo": row.get("t_slo"),
             "slo_stage": row.get("slo_stage"),

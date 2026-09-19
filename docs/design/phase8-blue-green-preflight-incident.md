@@ -3595,9 +3595,9 @@ native `prevented` 파일럿. native·fixed_threshold(재실행 recovered) 파�
 
 ### 37.6 남은 항목
 
-- `t_decision`/`t_switch`는 여전히 항상 null이다(이번 범위 밖 - 감사기록의
+- `t_decision`/`t_switch`는 이 절 시점엔 여전히 항상 null이었다(감사기록의
   `decided_at`은 promotion 실행 **후**에 찍혀 그대로 `t_decision`으로 쓰면 오해의
-  소지가 있어 별도 정의가 필요).
+  소지가 있어 별도 정의가 필요) -> **§38에서 서버 시각으로 정의·구현**.
 - 예측 경로 신호의 `detector`가 arm의 `detector_process`와 다른지(잘못된 detector가
   신호를 냄)는 이제 두 필드로 비교할 수 있지만 자동 검출은 추가하지 않았다(요청
   범위 밖).
@@ -3606,3 +3606,71 @@ native `prevented` 파일럿. native·fixed_threshold(재실행 recovered) 파�
   클러스터에 배포된 이미지(`8e19c41b…`)는 승인 반영 직전 워킹트리에서 빌드했고, 승인
   반영분(`reconcile_audit.py`의 경로별 귀속 엄격화·detector 추론 pilot 한정)은
   실험 클라이언트(로컬) 쪽 변경이라 recovery-policy 이미지와 무관하다.
+
+## 38. 마지막 필수 timing gap - `t_decision`/`t_switch` (2026-09-19)
+
+§37 커밋(승인 반영·origin merge·푸시 완료, `HEAD == origin/master`, working tree clean,
+병합 후 276 passed 확인) 뒤 별도 커밋으로 처리했다. 오프라인 테스트까지만 수행했고
+load_ramp 재실행·추가 live smoke·재배포는 하지 않았다(다음 실제 검증은 `pod_kill`
+non-native 파일럿).
+
+### 38.1 정의(지시 그대로, 전부 recovery-policy 서버 시각·첫 값만 유지)
+
+| 필드 | 시각 | promotion 없을 때 |
+|---|---|---|
+| `t_detection` | 현재 run의 유효 신호를 처음 수락(기존) | 있음 |
+| `t_decision` | **정책(`policy.decide()`)이 action을 확정한 직후** - observe-only여도, 조치 없는 판정(rule-out/unknown)도 기록 | 있음 |
+| `t_api_request` | 실제 promotion 호출 직전(기존) | null |
+| `t_switch` | **promotion 후 active selector 검증이 처음 성공한 시각** | null(검증 실패한 promotion도 null) |
+
+- `t_switch`의 원천은 `rollouts_client.promote()`가 verify 루프에서 selector 일치를 처음
+  관측한 **그 순간** 찍는 `verified_at`이다(`promote()` 반환 후의 시각이 아님). 같은
+  `verified_at`이 감사기록의 promotion `result`에도 남는다. 전환의 정확한 발생 시각이
+  아니라 처음 **관측**한 시각이라 폴링 간격(0.5초)+API 지연만큼의 관측 오차가 있음을
+  계약서에 명시했다.
+- 중복 신호는 `process_signal()`에서 `decide()` 전에 조기 반환되므로 `t_decision`을 건드릴
+  수 없고, 후속 non-duplicate 신호도 첫 값을 덮어쓰지 않는다. **결과**: 예측 신호가 먼저
+  observe-only로 판정된 뒤 반응 신호가 promotion을 실행하면 `t_decision`은 첫 유효 판정의
+  시각으로 유지되고 `t_api_request`/`t_switch`는 실행된 promotion의 것이다(순서는 여전히
+  성립) - "최초 유효 값" 규칙을 그대로 적용한 결과이며 테스트로 고정했다.
+- promotion 경로의 순서 `t_detection <= t_decision <= t_api_request <= t_switch`는 구조적으로
+  성립한다(각 신호는 자기 `_record_detection` 뒤에 `decide()`에 도달하고, `t_api_request`는
+  `promote()` 호출 전, `t_switch`는 그 안의 검증 성공 시각).
+
+### 38.2 구현·검증
+
+- `recovery-policy`: `rollouts_client.promote()`가 검증 성공 시 `verified_at`(UTC ISO) 반환,
+  `ExperimentContext`에 `t_decision`/`t_switch`, `process_signal()`이 `decide()` 직후
+  `_record_decision_time()`, 검증 성공한 promotion 직후 `_record_switch()`(락 안, 첫 값만),
+  `GET /admin/experiment-run/timing`이 두 필드를 함께 반환(경로 유지·상위 호환).
+- `run_once.py`: context clear 전에 회수해 `TrialResult.t_decision`/`t_switch`에 기록
+  (native는 조회하지 않아 null). 판정이 처리 중인 순간의 settle 대기(§37.1)는 그대로 -
+  `decision_outcome`이 확정될 때쯤이면 `t_decision`/`t_switch`가 이미 기록돼 있다(`_finish`
+  이전에 기록하는 순서).
+- `collect_metrics.py`: **comparison.csv에 `t_decision`/`t_api_request`/`t_switch` 컬럼 추가**
+  (예전엔 이 셋이 CSV에 없었다 - `TrialResult`에 있어도 화이트리스트에 안 넣으면 CSV에 안 나오는
+  기존 교훈), 순서는 기존 `CAUSAL_CHAIN`이 timing anomaly로 검증, 존재 규칙 신설(promotion
+  없으면 `t_api_request`/`t_switch` null, `t_switch`는 검증된 promotion에만, `live_state` trial은
+  탐지 시 `t_decision`·검증된 promotion 시 `t_api_request`/`t_switch` 필수). `action_delay_sec`
+  (`t_detection` -> `t_switch`)가 이제 실제 값으로 계산된다.
+- **기존 proposed 파일럿의 `t_decision`/`t_switch`는 추정해 채우지 않고 null로 보존**했다 -
+  `reconcile_audit.py`는 이 필드를 건드리지 않으며(감사기록의 `decided_at`은 promotion 실행
+  **후**에 찍혀 `t_decision`의 근거가 될 수 없다), `judgment_source=audit_reconcile` trial에는
+  존재 요구를 적용하지 않아 false positive가 없다.
+- 회귀 테스트 추가: `recovery-policy/test_main.py` 6(observe-only의 `t_decision`·조치 없는
+  판정의 `t_decision`·promotion 순서와 `t_switch=verified_at`·검증 실패 시 `t_switch` null·중복/후속
+  신호 최초 값 보존·먼저 observe-only 뒤 promotion), `test_rollouts_client.py`(신규) 3(첫
+  성공 시 `verified_at`·실패 시 없음·승격 대상 없으면 없음), `test_run_once.py`(전파·observe-only·
+  미탐지·native·다음 trial 격리에 검증 추가), `test_collect_metrics.py` 5(컬럼·순서 위반·
+  `t_switch`↔검증·promotion 없을 때 null·live/legacy 존재 규칙). `experiments`+`recovery-policy`
+통합 오프라인 스위트 **290 passed**(이전 276, live_cluster 3개는 기본 deselect), 수정된
+테스트 파일은 직접 실행(`__main__`) 경로도 통과.
+
+### 38.3 다음 검증
+
+이번 커밋 시점의 클러스터 배포 이미지(`8e19c41b…`)는 `t_decision`/`t_switch` 이전 버전이다.
+**다음 실제 promotion 파일럿(`pod_kill` non-native) 전에 변경된 recovery-policy를 재배포해야 하며**
+(재배포 없이 돌리면 `live_state` trial의 `t_decision`이 null이라 `collect_metrics.py`가 존재
+규칙 위반으로 드러낸다), 그 파일럿에서 네 timestamp의 순서와 값을 live로 검증한다. live
+smoke 테스트(`test_live_no_action_judgment_and_audit_fields_end_to_end`)에는 `t_decision is not
+None`/`t_switch is None` 단언을 추가해뒀다(새 이미지 배포 후에만 통과).

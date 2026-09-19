@@ -15,6 +15,7 @@ verified 여부로만 최종 성공을 판단할 것 (guideline.md 9-5절).
 import os
 import subprocess
 import time
+from datetime import datetime, timezone
 
 from kubernetes import client, config
 
@@ -126,6 +127,11 @@ def promote(name: str, namespace: str, verify_timeout: float = 5.0, poll_interva
     while time.monotonic() < deadline:
         if get_service_selector("vllm-active", namespace) == preview_selector:
             result["verified"] = True
+            # Phase 8 t_switch의 authoritative source(2026-09-19) - active selector가 preview와
+            # 일치함을 "처음 관측한" 서버 시각. selector 전환의 정확한 발생 시각이 아니라 그
+            # 변화를 처음 확인한 시각이므로(폴링 간격+API 지연만큼의 관측 오차) 과대해석하지 말 것.
+            # 검증에 실패하면(verified=False) 이 키는 없다.
+            result["verified_at"] = datetime.now(timezone.utc).isoformat()
             return result
         time.sleep(poll_interval)
     result["verified"] = False

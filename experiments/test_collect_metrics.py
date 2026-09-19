@@ -523,9 +523,10 @@ def test_promote_action_without_t_api_request_or_verification_is_flagged():
 
 def test_unverified_promotion_is_not_a_contradiction():
     # 실행했지만 selector 검증이 실패한 것(promotion_verified=false)은 "검증 결과 없음"이 아니다
-    row = _judged_row(promotion_verified=False, decision_outcome="executed_unverified")
+    row = _judged_row(promotion_verified=False, decision_outcome="executed_unverified", t_switch=None)
     _, issues = build_comparison([row])
     assert (row["run_id"], "promotion_verified") not in _fields(issues)
+    assert (row["run_id"], "t_switch") not in _fields(issues), "검증 실패 promotion은 t_switch가 null인 게 정상"
     print("OK - promotion_verified=false는 결과가 있는 것이라 모순이 아님")
 
 
@@ -571,6 +572,69 @@ def test_unreconciled_legacy_promotion_is_flagged_but_reconciled_one_is_not():
     assert out_rows[0]["judgment_source"] == "audit_reconcile"
     assert out_rows[0]["audit_reconciled_at"] == "2026-09-19T12:00:00+00:00"
     print("OK - reconcile 전 과거 trial은 모순으로 검출, 보완 후엔 provenance와 함께 정상")
+
+
+def test_promotion_path_timing_columns_order_and_derived_delay():
+    row = _judged_row()  # base row의 t_detection < t_decision < t_api_request < t_switch (00:01:30/31/32/35)
+    out_rows, issues = build_comparison([row])
+    out = out_rows[0]
+    assert out["t_decision"] == "2026-01-01T00:01:31+00:00" and out["t_api_request"] == "2026-01-01T00:01:32+00:00"
+    assert out["t_switch"] == "2026-01-01T00:01:35+00:00", "새 timestamp가 comparison 행까지 도달해야 함"
+    assert out["timing_anomaly"] is False
+    assert out["action_delay_sec"] == 5.0, "t_detection -> t_switch(이제 실제 값이 있어 계산됨)"
+    assert not [i for i in issues if i.field in ("t_decision", "t_api_request", "t_switch", "t_detection/t_decision")]
+    print("OK - promotion 경로 4개 timestamp가 컬럼으로 노출되고 순서 정상, action_delay_sec 계산됨")
+
+
+def test_promotion_path_order_violations_are_timing_anomalies():
+    early_decision = _judged_row(t_decision="2026-01-01T00:01:00+00:00")  # t_detection(00:01:30)보다 앞
+    out, issues = build_comparison([early_decision])
+    assert out[0]["timing_anomaly"] is True
+    assert any("t_detection/t_decision" in i.field for i in issues)
+
+    early_switch = _judged_row(t_switch="2026-01-01T00:01:31+00:00")  # t_api_request(00:01:32)보다 앞
+    out, issues = build_comparison([early_switch])
+    assert out[0]["timing_anomaly"] is True
+    assert any("t_api_request/t_switch" in i.field for i in issues)
+
+    late_decision = _judged_row(t_decision="2026-01-01T00:01:33+00:00")  # t_api_request보다 뒤
+    out, issues = build_comparison([late_decision])
+    assert out[0]["timing_anomaly"] is True and any("t_decision/t_api_request" in i.field for i in issues)
+    print("OK - t_detection <= t_decision <= t_api_request <= t_switch 순서 위반은 timing anomaly로 검출")
+
+
+def test_t_switch_requires_verified_promotion():
+    row = _judged_row(promotion_verified=False, decision_outcome="executed_unverified")  # base의 t_switch가 남아 있음
+    _, issues = build_comparison([row])
+    assert (row["run_id"], "t_switch") in _fields(issues)
+    print("OK - 검증되지 않은 promotion에 t_switch가 있으면 모순으로 검출")
+
+
+def test_no_promotion_requires_null_api_request_and_switch():
+    row = _judged_row(action="observe_only", decision_outcome="no_action", promotion_verified=None)
+    _, issues = build_comparison([row])
+    flagged = _fields(issues, row["run_id"])
+    assert (row["run_id"], "t_api_request") in flagged and (row["run_id"], "t_switch") in flagged
+
+    clean = _judged_row(action="observe_only", decision_outcome="no_action", promotion_verified=None,
+                        t_api_request=None, t_switch=None)
+    _, issues = build_comparison([clean])
+    assert (clean["run_id"], "t_api_request") not in _fields(issues) and (clean["run_id"], "t_switch") not in _fields(issues)
+    print("OK - promotion이 없으면 t_api_request/t_switch는 null이어야 함(observe-only의 t_decision은 허용)")
+
+
+def test_live_state_row_requires_decision_and_switch_but_legacy_reconciled_does_not():
+    missing = _judged_row(t_decision=None, t_switch=None)  # live_state인데 promotion 검증 trial에 t_decision/t_switch 없음
+    _, issues = build_comparison([missing])
+    flagged = _fields(issues, missing["run_id"])
+    assert (missing["run_id"], "t_decision") in flagged and (missing["run_id"], "t_switch") in flagged
+
+    # 판정 필드가 기록되기 전 과거 pilot을 audit_reconcile로 보완한 경우: t_decision/t_switch는 추정 없이 null 보존
+    legacy = _judged_row(run_id="legacy-proposed-01", judgment_source="audit_reconcile", t_decision=None, t_switch=None)
+    out_rows, issues = build_comparison([legacy])
+    assert (legacy["run_id"], "t_decision") not in _fields(issues) and (legacy["run_id"], "t_switch") not in _fields(issues)
+    assert out_rows[0]["t_decision"] is None and out_rows[0]["t_switch"] is None and out_rows[0]["timing_anomaly"] is False
+    print("OK - live_state는 t_decision/t_switch 필수, 보완된 과거 pilot의 null은 오류가 아님")
 
 
 if __name__ == "__main__":
@@ -620,4 +684,9 @@ if __name__ == "__main__":
     test_audit_pending_is_separate_from_timing_anomaly()
     test_audit_failed_is_flagged_as_pending_category_with_reason()
     test_unreconciled_legacy_promotion_is_flagged_but_reconciled_one_is_not()
+    test_promotion_path_timing_columns_order_and_derived_delay()
+    test_promotion_path_order_violations_are_timing_anomalies()
+    test_t_switch_requires_verified_promotion()
+    test_no_promotion_requires_null_api_request_and_switch()
+    test_live_state_row_requires_decision_and_switch_but_legacy_reconciled_does_not()
     print("\n모두 통과")

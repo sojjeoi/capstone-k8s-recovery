@@ -242,9 +242,9 @@ def _mock_admin_endpoints(timing_response=None, timing_raises=None, audit_record
 def _state_response(run_id, **over):
     """recovery-policy GET /admin/experiment-run/timing의 "미탐지" 기본 응답 - over로 덮어쓴다."""
     state = {
-        "run_id": run_id, "t_detection": None, "t_api_request": None, "detected": False,
-        "detection_source": None, "detector": None, "action": None, "decision_outcome": None,
-        "idempotency_key": None, "promotion_verified": None,
+        "run_id": run_id, "t_detection": None, "t_decision": None, "t_api_request": None, "t_switch": None,
+        "detected": False, "detection_source": None, "detector": None, "action": None,
+        "decision_outcome": None, "idempotency_key": None, "promotion_verified": None,
     }
     state.update(over)
     return state
@@ -253,7 +253,8 @@ def _state_response(run_id, **over):
 def _promoted_state(run_id, **over):
     """예측 경로 promotion 성공(executed_verified)한 trial의 상태 응답."""
     fields = dict(
-        t_detection="2026-09-19T00:00:05+00:00", t_api_request="2026-09-19T00:00:05.030000+00:00",
+        t_detection="2026-09-19T00:00:05+00:00", t_decision="2026-09-19T00:00:05.010000+00:00",
+        t_api_request="2026-09-19T00:00:05.030000+00:00", t_switch="2026-09-19T00:00:05.400000+00:00",
         detected=True, detection_source="predictive", detector="isolation_forest", action="promote_preview",
         decision_outcome="executed_verified", idempotency_key=f"{run_id}:anomaly_risk", promotion_verified=True)
     fields.update(over)
@@ -1175,7 +1176,7 @@ def test_native_arm_never_calls_recovery_policy(tmp_path):
     assert result.detected is False and result.action == "none"
     for field in ("detection_source", "detector", "decision_outcome", "idempotency_key", "promotion_verified",
                   "judgment_source", "audit_status", "audit_status_reason", "audit_record_id", "audit_reconciled_at",
-                  "reconciliation", "t_audit_write", "t_audit_push", "commit_sha"):
+                  "reconciliation", "t_audit_write", "t_audit_push", "commit_sha", "t_decision", "t_switch"):
         assert getattr(result, field) is None, field
     print("OK - native arm은 recovery-policy·detector·preview 전부 비활성, 판정 필드는 기본값(계약서 §1 재확인)")
 
@@ -1219,6 +1220,9 @@ def test_predictive_promotion_fields_populated_from_authoritative_state(tmp_path
     assert result.audit_status == "complete" and result.commit_sha == "abc123def"
     assert result.t_audit_write and result.t_audit_push and result.audit_record_id == "rec-primary"
     assert result.audit_reconciled_at is not None
+    assert (result.t_detection, result.t_decision, result.t_api_request, result.t_switch) == (
+        "2026-09-19T00:00:05+00:00", "2026-09-19T00:00:05.010000+00:00",
+        "2026-09-19T00:00:05.030000+00:00", "2026-09-19T00:00:05.400000+00:00"), "서버 시각 4종이 그대로 기록돼야 함"
     assert result.outcome == "recovered", "판정·감사 필드 회수가 outcome을 바꾸면 안 됨"
     written = json.loads(next(tmp_path.rglob(f"trial-{run_id}.json")).read_text(encoding="utf-8"))
     assert written["detected"] is True and written["commit_sha"] == "abc123def"
@@ -1242,15 +1246,16 @@ def test_reactive_fallback_fields_populated(tmp_path):
 def test_observe_only_fields_populated(tmp_path):
     run_id = "test-judgment-observe-01"
     state = _state_response(
-        run_id, t_detection="2026-09-19T00:00:05+00:00", detected=True, detection_source="predictive",
-        detector="fixed_threshold", action="observe_only", decision_outcome="no_action",
-        idempotency_key=f"{run_id}:anomaly_risk")
+        run_id, t_detection="2026-09-19T00:00:05+00:00", t_decision="2026-09-19T00:00:05.010000+00:00",
+        detected=True, detection_source="predictive", detector="fixed_threshold", action="observe_only",
+        decision_outcome="no_action", idempotency_key=f"{run_id}:anomaly_risk")
     result = _run_non_native(tmp_path, run_id, arm="fixed_threshold", timing_response=state,
                              audit_records=[_audit_record(run_id, outcome="no_action", action="observe_only")])
     assert result.detected is True and result.action == "observe_only" and result.decision_outcome == "no_action"
-    assert result.promotion_verified is None and result.t_api_request is None
+    assert result.promotion_verified is None and result.t_api_request is None and result.t_switch is None
+    assert result.t_decision == "2026-09-19T00:00:05.010000+00:00", "observe-only여도 t_decision은 기록"
     assert result.audit_status == "complete"
-    print("OK - observe-only: 탐지·판정은 기록되고 promotion_verified/t_api_request는 null")
+    print("OK - observe-only: 탐지·판정·t_decision은 기록되고 promotion_verified/t_api_request/t_switch는 null")
 
 
 def test_no_detection_is_recorded_as_authoritative_default_and_needs_no_audit(tmp_path):
@@ -1258,6 +1263,7 @@ def test_no_detection_is_recorded_as_authoritative_default_and_needs_no_audit(tm
     call_log = []
     result = _run_non_native(tmp_path, run_id, timing_response=_state_response(run_id), call_log=call_log)
     assert result.detected is False and result.action == "none"
+    assert result.t_decision is None and result.t_api_request is None and result.t_switch is None
     assert result.judgment_source == "live_state", "미탐지도 기본값이 아니라 authoritative 상태에서 확인된 값"
     assert result.audit_status == "not_applicable" and result.commit_sha is None
     assert result.outcome == "recovered", "무탐지·무조치여도 SLO 궤적에 따라 outcome을 판정(임의 실패 처리 안 함)"
@@ -1358,6 +1364,7 @@ def test_next_trial_does_not_inherit_previous_judgment(tmp_path):
     assert first.action == "promote_preview" and first.commit_sha == "abc123def"
     assert second.detected is False and second.action == "none"
     assert second.detector is None and second.commit_sha is None and second.audit_status == "not_applicable"
+    assert first.t_switch == "2026-09-19T00:00:05.400000+00:00" and second.t_decision is None and second.t_switch is None
     print("OK - 다음 trial은 이전 trial의 판정·감사 필드를 물려받지 않음")
 
 
@@ -1434,6 +1441,9 @@ def test_live_no_action_judgment_and_audit_fields_end_to_end(tmp_path):
         "중복 신호(fixed_threshold 태그)나 뒤이은 반응형 alert가 첫 탐지 정보를 덮어쓰면 안 됨"
     assert result.action == "observe_only" and result.decision_outcome == "no_action"
     assert result.promotion_verified is None and result.t_api_request is None
+    # t_decision/t_switch(2026-09-19 추가)를 지원하는 recovery-policy 이미지가 배포된 뒤에만 통과한다 -
+    # observe-only여도 t_decision은 기록되고, promotion이 없으니 t_switch는 null이다.
+    assert result.t_decision is not None and result.t_switch is None
     assert result.idempotency_key == f"{run_id}:anomaly_risk"
     assert result.audit_status == "complete", (result.audit_status, result.audit_status_reason)
     assert result.commit_sha and result.t_audit_push and result.t_audit_write and result.audit_record_id

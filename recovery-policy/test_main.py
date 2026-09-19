@@ -463,9 +463,9 @@ def test_timing_endpoint_null_when_no_active_experiment():
         client.post("/admin/experiment-run/clear", params={"run_id": current["run_id"]})
     timing = client.get("/admin/experiment-run/timing").json()
     assert timing == {
-        "run_id": None, "t_detection": None, "t_api_request": None, "detected": None,
-        "detection_source": None, "detector": None, "action": None, "decision_outcome": None,
-        "idempotency_key": None, "promotion_verified": None,
+        "run_id": None, "t_detection": None, "t_decision": None, "t_api_request": None, "t_switch": None,
+        "detected": None, "detection_source": None, "detector": None, "action": None,
+        "decision_outcome": None, "idempotency_key": None, "promotion_verified": None,
     }
     print("OK - 활성 실험이 없으면 상태 엔드포인트가 전부 null(2026-09-19 확장 필드 포함)")
 
@@ -645,7 +645,8 @@ def test_state_excludes_other_run_and_stale_signals():
     state = _state()
     assert state["detected"] is False
     assert state["detector"] is None and state["action"] is None and state["decision_outcome"] is None
-    print("OK - 다른 run_id·stale alert는 판정·조치 필드에 전혀 반영되지 않음")
+    assert state["t_decision"] is None and state["t_switch"] is None, "다른 run·stale 신호는 t_decision/t_switch도 안 채움"
+    print("OK - 다른 run_id·stale alert는 판정·조치·timing 필드에 전혀 반영되지 않음")
     _clear_run("state-isolation-01")
 
 
@@ -662,7 +663,7 @@ def test_state_not_carried_into_next_trial_after_clear():
     assert state["run_id"] == "state-carry-02"
     assert state["detected"] is False
     for key in ("detection_source", "detector", "action", "decision_outcome", "idempotency_key",
-                "promotion_verified", "t_detection", "t_api_request"):
+                "promotion_verified", "t_detection", "t_decision", "t_api_request", "t_switch"):
         assert state[key] is None, f"이전 trial의 {key}가 다음 trial로 새면 안 됨"
     print("OK - context clear 뒤 다음 trial엔 이전 판정·조치 상태가 남지 않음")
     _clear_run("state-carry-02")
@@ -718,6 +719,117 @@ def test_audit_endpoint_joins_outbox_and_rejects_bad_run_id(tmp_path):
     print("OK - 감사 조회 엔드포인트: outbox 상태 조인, 빈 결과, 형식 검증, 경로 이탈 차단")
 
 
+def _promote_verified_now(*args, **kwargs):
+    """promote()가 selector 검증에 성공한 "그 순간"의 서버 시각을 verified_at으로 돌려주는 가짜 -
+    호출 시점에 찍어야 t_api_request <= t_switch 순서가 실제 promote() 호출 뒤가 된다."""
+    from datetime import datetime, timezone
+    return {"method": "cli", "requested": True, "verified": True,
+            "verified_at": datetime.now(timezone.utc).isoformat()}
+
+
+def _ts(value):
+    from datetime import datetime
+    return datetime.fromisoformat(value)
+
+
+def test_state_decision_time_recorded_for_observe_only_without_api_request_or_switch():
+    _reset_state()
+    _register_run("state-tdecision-observe-01")
+    assert _state()["t_decision"] is None
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json=_predictive_payload("state-tdecision-observe-01"))
+    state = _state()
+    assert state["action"] == "observe_only"
+    assert state["t_decision"] is not None, "observe-only여도 정책이 action을 확정한 시각을 기록해야 함"
+    assert _ts(state["t_detection"]) <= _ts(state["t_decision"])
+    assert state["t_api_request"] is None and state["t_switch"] is None, "promotion이 없으면 둘 다 null"
+    print("OK - observe-only: t_decision 기록, t_api_request/t_switch는 null")
+    _clear_run("state-tdecision-observe-01")
+
+
+def test_state_decision_time_recorded_even_when_policy_takes_no_action():
+    _reset_state()
+    _register_run("state-tdecision-unknown-01")
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json=_predictive_payload("state-tdecision-unknown-01", signal_type="not_a_known_signal"))
+    state = _state()
+    assert state["decision_outcome"] == "skipped_unknown_signal" and state["action"] is None
+    assert state["t_decision"] is not None, "조치 자체가 없는 판정(unknown/rule-out)도 정책이 확정한 사건"
+    assert state["t_api_request"] is None and state["t_switch"] is None
+    print("OK - 조치 없는 판정(unknown)도 t_decision 기록, t_api_request/t_switch는 null")
+    _clear_run("state-tdecision-unknown-01")
+
+
+def test_state_promotion_path_timing_order_and_switch_time_from_verification():
+    _reset_state()
+    _register_run("state-tswitch-01")
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", side_effect=_promote_verified_now):
+        client.post("/signal", json=_predictive_payload("state-tswitch-01"))
+    state = _state()
+    assert state["decision_outcome"] == "executed_verified" and state["promotion_verified"] is True
+    for key in ("t_detection", "t_decision", "t_api_request", "t_switch"):
+        assert state[key] is not None, key
+    assert _ts(state["t_detection"]) <= _ts(state["t_decision"]) <= _ts(state["t_api_request"]) <= _ts(state["t_switch"]), state
+    record = mock_enqueue.call_args.args[1]
+    assert record.result["verified_at"], "감사기록의 promotion 결과에도 검증 시각이 남아야 함"
+    assert _ts(record.result["verified_at"]) == _ts(state["t_switch"]), \
+        "t_switch는 promote()가 검증에 성공한 순간에 찍은 시각을 그대로 쓴 것(반환 뒤의 시각이 아님)"
+    print("OK - promotion 경로: t_detection <= t_decision <= t_api_request <= t_switch, t_switch=verified_at")
+    _clear_run("state-tswitch-01")
+
+
+def test_state_unverified_promotion_has_no_switch_time():
+    _reset_state()
+    _register_run("state-tswitch-unverified-01")
+    with patch("main.is_paused_pre_promotion", return_value=True), \
+         patch("main.promote", return_value={"method": "cli", "requested": True, "verified": False}):
+        client.post("/signal", json=_predictive_payload("state-tswitch-unverified-01"))
+    state = _state()
+    assert state["decision_outcome"] == "executed_unverified" and state["promotion_verified"] is False
+    assert state["t_api_request"] is not None and state["t_decision"] is not None
+    assert state["t_switch"] is None, "selector 검증이 끝내 실패한 promotion에는 전환 시각을 기록하지 않음"
+    print("OK - 검증 실패 promotion: t_api_request는 있고 t_switch는 null")
+    _clear_run("state-tswitch-unverified-01")
+
+
+def test_state_first_timing_values_not_overwritten_by_duplicate_or_later_signals():
+    _reset_state()
+    _register_run("state-timing-first-01")
+    payload = _predictive_payload("state-timing-first-01")
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", side_effect=_promote_verified_now):
+        client.post("/signal", json=payload)
+        first = _state()
+        dup = client.post("/signal", json=payload)  # 같은 key -> 중복
+        later = client.post("/webhooks/alertmanager", json=_alert_payload("fp-timing-later"))  # 다른 신호 -> cooldown-skip
+    assert dup.json()["outcome"] == "skipped_duplicate"
+    assert later.json()["processed"][0]["outcome"] == "skipped_cooldown"
+    after = _state()
+    for key in ("t_detection", "t_decision", "t_api_request", "t_switch"):
+        assert after[key] == first[key], f"중복·후속 신호가 최초 {key}를 덮어쓰면 안 됨"
+    print("OK - 중복·후속 신호가 t_decision/t_api_request/t_switch 최초 값을 덮어쓰지 않음")
+    _clear_run("state-timing-first-01")
+
+
+def test_state_decision_time_is_first_valid_decision_when_later_signal_promotes():
+    # 예측 신호가 먼저 observe-only로 판정된 뒤 반응 신호가 promotion을 실행하는 경우: t_decision은
+    # 첫 유효 신호의 판정 시각으로 유지되고(최초 값 규칙), t_api_request/t_switch는 실행된 promotion의
+    # 것이라 뒤이며, 그래도 promotion 경로의 순서는 성립한다.
+    _reset_state()
+    _register_run("state-timing-multi-01")
+    with patch("main.is_paused_pre_promotion", return_value=False):
+        client.post("/signal", json=_predictive_payload("state-timing-multi-01"))
+    first = _state()
+    assert first["t_decision"] is not None and first["t_api_request"] is None
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", side_effect=_promote_verified_now):
+        client.post("/webhooks/alertmanager", json=_alert_payload("fp-timing-multi"))
+    state = _state()
+    assert state["t_decision"] == first["t_decision"], "t_decision은 첫 유효 판정의 시각으로 유지"
+    assert state["action"] == "promote_preview" and state["promotion_verified"] is True
+    assert _ts(state["t_detection"]) <= _ts(state["t_decision"]) <= _ts(state["t_api_request"]) <= _ts(state["t_switch"])
+    print("OK - 첫 판정이 observe-only여도 t_decision 유지, 뒤이은 promotion의 t_api_request/t_switch와 순서 성립")
+    _clear_run("state-timing-multi-01")
+
+
 if __name__ == "__main__":
     # pytest면 위 _patch_git_client autouse fixture가 매 테스트마다 자동으로
     # 걸어주지만, 직접 실행(python test_main.py)에선 fixture가 안 돌므로
@@ -757,6 +869,12 @@ if __name__ == "__main__":
         test_state_excludes_other_run_and_stale_signals()
         test_state_not_carried_into_next_trial_after_clear()
         test_reregister_same_run_id_preserves_detection_state_and_ignores_forged_fields()
+        test_state_decision_time_recorded_for_observe_only_without_api_request_or_switch()
+        test_state_decision_time_recorded_even_when_policy_takes_no_action()
+        test_state_promotion_path_timing_order_and_switch_time_from_verification()
+        test_state_unverified_promotion_has_no_switch_time()
+        test_state_first_timing_values_not_overwritten_by_duplicate_or_later_signals()
+        test_state_decision_time_is_first_valid_decision_when_later_signal_promotes()
         import tempfile
         from pathlib import Path
         with tempfile.TemporaryDirectory() as _d:

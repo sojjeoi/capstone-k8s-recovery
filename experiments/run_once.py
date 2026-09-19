@@ -370,6 +370,11 @@ class TrialResult:
     # 인 trial은 이제 이 필드가 항상 채워진다(둘 중 하나는 항상 있으므로).
     injection_observation_error_sec: Optional[float] = None
     t_injection_end: Optional[str] = None
+    # t_detection/t_decision/t_api_request/t_switch는 전부 recovery-policy 서버 시각(authoritative,
+    # 계약서 §5.2/§5.5) - t_detection: 유효 신호 최초 수락, t_decision: 정책이 action을 확정한 직후
+    # (observe-only 포함), t_api_request: 실제 promotion 호출 직전, t_switch: promotion 후 active
+    # selector 검증이 처음 성공한 시각. promotion이 없으면 t_api_request/t_switch는 null. 전부 첫 값만
+    # 유지한다. 2026-09-19 이전 trial의 t_decision/t_switch는 항상 null이고 추정으로 채우지 않는다.
     t_detection: Optional[str] = None
     t_decision: Optional[str] = None
     t_api_request: Optional[str] = None
@@ -856,7 +861,9 @@ def run_once(
                 if state is not None and state.get("run_id") == run_id:
                     authoritative_state = state
                     result.t_detection = state.get("t_detection")
+                    result.t_decision = state.get("t_decision")  # 정책이 action을 확정한 서버 시각(observe-only 포함)
                     result.t_api_request = state.get("t_api_request")
+                    result.t_switch = state.get("t_switch")  # promotion 후 selector 검증이 처음 성공한 서버 시각
                     result.detected = bool(state.get("detected"))
                     result.detection_source = state.get("detection_source")
                     result.detector = state.get("detector")

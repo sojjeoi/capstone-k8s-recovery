@@ -85,6 +85,15 @@ class ExperimentContext(BaseModel):
     # 아래 process_signal() 참고).
     t_detection: Optional[datetime] = None
     t_api_request: Optional[datetime] = None
+    # 파이프라인 timing의 나머지 두 사건(2026-09-19 추가) - 전부 process_signal()이 서버 시각으로
+    # 동기 기록하고 첫 값만 유지한다:
+    #   t_decision: 현재 run의 유효 신호에 대해 정책(policy.decide())이 action을 확정한 직후.
+    #     observe-only·rule-out·unknown처럼 조치가 없는 판정도, 뒤이은 cooldown-skip 후보도 기록한다.
+    #   t_switch: promotion 후 active selector가 preview와 일치함을 처음 검증한 시각
+    #     (rollouts_client.promote()의 verified_at). 검증 실패(executed_unverified)·promotion 없음이면 null.
+    # promotion 경로의 구조적 순서: t_detection <= t_decision <= t_api_request <= t_switch.
+    t_decision: Optional[datetime] = None
+    t_switch: Optional[datetime] = None
     # 판정·조치 필드의 authoritative source(2026-09-19 추가) - 트라이얼 결과의
     # detected/detection_source/detector/action/decision_outcome/idempotency_key/
     # promotion_verified가 이제 이 상태에서 채워진다(예전엔 run_once.py가 어디서도
@@ -196,15 +205,17 @@ def get_experiment_run_timing():
         ctx = _current_experiment
         if ctx is None:
             return {
-                "run_id": None, "t_detection": None, "t_api_request": None,
-                "detected": None, "detection_source": None, "detector": None,
+                "run_id": None, "t_detection": None, "t_decision": None, "t_api_request": None,
+                "t_switch": None, "detected": None, "detection_source": None, "detector": None,
                 "action": None, "decision_outcome": None, "idempotency_key": None,
                 "promotion_verified": None,
             }
         return {
             "run_id": ctx.run_id,
             "t_detection": ctx.t_detection,
+            "t_decision": ctx.t_decision,
             "t_api_request": ctx.t_api_request,
+            "t_switch": ctx.t_switch,
             # 2026-09-19 확장 - 경로는 그대로(run_once.py가 이미 쓰는 URL)지만 이제
             # timing뿐 아니라 판정·조치 필드까지 담는 "현재 실험 상태" 조회다.
             # 한 번의 락 안에서 스냅샷을 떠서 필드들이 서로 다른 시점 값이 섞이지 않게 한다.
@@ -349,6 +360,30 @@ def _record_api_request(signal: NormalizedSignal) -> None:
             _current_experiment.t_api_request = datetime.now(timezone.utc)
 
 
+def _record_decision_time(signal: NormalizedSignal) -> None:
+    """t_decision(2026-09-19 추가): 현재 run의 유효 신호(idempotency 통과 + run_id/stale 검사
+    통과)에 대해 정책이 action을 확정한 직후의 서버 시각 - policy.decide()가 반환한 바로 뒤에
+    부른다. action이 observe-only여도, 조치 자체가 없는 판정(rule-out/unknown)이어도 기록한다
+    (조치가 나가지 않았다는 판정도 "정책이 확정한" 사건이다). 첫 값만 유지한다 - 이후 신호의
+    판정이 이 값을 덮어쓰지 않는다. 구조적으로 t_detection <= t_decision이다(어느 신호든 자기
+    _record_detection 뒤에 여기 도달하고, t_detection은 가장 먼저 도달한 신호의 것이다)."""
+    with _state_lock:
+        if _signal_belongs_to_current_experiment(signal) and _current_experiment.t_decision is None:
+            _current_experiment.t_decision = datetime.now(timezone.utc)
+
+
+def _record_switch(signal: NormalizedSignal, verified_at: Optional[str]) -> None:
+    """t_switch(2026-09-19 추가): promotion 후 active selector 검증이 처음 성공한 서버 시각.
+    rollouts_client.promote()가 그 순간에 찍은 verified_at을 그대로 쓴다(promote()가 반환한 뒤의
+    시각이 아니다). verified_at이 없으면(promote()가 시각을 안 준 경우) 이 함수를 부른 시점으로
+    대체하지만 실제 promote()는 항상 준다. 검증에 실패한(executed_unverified) promotion에는 부르지
+    않는다 - 그때 t_switch는 null로 남는다. 첫 값만 유지한다."""
+    switched_at = datetime.fromisoformat(verified_at) if verified_at else datetime.now(timezone.utc)
+    with _state_lock:
+        if _signal_belongs_to_current_experiment(signal) and _current_experiment.t_switch is None:
+            _current_experiment.t_switch = switched_at
+
+
 def _record_decision(signal: NormalizedSignal, record: DecisionRecord) -> None:
     """primary 판정(action/decision_outcome/idempotency_key)을 기록한다(2026-09-19
     추가). skipped_duplicate는 절대 primary가 아니다(이미 처리된 신호를 다시 본
@@ -409,6 +444,7 @@ def process_signal(signal: NormalizedSignal) -> DecisionRecord:
     preview_ready = is_paused_pre_promotion(ROLLOUT_NAME, NAMESPACE)
     ctx = policy.PolicyContext(preview_ready=preview_ready)
     decision = policy.decide(signal, ctx)
+    _record_decision_time(signal)
 
     if decision.action is None:
         outcome = (
@@ -429,6 +465,8 @@ def process_signal(signal: NormalizedSignal) -> DecisionRecord:
 
     result = promote(ROLLOUT_NAME, NAMESPACE)
     safety.mark_action_taken()
+    if result.get("verified"):
+        _record_switch(signal, result.get("verified_at"))
     outcome = Outcome.EXECUTED_VERIFIED if result.get("verified") else Outcome.EXECUTED_UNVERIFIED
     return _finish(signal, decision.action, outcome, decision.reasoning, result=result)
 
