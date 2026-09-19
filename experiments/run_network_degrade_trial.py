@@ -18,6 +18,11 @@ TIMEOUT_SEC=900은 load_ramp의 실측 보정값(900초)을 그대로 가져온 
 - network_degrade 자체 주입이 4단계x90초=360초라 pod_kill의 600초보다
 더 큰 여유가 필요하지만, 실제로 필요한 값은 이번 첫 실측 실행 결과를 보고
 조정해야 한다(pod_kill_trial.py의 600초와 같은 성격의 잠정값).
+
+non-native arm은 arm_controller 배선(detector 기동 + preview 준비·자동 rollback)을 절대 우회할 수
+없다(fail-closed, 2026-09-19 추가) - 예전엔 --arm 이름만 결과에 태깅될 뿐 detector·preview가 전혀
+안 붙어서 run_pod_kill_trial.py가 고친 것과 같은 결함이 이 러너에도 있었다(test_run_trial_wiring.py가
+세 러너 모두를 고정). native는 원본 injector와 detector 없음을 그대로 유지한다.
 """
 import argparse
 from datetime import datetime, timezone
@@ -25,6 +30,7 @@ from pathlib import Path
 
 from kubernetes.client.exceptions import ApiException
 
+import arm_controller
 import slo_judge
 from active_pod_resolver import get_active_pods, load_kube_config
 from load_ramp_adapter import make_load_ramp_prober
@@ -91,6 +97,8 @@ def main():
                          help="위험 - active pod의 실제 probe timeoutSeconds 검증을 건너뛴다. "
                               "오프라인 계약 확인 등 클러스터 없이 --help 이외의 목적으로 "
                               "쓸 이유가 없음(정상 실행에서는 절대 켜지 말 것).")
+    parser.add_argument("--rollout", default="vllm-serving", help="non-native arm의 preview 준비 대상 Rollout 이름")
+    parser.add_argument("--namespace", default="vllm-serving", help="non-native arm의 preview 준비 대상 namespace")
     args = parser.parse_args()
 
     if args.probe_profile == "network_tolerant" and args.readiness_probe_timeout_sec is None:
@@ -106,15 +114,21 @@ def main():
     run_id = f"{prefix}{scenario}-{args.arm}-{args.rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
     injector = make_network_degrade_injector(run_id, args.arm, args.rep)
+    # non-native arm은 이 배선을 절대 우회할 수 없다(fail-closed, 2026-09-19 추가) - run_pod_kill_trial.py·
+    # run_load_ramp_trial.py와 같은 결함(--arm 이름만 결과에 태깅될 뿐 detector 기동·preview 준비·자동
+    # rollback이 안 붙음)이 이 러너에도 있었다. native면 두 함수 모두 원본/None을 그대로 돌려준다.
+    injector = arm_controller.wrap_injector_with_preview_prep(injector, args.arm, args.rollout, args.namespace)
+    detector = arm_controller.make_detector_for_arm(args.arm, run_id)
     prober = make_load_ramp_prober(args.probe_config, run_id, scenario, args.arm, args.rep, args.timeout_sec)
 
-    print(f"run_id: {run_id}")
+    print(f"run_id: {run_id}" + (f" / detector: {detector.name}" if detector is not None else ""))
     print(f"probe_profile: {args.probe_profile} (readiness_probe_timeout_sec={expected_timeout})")
     try:
         result = run_once(
             scenario=scenario, arm=args.arm, rep=args.rep,
             sequence_index=args.sequence_index, order_seed=args.order_seed,
             injector=injector, prober=prober, timeout_sec=args.timeout_sec,
+            detector=detector,
             run_id=run_id, is_pilot=args.pilot,
             latency_slo_sec=slo_judge.LATENCY_THRESHOLD, slo_version=slo_judge.SLO_VERSION,
             min_observation_sec=slo_judge.WINDOW_SEC,
