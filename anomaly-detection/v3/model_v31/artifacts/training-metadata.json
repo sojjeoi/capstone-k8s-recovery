@@ -1,0 +1,20 @@
+{
+  "model_params": {
+    "n_estimators": 100,
+    "contamination": "auto",
+    "random_state": 42,
+    "max_samples": "auto",
+    "max_features": 1.0,
+    "bootstrap": false,
+    "n_jobs": null,
+    "verbose": 0,
+    "warm_start": false
+  },
+  "scaler_class": "sklearn.preprocessing.StandardScaler (defaults)",
+  "python_version": "3.14.3 (tags/v3.14.3:323c59a, Feb  3 2026, 16:04:56) [MSC v.1944 64 bit (AMD64)]",
+  "sklearn_version": "1.9.0",
+  "numpy_version": "2.5.1",
+  "training_commit_sha": "cd77e1ecf9d30ee639ddccd04b8013b4a06c14a0",
+  "note_on_contamination_auto": "model.offset_(contamination='auto'가 내부적으로 만드는 sklearn 자체 임계값)는 운영 threshold로 쓰지 않는다 - calibrate.py가 별도로 정함",
+  "model_offset_sklearn_internal_not_used_as_threshold": -0.5
+}

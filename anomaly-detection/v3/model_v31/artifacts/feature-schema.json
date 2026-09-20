@@ -1,0 +1,99 @@
+{
+  "original_feature_names": [
+    "cpu_mean",
+    "cpu_slope",
+    "memory_mean",
+    "memory_slope",
+    "queue_mean",
+    "queue_slope",
+    "cache_mean",
+    "cache_slope"
+  ],
+  "kept_feature_names": [
+    "cpu_mean",
+    "cpu_slope",
+    "memory_mean",
+    "memory_slope",
+    "cache_mean",
+    "cache_slope"
+  ],
+  "kept_feature_indices": [
+    0,
+    1,
+    2,
+    3,
+    6,
+    7
+  ],
+  "removed_features": [
+    {
+      "name": "queue_mean",
+      "reason": "zero_variance_in_train",
+      "value": 0.0
+    },
+    {
+      "name": "queue_slope",
+      "reason": "zero_variance_in_train",
+      "value": 0.0
+    }
+  ],
+  "train_feature_stats": {
+    "cpu_mean": {
+      "mean": 1.4638033605918723,
+      "std": 0.26353980796174425,
+      "min": 1.0073390927067218,
+      "max": 1.796090702038845,
+      "range": 0.7887516093321232
+    },
+    "cpu_slope": {
+      "mean": 0.02122518907346154,
+      "std": 0.21361756844016544,
+      "min": -0.5138634723802576,
+      "max": 0.5198058172551906,
+      "range": 1.0336692896354482
+    },
+    "memory_mean": {
+      "mean": 7004879410.517333,
+      "std": 1421122.5700376562,
+      "min": 7002530611.2,
+      "max": 7006679859.2,
+      "range": 4149248.0
+    },
+    "memory_slope": {
+      "mean": 68403.19999933687,
+      "std": 405186.5060425938,
+      "min": -1431552.000000058,
+      "max": 2081177.5999990478,
+      "range": 3512729.5999991056
+    },
+    "queue_mean": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "range": 0.0
+    },
+    "queue_slope": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "range": 0.0
+    },
+    "cache_mean": {
+      "mean": 0.000473118279569892,
+      "std": 0.0007343385410307035,
+      "min": 0.0,
+      "max": 0.00161290322580645,
+      "range": 0.00161290322580645
+    },
+    "cache_slope": {
+      "mean": -3.2258064516129095e-05,
+      "std": 0.0006238412776068938,
+      "min": -0.0016129032258064514,
+      "max": 0.0016129032258064503,
+      "range": 0.003225806451612902
+    }
+  },
+  "n_train_rows": 75
+}

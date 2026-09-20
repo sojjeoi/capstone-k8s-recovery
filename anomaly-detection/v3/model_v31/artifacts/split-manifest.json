@@ -1,0 +1,21 @@
+{
+  "train_sessions": [
+    "v31-train-idle-20260920",
+    "v31-train-low_load-20260920"
+  ],
+  "calibration_sessions": [
+    "v31-calib-low_load-20260920",
+    "v31-calib-idle-20260920"
+  ],
+  "holdout_sessions": [
+    "v31-holdout-idle-20260920",
+    "v31-holdout-low_load-20260920"
+  ],
+  "train_row_counts_by_session": {
+    "v31-train-idle-20260920": 38,
+    "v31-train-low_load-20260920": 37
+  },
+  "train_independent_session_count": 2,
+  "train_total_rows": 75,
+  "note": "row 수는 60초 window/15초 step으로 겹치는 시계열 표본이다 - 독립 표본 수는 session 수(위 train_independent_session_count)를 봐야 한다."
+}

@@ -1,0 +1,7 @@
+# v3.1 model freeze(§74) - 재현에 필요한 정확한 버전 고정.
+# python_version: 3.14.3 (tags/v3.14.3:323c59a, Feb  3 2026, 16:04:56) [MSC v.1944 64 bit (AMD64)]
+scikit-learn==1.9.0
+numpy==2.5.1
+scipy==1.18.1
+joblib==1.6.0
+threadpoolctl==3.6.0

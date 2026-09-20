@@ -6714,3 +6714,77 @@ feature나 모델을 다시 건드리지 않았다.
 
 Holdout 개봉 없음, artifact freeze(§74) 없음, `score_server.py` 변경
 없음, 모델 배포 없음.
+
+## 74. v3.1 model artifact 동결 - `v3_model_freeze_commit` (2026-09-20)
+
+**이 커밋(§74를 포함하는 커밋) 이후에만 Holdout을 연다.** 이 절
+이전에는 Holdout feature 분포·score를 어디서도 계산하지 않았다(§73까지
+전부 Train/Calibration만 사용).
+
+### 74.1 동결된 artifact 전체 목록 - `anomaly-detection/v3/model_v31/artifacts/`
+
+| 파일 | SHA-256 |
+|---|---|
+| `model.pkl` | `2945aa30435d4e24d0539cb7da675ca20051620fa11d09b3d399838e0936463b` |
+| `scaler.pkl` | `7277759e2c8c4bb3950e2162c1009ced576c57f7e58b980a0f71aef1f254cdbf` |
+| `threshold.json` | `6a27e645bdcc35ff936a7fe39109aa0cd23c1b0bf491dd8fd463e68ef3c81d9e` |
+| `feature-schema.json` | `f3350554576a949f1bace0eba4fc340749425ba3caacdc4a7c660bc5aa0ec2df` |
+| `dataset-manifest.json` | `21c8a68ad68e08d6df731c3a028eda7e9211f4c109a65a8f66886243dd660b60` |
+| `split-manifest.json` | `eb2b684716d55821e3571865f9a8374a07d4194603d1bc5394f3740321f13485` |
+| `training-metadata.json` | `fa2fe43c85e6aa4c46b7b14a2afbaf444fe5c8e61be6edfce83d492f750edaa2` |
+| `requirements-lock.txt` | `0eb12eaaf5114140e92c857b89878c5eb10085af4a8f4958553ebcd56ec2a842` |
+
+전부 `SHA256SUMS.json`에도 기록돼 있고, `integrity.verify_sha256sums()`
+로 재검증해 불일치 0건을 확인했다(§8 테스트 대상과 동일 함수). `.pkl`은
+`.gitignore`의 `*.pkl` 규칙에 걸리므로 `git add -f`로 강제 추가한다
+(v1 artifact는 이력 보존을 위해 그대로 gitignore 유지 - v3.1 freeze만
+예외).
+
+### 74.2 seed·hyperparameter·재현 가능한 CLI
+
+`n_estimators=100, contamination="auto", random_state=42`(v1과 동일,
+하이퍼파라미터 탐색 없음), 나머지 sklearn 기본값(`max_samples="auto",
+max_features=1.0, bootstrap=False, n_jobs=None, verbose=0,
+warm_start=False`) - 전부 `training-metadata.json`에 명시 기록.
+`StandardScaler()`(기본값). 재현 가능한 CLI: `python anomaly-detection/
+v3/model_v31/train.py` → `python anomaly-detection/v3/model_v31/
+calibrate.py`(이 순서 그대로, 둘 다 인자 없이 실행 - session_id 목록이
+`train.py` 상단에 상수로 고정돼 있음).
+
+**제거된 feature**: `queue_mean`, `queue_slope`(`zero_variance_in_train`
+- Train 75행 전부 정확히 0). **유지된 feature**: `cpu_mean`, `cpu_slope`,
+`memory_mean`, `memory_slope`, `cache_mean`, `cache_slope`(6개).
+
+### 74.3 의존성 lock
+
+`requirements-lock.txt`: `scikit-learn==1.9.0`, `numpy==2.5.1`,
+`scipy==1.18.1`, `joblib==1.6.0`, `threadpoolctl==3.6.0`.
+Python `3.14.3 (tags/v3.14.3:323c59a, Feb 3 2026, 16:04:56) [MSC v.1944
+64 bit (AMD64)]`(파일 주석에 기록).
+
+### 74.4 재현성 - byte-identical 확인(3회 독립 실행)
+
+같은 환경에서 `train.py`→`calibrate.py`를 **3회** 독립 실행해(§73.2
+최초 확인 + 이번 절 직전 최종 재확인 2회) `model.pkl`/`scaler.pkl`/
+`threshold.json`/`training-metadata.json`(commit SHA 필드 제외 시점
+빼고) 전부 SHA-256이 **완전히 동일**함을 확인했다 - `n_jobs=None`
+단일 스레드 실행이라 이 환경에서는 nondeterminism 소스 자체가 없었다.
+합성 데이터로도 `decision_function` 점수 완전 재현을 오프라인 테스트로
+고정(`test_training_reproducible_with_same_seed`). 만약 다른 환경에서
+pickle byte hash가 달라지더라도(sklearn/numpy 내부 직렬화가 플랫폼별로
+다를 수 있음), **예측 score·feature schema·threshold 값 자체의
+결정론성**(이번에 실측 확인한 것)을 재현성의 필수 기준으로 삼는다 -
+byte hash 완전 일치는 "덤"이지 유일 기준이 아니다.
+
+### 74.5 학습 commit SHA
+
+`training-metadata.json.training_commit_sha` = `cd77e1e`(§73 - `train.py`/
+`calibrate.py` 실제 코드가 담긴 커밋). 이 절을 포함하는 커밋 자체를
+**`v3_model_freeze_commit`**으로 지정한다 - 커밋 직후 `git log`로 실제
+해시를 확인해 최종 보고에 명시한다(커밋은 자기 자신의 해시를 내용에
+담을 수 없으므로 사후에 기록).
+
+### 74.6 이 커밋 이후 규칙
+
+이 커밋 push 확인 이후에만 Holdout 봉인을 해제한다(§75). Holdout에는
+어떠한 재학습·feature 변경·threshold 변경도 하지 않는다.

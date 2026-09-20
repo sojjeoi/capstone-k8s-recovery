@@ -1,0 +1,38 @@
+{
+  "threshold": 0.013299302702671323,
+  "decision_rule": "anomaly if decision_function(x) < threshold (strict, score_server.py:82와 동일)",
+  "selected_from": "calibration split only",
+  "consecutive_threshold": 3,
+  "cooldown_sec": 60.0,
+  "eval_interval_sec": 15.0,
+  "calibration_sessions": [
+    "v31-calib-low_load-20260920",
+    "v31-calib-idle-20260920"
+  ],
+  "per_session_result": {
+    "v31-calib-low_load-20260920": {
+      "n_points": 37,
+      "point_anomaly_count": 1,
+      "point_fpr": 0.02702702702702703,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 1,
+      "score_min": 0.0053648465775697485,
+      "score_median": 0.07296739643457412,
+      "score_max": 0.11894817138337316
+    },
+    "v31-calib-idle-20260920": {
+      "n_points": 38,
+      "point_anomaly_count": 8,
+      "point_fpr": 0.21052631578947367,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "score_min": -0.04162410678440409,
+      "score_median": 0.03425692488984952,
+      "score_max": 0.10753366524659269
+    }
+  },
+  "calibration_failed": false,
+  "note": "가장 민감한(가장 높은) threshold 중 두 calibration session 모두에서 false signal episode(score_server.py 상태기계 기준)가 0인 값. 이후 holdout/train/calibration feature를 다시 보고 이 값을 바꾸지 않는다."
+}

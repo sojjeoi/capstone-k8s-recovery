@@ -1,0 +1,20 @@
+{
+  "train_sessions": [
+    {
+      "session_id": "v31-train-idle-20260920",
+      "regime": "idle",
+      "split_role": "train",
+      "valid_rows": 38,
+      "git_commit_sha": "492a603aec5ad617b7dc0a7066f6b98307f4a1a2",
+      "ramp_config_sha256": null
+    },
+    {
+      "session_id": "v31-train-low_load-20260920",
+      "regime": "low_load",
+      "split_role": "train",
+      "valid_rows": 37,
+      "git_commit_sha": "492a603aec5ad617b7dc0a7066f6b98307f4a1a2",
+      "ramp_config_sha256": "a99abef8106c4160bf73c66a555a2cdb28450eeabfe3d1ac80f5b6369ff919d4"
+    }
+  ]
+}
