@@ -5333,3 +5333,121 @@ Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요
 
 - **수행한 것**: Prometheus port-forward 재연결 → direct 후보(1500MB×120초, 단일 점프) 3회 반복 실행(전부 안전 PASS, SLO 재현성 0/3) → 보존된 raw CSV로 독립 재계산 검증(전부 일치) → 사후 kubectl 독립 확인 → §56.5 "미달" 분기 처리.
 - **하지 않은 것**: 강도·지속시간 조정 없음, 4회차 이상 추가 반복 없음, 1650MB·2000MB 없음, 안전 상한·SLO 정의 변경 없음, scenario YAML 동결(신규·기존 둘 다) 없음, non-native arm 없음, memory_pressure 3-arm 파일럿 없음, `run_all_scenarios.py`·본 실험(60회) 없음. 3회분 원본 요약 JSON·probe raw CSV는 `experiments/results/`(top-level)에 그대로 보존되며 `.gitignore`에 걸려 커밋되지 않는다.
+
+## 58. Isolation Forest 모델 감사 결과 - 공식 결정 + v3 정상 데이터 파이프라인 설계 (2026-09-20)
+
+memory_pressure를 `1500MB×120초 direct sub-critical negative control`(§56/§57 결과 기반, 복구속도가 아니라 불필요 탐지·promotion 평가가 목적)로 잠정 채택한 뒤 지시된 Isolation Forest 읽기 전용 감사 결과를 승인받았다. 이 절은 그 승인에 따른 **공식 결정**과, 이후 감사에서 지시된 **v3 정상 데이터 파이프라인 설계**(코드는 작성했으나 아직 official 학습 데이터로 확정하지도, 모델을 fit하지도 않았다)를 함께 기록한다.
+
+### 58.1 공식 결정 (사용자 승인)
+
+1. 현재 모델(`anomaly-detection/artifacts/model.pkl`/`scaler.pkl`)은 **19×8 학습 matrix**로 fit됐고(아티팩트 자체에서 재확인 - `scaler.n_samples_seen_=19.0`, `model.max_samples_=19`), **독립 정상 holdout이 없으며 FPR을 측정한 적이 없다.**
+2. 이 모델은 **4코어 CPU 환경**(2026-09-06 데이터 수집)에서 학습됐는데, `gitops/apps/vllm-serving/rollout.yaml`의 CPU limit이 2026-09-18(`a479f842`)에 4→3코어로 바뀐 뒤에도 **한 번도 재학습되지 않았다** - `cpu_mean`/`cpu_slope`는 죽지 않은(분산 있는) feature이므로, 이 모델을 **본 실험용 모델로 채택할 수 없다.**
+3. 기존 `proposed` arm 파일럿(load_ramp/pod_kill/network_degrade, 2026-09-18~09-19) 3건은 **시스템 배선·탐지→promotion 경로 검증용 제외 pilot**로만 유지한다 - detector 프로세스가 정상적으로 뜨고, 신호를 recovery-policy에 발행하고, promotion이 실제로 일어나는 배선 자체는 검증됐다는 의미로만 남긴다.
+4. 이 3건의 결과(탐지 여부·점수·판정)는 **`proposed` arm의 성능·우위를 뒷받침하는 근거로 재사용하지 않는다** - 구 모델(4코어 학습)로 채점된 결과이기 때문이다.
+5. **본 실험 전에 3코어 환경 기준 모델을 재학습·검증·동결**한다(§58.6 계획대로 - 아직 실행하지 않음).
+6. **memory_pressure negative-control 3-arm과 `run_all_scenarios.py`/본 실험은 최종 모델 동결 이후에만** 수행한다.
+
+이 절은 위 결정만 기록한다 - 새 모델 학습은 하지 않았다(v1 `data/regimes.jsonl`/`artifacts/*.pkl`은 이력으로 그대로 보존, 손대지 않음).
+
+### 58.2 v3 정상 데이터 파이프라인 - `anomaly-detection/v3/`(신규, v1과 완전히 별도)
+
+신규 파일: `v3/windows.py`(후보 세션 정의 + 등록 규칙 검증), `v3/build_dataset.py`(윈도우 생성·strict completeness·중복 검출·세션 단위 split·inventory 산출), `v3/test_build_dataset.py`(오프라인 테스트 18개, 실제 Prometheus 호출은 전부 가짜 함수로 주입). `v1`의 `train.py`/`features.py`/`score_server.py`/`data/regimes.jsonl`/`artifacts/*.pkl`은 전혀 수정하지 않았다 - `features.py`의 `METRICS`/`FEATURE_NAMES`/`_query_range`/`_mean_slope`만 그대로 import해 재사용한다(새 PromQL·새 계산식 없음).
+
+**inference와 동일한 고정 window**: `score_server.py`의 `WINDOW_SEC=60`/`EVAL_INTERVAL_SEC=15`를 그대로 상수로 가져와(`v3/build_dataset.py`의 `WINDOW_SEC`/`STEP_SEC`), 세션 구간 안에서 60초 창을 15초 간격으로 롤링 생성한다 - `train.py`처럼 세션 전체를 한 번에 평균 내지 않는다(감사 지적: v1은 학습 시 세션 전체 평균, 추론 시 고정 60초 창이라 서로 다른 통계를 비교하고 있었다).
+
+**strict completeness**: `extract_window_strict()`가 4개 지표 중 하나라도 빈 응답이면 그 창 전체를 `invalid`로 버리고 사유를 기록한다 - `features.py._mean_slope([])`의 `(0.0, 0.0)` 완충을 학습 데이터 생성 경로에서는 쓰지 않는다. **`score_server.py`/`features.py`의 런타임 동작 자체는 이번에 바꾸지 않았다** - 그 완충은 실시간 경로에는 그대로 남아있다(별도 결정 필요 시 향후 논의).
+
+**세션 단위 결정론적 split**: `split_sessions(seed=20260920)`가 **(regime, topology) 조합별로 독립 층화**해 train/calibration/holdout에 배정한다 - regime만으로 층화했더니 topology(§58.3의 우선순위 결론)가 한쪽 split에 전혀 안 들어가는 문제를 실측으로 발견해(최초 버전: calibration에 `active_plus_preview`가 0개) topology도 층화 키에 추가했다. 세션 수가 모자란 조합은 억지로 3분할하지 않고 `shortfalls`에 명시한다. 같은 세션의 row가 둘로 나뉘는 일은 구조적으로 불가능(세션 자체가 배정 단위).
+
+**manifest**: `feature_names`(순서 고정, `features.py.FEATURE_NAMES` 그대로), `window_sec`/`step_sec`, 세션 정의 전체, split 결과, git commit SHA, inventory(§58.5)를 JSON 하나(`v3/data/v3-inventory.json`, gitignore 대상 아님 - 이 파일 자체는 위원회가 검토할 수 있게 커밋에 포함시킬지는 별도 결정 필요)에 기록한다.
+
+### 58.3 Feature Topology 조사 - 코드 근거
+
+`features.py`의 PromQL은 pod 이름/역할(active/preview) 셀렉터가 전혀 없다(`container="vllm"`만 있음) - `_query_range()`의 `by_ts` 합산 로직(코드 주석에 이미 명시: "여러 시계열(active+preview 동시 구동 등으로 pod 여러 개)이 나오면 합산")이 실제로 **namespace 안의 모든 vLLM 컨테이너 값을 더한다.** 즉 active만 있으면 그 값, active+preview가 같이 떠 있으면 **둘의 합**이 나온다 - "pod별 series 중 첫 값만 선택" 같은 버그는 없다(코드로 확인).
+
+**실행 순서 근거**(`arm_controller.wrap_injector_with_preview_prep()` + `run_once.py` 상태 머신):
+- `wrap_injector_with_preview_prep()`은 non-native arm의 `injector.prepare()`를 감싸 **`prepare_preview_with_rollback()`을 시나리오 자체 `prepare()`보다 먼저** 호출한다(PREPARING 단계).
+- `run_once.py`: `PREPARING → READY → PROBING → BASELINE`(상태값 지정, L685) `→ detector.start()`(L702, INJECTING 진입 직전) `→ INJECTING → OBSERVING`(L756, `detector.is_alive()` 반복 확인) `→ ... → detector.stop()`(L933, OBSERVING 루프 종료 후).
+
+즉 **preview는 PREPARING에서 이미 만들어지고, detector.start()는 그 뒤 BASELINE이 끝난 시점에 불린다** - `proposed`/`fixed_threshold`의 detector가 실제로 살아서 점수를 매기는 전체 구간(baseline 끝~injecting~observing, promotion 전까지)은 **preview가 항상 Ready로 같이 떠 있는 상태**다. score_server.py 서브프로세스 자체는 run_once()의 폴링과 무관하게 자기 15초 루프를 계속 돌므로, promotion이 실제로 일어나면 그 이후 `detector.stop()` 전까지 짧게 `post_promotion_single_active`(옛 active 소멸 중 + 새 active) 과도 구간이 있을 수 있다 - 다만 이 구간은 old pod가 Terminating 상태로 잠깐 같이 잡힐 수 있어 topology가 한동안 불분명하다(warmup regime과 같은 문제).
+
+**결론(코드·계약 근거)**: `proposed`(및 `fixed_threshold`) arm의 detector가 정상을 정의해야 하는 **주 topology는 `active_plus_preview`다** - `active_only`가 아니다. v1의 19개 표본 중 `active_plus_preview`는 **단 1개**(`active_preview_concurrent`)뿐이었고 나머지 17개(idle/low_load/sustained_load/burst/post_startup)는 전부 `active_only`였다 - 즉 v1은 detector가 실제로 감시하는 상태의 반대에 가까운 topology로 "정상"을 정의하고 있었다. `warmup`(pod delete→recreate 과도구간)은 어느 topology에도 깔끔히 안 들어가는 전이 구간이라 정상 분포 정의에서 제외하는 게 맞다고 본다(§58.5의 "detector가 작동하는 topology와 상태만 정상 분포로 정의" 원칙).
+
+### 58.4 기존 3코어 정상 구간 재활용 조사 (Prometheus read-only, 클러스터 변경 없음)
+
+`kubectl port-forward`로 Prometheus에 read-only 조회만 했다(워크로드·Chaos·preview 생성 없음). `GET /api/v1/status/runtimeinfo` 확인: Prometheus `startTime=2026-09-16T09:14:52Z`, `storageRetention=30d or 15GiB` - 이번에 쓴 모든 후보 구간(9/18~9/20)이 보존 기간 안에 있다.
+
+기존 파일럿·이번 세션의 memory_pressure 탐색 JSON에서 **주입도 promotion도 아직 안 일어난** 안정 구간(대부분 `t_preview_ready`/`t_baseline_ready`/`t_run_start` ~ `t_injection` 직전, 보수적 여유 30~60초 포함)만 손으로 골라 `v3/windows.py`에 12개 세션으로 등록했다:
+
+| topology | 세션 수 | 출처 |
+|---|---|---|
+| `active_plus_preview` | 6 | pod_kill/network_degrade/load_ramp의 fixed_threshold·proposed 파일럿 각 baseline(전부 9/18~9/19, 3코어 이후) |
+| `active_only` | 6 | load_ramp native 파일럿 3건(9/18) + 이번 세션 §56/57 memory_pressure direct 후보 검증 3회분(9/20) baseline |
+
+**제외한 것**: 주입·recovery/drain 직후 구간(잔여 영향 불명확), preview coldstart/warmup, promotion 전환 구간, Node incident 구간, 4코어 시절 데이터(전부 §58.5의 컷오버 `2026-09-18T09:00:00Z` 이전) - 전부 `v3/windows.py`의 `validate_sessions()`가 기계적으로 재확인한다. **다른 CSV로 값을 합성하지 않았다** - probe raw CSV/안전 tick JSONL은 detector의 4개 지표(cpu/memory/queue/cache)와 겹치는 게 최대 1개(memory, 그나마 쿼리 형태가 다름)뿐이라 애초에 후보에서 제외했고, 전부 Prometheus 원본 재조회로만 만들었다.
+
+### 58.5 후보 데이터 Inventory (실측, Prometheus 재조회 - official 학습 데이터 아님, 모델 fit 안 함)
+
+`python v3/build_dataset.py` 실행 결과(`v3/data/v3-inventory.json`):
+
+| 항목 | 값 |
+|---|---|
+| 독립 세션 수 | **12개**(active_plus_preview 6 / active_only 6) |
+| regime별 세션 수 | `probe_baseline` 12(전부 - v1의 low_load/sustained_load/burst regime_configs 기반 세션은 아직 하나도 없음, §58.6 참고) |
+| 세션별 유효 60초 window 수 | 2~8개(세션 길이에 비례, `windows_per_session` 참고) |
+| 전체 feature row 수 | **58개**(전부 valid, invalid 0건 - Prometheus 응답 결측 없었음) |
+| train/calibration/holdout 세션 수 | 8 / 2 / 2(각 split에 두 topology 모두 최소 1개씩 배정 확인됨) |
+| train/calibration/holdout row 수 | 40 / 11 / 7 |
+| 중복 timestamp·중복 feature vector | 0건 |
+
+**feature별 min/median/max/std(58개 row 기준)**:
+
+| feature | min | median | max | std | 상수 여부 |
+|---|---|---|---|---|---|
+| `cpu_mean` | 0.0184 | 0.1930 | 1.7028 | 0.4734 | 아니오 |
+| `cpu_slope` | -0.0059 | 0.1000 | 0.8322 | 0.2248 | 아니오 |
+| `memory_mean` | 3.571e9 | 6.948e9 | 7.500e9 | 1.705e9 | 아니오 |
+| `memory_slope` | -227328 | ~0 | 3.009e8 | 3.916e7 | 아니오 |
+| `queue_mean` | 0.0 | 0.0 | 0.0 | 0.0 | **예 - 58개 전부 0** |
+| `queue_slope` | 0.0 | 0.0 | 0.0 | 0.0 | **예 - 58개 전부 0** |
+| `cache_mean` | 0.0 | 0.0 | 0.0 | 0.0 | **예 - 58개 전부 0** |
+| `cache_slope` | 0.0 | 0.0 | 0.0 | 0.0 | **예 - 58개 전부 0** |
+
+**§ 감사(이전 절) 대비 새 발견**: v1(4코어, 19개)에서는 `cache`(`vllm:kv_cache_usage_perc`)가 작지만 실변화가 있었는데, 이번 3코어·topology-보정 12세션(58 row) 전부에서는 **`queue`뿐 아니라 `cache`도 완전히 0**이다. 원인은 확정하지 않는다(가설: 이번 12개 세션이 전부 기본 probe profile의 가벼운 baseline 트래픽이라 KV 캐시가 눈에 띄게 안 찼을 가능성 - v1의 `burst`/`sustained_load` regime_configs 같은 더 무거운 합성 부하가 이번 후보엔 하나도 없음). `memory_mean`의 범위(3.57e9~7.50e9)는 §58.3의 topology 결론과 정확히 일치한다 - 하한(~3.57e9)은 단일 pod 수준, 상한(~7.50e9)은 그 두 배에 가까워 active+preview 합산으로 설명된다.
+
+### 58.6 목표 데이터 기준 제안 (제안만, 미실행)
+
+- **healthy regime마다 최소 5~6개 독립 세션** 목표는 유지하되, **topology를 regime과 동등한 1급 분류축으로 취급**한다 - `active_plus_preview` 우선(§58.3 결론), `active_only`는 보조.
+- **부족분**: 지금 12개 세션 전부가 `probe_baseline`(기본 profile) 하나뿐이다. v1의 `low_load`/`sustained_load`/`burst`(regime_configs 기반, 의도적으로 강도를 높인 합성 부하)에 해당하는 세션이 **`active_plus_preview` topology로는 0개**다 - 이게 가장 큰 공백이다. `queue`/`cache`가 이번 12세션에서 완전히 죽어있는 것도 이 공백과 관련 있을 수 있다(더 무거운 부하에서 살아나는지 아직 확인 못 함).
+- **train/calibration/holdout에 각 regime 최소 1세션 확보**는 `split_sessions()`가 이미 기계적으로 보장(§58.2) - 다만 지금은 regime이 사실상 1종류뿐이라 이 보장이 시험되지 않았다. `low_load`/`sustained_load`/`burst`를 `active_plus_preview` topology로 최소 2세션씩(총 6세션) 추가하면 이 보장이 의미를 갖는다.
+- **row 수보다 세션 다양성 우선** 원칙대로, "200~500 row"를 목표 숫자로 강제하지 않는다 - 지금 58개 row도 세션이 다양해지면 그 자체로 유용해진다.
+- **warmup/post_startup 제외**: §58.3 결론대로 detector가 실제로 작동하는 상태가 아니므로(어느 topology에도 안 들어가는 전이 구간) 정상 학습 세션 목표에서 뺀다 - v1엔 있었지만 v3에선 우선순위 밖.
+- **부족 regime·topology별 live 수집 횟수·예상 시간(추정치)**:
+
+| regime × topology | 필요 세션 | 예상 시간(세션당) | 합계 |
+|---|---|---|---|
+| low_load × active_plus_preview | 5~6개 | ~3분(안정화+관찰) | 15~18분 |
+| sustained_load × active_plus_preview | 5~6개 | ~5분 | 25~30분 |
+| burst × active_plus_preview | 5~6개 | ~3분 | 15~18분 |
+| (선택) 위 3종 × active_only 보강 | 각 2~3개 | 위와 동일 | 추가 15~25분 |
+
+**live 수집 자체를 하려면 preview 생성이 필요하다**(active_plus_preview 재현) - 이번 지시(§58.7 금지 목록: "preview 생성·promotion" 금지)로는 실행할 수 없다. 이 표는 "얼마나 걸릴지"의 추정치만 제공하고, 실행 여부는 사용자 결정이 필요하다.
+
+### 58.7 향후 모델 검증안 (계획만, 미실행)
+
+- **train**: 모델 fit 전용. **calibration**: threshold(`contamination`/`decision_function` cutoff) 선택 전용 - v1처럼 "training=threshold 결정"을 같은 데이터로 하지 않는다. **holdout**: 최종 FPR 평가 전용, threshold 재조정에 절대 안 씀.
+- calibration 목표: point-level FPR을 사전에 정한 상한 이하로 유지 + 3연속 episode 오탐(§58.2/`score_server.py`의 `CONSECUTIVE_THRESHOLD=3`) 억제.
+- holdout 결과 보고 항목: point-level FPR, false episode/hour(3연속 조건까지 충족한 오탐 episode 빈도), false action 후보 수(실제 recovery-policy 신호가 발행됐을 episode).
+- **holdout을 보고 threshold를 재조정하지 않는다** - 기준 미달이면 train/calibration 데이터를 보강해 다시 도는 것이지, holdout 결과에 맞춰 threshold만 손대지 않는다.
+- fault(장애) 데이터는 threshold 선택에 쓰지 않고, 동결 후 **외부 검증**(예: `test_model.py`의 Phase 5 known-anomaly 케이스 같은)에만 쓴다.
+- **정확한 버전 고정**: `requirements.txt`의 `>=` 하한을 실제 학습에 쓴 정확한 버전으로 고정(lockfile) - 지금(1.9.0/2.5.1 등 현재 설치 버전)으로 고정할지, 별도 검증 후 고정할지는 실제 학습 시점에 결정.
+- **artifact 보존**: `model.pkl`/`scaler.pkl`을 `.gitignore` 예외로 커밋(현재처럼 이력 없이 방치하지 않음) + `manifest.json`(feature schema·세션 목록·split·seed·SHA-256)을 같이 커밋해 "이 아티팩트가 정확히 이 데이터·이 코드로 나왔다"를 git으로 재현 가능하게 만든다.
+
+### 58.8 테스트
+
+`v3/test_build_dataset.py`(신규 18개, 오프라인) - 고정 60초 window 생성 경계, 세션 단위 split 누수 방지(같은 세션이 두 split에 안 나뉨), 빈 metric 응답 시 창 제외(0 대체 금지), timestamp·feature vector 중복 검출, 3코어 이전 세션 거부, feature 순서 고정(`features.py.FEATURE_NAMES` 재사용 확인), 동일 seed 결정론적 split, topology 층화. 전체 오프라인 스위트(`pytest experiments recovery-policy anomaly-detection -q -m "not live_cluster"`, 존재하지 않는 KUBECONFIG) 681 passed(직전 663에서 +18).
+
+### 58.9 수행 범위
+
+- **수행한 것**: 감사 결과 공식 결정 기록(§58.1) → v3 파이프라인 코드 작성(§58.2, 오프라인) → topology 코드 조사(§58.3, `arm_controller.py`/`run_once.py` 읽기) → Prometheus read-only 조회로 기존 3코어 정상 구간 재활용성 조사(§58.4, retention 확인 + 12세션 등록) → 실제 inventory 산출(§58.5, Prometheus 재조회, 재학습 없음) → 목표 데이터 제안(§58.6, 제안만) → 검증 계획 작성(§58.7, 계획만) → 오프라인 테스트(§58.8).
+- **하지 않은 것**: workload·Chaos 실행 없음, preview 생성·promotion 없음, live 정상 데이터 신규 수집 없음, 모델 재학습 없음, threshold 변경 없음, `model.pkl`/`scaler.pkl` 교체 없음, `score_server.py` 런타임 변경 없음, memory_pressure 3-arm 없음, `run_all_scenarios.py`·본 실험 없음. `v1`(`data/regimes.jsonl`, `artifacts/*.pkl`)은 전혀 수정하지 않았다.

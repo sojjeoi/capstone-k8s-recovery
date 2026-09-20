@@ -1,0 +1,245 @@
+{
+  "generated_at": "2026-09-20T06:22:19.649005+00:00",
+  "generator": "anomaly-detection/v3/build_dataset.py",
+  "git_commit_sha": "b5391b72db5908a5831d4d1a62aae779830603a5",
+  "feature_names": [
+    "cpu_mean",
+    "cpu_slope",
+    "memory_mean",
+    "memory_slope",
+    "queue_mean",
+    "queue_slope",
+    "cache_mean",
+    "cache_slope"
+  ],
+  "window_sec": 60.0,
+  "step_sec": 15.0,
+  "sessions": [
+    {
+      "session_id": "pk-ft-20260919-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_plus_preview",
+      "start_utc": "2026-09-19T05:52:44.130000+00:00",
+      "end_utc": "2026-09-19T05:54:41.820000+00:00",
+      "source_run_id": "pilot-pod_kill-fixed_threshold-01-20260919T054802Z",
+      "notes": "t_preview_ready(05:52:14.13)+30s ~ t_injection(05:54:41.82)"
+    },
+    {
+      "session_id": "pk-proposed-20260919-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_plus_preview",
+      "start_utc": "2026-09-19T06:26:20.890000+00:00",
+      "end_utc": "2026-09-19T06:28:13.330000+00:00",
+      "source_run_id": "pilot-pod_kill-proposed-01-20260919T062317Z",
+      "notes": "t_preview_ready(06:25:50.89)+30s ~ t_injection(06:28:13.33)"
+    },
+    {
+      "session_id": "nd-ft-20260919-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_plus_preview",
+      "start_utc": "2026-09-19T16:07:32.670000+00:00",
+      "end_utc": "2026-09-19T16:09:20.910000+00:00",
+      "source_run_id": "pilot-network_degrade-fixed_threshold-01-20260919T160306Z",
+      "notes": "t_preview_ready(16:07:02.67)+30s ~ t_injection(16:09:20.91)"
+    },
+    {
+      "session_id": "nd-proposed-20260919-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_plus_preview",
+      "start_utc": "2026-09-19T16:26:59.670000+00:00",
+      "end_utc": "2026-09-19T16:28:49.180000+00:00",
+      "source_run_id": "pilot-network_degrade-proposed-01-20260919T162315Z",
+      "notes": "t_preview_ready(16:26:29.67)+30s ~ t_injection(16:28:49.18). 이 trial은 이후(주입 이후) target_replaced=True(promotion) - 이 세션 구간(주입 전)에는 영향 없음, 참고용으로만 남김."
+    },
+    {
+      "session_id": "lr-ft-20260918-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_plus_preview",
+      "start_utc": "2026-09-18T17:46:34.530000+00:00",
+      "end_utc": "2026-09-18T17:49:28.590000+00:00",
+      "source_run_id": "pilot-load_ramp-fixed_threshold-01-20260918T174240Z",
+      "notes": "t_preview_ready(17:46:04.53)+30s ~ t_injection(17:49:28.59)"
+    },
+    {
+      "session_id": "lr-proposed-20260918-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_plus_preview",
+      "start_utc": "2026-09-18T18:18:58.770000+00:00",
+      "end_utc": "2026-09-18T18:21:57.160000+00:00",
+      "source_run_id": "pilot-load_ramp-proposed-01-20260918T181524Z",
+      "notes": "t_preview_ready(18:18:28.77)+30s ~ t_injection(18:21:57.16)"
+    },
+    {
+      "session_id": "lr-native-20260918-1301-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_only",
+      "start_utc": "2026-09-18T13:01:41.690000+00:00",
+      "end_utc": "2026-09-18T13:03:27.040000+00:00",
+      "source_run_id": "pilot-load_ramp-native-01-20260918T130111Z",
+      "notes": "t_run_start(13:01:11.69)+30s ~ t_injection(13:03:27.04)"
+    },
+    {
+      "session_id": "lr-native-20260918-1414-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_only",
+      "start_utc": "2026-09-18T14:14:50.760000+00:00",
+      "end_utc": "2026-09-18T14:17:32.900000+00:00",
+      "source_run_id": "pilot-load_ramp-native-01-20260918T141420Z",
+      "notes": "t_run_start(14:14:20.76)+30s ~ t_injection(14:17:32.90)"
+    },
+    {
+      "session_id": "lr-native-20260918-1637-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_only",
+      "start_utc": "2026-09-18T16:37:32.610000+00:00",
+      "end_utc": "2026-09-18T16:40:16.010000+00:00",
+      "source_run_id": "pilot-load_ramp-native-01-20260918T163702Z",
+      "notes": "t_run_start(16:37:02.61)+30s ~ t_injection(16:40:16.01)"
+    },
+    {
+      "session_id": "mp-direct-rep1-20260920-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_only",
+      "start_utc": "2026-09-20T04:56:24.610000+00:00",
+      "end_utc": "2026-09-20T04:57:56.170000+00:00",
+      "source_run_id": "explore-memory_pressure-native-1500mb-120s-20260920T045524Z",
+      "notes": "t_round_start(04:55:24.61)+60s(=PROBE_STARTUP_TIMEOUT_SEC 상한) ~ t_injection(04:57:56.17) - 이번 세션 §56/57에서 이미 검증된 파일. 처음엔 90초 여유를 뒀더니 rep3가 0개 윈도우가 돼 60초로 낮췄다"
+    },
+    {
+      "session_id": "mp-direct-rep2-20260920-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_only",
+      "start_utc": "2026-09-20T05:04:34.560000+00:00",
+      "end_utc": "2026-09-20T05:06:15.620000+00:00",
+      "source_run_id": "explore-memory_pressure-native-1500mb-120s-20260920T050334Z",
+      "notes": "t_round_start(05:03:34.56)+60s ~ t_injection(05:06:15.62)"
+    },
+    {
+      "session_id": "mp-direct-rep3-20260920-baseline",
+      "regime": "probe_baseline",
+      "topology": "active_only",
+      "start_utc": "2026-09-20T05:12:42.190000+00:00",
+      "end_utc": "2026-09-20T05:14:05.540000+00:00",
+      "source_run_id": "explore-memory_pressure-native-1500mb-120s-20260920T051142Z",
+      "notes": "t_round_start(05:11:42.19)+60s ~ t_injection(05:14:05.54)"
+    }
+  ],
+  "split": {
+    "train": [
+      "lr-native-20260918-1301-baseline",
+      "mp-direct-rep3-20260920-baseline",
+      "mp-direct-rep1-20260920-baseline",
+      "lr-native-20260918-1414-baseline",
+      "lr-ft-20260918-baseline",
+      "pk-proposed-20260919-baseline",
+      "nd-proposed-20260919-baseline",
+      "lr-proposed-20260918-baseline"
+    ],
+    "calibration": [
+      "lr-native-20260918-1637-baseline",
+      "nd-ft-20260919-baseline"
+    ],
+    "holdout": [
+      "mp-direct-rep2-20260920-baseline",
+      "pk-ft-20260919-baseline"
+    ],
+    "seed": 20260920,
+    "ratios": [
+      0.6,
+      0.2,
+      0.2
+    ],
+    "shortfalls": []
+  },
+  "inventory": {
+    "num_candidate_sessions": 12,
+    "num_sessions_with_any_valid_row": 12,
+    "sessions_by_regime": {
+      "probe_baseline": 12
+    },
+    "sessions_by_topology": {
+      "active_plus_preview": 6,
+      "active_only": 6
+    },
+    "windows_per_session": {
+      "pk-ft-20260919-baseline": 4,
+      "pk-proposed-20260919-baseline": 4,
+      "nd-ft-20260919-baseline": 4,
+      "nd-proposed-20260919-baseline": 4,
+      "lr-ft-20260918-baseline": 8,
+      "lr-proposed-20260918-baseline": 8,
+      "lr-native-20260918-1301-baseline": 4,
+      "lr-native-20260918-1414-baseline": 7,
+      "lr-native-20260918-1637-baseline": 7,
+      "mp-direct-rep1-20260920-baseline": 3,
+      "mp-direct-rep2-20260920-baseline": 3,
+      "mp-direct-rep3-20260920-baseline": 2
+    },
+    "total_rows": 58,
+    "valid_rows": 58,
+    "invalid_rows": 0,
+    "invalid_reasons": [],
+    "feature_stats": {
+      "cpu_mean": {
+        "min": 0.018445956116269514,
+        "median": 0.19302249190723533,
+        "max": 1.7027754858565678,
+        "std": 0.4733673862859972,
+        "n": 58
+      },
+      "cpu_slope": {
+        "min": -0.005873864130163624,
+        "median": 0.09997697619395203,
+        "max": 0.8321820772398983,
+        "std": 0.22477486183884818,
+        "n": 58
+      },
+      "memory_mean": {
+        "min": 3570937036.8,
+        "median": 6947913728.0,
+        "max": 7499857920.0,
+        "std": 1704990056.3437905,
+        "n": 58
+      },
+      "memory_slope": {
+        "min": -227327.99999967974,
+        "median": -2.6506305248591435e-07,
+        "max": 300850380.7999997,
+        "std": 39164360.397217646,
+        "n": 58
+      },
+      "queue_mean": {
+        "min": 0.0,
+        "median": 0.0,
+        "max": 0.0,
+        "std": 0.0,
+        "n": 58
+      },
+      "queue_slope": {
+        "min": 0.0,
+        "median": 0.0,
+        "max": 0.0,
+        "std": 0.0,
+        "n": 58
+      },
+      "cache_mean": {
+        "min": 0.0,
+        "median": 0.0,
+        "max": 0.0,
+        "std": 0.0,
+        "n": 58
+      },
+      "cache_slope": {
+        "min": 0.0,
+        "median": 0.0,
+        "max": 0.0,
+        "std": 0.0,
+        "n": 58
+      }
+    },
+    "queue_mean_nonzero_valid_rows": 0,
+    "queue_mean_nonzero_fraction": 0.0
+  },
+  "duplicate_timestamps": [],
+  "duplicate_feature_vectors": []
+}
