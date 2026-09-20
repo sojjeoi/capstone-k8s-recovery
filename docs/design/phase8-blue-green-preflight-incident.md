@@ -5198,3 +5198,15 @@ Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요
 
 - **수행한 것**: Prometheus port-forward 재연결 → progressive 후보 3회 반복 실행(전부 안전 PASS) → `analyze_slo()` stage 스코핑 버그 발견·수정(오프라인 회귀 테스트 추가, 전체 스위트 재확인) → 보존된 raw CSV로 stage별 `p95_peak` 재계산(재측정 없음) → §54.5 기준으로 기계적 판정(FAIL) → 사후 kubectl 독립 확인.
 - **하지 않은 것**: 강도·지속시간 즉석 조정 없음, 4회차 이상 추가 반복 없음, scenario YAML 동결 없음, non-native arm 없음, memory_pressure 3-arm 파일럿 없음, `run_all_scenarios.py`·본 실험(60회) 없음, 안전 상한·`TrialResult` 스키마 변경 없음.
+
+### 55.6 최종 판정 (사용자 승인, §55.1~55.5 결과에 대한 공식 기록)
+
+| 항목 | 판정 |
+|---|---|
+| `500→1000→1500MB` progressive 후보 | **재현성 FAIL** |
+| 안전성(§54.4, 9개 기준 × 3회) | **PASS** |
+| 1500MB stage sustained SLO 위반 | **0/3** |
+| 최종 memory_pressure 시나리오로 동결 여부 | **동결하지 않음** |
+| §53(단독 1500MB×120초 위반 확정)과의 차이 원인 | **인과 결론 내리지 않음 - `path-dependent behavior observed`로만 기록**(§55.3의 두 가설은 참고용 정황일 뿐 결론이 아니다 - "적응 효과 때문"이라거나 "§53이 우연"이라는 판정을 이 문서는 내리지 않는다) |
+
+이 판정은 §55.1~55.5의 원본 데이터(raw CSV·안전 tick·stage summary 3회분, `experiments/results/`에 그대로 보존)를 그대로 유지한 채 확정한다 - 데이터 자체를 수정하거나 재해석하지 않는다.

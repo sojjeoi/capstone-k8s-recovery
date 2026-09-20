@@ -3,8 +3,10 @@
 판정·§50.6 SLO 분석·이벤트 diff). `run_round()`의 라이브 오케스트레이션
 자체는 explore_ramp_intensity.py의 run_candidate()와 같은 이유로 오프라인
 테스트 대상이 아니다(실클러스터·kubectl exec·probe pod 의존)."""
+import json
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -264,6 +266,106 @@ def test_analyze_slo_upper_bound_scopes_p95_peak_to_window(tmp_path):
     windowed = analyze_slo(path, t0.isoformat(), upper_bound_iso=early_window_end, upper_margin_sec=0.0)
     assert windowed["p95_peak"] < 0.5, "upper_bound로 고지연 구간을 제외하면 그 구간의 p95_peak는 낮아야 함"
     print("OK - upper_bound_iso를 주면 p95_peak/availability_min이 그 구간으로 좁혀짐(stage별 오분류 방지)")
+
+
+def _write_region_csv(path, regions):
+    """regions: [(start_offset_sec, count, latency), ...] - 1초 간격 표본.
+    구간 사이 간격을 60초(rolling window 길이) 이상 벌려야 인접 구간의
+    표본이 서로의 rolling P95에 섞여 들어가지 않는다(고의로 §55.2와 같은
+    조건을 피해 "이 구간 자체"만 순수하게 확인하기 위함)."""
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    lines = ["sent_at,latency,success"]
+    for start, count, latency in regions:
+        for i in range(count):
+            t = t0 + timedelta(seconds=start + i)
+            lines.append(f"{t.isoformat()},{latency},True")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return t0
+
+
+# 서로 90초 이상 떨어진 세 구간(60초 rolling window보다 넉넉히 커서 서로 오염 안 됨)
+_THREE_REGIONS = [(0, 30, 0.1), (120, 30, 0.9), (240, 30, 0.15)]
+
+
+def test_analyze_slo_stage_window_uses_only_samples_within_actual_boundary(tmp_path):
+    """§55.2 버그 회귀 - upper_bound_iso로 좁힌 구간의 p95_peak가 그 구간
+    자체의 분포만 반영해야 한다(앞뒤 다른 구간이 섞여 들어가면 안 됨)."""
+    path = tmp_path / "raw.csv"
+    t0 = _write_region_csv(path, _THREE_REGIONS)
+    start_sec, count, latency = _THREE_REGIONS[1]  # 가운데(고지연) 구간만 확인
+    w_start = (t0 + timedelta(seconds=start_sec)).isoformat()
+    w_end = (t0 + timedelta(seconds=start_sec + count)).isoformat()
+    result = analyze_slo(path, w_start, upper_bound_iso=w_end, upper_margin_sec=0.0)
+    assert result["p95_peak"] == latency
+    print(f"OK - 가운데 구간만 좁혀 보면 그 구간 자체의 latency({latency})만 반영됨 - 앞뒤 구간 안 섞임")
+
+
+def test_analyze_slo_different_stage_windows_return_different_p95(tmp_path):
+    """§55.2 버그 회귀 - 서로 다른 stage(latency 분포가 다름)를 각자의
+    경계로 분석하면 서로 다른 p95_peak가 나와야 한다(수정 전에는 세 stage
+    모두 raw CSV 전체 기준의 같은 값이 찍혔다)."""
+    path = tmp_path / "raw.csv"
+    t0 = _write_region_csv(path, _THREE_REGIONS)
+    peaks = []
+    for start_sec, count, latency in _THREE_REGIONS:
+        w_start = (t0 + timedelta(seconds=start_sec)).isoformat()
+        w_end = (t0 + timedelta(seconds=start_sec + count)).isoformat()
+        r = analyze_slo(path, w_start, upper_bound_iso=w_end, upper_margin_sec=0.0)
+        peaks.append(r["p95_peak"])
+    assert peaks == [0.1, 0.9, 0.15]
+    assert len(set(peaks)) == 3, "세 stage가 서로 다른 p95_peak를 반환해야 함"
+    print(f"OK - 서로 다른 stage 구간이 서로 다른 p95_peak를 반환: {peaks}")
+
+
+def test_analyze_slo_upper_bound_does_not_change_t_slo_value(tmp_path):
+    """§55.2 수정이 t_slo/t_recovery 판정 로직(slo_judge.find_t_slo/
+    find_t_recovery) 자체는 건드리지 않았음을 고정한다 - upper_bound_iso는
+    보고용 필드(p95_peak 등)와 t_slo_within_window만 바꿀 뿐, t_slo/
+    t_recovery 값 자체는 upper_bound_iso 유무와 무관하게 항상 같아야 한다."""
+    path = tmp_path / "raw.csv"
+    t0 = _write_region_csv(path, [(0, 30, 0.1), (30, 90, 0.9)])  # 30초 연속 위반 조건을 충분히 채우는 90초 위반 구간
+    without_upper = analyze_slo(path, t0.isoformat())
+    assert without_upper["t_slo"] is not None, "이 합성 데이터는 실제 위반이 나야 함(테스트 전제 확인)"
+
+    late_upper = (t0 + timedelta(seconds=200)).isoformat()  # 위반이 이미 다 끝난 뒤의 넉넉한 상한
+    with_upper = analyze_slo(path, t0.isoformat(), upper_bound_iso=late_upper, upper_margin_sec=0.0)
+    assert with_upper["t_slo"] == without_upper["t_slo"]
+    assert with_upper["t_recovery"] == without_upper["t_recovery"]
+    print("OK - upper_bound_iso를 줘도 t_slo/t_recovery 값 자체는 그대로(판정 로직 불변)")
+
+
+# --- §54 3회 재현성 검증에서 보존된 실제 raw CSV·요약 JSON으로 §55.2 수정 검증 ---
+
+_EVIDENCE_DIR = Path(__file__).resolve().parent.parent / "docs" / "design" / "evidence" / "memory-pressure-candidate-verify"
+_REP_RUN_IDS = [
+    "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+    "verify-memory_pressure-candidate-rep2-20260920T040043Z",
+    "verify-memory_pressure-candidate-rep3-20260920T041304Z",
+]
+# §55.2 문서에 적은 재계산값(보존 fixture 기준) - 이 테스트가 깨지면 §55에
+# 적힌 수치의 재현 근거 자체가 깨진 것이다(사후 재정의 금지 원칙과 같은 이유
+# - 문서에 적은 실측값은 항상 이 fixture로 재현 가능해야 한다).
+_EXPECTED_STAGE_P95_PEAK = {
+    _REP_RUN_IDS[0]: [0.34149773088283836, 0.3518388823256828, 0.3528281099279411],
+    _REP_RUN_IDS[1]: [0.35202021247241644, 0.34953845038544384, 0.34953845038544384],
+    _REP_RUN_IDS[2]: [0.3575589725514874, 0.3575589725514874, 0.3566225753631443],
+}
+
+
+def test_analyze_slo_matches_preserved_candidate_verify_evidence():
+    """§55.2에서 §54 3회 재현성 검증의 보존 데이터로 재계산한 stage별
+    p95_peak가 문서 수치와 일치하는지, t_slo가 여전히 전부 None(0/3 위반)인지
+    고정한다."""
+    for run_id, expected_peaks in _EXPECTED_STAGE_P95_PEAK.items():
+        summary = json.loads((_EVIDENCE_DIR / f"{run_id}-summary.json").read_text(encoding="utf-8"))
+        local_raw = _EVIDENCE_DIR / f"probe-{run_id}-native-1-raw.csv"
+        peaks = []
+        for w in summary["stage_windows"]:
+            r = analyze_slo(local_raw, w["start"], upper_bound_iso=w["end"], upper_margin_sec=30.0)
+            assert r["t_slo"] is None, f"{run_id}/{w['name']}: §55 결과(0/3 위반)와 달라짐 - 재현 실패"
+            peaks.append(r["p95_peak"])
+        assert peaks == expected_peaks, f"{run_id}: stage별 p95_peak 재계산값이 §55 문서 수치와 다름"
+        print(f"OK - {run_id}: stage별 p95_peak {peaks} = §55 문서 수치와 일치, t_slo 전부 None(0/3 위반 재확인)")
 
 
 def test_analyze_slo_no_upper_bound_key_when_not_requested(tmp_path):

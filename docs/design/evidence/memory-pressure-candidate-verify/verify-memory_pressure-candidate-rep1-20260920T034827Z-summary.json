@@ -1,0 +1,1647 @@
+{
+  "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+  "rep_index": 1,
+  "target_pod": "vllm-serving-6b9d88c96-64k7r",
+  "target_uid": "630f21a9-409b-4bea-a378-95a17df78735",
+  "node_name": "sj-worker",
+  "t_round_start": "2026-09-20T03:48:27.226535+00:00",
+  "aborted": false,
+  "abort_reason": null,
+  "cleanup_confirmed": true,
+  "probe_baseline": {
+    "ready": true,
+    "ready_at": "2026-09-20T03:50:46.823609+00:00",
+    "sample_count": 61,
+    "p95": 0.3307046858360991,
+    "availability": 1.0
+  },
+  "baseline_working_set_bytes": 3573325824.0,
+  "t_baseline_done": "2026-09-20T03:50:47.451124+00:00",
+  "t_injection_request": "2026-09-20T03:50:48.322857+00:00",
+  "t_injection": "2026-09-20T03:51:05.230281+00:00",
+  "t_injection_end": "2026-09-20T03:56:59.467782+00:00",
+  "stage_windows": [
+    {
+      "name": "stage-1-500mb",
+      "start": "2026-09-20T03:50:49.221810+00:00",
+      "end": "2026-09-20T03:52:51.051652+00:00",
+      "all_injected": true
+    },
+    {
+      "name": "stage-2-1000mb",
+      "start": "2026-09-20T03:52:51.922660+00:00",
+      "end": "2026-09-20T03:54:53.776609+00:00",
+      "all_injected": true
+    },
+    {
+      "name": "stage-3-1500mb",
+      "start": "2026-09-20T03:54:54.735860+00:00",
+      "end": "2026-09-20T03:56:56.562542+00:00",
+      "all_injected": true
+    }
+  ],
+  "t_cleanup_done": "2026-09-20T03:57:06.741268+00:00",
+  "t_round_end": "2026-09-20T03:58:42.554932+00:00",
+  "ticks": [
+    {
+      "ts": "2026-09-20T03:49:33.994834+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8486948864.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:49:40.158812+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8486948864.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:49:46.206725+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8486948864.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:49:52.368921+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8455393280.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:49:58.368561+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8455393280.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:04.498367+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8455393280.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:10.531529+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8455393280.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:16.625283+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8455393280.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:23.017607+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8462663680.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:28.966804+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8462663680.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:34.948474+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8462663680.0,
+      "working_set_bytes": 3573317632.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:41.001241+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8462663680.0,
+      "working_set_bytes": 3573325824.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:46.923157+00:00",
+      "phase": "baseline",
+      "event": "safety_tick",
+      "node_available_bytes": 8462663680.0,
+      "working_set_bytes": 3573325824.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:48.322841+00:00",
+      "event": "prepare_ok",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "arm": "native",
+      "rep": 1,
+      "target_pod": "vllm-serving-6b9d88c96-64k7r",
+      "target_uid": "630f21a9-409b-4bea-a378-95a17df78735",
+      "node_name": "sj-worker",
+      "memory_limit_bytes": 6442450944.0,
+      "baseline_restart_count": 0,
+      "baseline_working_set_bytes": 3573325824.0,
+      "node_available_bytes": 8462663680.0
+    },
+    {
+      "ts": "2026-09-20T03:50:49.094280+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8462663680.0,
+      "working_set_bytes": 3573325824.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:50:54.880214+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8033210368.0,
+      "working_set_bytes": 3573325824.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:00.411655+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8033210368.0,
+      "working_set_bytes": 3573325824.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:05.784482+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8033210368.0,
+      "working_set_bytes": 4076523520.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:11.144606+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8033210368.0,
+      "working_set_bytes": 4076523520.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:16.431041+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8033210368.0,
+      "working_set_bytes": 4076523520.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:21.815185+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7960596480.0,
+      "working_set_bytes": 4076523520.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:27.168852+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7960596480.0,
+      "working_set_bytes": 4076523520.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:32.577288+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7960596480.0,
+      "working_set_bytes": 4076523520.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:37.979686+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7960596480.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:43.426356+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7960596480.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:48.878242+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7960596480.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:54.281397+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7951831040.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:51:59.721293+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7951831040.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:05.356161+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7951831040.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:10.900490+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7951831040.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:16.586565+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7951831040.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:22.077625+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7953465344.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:27.721081+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7953465344.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:33.358531+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7953465344.0,
+      "working_set_bytes": 4076531712.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:38.943988+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7953465344.0,
+      "working_set_bytes": 4076539904.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:44.547479+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7953465344.0,
+      "working_set_bytes": 4076539904.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:49.822654+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7953465344.0,
+      "working_set_bytes": 4076539904.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:51.816031+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8469544960.0,
+      "working_set_bytes": 4076539904.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:52:57.601015+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8469544960.0,
+      "working_set_bytes": 4076539904.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:03.218110+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8469544960.0,
+      "working_set_bytes": 4076539904.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:08.764170+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8469544960.0,
+      "working_set_bytes": 4577583104.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:14.112343+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8469544960.0,
+      "working_set_bytes": 4577583104.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:19.507781+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 8469544960.0,
+      "working_set_bytes": 4577583104.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:24.895123+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7449251840.0,
+      "working_set_bytes": 4577583104.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:30.209728+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7449251840.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:35.539556+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7449251840.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:41.041386+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7449251840.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:46.464712+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7449251840.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:52.042311+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7447339008.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:53:57.684049+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7447339008.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:03.254978+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7447339008.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:08.887811+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7447339008.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:14.335191+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7447339008.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:19.958224+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7447339008.0,
+      "working_set_bytes": 4577591296.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:25.628181+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7446319104.0,
+      "working_set_bytes": 4577722368.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:31.228992+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7446319104.0,
+      "working_set_bytes": 4577722368.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:36.804387+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7446319104.0,
+      "working_set_bytes": 4577722368.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:42.392160+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7446319104.0,
+      "working_set_bytes": 4577722368.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:48.013676+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7446319104.0,
+      "working_set_bytes": 4577632256.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:52.543725+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7453913088.0,
+      "working_set_bytes": 4577632256.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:54:54.594526+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7453913088.0,
+      "working_set_bytes": 4577632256.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:00.444016+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7453913088.0,
+      "working_set_bytes": 4379869184.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:06.072009+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7453913088.0,
+      "working_set_bytes": 4379869184.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:11.653054+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7453913088.0,
+      "working_set_bytes": 4379869184.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:17.272165+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 7453913088.0,
+      "working_set_bytes": 5077626880.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:22.753825+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6953279488.0,
+      "working_set_bytes": 5077626880.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:28.118247+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6953279488.0,
+      "working_set_bytes": 5077626880.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:33.496139+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6953279488.0,
+      "working_set_bytes": 5077626880.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:38.887723+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6953279488.0,
+      "working_set_bytes": 5077626880.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:44.268554+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6953279488.0,
+      "working_set_bytes": 5077626880.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:49.635712+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6953279488.0,
+      "working_set_bytes": 5077635072.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:55:55.029076+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6949167104.0,
+      "working_set_bytes": 5077635072.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:00.408504+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6949167104.0,
+      "working_set_bytes": 5077635072.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:05.818698+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6949167104.0,
+      "working_set_bytes": 5077635072.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:11.323062+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6949167104.0,
+      "working_set_bytes": 5077635072.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:16.995104+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6949167104.0,
+      "working_set_bytes": 5077614592.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:22.486436+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6944092160.0,
+      "working_set_bytes": 5077614592.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:28.028646+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6944092160.0,
+      "working_set_bytes": 5077622784.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:33.683384+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6944092160.0,
+      "working_set_bytes": 5077622784.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:39.325437+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6944092160.0,
+      "working_set_bytes": 5077622784.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:44.927832+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6944092160.0,
+      "working_set_bytes": 5077622784.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:50.565206+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6944092160.0,
+      "working_set_bytes": 5077622784.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:56:55.294287+00:00",
+      "event": "safety_tick",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "node_available_bytes": 6955515904.0,
+      "working_set_bytes": 5077622784.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:57:06.741235+00:00",
+      "event": "cleanup_recovery_check",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "recovered": true,
+      "baseline_working_set_bytes": 3573325824.0,
+      "final_working_set_bytes": 3572383744.0,
+      "tolerance_bytes": 157286400,
+      "timeout_sec": 30.0
+    },
+    {
+      "ts": "2026-09-20T03:57:07.460505+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 6955515904.0,
+      "working_set_bytes": 3572383744.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:57:13.547712+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 6955515904.0,
+      "working_set_bytes": 3572383744.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:57:19.654570+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 6955515904.0,
+      "working_set_bytes": 3572383744.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:57:25.662856+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 8459501568.0,
+      "working_set_bytes": 3572383744.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:57:31.790303+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 8459501568.0,
+      "working_set_bytes": 3572383744.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:57:37.652335+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 8459501568.0,
+      "working_set_bytes": 3572391936.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:57:44.810551+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 8459501568.0,
+      "working_set_bytes": 3572391936.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:57:51.062793+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 8453054464.0,
+      "working_set_bytes": 3572391936.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:57:57.174425+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 8453054464.0,
+      "working_set_bytes": 3572391936.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:58:03.334508+00:00",
+      "phase": "recovery",
+      "event": "safety_tick",
+      "node_available_bytes": 8453054464.0,
+      "working_set_bytes": 3572391936.0,
+      "restart_count": 0,
+      "oom_killed": false,
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      }
+    },
+    {
+      "ts": "2026-09-20T03:58:09.406316+00:00",
+      "event": "cleanup_recovery_check",
+      "run_id": "verify-memory_pressure-candidate-rep1-20260920T034827Z",
+      "recovered": true,
+      "baseline_working_set_bytes": 3573325824.0,
+      "final_working_set_bytes": 3572391936.0,
+      "tolerance_bytes": 157286400,
+      "timeout_sec": 30.0
+    }
+  ],
+  "unhealthy_events": {
+    "Readiness": 0,
+    "Liveness": 0
+  },
+  "overall_slo": {
+    "local_raw_csv": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-verify-memory_pressure-candidate-rep1-20260920T034827Z-native-1-raw.csv",
+    "total_samples": 505,
+    "success_rate": 1.0,
+    "t_slo": null,
+    "t_recovery": null,
+    "violation_duration_sec": null,
+    "post_injection_evaluable_samples": 418,
+    "p95_peak": 1.2167509421589784,
+    "availability_min": 1.0
+  },
+  "stages": [
+    {
+      "name": "stage-1-500mb",
+      "size_mb": 500.0,
+      "duration_sec": 120.0,
+      "start": "2026-09-20T03:50:49.221810+00:00",
+      "end": "2026-09-20T03:52:51.051652+00:00",
+      "all_injected": true,
+      "max_working_set_bytes": 4076539904.0,
+      "working_set_rise_bytes": 503214080.0,
+      "num_safety_ticks": 22,
+      "slo": {
+        "local_raw_csv": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-verify-memory_pressure-candidate-rep1-20260920T034827Z-native-1-raw.csv",
+        "total_samples": 505,
+        "success_rate": 1.0,
+        "t_slo": null,
+        "t_recovery": null,
+        "violation_duration_sec": null,
+        "post_injection_evaluable_samples": 434,
+        "p95_peak": 1.2167509421589784,
+        "availability_min": 1.0,
+        "t_slo_within_window": false
+      },
+      "recovery_after_stage_end": null
+    },
+    {
+      "name": "stage-2-1000mb",
+      "size_mb": 1000.0,
+      "duration_sec": 120.0,
+      "start": "2026-09-20T03:52:51.922660+00:00",
+      "end": "2026-09-20T03:54:53.776609+00:00",
+      "all_injected": true,
+      "max_working_set_bytes": 4577722368.0,
+      "working_set_rise_bytes": 1004396544.0,
+      "num_safety_ticks": 22,
+      "slo": {
+        "local_raw_csv": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-verify-memory_pressure-candidate-rep1-20260920T034827Z-native-1-raw.csv",
+        "total_samples": 505,
+        "success_rate": 1.0,
+        "t_slo": null,
+        "t_recovery": null,
+        "violation_duration_sec": null,
+        "post_injection_evaluable_samples": 311,
+        "p95_peak": 1.2167509421589784,
+        "availability_min": 1.0,
+        "t_slo_within_window": false
+      },
+      "recovery_after_stage_end": null
+    },
+    {
+      "name": "stage-3-1500mb",
+      "size_mb": 1500.0,
+      "duration_sec": 120.0,
+      "start": "2026-09-20T03:54:54.735860+00:00",
+      "end": "2026-09-20T03:56:56.562542+00:00",
+      "all_injected": true,
+      "max_working_set_bytes": 5077635072.0,
+      "working_set_rise_bytes": 1504309248.0,
+      "num_safety_ticks": 22,
+      "slo": {
+        "local_raw_csv": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-verify-memory_pressure-candidate-rep1-20260920T034827Z-native-1-raw.csv",
+        "total_samples": 505,
+        "success_rate": 1.0,
+        "t_slo": null,
+        "t_recovery": null,
+        "violation_duration_sec": null,
+        "post_injection_evaluable_samples": 188,
+        "p95_peak": 1.2167509421589784,
+        "availability_min": 1.0,
+        "t_slo_within_window": false
+      },
+      "recovery_after_stage_end": null
+    }
+  ],
+  "working_set_monotonic_nondecreasing": true,
+  "safety": {
+    "pass": true,
+    "reasons": []
+  }
+}
