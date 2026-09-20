@@ -1,0 +1,52 @@
+{
+  "threshold": 0.013299302702671323,
+  "holdout_sessions": [
+    "v31-holdout-idle-20260920",
+    "v31-holdout-low_load-20260920"
+  ],
+  "per_session": {
+    "v31-holdout-idle-20260920": {
+      "session_id": "v31-holdout-idle-20260920",
+      "n_points": 38,
+      "point_anomaly_count": 4,
+      "point_fpr": 0.10526315789473684,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "score_min": -0.0026382618018978565,
+      "score_median": 0.08672519200122239,
+      "score_max": 0.10478545896510005,
+      "first_signal_window_start_utc": null
+    },
+    "v31-holdout-low_load-20260920": {
+      "session_id": "v31-holdout-low_load-20260920",
+      "n_points": 37,
+      "point_anomaly_count": 26,
+      "point_fpr": 0.7027027027027027,
+      "signal_indices": [
+        2,
+        9,
+        17,
+        25,
+        33
+      ],
+      "signal_count": 5,
+      "max_consecutive_anomalous": 6,
+      "score_min": -0.1764095694761021,
+      "score_median": -0.06904885367496838,
+      "score_max": 0.08353759430743879,
+      "first_signal_window_start_utc": "2026-09-20T14:21:00.406608+00:00"
+    }
+  },
+  "overall_point_count": 75,
+  "overall_point_anomaly_count": 30,
+  "overall_point_fpr": 0.4,
+  "overall_false_signal_episodes": 5,
+  "adoption_criteria": {
+    "zero_false_signal_episodes": false,
+    "no_missing_or_nan": true,
+    "schema_and_hash_consistent": true
+  },
+  "model_adopted": false,
+  "note": "window 표본은 60초/15초 overlapping이라 독립 표본이 아님 - session-level false episode와 함께 봐야 함"
+}

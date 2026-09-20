@@ -6788,3 +6788,74 @@ byte hash 완전 일치는 "덤"이지 유일 기준이 아니다.
 
 이 커밋 push 확인 이후에만 Holdout 봉인을 해제한다(§75). Holdout에는
 어떠한 재학습·feature 변경·threshold 변경도 하지 않는다.
+
+## 75. Sealed Holdout 평가 - 채택 기준 미충족, 모델 채택 안 함 (2026-09-20)
+
+freeze commit(`9caac66`)이 origin에 push된 것을 `git fetch`+`git
+rev-list --left-right --count HEAD...origin/master`(결과 `0 0`)로 재확인한
+뒤에만 Holdout 봉인을 열었다. `anomaly-detection/v3/model_v31/
+evaluate_holdout.py`는 동결된 artifact(§74)를 읽기만 하고 재학습·
+feature 변경·threshold 변경을 전혀 하지 않는다(`evaluate.py`의 공용
+`evaluate_session()` 재사용 - calibration과 동일 판정 함수).
+
+### 75.1 결과
+
+| session | n(window) | point anomaly | point FPR | false signal episode | 최대 연속 | score[min/median/max] |
+|---|---|---|---|---|---|---|
+| `v31-holdout-idle-20260920` | 38 | 4 | 10.53% | **0** | 2 | -0.0026 / 0.0867 / 0.1048 |
+| `v31-holdout-low_load-20260920` | 37 | 26 | 70.27% | **5** | **6** | -0.1764 / -0.0690 / 0.0835 |
+
+**전체(overlapping window, 독립 session 2개) point FPR = 40.00%, 전체
+false signal episode = 5건.** `idle` holdout은 episode 0(연속 최대
+2회로 3회 미달)이라 통과였지만, **`low_load` holdout에서 최대 연속
+6회 - `CONSECUTIVE_THRESHOLD=3`를 넘어 실제 런타임이었다면 5회의
+독립적인 POST 신호가 나갔을 것**이다(§71 감사대로 재생 - point anomaly
+1건이 아니라 실제 3연속 이상 sustained streak 기준으로 계산함, 사용자
+지시대로 "현재 런타임이 단일 point로 signal을 보내는 구조라면"에는
+해당하지 않지만 그보다 강한 조건인 연속 6회가 실측됨).
+
+### 75.2 채택 기준 - 미충족
+
+| 기준 | 결과 |
+|---|---|
+| false signal episode 0 | **불충족(5건)** |
+| 실제 runtime 기준 불필요한 recovery signal 0 | **불충족** |
+| 데이터·schema·hash 정합 | 충족(§74 동결 그대로 읽음) |
+| 결측·NaN 없음 | 충족(§70에서 이미 무효 window 0건 확인) |
+
+`window 표본은 60초/15초로 overlapping되므로 "75개의 완전 독립
+표본"으로 과장하지 않는다 - 독립 session은 2개뿐이고, 그중 1개
+session에서 sustained false episode가 5회 나왔다는 session-level
+사실이 이 실패의 핵심이다.
+
+### 75.3 사후 진단(참고, 코드 버그 아님 확인만 - 원인 단정 안 함)
+
+`v31-holdout-low_load-20260920`의 `cpu_mean` 최솟값(0.799)이 `v31-train-
+low_load-20260920`(최솟값 1.025)·`v31-calib-low_load-20260920`(최솟값
+1.122)보다 뚜렷하게 낮다 - Train 2세션·Calibration 2세션만으로는 모델이
+학습하지 못한 정상 변동 구간일 가능성이 있다(session 수가 매우 적어
+일반화 여력이 작았을 가능성 - **단정하지 않음**, 다른 원인도 배제하지
+않음). `split_manifest`/`session_id` 중복 검사(§8 테스트)와 코드 경로
+재확인 결과 train/calibration/holdout 세션이 서로 뒤섞인 흔적은 없다 -
+파이프라인 버그로 보이지 않는다.
+
+### 75.4 조치 - 사전등록 규칙 그대로 적용
+
+지시대로: **이 모델을 본 실험용으로 채택하지 않는다.** Holdout을
+calibration으로 전환하지 않았다. threshold를 다시 조정하지 않았다.
+실패 결과(`holdout-evaluation.json`, `model_adopted: false`)를 그대로
+보존했다. **새로운 모델을 채택하려면 새로운 calibration/holdout
+데이터(현재보다 많은 독립 session)가 필요하다** - 이번 범위에서는
+그 추가 수집을 시작하지 않는다.
+
+### 75.5 §76(boundary challenge) 미실행
+
+사용자 지시("Holdout이 채택 기준을 통과한 경우에만... challenge set을
+평가하세요")에 따라, Holdout이 실패했으므로 **boundary challenge set
+평가(§76)를 실행하지 않는다.** `boundary_challenge_manifest.json`은
+그대로 미평가 상태로 남는다.
+
+### 75.6 범위 준수
+
+Holdout 재학습·feature 변경·threshold 재조정 없음, boundary challenge
+평가 없음, `score_server.py` 변경 없음, artifact 교체 없음.
