@@ -137,13 +137,17 @@ def analyze_slo(local_raw: Path, t_injection_iso, upper_bound_iso=None, upper_ma
     새 판정 로직 없음).
 
     upper_bound_iso(선택, §54 - 후보 재현성 검증의 stage별 분석 지원): 주어지면
-    `t_slo`가 이 시각(+upper_margin_sec 여유) 이내인지도 함께 판정해
-    `t_slo_within_window`에 담는다 - 특정 stage 구간에 국한해 위반을 볼 때,
-    그 위반이 실제로 그 stage 안에서 확정됐는지(다음 stage나 drain 구간까지
-    번진 게 아닌지) 확인하는 용도. 하한(not_before)은 기존과 동일하게
-    `find_t_slo(not_before=t_injection_iso)`가 이미 보장한다(그 이전 시각은
-    스트릭 시작점으로도 t_slo 후보로도 못 쓰임). 기존 호출부(§50~§53, 단일
-    라운드 전체 분석)는 이 인자를 안 넘기므로 반환 dict 구조가 그대로다."""
+    (1) `t_slo`가 이 시각(+upper_margin_sec 여유) 이내인지 `t_slo_within_window`에
+    담고, (2) `p95_peak`/`availability_min`/`post_injection_evaluable_samples`도
+    [not_before, 이 시각+여유) 구간으로 좁혀서 계산한다(2026-09-20 수정 - §54
+    최초 라이브 실행에서 실측 발견: 이 인자 없이는 이 세 값이 raw CSV 전체
+    기준이라 같은 라운드의 서로 다른 stage에 항상 같은 값이 찍혀 stage별
+    비교가 무의미했다). 하한(not_before)은 `find_t_slo(not_before=t_injection_
+    iso)`가 이미 보장하지만(그 이전 시각은 스트릭 시작점으로도 t_slo 후보로도
+    못 쓰임), p95_peak 등은 원래 이 하한조차 안 걸려 있었다. 기존 호출부
+    (§50~§53, 단일 라운드 전체 분석)는 upper_bound_iso를 안 넘기므로 이
+    세 값의 계산 범위(raw CSV 전체)가 그대로 유지된다 - 이미 §50~§53 문서에
+    적힌 수치는 이 수정으로 달라지지 않는다(사후 재정의 금지 원칙)."""
     if not local_raw.exists():
         return {"error": "probe raw CSV 없음(probe 시작 실패 등)"}
     rows = slo_judge.load_raw(local_raw)
@@ -153,11 +157,16 @@ def analyze_slo(local_raw: Path, t_injection_iso, upper_bound_iso=None, upper_ma
     not_before = datetime.fromisoformat(t_injection_iso) if t_injection_iso else None
     t_slo = slo_judge.find_t_slo(points, not_before=not_before)
     t_recovery = slo_judge.find_t_recovery(points, t_slo) if t_slo else None
-    post_injection = [p for p in points if not_before is None or p["t"] >= not_before]
-    evaluable_count = sum(1 for p in post_injection if p["latency_evaluable"])
+    upper = datetime.fromisoformat(upper_bound_iso) + timedelta(seconds=upper_margin_sec) if upper_bound_iso else None
+    windowed = [p for p in points
+                if (not_before is None or p["t"] >= not_before) and (upper is None or p["t"] < upper)]
+    evaluable_count = sum(1 for p in windowed if p["latency_evaluable"])
     success_count = sum(1 for r in rows if r["success"])
-    p95_values = [p["p95"] for p in points if p["p95"] is not None]
-    availability_values = [p["success_rate"] for p in points]
+    # upper_bound_iso가 없으면(기존 §50~§53 호출부) p95_peak/availability_min은
+    # raw CSV 전체 기준을 그대로 유지 - 있으면(§54 stage별 호출) windowed로 좁힌다.
+    p95_source = windowed if upper is not None else points
+    p95_values = [p["p95"] for p in p95_source if p["p95"] is not None]
+    availability_values = [p["success_rate"] for p in p95_source]
     result = {
         "local_raw_csv": str(local_raw),
         "total_samples": len(rows),
@@ -170,7 +179,6 @@ def analyze_slo(local_raw: Path, t_injection_iso, upper_bound_iso=None, upper_ma
         "availability_min": min(availability_values) if availability_values else None,
     }
     if upper_bound_iso is not None:
-        upper = datetime.fromisoformat(upper_bound_iso) + timedelta(seconds=upper_margin_sec)
         result["t_slo_within_window"] = t_slo is not None and t_slo <= upper
     return result
 

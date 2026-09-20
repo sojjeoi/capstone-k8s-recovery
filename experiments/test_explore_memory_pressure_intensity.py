@@ -243,6 +243,29 @@ def test_analyze_slo_upper_bound_false_when_t_slo_beyond_margin(tmp_path, monkey
     print("OK - t_slo가 stage 종료 시각(+여유)을 넘으면 t_slo_within_window=False(다른 구간 위반 오분류 방지)")
 
 
+def test_analyze_slo_upper_bound_scopes_p95_peak_to_window(tmp_path):
+    """2026-09-20 실측 발견 - §54 최초 라이브 3회 재현성 검증에서 같은
+    라운드의 500/1000/1500MB stage 세 개에 항상 똑같은 p95_peak가 찍힌
+    버그를 재현·고정한다. upper_bound_iso 없이는 raw CSV 전체 최고값,
+    있으면 그 구간 안으로 좁혀야 한다."""
+    path = tmp_path / "raw.csv"
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    lines = ["sent_at,latency,success"]
+    for i in range(25):  # 0~24초: 정상 구간
+        lines.append(f"{(t0 + timedelta(seconds=i)).isoformat()},0.1,True")
+    for i in range(25):  # 100~124초: 고지연 구간(다른 stage에 해당한다고 가정)
+        lines.append(f"{(t0 + timedelta(seconds=100 + i)).isoformat()},2.0,True")
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+    whole = analyze_slo(path, t0.isoformat())
+    assert whole["p95_peak"] > 1.0, "upper_bound 없으면 raw CSV 전체(고지연 구간 포함) 최고값을 봐야 함"
+
+    early_window_end = (t0 + timedelta(seconds=30)).isoformat()
+    windowed = analyze_slo(path, t0.isoformat(), upper_bound_iso=early_window_end, upper_margin_sec=0.0)
+    assert windowed["p95_peak"] < 0.5, "upper_bound로 고지연 구간을 제외하면 그 구간의 p95_peak는 낮아야 함"
+    print("OK - upper_bound_iso를 주면 p95_peak/availability_min이 그 구간으로 좁혀짐(stage별 오분류 방지)")
+
+
 def test_analyze_slo_no_upper_bound_key_when_not_requested(tmp_path):
     path, t0 = _minimal_csv(tmp_path)
     result = analyze_slo(path, t0.isoformat())

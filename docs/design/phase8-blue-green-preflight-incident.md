@@ -5125,3 +5125,76 @@ Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요
 ### 54.9 구현 확인
 
 `experiments/verify_memory_pressure_candidate.py`(신규) + `experiments/test_verify_memory_pressure_candidate.py`(신규 19개, `bucket_ticks_by_stage`/`judge_safety`/`judge_reproducibility` 순수 함수만 - 라이브 오케스트레이션은 `explore_ramp_intensity.run_candidate()`와 같은 이유로 오프라인 테스트 대상 아님). 지원을 위해 `run_once.Injector`에 선택 훅 `get_stage_windows` 추가(1개), `memory_pressure_adapter.py`에 stage별 AllInjected 관측(`_stage_wait_with_safety`)과 `_log()` 시각 통일 추가(신규 테스트 2개), `explore_memory_pressure_intensity.analyze_slo()`에 `upper_bound_iso` 확장(신규 테스트 3개) - **`TrialResult` 스키마·기존 안전 상수·기존 단일 라운드 도구(§50/§52) 동작 전부 불변**. 전체 오프라인 스위트(`pytest experiments recovery-policy anomaly-detection -q -m "not live_cluster"`, 존재하지 않는 KUBECONFIG) 640 passed(직전 616에서 +24), 3 deselected.
+
+## 55. `memory_pressure` 최종 후보 3회 재현성 검증 결과 - 안전 9/9 PASS, **1500MB stage SLO 재현성 FAIL**(§54 기준 미충족) (2026-09-20)
+
+§54 사전 등록대로 500MB→1000MB→1500MB(각 120초) progressive 시퀀스를 3회 독립 반복했다. **§54.4 안전 기준 9개는 3회 전부 PASS**했지만, **§54.5의 1500MB stage SLO 재현성 기준(최소 2/3회 sustained 위반)은 충족하지 못했다(0/3회)** - §54.8 지시대로 강도·지속시간을 조정하지 않고 결과만 보고한다.
+
+### 55.1 결과 요약
+
+| 항목 | rep1 | rep2 | rep3 |
+|---|---|---|---|
+| `run_id` | `...rep1-20260920T034827Z` | `...rep2-20260920T040043Z` | `...rep3-20260920T041304Z` |
+| 소요시간 | 615초(10분15초) | 620초(10분20초) | 628초(10분28초) |
+| baseline working set | 3.328GiB | 3.327GiB | 3.327GiB |
+| stage-1(500MB) 최대 ws / 상승분 | 4.076GiB / 503.2MB(**100.6%**) | 4.075GiB / 503.2MB(**100.6%**) | 4.075GiB / 503.3MB(**100.7%**) |
+| stage-2(1000MB) 최대 ws / 상승분 | 4.577GiB / 1004.4MB(**100.4%**) | 4.576GiB / 1004.2MB(**100.4%**) | 4.577GiB / 1004.9MB(**100.5%**) |
+| stage-3(1500MB) 최대 ws / 상승분 | 5.078GiB / 1504.3MB(**100.3%**, 상한까지 292MiB 여유) | 5.078GiB / 1505.2MB(**100.3%**) | 5.078GiB / 1506.1MB(**100.4%**) |
+| `working_set_monotonic_nondecreasing` | True | True | True |
+| Node MemAvailable 범위 | 6.47~7.90GiB | 6.43~7.91GiB | 6.43~7.87GiB |
+| restartCount / OOMKilled | 불변(0) / 없음 | 불변(0) / 없음 | 불변(0) / 없음 |
+| readiness/liveness 실패 | 0 / 0 | 0 / 0 | 0 / 0 |
+| completion 성공률(raw 전체) | 100%(505건) | 100%(509건) | 100%(522건) |
+| stage-1/2/3 `t_slo` | 셋 다 null | 셋 다 null | 셋 다 null |
+| cleanup 후 30초 내 baseline 복귀 | 확인(±150MiB, 편차 <1MiB) | 확인 | 확인 |
+| §54.4 안전 판정 | **PASS**(0 reasons) | **PASS**(0 reasons) | **PASS**(0 reasons) |
+
+반복 사이 cooldown(120초) 후 quiescence 확인(`node_ok=True`, `restart_unchanged=True`) 모두 통과. 실행 후 `kubectl`로 독립 재확인: chaos CR 0건, vLLM pod 동일 이름·restart 0, Node 2개 Ready.
+
+**§54.5 stage별 SLO 재현성 최종 판정**:
+
+| 검사 항목 | 결과 |
+|---|---|
+| `enough_repetitions` | PASS(3) |
+| `all_reps_safety_pass` | PASS |
+| `stage-1-500mb_never_violates` | PASS(3/3 미위반) |
+| `stage-2-1000mb_never_violates` | PASS(3/3 미위반) |
+| `stage-3-1500mb_violates_at_least_2_of_3` | **FAIL(0/3 위반)** |
+| **종합** | **FAIL** |
+
+### 55.2 실행 중 발견 - `analyze_slo()`의 stage별 `p95_peak` 스코핑 버그(발견 즉시 수정, 재측정 불필요)
+
+라이브 실행 결과를 1차로 읽었을 때 세 stage(500/1000/1500MB)의 `p95_peak`가 같은 반복 안에서 **항상 완전히 같은 값**으로 찍혀 있었다(예: rep1 세 stage 전부 1.2167...초) - 명백히 stage별로 다른 신호를 보고 있어야 하는데 그렇지 않았다. 원인 확인: `analyze_slo()`에 §54에서 추가한 `upper_bound_iso`는 `t_slo_within_window` 판정에만 쓰였고, `p95_peak`/`availability_min`/`post_injection_evaluable_samples`는 여전히 raw CSV **전체**(baseline+세 stage+drain 전부)를 기준으로 계산되고 있었다 - 세 stage 호출이 같은 파일을 참조하니 당연히 같은 값이 나온 것이었다(버그이지 클러스터 문제가 아니다).
+
+`t_slo`/`t_recovery` 자체는 이미 `find_t_slo(not_before=...)`로 올바르게 stage 하한이 걸려 있어 **§55.1의 최종 판정(0/3 위반)에는 영향이 없다** - 영향을 받은 건 "추가 확인"용 보고 필드뿐이었다. `analyze_slo()`를 고쳐 `upper_bound_iso`가 주어지면 `p95_peak`/`availability_min`/`post_injection_evaluable_samples`도 `[not_before, upper_bound+여유)` 구간으로 좁히게 했다 - `upper_bound_iso`를 안 넘기는 기존 §50~§53 호출부는 계산 범위(raw CSV 전체)가 그대로라 그 문서들에 이미 적힌 수치는 변하지 않는다. 회귀 테스트 1개 추가(`test_analyze_slo_upper_bound_scopes_p95_peak_to_window`), 전체 스위트 641 passed.
+
+이미 보존된 3회 raw CSV에서(재측정 없이) 고친 함수로 다시 계산한 stage별 `p95_peak`:
+
+| stage | rep1 | rep2 | rep3 |
+|---|---|---|---|
+| stage-1(500MB) | 0.341초 | 0.352초 | 0.358초 |
+| stage-2(1000MB) | 0.352초 | 0.350초 | 0.358초 |
+| stage-3(1500MB) | 0.353초 | 0.350초 | 0.357초 |
+
+세 stage 모두, 3회 전부 SLO 임계치(0.648초)의 **약 55% 수준**에 머물렀다 - §53의 단독 1500MB×120초 라운드(`p95_peak=1.124초`, sustained 위반 확정)와 대조적으로, 이번 progressive 시퀀스의 1500MB stage는 순간적인 근접조차 없었다(단순히 "30초 지속을 못 채운 경계선" 수준이 아니라 애초에 위반 신호 자체가 거의 없었음).
+
+### 55.3 해석 - §53(단독 1500MB×120초)과 정면으로 배치되는 결과
+
+같은 강도(1500MB)·같은 지속시간(120초)·거의 같은 baseline(3452~3573MiB)·거의 같은 최대 working set(§53: 4.730GiB, 이번 3회: 5.078GiB대 - 약간 더 높지만 오히려 이쪽이 5GiB에 더 가깝다)인데도, §53은 sustained 위반을 확정했고 이번 3회는 위반 신호 자체가 거의 없었다. 유일한 구조적 차이는 **1500MB에 도달하는 경로**다 - §53은 정상 baseline에서 곧바로 1500MB로 뛰어들었고, 이번은 500MB→1000MB를 거쳐(총 240초의 선행 메모리 압박 이후) 1500MB에 도달했다. 가능한 설명(둘 다 검증되지 않은 가설, 추가 조사 없이는 확정할 수 없음):
+
+- **선행 압박에 의한 적응 효과**: stage-1/2 동안 이미 회수 가능한 페이지 캐시 등이 정리돼, 1500MB 도달이 "완만한 마지막 한 걸음"이 되어 §53의 "무방비 상태에서의 급격한 점프"보다 충격이 작았을 수 있다.
+- **§53 자체가 경계선 사례였을 가능성**: §53의 위반은 주입 후 약 31초 시점에 겨우 스트릭이 확정되고 10초 만에 회복된, 30초 연속 조건에 거의 딱 걸친 사례였다(§53.1) - 즉 애초에 그 강도·조건에서 반복 시행 시 매번 재현되리라 장담할 수 없는 한계 사례(marginal event)였을 가능성이 있다.
+
+이 절은 어느 가설이 맞는지 판단하지 않는다 - **§54.8 지시대로 결과만 보고한다.**
+
+### 55.4 판정에 따른 조치 (§54.8 - 기준 미충족이므로 조정하지 않고 보고만)
+
+- `scenario-progressive-memory-pressure.yaml`의 최종 구성을 500/1000/1500MB×120초로 **동결하지 않는다**(§54.5 stage-3 기준 미충족).
+- "실제 OOM 유도" 표현 제거나 1500MB stage를 "안전한 high-stage latency degradation"으로 **확정하지 않는다** - 이번 3회 데이터로는 오히려 1500MB(progressive 경로)가 SLO에 거의 영향을 주지 않는다는 반대 방향 증거가 나왔다.
+- 강도(1600MB 등)나 지속시간을 이 자리에서 조정하지 않는다(지시).
+- 원본 probe raw CSV·안전 tick·stage summary(3회분) 전부 `experiments/results/`(top-level)에 그대로 보존.
+
+### 55.5 수행 범위
+
+- **수행한 것**: Prometheus port-forward 재연결 → progressive 후보 3회 반복 실행(전부 안전 PASS) → `analyze_slo()` stage 스코핑 버그 발견·수정(오프라인 회귀 테스트 추가, 전체 스위트 재확인) → 보존된 raw CSV로 stage별 `p95_peak` 재계산(재측정 없음) → §54.5 기준으로 기계적 판정(FAIL) → 사후 kubectl 독립 확인.
+- **하지 않은 것**: 강도·지속시간 즉석 조정 없음, 4회차 이상 추가 반복 없음, scenario YAML 동결 없음, non-native arm 없음, memory_pressure 3-arm 파일럿 없음, `run_all_scenarios.py`·본 실험(60회) 없음, 안전 상한·`TrialResult` 스키마 변경 없음.
