@@ -449,5 +449,8 @@
     }
   },
   "excluded": false,
-  "exclusion_reasons": []
+  "exclusion_reasons": [],
+  "included_in_calibration": false,
+  "included_in_holdout": false,
+  "classification": "normal_valid"
 }

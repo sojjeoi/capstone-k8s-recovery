@@ -579,5 +579,8 @@
   "excluded": true,
   "exclusion_reasons": [
     "sustained SLO 위반(t_slo=2026-09-20T10:54:20.545650+00:00)"
-  ]
+  ],
+  "included_in_calibration": false,
+  "included_in_holdout": false,
+  "classification": "unexpected_slo_violation"
 }

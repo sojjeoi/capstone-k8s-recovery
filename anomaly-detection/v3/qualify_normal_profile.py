@@ -183,6 +183,31 @@ def _iso(dt):
     return dt.isoformat() if hasattr(dt, "isoformat") else dt
 
 
+def classify_official_session(passed: bool, split_role: str, t_slo) -> dict:
+    """§67.2 - official 세션의 3개 split 소속 플래그와 `classification`을
+    한 곳에서 계산하는 순수 함수(오프라인 테스트 대상). 진짜 sustained SLO
+    위반으로 FAIL한 세션(`official-train-sustained_load-20260920` 등)은
+    `included_in_{training,calibration,holdout}` 전부 False,
+    `classification="unexpected_slo_violation"`으로 영구 분류되며, 어떤
+    split의 정상 데이터 수를 채우는 대체 session으로도 계산되지 않는다.
+    (t_slo가 아닌 다른 사유로 FAIL하면 - restart/OOM/Node/harness 오류 등 -
+    `invalid_session`으로 분류해 §65.4의 기존 "기술적 오류는 새 ID로
+    재실행 가능" 경로와 구분한다.)"""
+    if passed:
+        return {
+            "included_in_training": split_role == "train",
+            "included_in_calibration": split_role == "calibration",
+            "included_in_holdout": split_role == "holdout",
+            "classification": "normal_valid",
+        }
+    return {
+        "included_in_training": False,
+        "included_in_calibration": False,
+        "included_in_holdout": False,
+        "classification": "unexpected_slo_violation" if t_slo is not None else "invalid_session",
+    }
+
+
 def collect_qualification_session(profile: str, session_id: str, *,
                                    official: bool = False, split_role: str = None) -> dict:
     if profile not in PROFILE_CONFIGS:
@@ -340,10 +365,10 @@ def collect_qualification_session(profile: str, session_id: str, *,
     )
     session["excluded"] = not passed
     session["exclusion_reasons"] = reasons
-    # official 세션만 학습 후보 자격을 얻는다(§65.1 - PASS해야만 True,
-    # qualification은 항상 False로 고정돼 있었음 - 위에서 이미 세팅).
+    # official 세션만 split 소속 판정을 받는다(§67.2 - qualification은
+    # included_in_training이 항상 False로 고정돼 있었음, 위에서 이미 세팅).
     if official:
-        session["included_in_training"] = passed
+        session.update(classify_official_session(passed, split_role, t_slo))
 
     print(f"[{session_id}] 완료 - {'PASS' if passed else 'FAIL'}" + (f" - 사유: {reasons}" if reasons else ""))
     return session

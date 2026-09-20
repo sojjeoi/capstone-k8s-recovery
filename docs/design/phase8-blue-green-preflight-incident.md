@@ -6171,3 +6171,95 @@ after.isolated=True`). 사후 kubectl 확인: pod 2개(`recovery-policy`·
 (§65.6) 미실행(완결된 데이터셋이 없어 수행하지 않음), `memory_pressure`
 3-arm·`run_all_scenarios.py`·본 실험 없음, `TrialResult` 스키마 변경
 없음, Chaos 주입·promotion 없음.
+
+## 67. 공식 데이터 계획 개정 - `sustained_load` 영구 제외, 남은 5세션 사전등록 (2026-09-20)
+
+사용자 승인에 따라 §65/§66을 **종료된 사전등록 계획**으로 그대로 보존한다
+(세션 3~9를 이어서 실행하지 않음, `official_collection_manifest.json`도
+수정하지 않고 이력으로 둔다) - 개정 계획은 별도 신규 문서(§67, 신규
+`anomaly-detection/v3/official_collection_manifest_v2.json`)로 관리한다.
+
+### 67.1 최종 후보 regime을 3종으로 제한
+
+`sustained_load=0.05 RPS`를 v3 정상 데이터 최종 후보에서 **영구
+제외한다** - 강도를 낮춰 같은 이름으로 대체하는 탐색도 이번 Phase 8
+모델 데이터 수집 범위에서 하지 않는다(별도 사전등록 없이는 재시도
+안 함). 최종 후보:
+
+| regime | 근거 | 목표 세션 | split당 |
+|---|---|---|---|
+| `idle` | §58의 strict-complete `active_plus_preview` 6세션(§65.2 재확인) | 6 | 2 |
+| `low_load=0.025 RPS` | §64 qualification PASS + §66 공식 train session PASS | 3 | 1 |
+| `burst=0.025 base+0.10 pulse×4` | §64에서 순간 threshold 초과는 있었지만 진짜 30초 sustained 위반 없이 PASS | 3 | 1 |
+
+총 **12개의 독립 `active_plus_preview` 세션**이 최종 목표다. 이미 확보한
+`official-train-low_load-20260920`(PASS)은 그대로 유지 - 결과를 봤다는
+이유로 폐기·재측정하지 않는다.
+
+### 67.2 `official-train-sustained_load-20260920` 영구 처리
+
+새 순수 함수 `qualify_normal_profile.classify_official_session(passed,
+split_role, t_slo)`(오프라인 테스트 5개)로 기존 세션 JSON 2건에 필드를
+소급 반영했다(측정 재실행 없음 - 원본 raw data·모든 timestamp 그대로,
+메타데이터 필드만 추가):
+
+- `official-train-sustained_load-20260920`: `included_in_training=false`,
+  `included_in_calibration=false`, `included_in_holdout=false`,
+  `classification=unexpected_slo_violation`. 정상 데이터 수를 채우는
+  대체 session으로 계산하지 않는다. **모델·threshold가 완전히 동결된
+  이후에만** `external_anomaly_validation` 후보로 1회 평가할 수 있다 -
+  지금은 anomaly score 계산이나 threshold 검토에 쓰지 않는다.
+- `official-train-low_load-20260920`: `included_in_training=true`,
+  `included_in_calibration=false`, `included_in_holdout=false`,
+  `classification=normal_valid`(변경 없음, 필드만 추가).
+
+이후 모든 official 세션은 `judge_qualification()`의 PASS/FAIL 결과와
+`t_slo` 유무로 이 4개 필드를 자동 계산한다 - 평균 P95가 threshold
+아래였다는 이유로 재분류하지 않는다(§66.2에서 이미 확인한 것처럼 stage
+평균과 진짜 30초 sustained 판정은 다른 기준이다).
+
+### 67.3 남은 5세션 - 실행 순서·역할 사전 고정
+
+`official_collection_manifest_v2.json`에 아래와 동일 내용을 동결한다.
+기존 `official-train-low_load-20260920`과 §58 idle 사전 배정(§65.2)은
+그대로 유지 - holdout 역할은 결과를 본 뒤 바꾸지 않는다.
+
+| 순서 | session_id | regime | split_role |
+|---|---|---|---|
+| 1 | `official-train-burst-20260920` | burst | train |
+| 2 | `official-calib-low_load-20260920` | low_load | calibration |
+| 3 | `official-calib-burst-20260920` | burst | calibration |
+| 4 | `official-holdout-low_load-20260920` | low_load | holdout |
+| 5 | `official-holdout-burst-20260920` | burst | holdout |
+
+절차는 §65.1과 동일: 독립 preview lifecycle(생성→Ready→60초 이상
+settle→profile 실행→recovery/drain→abort→단일 revision 복원→clean
+preflight→60초 이상 cooldown), `qualify_normal_profile.py
+--official --split-role`를 그대로 재사용(코드 변경 없음, §67.2의
+classification 로직만 추가).
+
+### 67.4 유효 조건 - 변경 없음
+
+§65.3과 완전히 동일(성공률 100%, `t_slo=null`, restart/OOM/Node 정상,
+target UID 불변, Endpoint 격리, feature 결측 없음, `window_boundary_ok`,
+cleanup 후 단일 revision). **burst의 순간 P95가 threshold를 넘어도
+진짜 30초 sustained 위반(`t_slo`)이 없으면 정상 transient로 인정한다**
+(§64.1에서 이미 실측 확인된 동작 - 판정 로직 변경 없음).
+
+### 67.5 중단·재실행 규칙 - 변경 없음
+
+`low_load`·`burst`에서 진짜 `t_slo` 발생, restart·OOM·Node 이상·
+promotion·cleanup 실패 중 하나라도 나오면 즉시 중단(강도 조정·대체
+실행 금지, SLO 위반 세션을 지우지 않음). 기술적 harness 오류만 원본
+보존 후 새 ID로 재실행 가능(§64에서 이미 이 경로로 처리한 전례).
+모델에 불리해 보인다는 이유로 결과를 제외하지 않는다.
+
+### 67.6 범위 제한
+
+`sustained_load` 대체 강도 탐색 금지(위 §67.1), 모델 학습 금지, feature
+최종 삭제 금지, threshold 결정 금지, holdout score/FPR 계산 금지,
+artifact 교체 금지, `score_server.py` 런타임 변경 금지, `memory_pressure`
+3-arm 금지, `run_all_scenarios.py` 금지, 60회 본 실험 금지, `TrialResult`
+스키마 변경 금지, Chaos 주입·promotion 금지.
+
+이 절(§67) 커밋·푸시 이후에만 남은 5세션 실측을 시작한다.

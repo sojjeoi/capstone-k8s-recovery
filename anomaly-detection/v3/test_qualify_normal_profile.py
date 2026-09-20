@@ -14,6 +14,7 @@ from qualify_normal_profile import (
     PROFILE_CONFIGS,
     PROFILE_RUN_LABELS,
     check_endpoint_isolation,
+    classify_official_session,
     collect_qualification_session,
     judge_qualification,
 )
@@ -160,6 +161,48 @@ def test_check_endpoint_isolation_no_preview_expected_empty():
         result = check_endpoint_isolation("active-pod", None)
     assert result["isolated"] is True
     print("OK - preview가 없어야 하는 상태(cleanup 후)에서 vllm-preview Endpoint가 비어 있으면 isolated=True")
+
+
+def test_classify_official_session_passed_train():
+    result = classify_official_session(True, "train", None)
+    assert result == {"included_in_training": True, "included_in_calibration": False,
+                       "included_in_holdout": False, "classification": "normal_valid"}
+    print("OK - PASS+train이면 included_in_training만 True, normal_valid")
+
+
+def test_classify_official_session_passed_calibration():
+    result = classify_official_session(True, "calibration", None)
+    assert result["included_in_calibration"] is True
+    assert result["included_in_training"] is False and result["included_in_holdout"] is False
+    print("OK - PASS+calibration이면 included_in_calibration만 True")
+
+
+def test_classify_official_session_passed_holdout():
+    result = classify_official_session(True, "holdout", None)
+    assert result["included_in_holdout"] is True
+    assert result["included_in_training"] is False and result["included_in_calibration"] is False
+    print("OK - PASS+holdout이면 included_in_holdout만 True")
+
+
+def test_classify_official_session_failed_with_slo_violation():
+    """§67.2 핵심 - 진짜 sustained SLO 위반으로 FAIL하면 어떤 split에도
+    포함되지 않고 unexpected_slo_violation으로 영구 분류된다(평균 P95가
+    threshold 아래였다는 이유로 정상 재분류하지 않음 - official-train-
+    sustained_load-20260920 실측 사례)."""
+    result = classify_official_session(False, "train", "2026-09-20T10:54:20.545650+00:00")
+    assert result == {"included_in_training": False, "included_in_calibration": False,
+                       "included_in_holdout": False, "classification": "unexpected_slo_violation"}
+    print("OK - t_slo 존재+FAIL이면 세 split 전부 False, unexpected_slo_violation")
+
+
+def test_classify_official_session_failed_without_slo_violation():
+    """t_slo가 없는데(=진짜 sustained 위반은 아님) FAIL한 경우(restart/OOM/
+    Node/harness 오류 등)는 invalid_session으로 구분한다 - §65.4의 기존
+    "기술적 오류는 새 ID로 재실행" 경로 대상."""
+    result = classify_official_session(False, "calibration", None)
+    assert result["classification"] == "invalid_session"
+    assert not any([result["included_in_training"], result["included_in_calibration"], result["included_in_holdout"]])
+    print("OK - t_slo 없이 FAIL(restart/OOM/Node/harness 등)이면 invalid_session")
 
 
 def test_collect_official_session_requires_valid_split_role():

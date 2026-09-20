@@ -1,0 +1,94 @@
+{
+  "_purpose": "§67 개정된 공식 v3 정상 데이터 수집 계획 - docs/design/phase8-blue-green-preflight-incident.md §67과 동일 내용, 기계 판독용. official_collection_manifest.json(§65, sustained_load 포함 원래 계획)은 종료된 사전등록 이력으로 그대로 보존하고 수정하지 않는다 - 이 파일이 현재 유효한 계획다.",
+  "supersedes": "official_collection_manifest.json (§65) - preserved as a concluded plan, not deleted or edited",
+  "scope": "data collection and quality audit only - no model training, no threshold determination",
+  "sustained_load_permanently_excluded": {
+    "reason": "official-train-sustained_load-20260920 produced a genuine 30s-sustained SLO violation (t_slo not null) on an independent re-run, even though §64 qualification passed at the same intensity - reproducibility not established",
+    "action": "removed from final candidate regimes; lowering intensity and re-trying under the same regime name is also out of scope for this Phase 8 data collection"
+  },
+  "final_candidate_regimes": {
+    "idle": {"source": "§58 strict-complete active_plus_preview 6 sessions (§65.2)", "target_sessions": 6, "per_split": 2},
+    "low_load": {"rps": 0.025, "pattern": "steady", "duration_sec": 180, "target_sessions": 3, "per_split": 1},
+    "burst": {"pattern": "0.025 RPS base (60s) x5 alternating with 0.10 RPS pulse (20s) x4", "target_sessions": 3, "per_split": 1}
+  },
+  "final_target_total_independent_active_plus_preview_sessions": 12,
+  "already_collected_kept_as_is": [
+    {"session_id": "official-train-low_load-20260920", "regime": "low_load", "split_role": "train", "result": "PASS", "classification": "normal_valid"}
+  ],
+  "permanently_excluded_sessions": [
+    {"session_id": "official-train-sustained_load-20260920", "regime": "sustained_load", "originally_assigned_split_role": "train",
+     "included_in_training": false, "included_in_calibration": false, "included_in_holdout": false,
+     "classification": "unexpected_slo_violation",
+     "future_use": "may be evaluated once as an external_anomaly_validation candidate only after model and threshold are fully frozen - not used for anomaly score or threshold review now",
+     "not_counted_as_substitute_for_normal_data": true}
+  ],
+  "remaining_official_sessions": [
+    {"order": 1, "session_id": "official-train-burst-20260920", "regime": "burst", "split_role": "train"},
+    {"order": 2, "session_id": "official-calib-low_load-20260920", "regime": "low_load", "split_role": "calibration"},
+    {"order": 3, "session_id": "official-calib-burst-20260920", "regime": "burst", "split_role": "calibration"},
+    {"order": 4, "session_id": "official-holdout-low_load-20260920", "regime": "low_load", "split_role": "holdout"},
+    {"order": 5, "session_id": "official-holdout-burst-20260920", "regime": "burst", "split_role": "holdout"}
+  ],
+  "roles_fixed_before_measurement": true,
+  "roles_never_swapped_after_seeing_results": true,
+  "idle_session_role_assignment_unchanged_from_65_2": true,
+  "session_procedure": [
+    "preview create (prepare_preview_with_rollback)", "confirm Ready", "settle >= 60s",
+    "run assigned profile", "recovery/drain observation",
+    "preview abort", "confirm single active revision restored (wait_until_rolled_back)",
+    "clean preflight", "cooldown >= 60s"
+  ],
+  "valid_session_conditions": [
+    "success_rate == 100%",
+    "t_slo == null (covers both 30s-sustained latency violation and immediate availability violation)",
+    "active and preview restartCount unchanged",
+    "no OOMKilled",
+    "Node Ready, no pressure",
+    "active/preview Endpoint isolation maintained",
+    "target UID unchanged (no unexpected promotion)",
+    "no missing/NaN/stale on any of the 8 feature source metrics (zero invalid windows)",
+    "feature window timestamps fall within session boundaries (window_boundary_ok)",
+    "cleanup succeeds, single revision restored"
+  ],
+  "burst_transient_policy": "momentary per-stage P95 crossing the threshold is accepted as a normal transient as long as the true 30s-sustained slo_judge determination (t_slo) does not fire - unchanged from §64.1, judgment logic not modified",
+  "failure_and_rerun_rules": {
+    "real_slo_violation_in_low_load_or_burst": "stop remaining collection immediately, do not adjust intensity or run a substitute session, preserve the SLO-violating session as-is (do not erase it)",
+    "restart_oom_node_promotion_cleanup_failure": "stop immediately, same as an SLO violation",
+    "technical_harness_error": "preserve raw data, record with exact reason, fix code + pass offline tests, rerun from scratch under a NEW session_id",
+    "no_exclusion_for_being_unfavorable_to_the_model": true
+  },
+  "post_collection_audit_only_if_all_12_sessions_complete": [
+    "valid row counts per session/regime/split",
+    "final candidate matrix size",
+    "per-feature min/median/max/std on training-candidate data",
+    "per-session feature distribution",
+    "queue/cache non-zero window counts",
+    "zero-variance / near-zero-variance feature candidates",
+    "missing/stale/invalid window counts",
+    "regime composition per split",
+    "overlapping window count reported separately from independent session count",
+    "whether the targeted session-level train/calibration/holdout composition is achievable"
+  ],
+  "holdout_stage_gate": "schema, completeness, and session-validity checks only - no anomaly score or FPR computation, no feature selection driven by holdout values",
+  "if_candidate_matrix_smaller_than_reference_row_count": "report independent session count and row count separately - do not inflate apparent sufficiency via overlapping windows; propose (do not execute) a separate pre-registration for additional data in a later step",
+  "scope_limits": [
+    "no alternative-intensity exploration for sustained_load",
+    "no model training",
+    "no final feature deletion",
+    "no threshold determination",
+    "no holdout anomaly score or FPR computation",
+    "no model/scaler artifact replacement",
+    "no score_server.py runtime change",
+    "no memory_pressure 3-arm",
+    "no run_all_scenarios.py",
+    "no 60-trial main experiment",
+    "no TrialResult schema change",
+    "no promotion or chaos injection"
+  ],
+  "tooling": {
+    "script": "anomaly-detection/v3/qualify_normal_profile.py (unchanged session logic; added classify_official_session() pure function, 5 offline tests)",
+    "reused_unchanged": ["blue_green_prep.py", "explore_ramp_intensity.run_candidate", "build_dataset.build_rows_for_session", "slo_judge.evaluate/find_t_slo", "collect_session.run_candidate_with_retry/verify_and_force_cleanup", "judge_qualification"]
+  },
+  "registered_before_measurement": true,
+  "registered_at_utc": "2026-09-20T11:30:00Z"
+}
