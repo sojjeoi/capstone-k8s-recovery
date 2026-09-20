@@ -4981,3 +4981,54 @@ Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요
 4. `t_slo`가 not null이면 여기서 중단·보고. null이면 cooldown·클러스터 복원 확인 후 **1600MB × 120초** 1라운드 실행(§52.2 사전 조건 통과 시에만 실제 주입) → 동일 항목 분석.
 5. 결과 비교, 다음 calibration 범위 제안(§52.4 표 기준).
 6. 문서화·커밋·푸시 후 정지 - 재현성 반복(3회차 등)·memory_pressure 3-arm 파일럿·`run_all_scenarios.py`·본 실험은 시작하지 않는다.
+
+## 53. `memory_pressure` 1500MB×120초 결과 - sustained SLO 위반 확인, 1600MB 미실행 (2026-09-20)
+
+§52 사전 등록 규칙대로 1500MB×120초 1라운드를 실행했다. **§52.4의 진행 조건("`t_slo`가 null일 때만 1600MB 진행")에 따라 1600MB는 실행하지 않고 여기서 멈춘다** - 1500MB에서 이미 sustained SLO 위반이 확인됐기 때문이다.
+
+### 53.1 실행 전 발견 - Prometheus 접근 경로 끊김(하니스 문제, 클러스터 문제 아님)
+
+첫 실행 시도가 `Node MemAvailable 부족/조회 실패(baseline): None`으로 즉시 중단됐다(fail-closed 정상 동작). 원인은 `memory_pressure_adapter.py`의 `get_node_available_bytes()`/`get_pod_working_set_bytes()`가 의존하는 로컬 Prometheus port-forward(`localhost:9090`)가 이전 세션 종료 시 끊겨 있었던 것 - `kubectl get nodes`/`kubectl get pods`로 확인한 클러스터 자체는 두 시도 사이 계속 정상이었다(Node 2개 Ready, chaos CR 0건, vLLM pod restart 0). `kubectl port-forward -n monitoring svc/kube-prom-kube-prometheus-prometheus 9090:9090`로 재연결하고 `node_memory_MemAvailable_bytes`/`container_memory_working_set_bytes` 쿼리가 정상값을 반환함을 직접 확인한 뒤 재실행했다. 이 실패한 1차 시도의 요약 JSON(`explore-memory_pressure-native-1500mb-120s-20260920T030001Z-summary.json`, `aborted=True`)은 원본 그대로 보존하고 아래 비교·분석에서 제외한다(§49.4와 같은 원칙).
+
+### 53.2 결과
+
+| 항목 | 값 |
+|---|---|
+| `run_id` | `explore-memory_pressure-native-1500mb-120s-20260920T030314Z` |
+| 라운드 소요시간 | 382초(6분22초) |
+| baseline working set | 3.328GiB(3573239808B) |
+| 최대 working set | 4.730GiB(5078597632B, 5GiB 상한까지 **약 277MiB** 여유) |
+| 실측 상승분 | 1435.7MB(요청량의 **95.71%**) |
+| Node MemAvailable 범위 | 6.52~7.96GiB(PASS 기준 4GiB·즉시중단 3GiB 모두 여유) |
+| restartCount / OOMKilled | 불변(0) / 없음 |
+| Node 상태 이상 | 0건 |
+| readiness/liveness 실패 | 0 / 0 |
+| probe baseline(안정 후, 61표본) P95 / 가용률 | 0.331초 / 100% |
+| `t_injection` → `t_slo` | 2026-09-20T03:05:55Z → 2026-09-20T03:06:26Z(약 31초 후 30초 연속 latency 위반 스트릭 확정) |
+| `t_slo` → `t_recovery` | 10.01초 만에 회복(`violation_duration_sec=10.007869`) |
+| `p95_peak` | **1.124초**(SLO 임계치 0.648초의 약 1.73배) |
+| availability | 위반 없음(`availability_min=1.0`) - 위반은 순수 latency 경로 |
+| 성공률(raw 272건 전체) | 100% |
+| post-injection evaluable 표본 | 179개(`MIN_SAMPLES_FOR_RELIABLE_P95`=20 기준 충분) |
+| cleanup 후 30초 내 baseline 복귀 | 확인(±150MiB 이내, 2회 모두 - 실제 편차 60~70KB) |
+| §50.4 안전 PASS 판정 | **PASS**(0 reasons) |
+| §52.4 진행 게이트(`t_slo`) | **not null - 1600MB 진행 조건 미충족(의도대로 중단)** |
+
+사후 클러스터 확인(kubectl 직접): chaos CR 0건, vLLM pod 동일 이름·restart 0, Node 2개 Ready, working set 3573317632B(baseline 대비 +78KB, 사실상 완전 복귀).
+
+### 53.3 해석 - §51(90초)과의 결정적 차이는 강도가 아니라 지속시간이었다
+
+같은 1500MB 요청, 거의 같은 실측 상승분(§51: 95.70% / 이번: 95.71%, 최대 working set도 4.773GiB→4.730GiB로 거의 동일)인데도 **stage 지속시간을 90초에서 120초로 늘리자 §51에서는 안 걸렸던 sustained 위반(`t_slo`)이 이번에는 확정됐다.** §51.1에서 두 라운드(1000MB·1500MB) 모두 `p95_peak`가 SLO 임계치를 순간적으로 넘겼지만 30초 연속 스트릭엔 못 미쳤던 것과 대조적으로, 이번엔 그 스트릭이 실제로 30초를 채웠다(주입 후 약 31초 시점에 확정, 이후 10초 만에 회복). 이는 §51.2에서 제기했던 "5GiB 안전 상한이 Phase 5 붕괴 강도(baseline+1862MB)보다 194MB 낮아 구조적으로 위반 재현이 불가능할 수 있다"는 우려가 **강도 축에서는 맞을 수 있지만, 지속시간 축에서는 성립하지 않음**을 보여준다 - 안전 상한을 전혀 건드리지 않고, 심지어 §51의 1500MB보다도 약간 낮은 최대 working set(4.730GiB < 4.773GiB)으로도 sustained 위반을 재현했다.
+
+§52.4 해석표 기준: **"sustained SLO 위반(`t_slo` not null) + restart/OOM 없음" → 본 실험 high-stage 후보**. 사전 등록된 규칙대로 1600MB는 실행하지 않는다(1500MB에서 이미 위반이 확인됐으므로 §52.4의 "1500MB가 안전조건을 충족하지만 sustained SLO 위반이 없을 때만 1600MB 실행" 조건이 성립하지 않는다).
+
+### 53.4 다음 단계에 대한 제안 (실행하지 않음 - 제안만)
+
+- **1500MB×120초는 본 실험의 memory_pressure high-stage 후보로 유력하다** - SLO 위반이 실제로 발생하고(30초 연속 latency 위반), 안전조건(restart·OOM·Node 이상 없음, 5GiB 상한까지 277MiB 여유)도 전부 충족했다. §51.2에서 우려했던 "현재 안전 상한 안에서는 진짜 위반을 못 만든다"는 결론은 **stage 지속시간을 원본 YAML 기준(120초)으로 맞추면 성립하지 않는 것으로 보인다** - 안전 상한 재검토(§51.3 옵션 C)나 sub-critical 재정의(옵션 B)가 필요 없어질 수 있다.
+- 다만 이 결론은 **1회 관측**이다 - 재현성(같은 조건 2회차 반복)은 사용자가 명시적으로 아직 지시하지 않았으므로 이번 지시 범위에서 실행하지 않았다. 본 실험 강도로 확정하기 전에 재현성 확인이 필요한지는 사용자 판단이 필요하다.
+- 1600MB·1650MB·안전 상한 상향은 이번 지시("1500MB에서 sustained 위반이 확인되면 1600MB는 실행하지 말고 멈추세요")에 따라 실행하지 않았고, 이 발견 이후에도 자동으로 진행하지 않는다.
+
+### 53.5 수행 범위
+
+- **수행한 것**: Prometheus port-forward 재연결 + 실측 확인(§53.1) → 1500MB×120초 1라운드 실행(PASS, sustained SLO 위반 확인) → 사후 클러스터 확인 → §52.4 게이트에 따라 1600MB 미실행 결정.
+- **하지 않은 것**: 1600MB·1650MB·2000MB 실행 없음, 재현성 반복 없음, non-native arm 없음, memory_pressure 3-arm 파일럿 없음, `run_all_scenarios.py`·본 실험(60회) 없음, 안전 상한·결과 스키마·sub-critical 재정의 변경 없음. 1차(실패)·2차(성공) 라운드의 원본 요약 JSON·probe raw CSV는 `experiments/results/`(top-level)에 그대로 보존되며 `.gitignore`(`*.json`/`*.csv`/`*.jsonl`)에 걸려 커밋되지 않는다.
