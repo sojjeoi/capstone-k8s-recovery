@@ -6556,3 +6556,102 @@ Isolation Forest 학습 없음, feature 최종 삭제 없음, threshold 결정
 없음, `score_server.py` 런타임 변경 없음, `memory_pressure` 3-arm·
 `run_all_scenarios.py`·본 실험 없음, `TrialResult` 스키마 변경 없음,
 Chaos 주입·promotion 없음.
+
+## 71. 런타임 판정 의미 감사 - 코드 근거만 (2026-09-20, 오프라인·읽기 전용)
+
+학습 전에 `anomaly-detection/score_server.py`(전체), `recovery-policy/
+policy.py`(전체), `anomaly-detection/features.py`(전체)를 읽고 추정 없이
+아래를 확정한다. 이번 절 전체는 읽기 전용 - 코드 변경 없음.
+
+**score 종류·방향** - `model.decision_function(X)[0]`(`score_server.py:58`)
+을 쓴다. `score_samples()`가 아니라 `decision_function`(=`score_samples -
+offset_`, sklearn 관례상 양수=정상/음수=이상). **anomaly 조건은 `score <
+SCORE_THRESHOLD`(엄격한 미만, `<=` 아님)**(`score_server.py:82`),
+`SCORE_THRESHOLD=0.0`(`score_server.py:41`) - 현재는 코드에 박힌 상수이지
+별도 artifact에서 읽지 않는다.
+
+**연속판정·debounce - 존재함, 이번 단계에서 그대로 재사용**:
+`CONSECUTIVE_THRESHOLD=3`(`score_server.py:39`) - 3회 연속으로 이상
+판정이어야 신호를 보낸다. 단일 window는 신호를 보내지 않는다.
+`consecutive_anomalous`는 정상 판정 한 번이라도 나오면 즉시 0으로
+리셋된다(`score_server.py:83`, `consecutive_anomalous + 1 if is_anomalous
+else 0`) - 리셋 없이 누적만 되는 구조가 아니다.
+
+**평가 주기** - `EVAL_INTERVAL_SEC=15`(`score_server.py:37`), 매 평가마다
+`WINDOW_SEC=60`(`score_server.py:38`) trailing window로
+`extract_features()`를 호출한다(`score_server.py:56`) - `anomaly-detection/
+v3/build_dataset.py`의 60초 window·15초 step과 정확히 같은 관례라 이번에
+수집한 `feature_rows` 시퀀스를 시간 순서대로 재생하면 실제 평가 주기를
+그대로 흉내낼 수 있다(각 세션 내부는 `iter_window_starts()`가 정확히
+15초 간격으로 창을 만들어 gap 없음 - 실측 재확인 완료, §70의 무효
+window 0개와 일치).
+
+**중복 신호 억제** - `COOLDOWN_SEC=60`(`score_server.py:40`), 신호를
+보낸 뒤 60초 안에는(`last_signal_at` 기준, `score_server.py:90`)
+`consecutive_anomalous>=3`이 계속돼도 새 신호를 보내지 않는다(카운터
+자체는 리셋되지 않음 - cooldown은 "신호 재발행"만 막는다).
+
+**feature 순서·scaler 적용 순서** - `features.py:24`의
+`FEATURE_NAMES=["cpu_mean","cpu_slope","memory_mean","memory_slope",
+"queue_mean","queue_slope","cache_mean","cache_slope"]` 순서로
+`extract_features()`가 벡터를 만들고(`score_server.py:56`), `scaler.
+transform([feats])`를 먼저 적용한 뒤(`score_server.py:57`)
+`model.decision_function(X)`를 호출한다(`score_server.py:58`) - scaler는
+`extract_features` 이후·`decision_function` 이전에만 적용된다. `anomaly-
+detection/v3/build_dataset.py`가 같은 `FEATURE_NAMES`를 import해서 쓰므로
+이번에 수집한 `feature_rows`의 8원소 배열도 정확히 이 순서와 일치한다
+(별도 재정렬 불필요).
+
+**중복·promotion 정책(recovery-policy, 참고 - 이번 calibration 범위
+아님)** - `recovery-policy/policy.py:35-41`: `signal_type=="anomaly_risk"`
+신호가 recovery-policy에 도달해도, **`preview_ready`가 False면
+`observe_only`만 하고 실제 promotion을 안 한다** - `preview_ready=True`일
+때만 `promote_preview`. 즉 평상시(정상 모니터링, 사고 대응 중 preview
+준비가 안 된 상태)에 오탐 신호가 나가도 즉시 promotion으로 이어지지는
+않는다 - 다만 이 조건 분기는 score_server.py의 신호 발행 자체를 막지
+않으므로, 이번 calibration/holdout/challenge 평가는 **"score_server.py가
+POST를 보내는가"만 재생한다**(recovery-policy의 `preview_ready` 게이트나
+`safety.py`의 추가 idempotency/cooldown은 모델링하지 않음 - 명시적
+범위 밖으로 남긴다).
+
+**결론 - 런타임 의미가 명확하므로 이번 단계에서 임의 변경 없이 그대로
+사용한다.** offline replay 함수 하나(§73)가 이 상태기계(`score<threshold`
+strict, 연속 3회, cooldown 60초, 15초 간격)를 그대로 구현하고, 학습·
+calibration·holdout·challenge 평가 전부 이 함수 하나만 재사용한다.
+
+## 72. Training-only feature 선택 규칙 사전등록 (2026-09-20, 계산 전)
+
+Holdout은 계속 봉인, Calibration score도 아직 계산하지 않은 상태에서
+규칙과 코드를 먼저 커밋한다. 신규 `anomaly-detection/v3/model_v31/`:
+
+- `replay.py` - §71에서 감사한 런타임 상태기계(`score<threshold` 엄격한
+  미만, `CONSECUTIVE_THRESHOLD=3`, `COOLDOWN_SEC=60`, 15초 간격, 정상
+  판정 1회로 연속 카운터 즉시 리셋)를 그대로 구현한 `replay_detector()`
+  하나만 존재 - 학습(사용 안 함)·calibration·holdout·challenge 평가가
+  전부 이 함수를 재사용한다. `calibrate_threshold()`는 이 함수를 이용해
+  calibration split에서 "false signal episode 0인 가장 민감한 threshold"
+  를 찾는다(§73.4).
+- `feature_selection.py` - `compute_feature_schema(train_feature_matrix)`
+  하나만 존재. **규칙**: train에서 정확히 0분산인 feature만 제거
+  (`std==0.0`), 결측/NaN/Inf가 하나라도 있으면 예외로 fail-closed, 빈
+  입력·열 개수 불일치도 fail-closed. **near-zero variance는 자동
+  제거하지 않고 `train_feature_stats`에 평균·표준편차·min/max/range를
+  전부 남겨 사람이 보고서에서 판단**한다. **상관관계 기반 제거 로직
+  자체를 만들지 않았다**(코드에 존재하지 않음 - 지시). feature 순서는
+  원본 `features.FEATURE_NAMES` 8개 순서를 유지한 부분집합(제거된 것만
+  빠짐, 재정렬 없음). `apply_feature_schema()`로 학습·calibration·
+  holdout·challenge 전부 동일하게 열을 뽑아 순서 불일치를 방지한다.
+  **이 함수는 calibration/holdout/challenge 데이터를 인자로 받을 수
+  없는 시그니처**라 다른 split의 값이 feature 선택에 개입할 경로 자체가
+  없다.
+
+오프라인 테스트 21개 추가(`test_replay.py` 10개, `test_feature_selection.py`
+11개) - `score<threshold` 경계값(`score==threshold`는 이상 아님), 연속
+3회 미만 무신호, 연속 3회 발화, 정상 1회 리셋, cooldown 억제·해제,
+calibration degenerate 판정, feature fail-closed(NaN/Inf/None/빈 입력/
+열 개수 불일치) 전부 확인. 전체 오프라인 스위트 750 passed(직전
+730에서 +21, KUBECONFIG=/nonexistent/kubeconfig로 실행 - 무관한 타이밍
+테스트 1개는 단독 실행 시 통과함을 재확인한 기존 flaky).
+
+이 절 커밋·푸시 이후에만 실제 train/calibration feature 값을 이 함수들에
+넣는다(§73).
