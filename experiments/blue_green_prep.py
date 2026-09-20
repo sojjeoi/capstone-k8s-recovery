@@ -164,11 +164,19 @@ def prepare_preview_with_rollback(name: str, namespace: str,
         result["external_interference"] = True
         return result
 
-    result["created_pod_hash"] = after_bump["current_pod_hash"]
+    # 2026-09-20 실측 발견(anomaly-detection/v3/collect_session.py qualification
+    # 1~2차 시도에서 재현) - bump 직후 곧바로 읽은 current_pod_hash를 여기서
+    # created_pod_hash로 확정하지 않는다. 특히 직전 시도가 abort로 끝난
+    # 직후처럼 Rollout 컨트롤러의 reconcile이 아직 안 끝난 상태에서 bump하면,
+    # 이 read가 새 preview가 아니라 잔여(stale) 값을 돌려줄 수 있다(실측
+    # 확인 - kubectl로 직접 대조). Ready(BlueGreenPause) 확정 시점과 timeout
+    # 시점 각각에서 다시 읽은 값만 신뢰한다 - 두 시점 모두 reconcile이 끝나
+    # 있다고 볼 수 있는 지점이다.
 
     deadline = t0 + timeout
     while time.monotonic() < deadline:
         if is_paused_pre_promotion(name, namespace):
+            result["created_pod_hash"] = get_blue_green_status(name, namespace)["current_pod_hash"]
             result["ready"] = True
             result["t_preview_ready"] = datetime.now(timezone.utc).isoformat()
             result["prep_duration_sec"] = time.monotonic() - t0
@@ -176,7 +184,8 @@ def prepare_preview_with_rollback(name: str, namespace: str,
         time.sleep(poll_interval)
 
     result["prep_duration_sec"] = time.monotonic() - t0
-    our_hash = after_bump["current_pod_hash"]
+    our_hash = get_blue_green_status(name, namespace)["current_pod_hash"]
+    result["created_pod_hash"] = our_hash
     result["rollback_attempted"] = True
     result["aborted_pod_hash"] = our_hash
     abort_preview(name, namespace)

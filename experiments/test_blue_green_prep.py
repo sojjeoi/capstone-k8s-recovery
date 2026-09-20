@@ -79,6 +79,55 @@ def test_external_interference_skips_rollback_fail_closed():
     print("OK - bump 직후 activeSelector가 예상 밖이면 fail-closed로 abort 시도 안 함")
 
 
+def test_prepare_preview_stale_hash_after_bump_is_not_trusted():
+    """2026-09-20 실측 발견(anomaly-detection/v3/collect_session.py
+    qualification 1~2차 시도에서 재현, kubectl로 직접 대조 확인) - bump
+    직후 곧바로 읽은 current_pod_hash가 직전 시도의 잔여값(컨트롤러
+    reconcile 미완료)일 수 있다. Ready 확정 시점에 다시 읽은 값만
+    created_pod_hash로 써야 한다."""
+    calls = [
+        {"active_selector": "stableA", "current_pod_hash": "leftoverFromPriorAttempt"},  # before
+        {"active_selector": "stableA", "current_pod_hash": "leftoverFromPriorAttempt"},  # bump 직후(reconcile 전 - stale)
+        {"active_selector": "stableA", "current_pod_hash": "realNewPreview"},  # Ready 확정 시점(reconcile 끝남)
+    ]
+    with patch("blue_green_prep.get_blue_green_status", side_effect=calls), \
+         patch("blue_green_prep.bump_template_annotation"), \
+         patch("blue_green_prep.is_paused_pre_promotion", return_value=True), \
+         patch("blue_green_prep.abort_preview") as mock_abort:
+        r = prepare_preview_with_rollback("vllm-serving", "vllm-serving", timeout=1.0, poll_interval=0.01)
+    assert r["ready"] is True
+    assert r["created_pod_hash"] == "realNewPreview", "bump 직후 값(stale) 말고 Ready 확정 시점 값을 써야 함"
+    mock_abort.assert_not_called()
+    print("OK - bump 직후 stale current_pod_hash를 신뢰하지 않고 Ready 확정 시점에 다시 읽음")
+
+
+def test_prepare_preview_timeout_rereads_hash_before_abort():
+    """timeout 경로도 마찬가지 - abort 직전에 다시 읽은 hash를 aborted_pod_hash로
+    써야 한다(stale 값으로 엉뚱한 revision을 대상으로 삼으면 안 됨)."""
+    calls_iter = iter([
+        {"active_selector": "stableA", "current_pod_hash": "leftover"},  # before
+        {"active_selector": "stableA", "current_pod_hash": "leftover"},  # bump 직후
+    ])
+
+    def side_effect(*_a, **_kw):
+        try:
+            return next(calls_iter)
+        except StopIteration:
+            return {"active_selector": "stableA", "current_pod_hash": "reconciledLater"}
+
+    with patch("blue_green_prep.get_blue_green_status", side_effect=side_effect), \
+         patch("blue_green_prep.bump_template_annotation"), \
+         patch("blue_green_prep.is_paused_pre_promotion", return_value=False), \
+         patch("blue_green_prep.abort_preview") as mock_abort, \
+         patch("blue_green_prep.wait_until_rolled_back", return_value=True) as mock_verify:
+        r = prepare_preview_with_rollback("vllm-serving", "vllm-serving", timeout=0.03, poll_interval=0.01)
+    assert r["aborted_pod_hash"] == "reconciledLater"
+    assert r["created_pod_hash"] == "reconciledLater"
+    mock_verify.assert_called_once_with("vllm-serving", "vllm-serving", "stableA", "reconciledLater")
+    mock_abort.assert_called_once_with("vllm-serving", "vllm-serving")
+    print("OK - timeout 시에도 abort 직전 다시 읽은 hash를 씀(stale 값으로 잘못된 preview를 기록 안 함)")
+
+
 def test_wait_until_rolled_back_polls_until_converged():
     """timeout 직후 preview가 뒤늦게 Ready/삭제되는 경합 상황 - 첫 poll에서는
     아직 안 끝났어도(RS replica 잔존) 이후 poll에서 수렴하면 True를 반환해야
@@ -158,6 +207,8 @@ if __name__ == "__main__":
     test_timeout_triggers_rollback_and_succeeds()
     test_timeout_rollback_fails_is_reported()
     test_external_interference_skips_rollback_fail_closed()
+    test_prepare_preview_stale_hash_after_bump_is_not_trusted()
+    test_prepare_preview_timeout_rereads_hash_before_abort()
     test_wait_until_rolled_back_polls_until_converged()
     test_wait_until_rolled_back_gives_up_after_timeout()
     test_cleanup_unpromoted_preview_aborts_when_not_promoted()
