@@ -5871,3 +5871,94 @@ profile을 실행하지 않는다. 중단 시 강도·pulse를 즉석 조정하�
 금지.
 
 이 절(§63) 커밋·푸시 이후에만 세 profile 실측을 시작한다.
+
+## 64. 3-core 정상 부하 profile qualification 실측 결과 - 세 profile 전부 PASS (2026-09-20)
+
+§63 사전등록대로 `low_load → sustained_load → burst` 순서로 각 1회, 세션
+사이 60초 cooldown+clean preflight를 두고 전량 실행했다. 실행 중 코드
+버그 1건을 발견·수정했다(측정 자체와는 별개, 클러스터 조작 이전/이후
+단계였음): `qualify_normal_profile.py`의 `EXPERIMENTS_DIR` 경로가 parent를
+한 단계 덜 올라가 `slo_judge` import에 실패(라이브 세션 시작 전 오프라인
+에서 즉시 발견, 클러스터 손대기 전이라 부작용 없음), 그리고 Prometheus
+요약 구간 계산에서 이미 `datetime` 객체인 값을 `datetime.fromisoformat()`
+에 다시 넣어 TypeError(1차 `low_load` 시도가 preview 정리까지 전부 마친
+뒤 결과 저장 직전에 죽음 - 측정·cleanup 자체는 정상 완료됐고 원본 CSV도
+보존됨, 사후 kubectl로 클러스터 정상 복원 확인 후 `low_load`를 처음부터
+다시 깨끗하게 재실행). 두 버그 모두 수정·오프라인 테스트(719 passed)
+재확인 후 커밋·푸시했고, 이후 세 profile은 전부 한 번에 통과했다.
+
+### 64.1 세 profile 전부 PASS
+
+| profile | RPS | stage P95 | sustained SLO(`t_slo`) | `extreme_latency_detected` | 유효/무효 window | cleanup |
+|---|---|---|---|---|---|---|
+| `low_load` | 0.025 | 0.424초 | null(PASS) | False | 9/0 | True |
+| `sustained_load` | 0.05 | 0.592초 | null(PASS) | False | 17/0 | True |
+| `burst` | 0.025 base+0.10 pulse | base 0.58~0.62초, pulse 0.625~0.698초 | null(PASS) | False | 22/0 | True |
+
+세 profile 모두 `excluded=False`(사유 없음) - 요청 성공률 100%, Node·
+restart·OOM 이상 없음, `active_pod_before`/`active_pod_after` 이름·UID
+완전 동일(예기치 않은 promotion 없음), `endpoint_isolation_{before,after}.
+isolated=True`(active/preview Endpoint가 각자 자기 pod만 가리킴, cleanup
+후 preview Endpoint는 비어 있음), `cleanup_result=True`.
+
+**burst의 momentary-vs-sustained 구분이 실측으로 검증됐다**: pulse
+stage 4개 중 3개(pulse-2·3·4)가 `run_candidate()`의 순간 P95 판정으로는
+threshold(0.648초)를 근소하게 넘겼다(`violates=True`, 0.683~0.698초) -
+**인위적으로 위반을 막은 게 아니라 실제로 근소하게 넘은 경우가
+나왔다.** 그런데도 `slo_judge.find_t_slo()`(30초 연속 조건)는 세 profile
+전부에서 `t_slo=None`으로 판정했다 - pulse 길이(20초)가 30초 미만으로
+설계됐기 때문에 이 순간적 초과가 sustained 위반으로 이어지지 않은
+것이다(§63.2에서 의도한 대로 동작함을 실측으로 확인).
+
+### 64.2 CFS throttle·메모리·Node(Prometheus 이력 조회, 보고용 - PASS/FAIL 기준 아님)
+
+| profile | active CPU(avg/max, 코어) | active CFS throttle(avg/max) | active working set | preview working set | sj-worker(192.168.30.76) 사용률 |
+|---|---|---|---|---|---|
+| `low_load` | 1.38 / 1.81 | 27.4% / 37.4% | 3.472GiB | 3.557GiB | 47.0%avg |
+| `sustained_load` | 1.59 / 1.95 | 33.3% / 44.5% | 3.468GiB | 3.563GiB | 48.3%avg |
+| `burst` | 1.63 / 2.02 | 33.4% / 49.3% | 3.464GiB | 3.537GiB | 48.8%avg |
+
+§61.1/§62에서 발견한 active pod 자신의 CFS throttle(idle 대비 27~49%대)은
+세 profile 모두에서 여전히 관측된다 - RPS가 낮아졌다고 이 배경 현상
+자체가 사라지지는 않았다. 다만 이번 세 profile은 그 상태에서도 latency가
+threshold 안쪽(또는 momentary하게만 근소 초과)에 머물렀다는 점이 §60·
+§62와의 차이다. preview 자신의 CPU(0.010~0.011코어 avg)와 throttle(0%)은
+세 profile 모두 무시할 수준으로 §62와 일관됐다. Node(sj-worker) 사용률은
+47~49%로 세 profile이 비슷했고 포화 상태가 아니었다.
+
+### 64.3 feature 관측 - queue는 여전히 상수 0, cache는 이번에 처음으로 두 profile에서 비영 변화 관측
+
+`queue_mean`은 세 profile 전부에서 `observed_constant_zero.queue=True`
+(모든 유효 window에서 정확히 0) - metric 이름·label·신선도는 정상이고
+값 자체가 0이라는 뜻이며, 이번에도 부하를 올려 비영으로 만들려 하지
+않았다. **`cache_mean`은 `low_load`(0.025 RPS)에서는 여전히 상수 0이었지만,
+`sustained_load`(0.05 RPS)와 `burst`(0.10 RPS pulse 포함)에서는 처음으로
+`observed_constant_zero.cache=False`** - 이번 investigation 전체(§58의
+12세션, §60 qualification, §62 A-B-A 3세션)를 통틀어 cache가 완전한
+상수 0이 아니었던 첫 사례들이다. 원인은 판단하지 않고 사실만 기록한다.
+두 필드 모두 최종 feature 선택 단계의 제외 후보로만 남긴다(신규 판정
+로직 없음).
+
+### 64.4 결론 및 공식 정상 데이터 수집 가능 여부
+
+세 profile(`low_load=0.025`, `sustained_load=0.05`, `burst=0.025+0.10
+pulse×4/20초`)이 `active_plus_preview` topology·§63.4 PASS 조건 전체를
+1회씩 통과했다 - **공식 9세션 수집(각 profile 3세션)으로 넘어갈 준비는
+됐다고 판단하지만, 이번 작업 범위(§63.7)에는 포함하지 않았으므로 아직
+시작하지 않았다.** 참고할 점: (1) 이번 qualification은 각 profile
+1회씩만 실행했다 - §59와 같은 재현성(최소 2/3회) 기준은 아직 적용되지
+않았으므로, 공식 수집은 이 1회 결과만으로 강도를 최종 확정하는 게 아니라
+여전히 "3세션 중 결과를 그대로 관찰"하는 절차로 진행돼야 한다. (2) 활성
+pod의 CFS throttle은 이 강도에서도 여전히 27~49%대로 남아있다 - latency
+자체는 괜찮지만, 이 배경 현상이 §58 모델 학습 feature(`cpu_mean`)에
+어떤 영향을 주는지는 이번 범위에서 다루지 않았다.
+
+### 64.5 범위 준수
+
+전량 `is_pilot=true`/`included_in_training=false`/`purpose=normal_
+profile_qualification`. 공식 9세션 수집 없음, 모델 재학습 없음, feature
+삭제 없음, threshold 결정 없음, artifact 교체 없음, `score_server.py`
+런타임 변경 없음, `memory_pressure` 3-arm·`run_all_scenarios.py`·본
+실험 없음, `TrialResult` 스키마 변경 없음, Chaos 주입·promotion 없음.
+사후 kubectl 확인: pod 2개(`recovery-policy`·`vllm-serving`, active
+restart 0), chaos CR 없음.
