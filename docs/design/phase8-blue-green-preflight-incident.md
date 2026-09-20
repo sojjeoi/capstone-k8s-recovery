@@ -5276,3 +5276,60 @@ Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요
 3. **1500MB×120초 direct 점프** 1~3회차 실행(안전 기준 위반 시 즉시 중단) → §56.3~56.4 판정.
 4. 보존된 raw CSV로 독립 재계산 검증.
 5. §56.5 기준으로 최종 판정, 문서화·커밋·푸시 후 정지 - memory_pressure 3-arm 파일럿·`run_all_scenarios.py`·본 실험은 시작하지 않는다.
+
+## 57. `memory_pressure` "direct" 후보 3회 재현성 검증 결과 - 안전 PASS, **SLO 재현성 FAIL(0/3)** - §56.5 "미달" 판정 확정 (2026-09-20)
+
+§56 사전 등록대로 baseline에서 곧장 1500MB×120초로 점프하는 direct 후보(§53과 동일 조건)를 3회 독립 반복했다. **안전 기준 10개는 3회 전부 PASS**했지만, **§56.4 SLO 재현성 기준(최소 2/3회 sustained 위반)은 충족하지 못했다(0/3회)** - §53의 유일한 관측(sustained 위반 확정)이 동일 조건 3회 반복에서 재현되지 않았다.
+
+### 57.1 결과 요약
+
+| 항목 | rep1 | rep2 | rep3 |
+|---|---|---|---|
+| `run_id` | `...1500mb-120s-20260920T045524Z` | `...1500mb-120s-20260920T050334Z` | `...1500mb-120s-20260920T051142Z` |
+| baseline working set | 3.328GiB | 3.327GiB | 3.326GiB |
+| 최대 working set | 5.078GiB | 5.076GiB | 5.076GiB(셋 다 §53의 5.0786GiB와 사실상 동일) |
+| 실측 상승분 | 1504.3MB(**100.3%**) | 1504.4MB(**100.3%**) | 1504.5MB(**100.3%**) |
+| Node MemAvailable 범위 | 6.40~7.84GiB | 6.41~7.84GiB | 6.40~7.83GiB |
+| restartCount / OOMKilled / target UID | 불변(0) / 없음 / 불변 | 불변(0) / 없음 / 불변 | 불변(0) / 없음 / 불변 |
+| readiness/liveness 실패 | 0 / 0 | 0 / 0 | 0 / 0 |
+| completion 성공률 | 100%(261건) | 100%(259건) | 100%(251건) |
+| 전체 라운드 `p95_peak`(참고용, §50~§53과 같은 계산 - stage 경계 미적용) | 1.124초 | 1.302초 | 0.953초 |
+| **stage 경계로 좁힌 `p95_peak`**(§56.3, 실제 주입 구간만) | **0.347초** | **0.335초** | **0.363초** |
+| `t_slo`(전체 라운드 기준·stage 경계 기준 둘 다) | 둘 다 null | 둘 다 null | 둘 다 null |
+| cleanup 후 30초 내 baseline 복귀 | 확인(±150MiB, 편차 <1.5MiB) | 확인 | 확인 |
+| §56.3 안전 판정 | **PASS**(0 reasons) | **PASS**(0 reasons) | **PASS**(0 reasons) |
+
+사후 `kubectl` 독립 확인: chaos CR 0건, vLLM pod 동일 이름·restart 0, Node 2개 Ready.
+
+**§56.4 SLO 재현성 최종 판정**:
+
+| 검사 항목 | 결과 |
+|---|---|
+| `enough_repetitions` | PASS(3) |
+| `all_reps_safety_pass` | PASS |
+| `violates_at_least_2_of_3` | **FAIL(0/3 위반)** |
+| **종합** | **FAIL** |
+
+### 57.2 흥미로운 발견 - "전체 라운드 `p95_peak`"와 "stage 경계 `p95_peak`"의 큰 차이
+
+세 반복 모두 **전체 라운드 기준**(§50~§53과 동일 계산, stage 경계 미적용) `p95_peak`는 0.95~1.30초로 높게 나왔지만, **실제 주입 구간(§56.3)으로 좁히면 0.33~0.36초**로 뚝 떨어진다 - 즉 순간적인 고지연 표본은 baseline/recovery/drain 등 **주입 구간 밖**에서 발생했다는 뜻이다(§55.2에서 확인한 것과 같은 "명목 경계로 좁히지 않으면 오분류될 수 있다"는 원칙이 이번엔 반대 방향으로도 확인된 것 - 좁히지 않았다면 "1500MB가 순간적으로는 여전히 위협적"이라는 잘못된 인상을 줄 수 있었다). `t_slo`는 전체 라운드 기준으로도 null이므로(둘 다 동일하게 위반 없음) 이번 3회의 최종 판정 자체에는 영향이 없다 - 다만 §53에 적힌 "`p95_peak`=1.124초"가 참고했던 것과 같은 "전체 라운드 기준" 계산이라는 점은 유의할 필요가 있다(§53 당시엔 stage 경계로 좁힌 값을 따로 계산하지 않았음 - 그때는 t_slo 자체가 확정됐으므로 §53의 sustained 위반 결론 자체는 유효하지만, 그 "p95_peak" 수치가 어디서 나온 순간적 지연인지는 §53 문서만으로는 알 수 없었다).
+
+### 57.3 보존된 raw CSV로 독립 재계산 검증(§56.4 요구사항)
+
+3회 전부 라이브 실행 중 계산된 `scoped_slo`를, 실행이 끝난 뒤 저장된 raw CSV에서 `analyze_slo()`를 다시 호출해 재계산했다 - `t_slo`/`t_recovery`/`p95_peak`/`t_slo_within_window` 전부 **정확히 일치**했다(부동소수점까지 동일). 하니스 자체의 계산 오류 가능성은 배제된다.
+
+### 57.4 §53과의 관계 - §56.5 "미달" 판정에 따른 처리
+
+§53(단독 1회)이 관측한 sustained 위반은 **동일 조건(정상 baseline → 곧장 1500MB×120초, native, worker 1) 3회 독립 반복에서 단 한 번도 재현되지 않았다(0/3)**. §55(progressive 후보)에 이어 §56(direct 후보)도 재현성 기준을 충족하지 못해, **현재까지 확인된 모든 memory_pressure 설계(progressive·direct)가 안전 범위 안에서 sustained SLO 위반을 안정적으로 재현하지 못한다**는 일관된 그림이 된다.
+
+**§56.5 지시대로("2/3 미만이면") 처리한다**:
+
+1. **판정**: 안전 범위(5GiB 상한 등, 변경 없음) 안에서 memory_pressure(1500MB×120초, direct)가 현재 SLO 위반을 안정적으로 재현하지 못하는 것으로 판정한다.
+2. **하지 않은 것**: 강도 상향(1600MB 이상), 1650MB·2000MB 실행, 안전 상한 변경, SLO 정의(`slo_judge.py`의 임계치·`LATENCY_PERSIST_SEC` 등) 변경 - 전부 실행하지 않았다.
+3. **별도 결정으로 남기는 것**: memory_pressure를 sub-critical 시나리오로 유지할지, 본 실험(60회)에서 제외할지는 이 절에서 판단하지 않는다 - 사용자의 결정이 필요하다.
+4. `scenario-progressive-memory-pressure.yaml`도 신규 `sudden_memory_pressure` 시나리오도 **동결하지 않는다**(§56.5의 "2/3 이상" 조건이 성립하지 않았으므로).
+
+### 57.5 수행 범위
+
+- **수행한 것**: Prometheus port-forward 재연결 → direct 후보(1500MB×120초, 단일 점프) 3회 반복 실행(전부 안전 PASS, SLO 재현성 0/3) → 보존된 raw CSV로 독립 재계산 검증(전부 일치) → 사후 kubectl 독립 확인 → §56.5 "미달" 분기 처리.
+- **하지 않은 것**: 강도·지속시간 조정 없음, 4회차 이상 추가 반복 없음, 1650MB·2000MB 없음, 안전 상한·SLO 정의 변경 없음, scenario YAML 동결(신규·기존 둘 다) 없음, non-native arm 없음, memory_pressure 3-arm 파일럿 없음, `run_all_scenarios.py`·본 실험(60회) 없음. 3회분 원본 요약 JSON·probe raw CSV는 `experiments/results/`(top-level)에 그대로 보존되며 `.gitignore`에 걸려 커밋되지 않는다.
