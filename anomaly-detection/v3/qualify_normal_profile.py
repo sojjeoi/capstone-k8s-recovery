@@ -24,7 +24,7 @@ from pathlib import Path
 
 import requests
 
-EXPERIMENTS_DIR = Path(__file__).parent.parent / "experiments"
+EXPERIMENTS_DIR = Path(__file__).parent.parent.parent / "experiments"
 V3_DIR = Path(__file__).parent
 sys.path.insert(0, str(EXPERIMENTS_DIR))
 sys.path.insert(0, str(V3_DIR))
