@@ -7,7 +7,7 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from collect_session import judge_session_exclusion
+from collect_session import judge_session_exclusion, verify_and_force_cleanup
 
 HEALTHY_NODE = {"node_ok": True, "restart_count": 0}
 UNHEALTHY_NODE = {"node_ok": False, "restart_count": 0}
@@ -109,6 +109,62 @@ def test_judge_session_exclusion_accumulates_multiple_reasons():
     assert excluded is True
     assert len(reasons) >= 2
     print("OK - 여러 조건이 동시에 위반되면 전부 reasons에 누적")
+
+
+# --- verify_and_force_cleanup (2026-09-20 실측 버그 회귀) ---------------------
+
+_PREP_INFO = {"ready": True, "pre_prepare_active_selector": "old-hash", "created_pod_hash": "preview-hash"}
+
+
+def test_verify_and_force_cleanup_passthrough_when_already_decided():
+    assert verify_and_force_cleanup(_PREP_INFO, True) is True
+    assert verify_and_force_cleanup(_PREP_INFO, False) is False
+    print("OK - cleanup_ok가 이미 True/False면 그대로 통과(원 함수가 실제로 시도한 경우)")
+
+
+def test_verify_and_force_cleanup_noop_when_no_preview_was_prepared():
+    assert verify_and_force_cleanup(None, None) is None
+    assert verify_and_force_cleanup({"ready": False}, None) is None
+    print("OK - 애초에 준비된 preview가 없으면(native 등) None 그대로")
+
+
+def test_verify_and_force_cleanup_forces_abort_when_still_unpromoted():
+    calls = {"aborted": False}
+    result = verify_and_force_cleanup(
+        _PREP_INFO, None,
+        get_status_fn=lambda: {"active_selector": "old-hash", "current_pod_hash": "preview-hash"},
+        abort_fn=lambda: calls.__setitem__("aborted", True),
+        wait_rolled_back_fn=lambda pre_active, our_hash: True,
+    )
+    assert result is True
+    assert calls["aborted"] is True
+    print("OK - 원 함수가 스킵(None)했는데 실제로 아직 미승격이면 abort를 직접 재시도")
+
+
+def test_verify_and_force_cleanup_does_not_touch_promoted_preview():
+    calls = {"aborted": False}
+    result = verify_and_force_cleanup(
+        _PREP_INFO, None,
+        get_status_fn=lambda: {"active_selector": "preview-hash", "current_pod_hash": "preview-hash"},
+        abort_fn=lambda: calls.__setitem__("aborted", True),
+        wait_rolled_back_fn=lambda pre_active, our_hash: True,
+    )
+    assert result is None
+    assert calls["aborted"] is False
+    print("OK - 실제로 이미 승격됐으면(activeSelector가 우리 hash로 바뀜) 손대지 않음")
+
+
+def test_verify_and_force_cleanup_does_not_touch_unrelated_change():
+    calls = {"aborted": False}
+    result = verify_and_force_cleanup(
+        _PREP_INFO, None,
+        get_status_fn=lambda: {"active_selector": "old-hash", "current_pod_hash": "some-other-hash"},
+        abort_fn=lambda: calls.__setitem__("aborted", True),
+        wait_rolled_back_fn=lambda pre_active, our_hash: True,
+    )
+    assert result is None
+    assert calls["aborted"] is False
+    print("OK - 우리가 만든 preview가 아닌 다른 변경이 있으면 fail-closed로 손대지 않음")
 
 
 if __name__ == "__main__":

@@ -34,7 +34,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.stdout.reconfigure(encoding="utf-8")
 
 from active_pod_resolver import get_active_pods  # noqa: E402
-from blue_green_prep import cleanup_unpromoted_preview, prepare_preview_with_rollback  # noqa: E402
+from blue_green_prep import (  # noqa: E402
+    abort_preview,
+    cleanup_unpromoted_preview,
+    get_blue_green_status,
+    prepare_preview_with_rollback,
+    wait_until_rolled_back,
+)
 from explore_ramp_intensity import check_node_and_pods, run_candidate  # noqa: E402
 from memory_pressure_adapter import get_pod_details  # noqa: E402
 
@@ -53,6 +59,34 @@ REGIME_CONFIG_PATHS = {
     "sustained_load": REGIME_CONFIGS_DIR / "sustained-load.yaml",
     "burst": REGIME_CONFIGS_DIR / "burst.yaml",
 }
+
+
+def verify_and_force_cleanup(prep_info, cleanup_ok, get_status_fn=None, abort_fn=None, wait_rolled_back_fn=None):
+    """2026-09-20 실측 발견(qual-low_load 1차 시도) - `cleanup_unpromoted_
+    preview()`가 이유가 뚜렷하지 않은 채 정리를 건너뛰어(반환값 None)
+    preview가 방치된 사례가 있었다(Rollout이 Paused로 남고 `status.abort`가
+    끝내 세팅 안 됨 - kubectl로 직접 확인). `cleanup_ok`가 이미 True/False로
+    확정된 경우(원 함수가 실제로 시도한 경우)는 그대로 반환한다 - 이 함수는
+    **None(스킵) 케이스만** 독립적으로 재확인해 방어한다: 실제로 여전히
+    미승격 상태(activeSelector·pod_hash가 준비 직후 그대로)면 abort를 직접
+    재시도하고, 이미 승격됐거나(정상) 다른 변경이 있었으면(fail-closed
+    원칙 유지) 그대로 손대지 않는다. 순수 로직만 여기 두고 실제 클러스터
+    호출은 주입된 함수로 분리해 오프라인 테스트 가능하게 한다."""
+    if cleanup_ok is not None:
+        return cleanup_ok
+    if prep_info is None or not prep_info.get("ready"):
+        return None
+    get_status_fn = get_status_fn or (lambda: get_blue_green_status(ROLLOUT_NAME, NAMESPACE))
+    abort_fn = abort_fn or (lambda: abort_preview(ROLLOUT_NAME, NAMESPACE))
+    wait_rolled_back_fn = wait_rolled_back_fn or (
+        lambda pre_active, our_hash: wait_until_rolled_back(ROLLOUT_NAME, NAMESPACE, pre_active, our_hash))
+    current = get_status_fn()
+    pre_active = prep_info.get("pre_prepare_active_selector")
+    our_hash = prep_info.get("created_pod_hash")
+    if current["active_selector"] != pre_active or current["current_pod_hash"] != our_hash:
+        return None  # 이미 승격됐거나 다른 변경 - 원 함수와 동일한 fail-closed 판단 유지
+    abort_fn()
+    return wait_rolled_back_fn(pre_active, our_hash)
 
 
 def judge_session_exclusion(candidate_result: dict, node_before: dict, node_after: dict,
@@ -127,6 +161,11 @@ def collect_one_session(regime: str, session_id: str, is_pilot: bool,
     finally:
         print(f"[{session_id}] preview 정리(abort + 단일 revision 복원 확인)...")
         cleanup_ok = cleanup_unpromoted_preview(prep_info, ROLLOUT_NAME, NAMESPACE)
+        forced_cleanup_ok = verify_and_force_cleanup(prep_info, cleanup_ok)
+        if forced_cleanup_ok != cleanup_ok:
+            print(f"[{session_id}] cleanup_unpromoted_preview가 스킵(None)했지만 독립 재확인 결과 "
+                  f"미승격 상태로 남아있어 abort 강제 재시도 - 결과: {forced_cleanup_ok}")
+        cleanup_ok = forced_cleanup_ok
         session["cleanup_unpromoted_preview_result"] = cleanup_ok
 
     session["t_session_end"] = datetime.now(timezone.utc).isoformat()
