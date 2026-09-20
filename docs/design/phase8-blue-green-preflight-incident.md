@@ -5210,3 +5210,69 @@ Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요
 | §53(단독 1500MB×120초 위반 확정)과의 차이 원인 | **인과 결론 내리지 않음 - `path-dependent behavior observed`로만 기록**(§55.3의 두 가설은 참고용 정황일 뿐 결론이 아니다 - "적응 효과 때문"이라거나 "§53이 우연"이라는 판정을 이 문서는 내리지 않는다) |
 
 이 판정은 §55.1~55.5의 원본 데이터(raw CSV·안전 tick·stage summary 3회분, `experiments/results/`에 그대로 보존)를 그대로 유지한 채 확정한다 - 데이터 자체를 수정하거나 재해석하지 않는다.
+
+## 56. `memory_pressure` "direct"(단일 점프) 후보 3회 재현성 검증 - 사전 등록 (측정 전, 2026-09-20)
+
+§55.6 판정(progressive 후보 재현성 FAIL) 이후 지시. progressive 시퀀스 없이 **정상 baseline에서 곧장 1500MB×120초로** 주입하는 "direct" 후보(=§53이 이미 1회 실행한 조건 그 자체)의 재현성을 3회 독립 반복으로 확인한다. 이 절도 §50/§52/§54와 동일하게 **측정 전에** 규칙을 고정한다.
+
+### 56.1 후보 구성
+
+| 항목 | 값 |
+|---|---|
+| 주입 방식 | 정상 baseline에서 **곧장 1500MB로 점프**(선행 500MB·1000MB 압박 없음 - progressive 아님) |
+| worker | 1개 |
+| duration | **120초**(§53과 동일) |
+| arm | `native`만 |
+| `is_pilot` | 개념상 true와 동등(§50.1과 동일 논리) |
+| probe profile | 기본 readiness/liveness profile |
+| baseline 관찰 | 최소 60초 |
+| recovery 관찰 | 최소 60초 |
+| 반복 횟수 | **3회**, 각 사이 완전 cleanup·baseline 복귀·cooldown 확인 |
+| 결과 취급 | 본 실험(60회) 분석에서 제외 |
+
+### 56.2 도구 - `experiments/verify_memory_pressure_direct_candidate.py`(신규, 이 절 이후 구현)
+
+새 어댑터·새 주입 경로를 만들지 않는다 - `explore_memory_pressure_intensity.run_round(1500.0, workers=1, stage_duration_sec=120.0)`를 그대로 재사용한다(§53이 이미 정확히 이 호출이었다). `verify_ramp_candidate.py`가 `explore_ramp_intensity.run_candidate()`를 감싸는 것과 같은 패턴으로, 이 스크립트는 `run_round()`를 3회 반복하고 `verify_memory_pressure_candidate.py`의 quiescence 확인 헬퍼(`check_cluster_quiescent`/`wait_for_quiescence`, 재사용·중복 구현 없음)로 반복 사이를 확인한 뒤 아래 기준으로 기계적으로 판정한다. `run_round()`가 §50~§53에서 이미 쓰던 계산(전체 CSV 기준 `slo`)은 그대로 두고, stage 경계로 좁힌 SLO는 별도로 다시 계산한다(§55.2와 같은 이유 - 기존 호출부 수치를 사후에 안 바꿈). `target UID 불변`을 명시적으로 확인할 수 있도록 `run_round()`에 `result["target_replacement"] = injector.get_target_replacement()`(선택 훅, 신규 - 기존 §50~§53 호출부는 이 키를 안 읽으므로 동작 불변)를 추가했다.
+
+### 56.3 안전 기준 (3회 모두 충족해야 "재현성 확인" 자격, 하나라도 위반하면 그 즉시 이후 반복 중단)
+
+1. `AllInjected=True`
+2. completion 성공률 100%
+3. target working set 5GiB 미만
+4. Node MemAvailable 4GiB 이상
+5. restartCount 불변
+6. OOMKilled 없음
+7. Node Ready·pressure 없음
+8. target UID 불변
+9. cleanup 후 baseline ±150MiB 복귀
+10. CR·observer·context 완전 정리
+
+### 56.4 SLO 재현성 기준
+
+- 3회 중 **최소 2회** sustained latency SLO 위반(`t_slo is not None`)
+- 각 위반은 `MIN_SAMPLES_FOR_RELIABLE_P95`(20개) 이상 evaluable한 rolling P95와 `LATENCY_PERSIST_SEC`(30초) 연속 조건을 그대로 충족해야 함(`slo_judge` 재사용, 새 판정 로직 없음)
+- **`t_slo`가 실제 이 1500MB stage 경계(주입 시작~종료+30초 여유) 안에 있어야** 위반으로 인정한다(`t_slo_within_window`, §55.2와 같은 원칙 - 관측 구간 밖으로 샌 사건을 이 stage의 위반으로 잘못 세지 않기 위함)
+- availability 위반은 필수 조건이 아니다(latency 경로 위반만으로 충분)
+- 라이브 실행 후 **보존된 raw CSV로 독립 재계산한 결과가 실행 중 판정과 일치**하는지 확인한다(§55.2와 같은 검증 절차)
+
+### 56.5 최종 판정 (사전 확정, 결과를 본 뒤 바꾸지 않는다)
+
+**2/3 이상 위반 + 안전 기준 3회 모두 충족 시**:
+1. 기존 progressive 시나리오(`scenario-progressive-memory-pressure.yaml`)를 최종안으로 **쓰지 않는다**.
+2. 신규 `sudden_memory_pressure`(또는 명확히 동일한 의미의 이름) 1500MB×120초 **단일 step** 시나리오를 최종 후보로 동결한다.
+3. 기존 progressive YAML은 과거 설계 이력으로 그대로 보존한다(손대지 않음).
+4. "OOM 유도"가 아니라 **"급격한 메모리 압박에 따른 latency degradation"**으로 정의한다.
+5. **memory_pressure 3-arm 파일럿은 아직 실행하지 않는다**(이 절의 범위 밖).
+
+**2/3 미만이면**:
+1. 안전 범위 안에서 memory pressure가 현재 SLO를 안정적으로 재현하지 못하는 것으로 판정한다.
+2. 강도 상향(1650MB 등)·1650/2000MB 실행·안전 상한 변경·SLO 정의 변경을 **하지 않는다** - 멈춰서 보고한다.
+3. sub-critical 시나리오로 유지할지, 본 실험에서 제외할지는 **별도 결정**으로 남긴다(이 절에서 판단하지 않음).
+
+### 56.6 수행 순서 (이 절 커밋·푸시 이후)
+
+1. `verify_memory_pressure_direct_candidate.py` 구현(§56.2) + 오프라인 테스트.
+2. 전체 오프라인 스위트 재확인.
+3. **1500MB×120초 direct 점프** 1~3회차 실행(안전 기준 위반 시 즉시 중단) → §56.3~56.4 판정.
+4. 보존된 raw CSV로 독립 재계산 검증.
+5. §56.5 기준으로 최종 판정, 문서화·커밋·푸시 후 정지 - memory_pressure 3-arm 파일럿·`run_all_scenarios.py`·본 실험은 시작하지 않는다.

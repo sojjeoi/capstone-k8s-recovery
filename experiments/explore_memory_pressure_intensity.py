@@ -416,6 +416,12 @@ def run_round(size_mb: float, workers: int = 1, probe_config: str = str(DEFAULT_
 
     local_raw = PROBE_RESULTS_DIR / f"probe-{run_id}-native-1-raw.csv"
     result["slo"] = analyze_slo(local_raw, result.get("t_injection"))
+    # §56(direct 후보 재현성 검증) 지원용 - own_tick()은 효과 전 UID 변경만
+    # 중단시키고(TrialInvalid 아님, ExplorationAbort), 효과 후 변경은 어댑터가
+    # target_replacement에 기록만 하고 계속 진행한다(§48 설계 그대로) - 이
+    # 필드가 없으면 "aborted=False였으니 UID도 안 바뀌었다"고만 짐작해야
+    # 했다. 기존 호출부(§50~§53)는 이 키를 안 읽으므로 동작 불변.
+    result["target_replacement"] = injector.get_target_replacement()
     result["pass"] = judge_pass(result)
     return result
 
