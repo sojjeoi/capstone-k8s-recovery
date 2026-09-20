@@ -582,5 +582,9 @@
   ],
   "included_in_calibration": false,
   "included_in_holdout": false,
-  "classification": "unexpected_slo_violation"
+  "classification": "unexpected_slo_violation",
+  "boundary_challenge_set": true,
+  "boundary_challenge_role": "sustained_load_violation",
+  "boundary_challenge_original_file_sha256_before_this_patch": "64102ae680a9871bf8250369a60bfaf1ec90b6da0db8343900da8be4f150f48f",
+  "boundary_challenge_score_policy": "not scored until model+threshold frozen; one-time exploratory evaluation only, not used for threshold tuning"
 }

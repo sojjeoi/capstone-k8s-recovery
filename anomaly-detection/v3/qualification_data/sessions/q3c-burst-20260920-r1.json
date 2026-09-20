@@ -812,5 +812,11 @@
     }
   },
   "excluded": false,
-  "exclusion_reasons": []
+  "exclusion_reasons": [],
+  "boundary_challenge_set": true,
+  "boundary_challenge_role": "burst_safe",
+  "included_in_calibration": false,
+  "included_in_holdout": false,
+  "boundary_challenge_original_file_sha256_before_this_patch": "ece8fe265c800815113be5232bdf9070817df1c44602e4eec90f1529304eeb6d",
+  "boundary_challenge_score_policy": "not scored until model+threshold frozen; one-time exploratory evaluation only, not used for threshold tuning"
 }

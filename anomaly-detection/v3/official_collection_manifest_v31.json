@@ -1,0 +1,111 @@
+{
+  "_purpose": "§69 v3.1 최종 정상 데이터 수집 계획 - docs/design/phase8-blue-green-preflight-incident.md §69와 동일 내용, 기계 판독용. official_collection_manifest.json(§65)/official_collection_manifest_v2.json(§67)은 종료된 사전등록 이력으로 그대로 보존하고 수정하지 않는다 - 이 파일이 현재 유효한 계획다.",
+  "supersedes": ["official_collection_manifest.json (§65)", "official_collection_manifest_v2.json (§67)"],
+  "scope": "data collection and quality audit only - no model training, no threshold determination",
+  "burst_also_permanently_excluded": {
+    "reason": "official-calib-burst-20260920 produced a genuine 30s-sustained SLO violation (t_slo not null) on the 3rd independent burst attempt, even though qualification and official-train-burst both passed - reproducibility not established (2 pass / 1 fail out of 3)",
+    "action": "removed from final normal-data candidate regimes, same treatment as sustained_load - PASS sessions are not cherry-picked as normal data"
+  },
+  "final_normal_domain": {
+    "idle": {"topology": "active_plus_preview", "load": "none beyond the SLO probe (no ramp pod created)", "duration_sec": 600, "target_sessions": 3, "per_split": 1},
+    "low_load": {"topology": "active_plus_preview", "rps": 0.025, "duration_sec": 600, "target_sessions": 3, "per_split": 1}
+  },
+  "feature_window_sec": 60,
+  "feature_step_sec": 15,
+  "expected_rows_per_session": 37,
+  "expected_total_rows": 222,
+  "section_58_idle_assignment_also_superseded": "windows.ACTIVE_PLUS_PREVIEW_SESSIONS idle role assignment from §65.2 is superseded by freshly-measured 600s idle sessions in v3.1 - not reused, preserved as part of the concluded §65 plan",
+  "sessions": [
+    {"order": 1, "session_id": "v31-train-idle-20260920", "regime": "idle", "split_role": "train"},
+    {"order": 2, "session_id": "v31-train-low_load-20260920", "regime": "low_load", "split_role": "train"},
+    {"order": 3, "session_id": "v31-calib-low_load-20260920", "regime": "low_load", "split_role": "calibration"},
+    {"order": 4, "session_id": "v31-calib-idle-20260920", "regime": "idle", "split_role": "calibration"},
+    {"order": 5, "session_id": "v31-holdout-idle-20260920", "regime": "idle", "split_role": "holdout"},
+    {"order": 6, "session_id": "v31-holdout-low_load-20260920", "regime": "low_load", "split_role": "holdout"}
+  ],
+  "roles_fixed_before_measurement": true,
+  "roles_never_swapped_after_seeing_results": true,
+  "session_procedure": [
+    "preview create (prepare_preview_with_rollback)", "confirm Ready", "settle >= 60s",
+    "run assigned profile (idle: probe only, no ramp pod; low_load: run_candidate 0.025 RPS 600s)",
+    "recovery/drain observation",
+    "preview abort", "confirm single active revision restored (wait_until_rolled_back)",
+    "clean preflight", "cooldown >= 60s"
+  ],
+  "valid_session_conditions": [
+    "success_rate == 100%",
+    "t_slo == null (covers both 30s-sustained latency violation and immediate availability violation)",
+    "active and preview restartCount unchanged",
+    "no OOMKilled",
+    "Node Ready, no pressure",
+    "active/preview Endpoint isolation maintained",
+    "target UID unchanged (no unexpected promotion)",
+    "no missing/NaN/stale on any of the 8 feature source metrics (zero invalid windows)",
+    "feature window timestamps fall within session boundaries (window_boundary_ok)",
+    "cleanup succeeds, single revision restored"
+  ],
+  "cfs_throttle_policy": "recorded, not a session-exclusion criterion on its own",
+  "failure_and_rerun_rules": {
+    "real_slo_violation_in_idle_or_low_load": "stop remaining collection immediately, do not adjust intensity/session length, do not delete the SLO-violating session, do not run a substitute session",
+    "restart_oom_node_promotion_cleanup_failure": "stop immediately, same as an SLO violation",
+    "technical_harness_error": "preserve raw data, record with exact reason, fix code + pass offline tests, rerun from scratch under a NEW session_id",
+    "no_shortening_after_seeing_results": true,
+    "no_trimming_to_only_favorable_windows": true
+  },
+  "holdout_sealing": {
+    "sessions": ["v31-holdout-idle-20260920", "v31-holdout-low_load-20260920"],
+    "checked_at_collection_time_only": ["session completion", "schema match", "row count", "missing/NaN/stale", "SLO/restart/OOM/Node/cleanup validity"],
+    "not_examined": ["feature distribution", "anomaly score", "FPR"],
+    "not_used_for": ["threshold selection", "feature selection"],
+    "sealed_holdout": true,
+    "raw_and_feature_file_sha256_recorded": true
+  },
+  "post_collection_audit_scope": {
+    "computed_on": "train and calibration sessions only",
+    "items": [
+      "session and row counts per split/regime",
+      "actual full matrix size",
+      "per-feature min/median/max/std on train+calibration data",
+      "queue/cache non-zero window counts",
+      "zero-variance / near-zero-variance feature candidates",
+      "regime distribution in train and calibration",
+      "missing/stale/invalid window counts",
+      "independent session count reported separately from overlapping row count",
+      "difference between expected 222 rows and actual row count"
+    ],
+    "holdout_detailed_stats_not_printed": true
+  },
+  "boundary_challenge_set": {
+    "manifest_file": "anomaly-detection/v3/boundary_challenge_manifest.json",
+    "sessions": [
+      {"session_id": "q3c-sustained_load-20260920-r1", "role": "sustained_load_pass"},
+      {"session_id": "official-train-sustained_load-20260920", "role": "sustained_load_violation"},
+      {"session_id": "q3c-burst-20260920-r1", "role": "burst_safe"},
+      {"session_id": "official-train-burst-20260920", "role": "burst_safe"},
+      {"session_id": "official-calib-burst-20260920", "role": "burst_violation"},
+      {"session_id": "qual-low_load-20260920-r6", "role": "non_reproduced_anomaly"}
+    ],
+    "scoring_policy": "score exactly once, only after model and threshold are fully frozen; exploratory only (false-detection-on-safe-transient check, detection-on-real-violation check, lead-time check); never used for threshold tuning"
+  },
+  "scope_limits": [
+    "no Isolation Forest training",
+    "no final feature deletion",
+    "no threshold determination",
+    "no holdout or boundary-challenge anomaly score computation",
+    "no FPR computation",
+    "no model/scaler artifact replacement",
+    "no score_server.py runtime change",
+    "no memory_pressure 3-arm",
+    "no run_all_scenarios.py",
+    "no 60-trial main experiment",
+    "no TrialResult schema change",
+    "no promotion or chaos injection"
+  ],
+  "tooling": {
+    "script": "anomaly-detection/v3/qualify_normal_profile.py (extended with --v31 --split-role; new run_idle_session() for the idle regime, no other new cluster-mutating code)",
+    "config": "anomaly-detection/v3/profile_configs_v31/low-load.yaml (600s, same payload as §64/§66)",
+    "reused_unchanged": ["blue_green_prep.py", "explore_ramp_intensity.run_candidate/bucket_stats", "build_dataset.build_rows_for_session", "slo_judge.evaluate/find_t_slo", "collect_session.run_candidate_with_retry/verify_and_force_cleanup", "judge_qualification", "check_endpoint_isolation", "prometheus_session_summary", "classify_official_session"]
+  },
+  "registered_before_measurement": true,
+  "registered_at_utc": "2026-09-20T13:00:00Z"
+}

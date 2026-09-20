@@ -572,5 +572,11 @@
     }
   },
   "excluded": false,
-  "exclusion_reasons": []
+  "exclusion_reasons": [],
+  "boundary_challenge_set": true,
+  "boundary_challenge_role": "sustained_load_pass",
+  "included_in_calibration": false,
+  "included_in_holdout": false,
+  "boundary_challenge_original_file_sha256_before_this_patch": "7ec7c289ee49852b28a2afe566da932f3da18a9d4251399f1d75748a90eefd16",
+  "boundary_challenge_score_policy": "not scored until model+threshold frozen; one-time exploratory evaluation only, not used for threshold tuning"
 }

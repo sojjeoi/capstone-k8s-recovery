@@ -6340,3 +6340,120 @@ holdout 확보 방법(재시도 허용 여부, profile 재검토 등)은 사용�
 강도·pulse 조정·대체 세션 없음, 모델 재학습·threshold 결정 없음, 데이터
 감사 미실행(12세션 미완성), `memory_pressure` 3-arm·`run_all_scenarios.py`
 ·본 실험 없음, `TrialResult` 스키마 변경 없음, Chaos 주입·promotion 없음.
+
+## 69. v3.1 최종 정상 데이터 재설계 - `burst`도 전량 boundary challenge set으로, `idle`/`low_load` 2-regime·600초 통일 (2026-09-20)
+
+`burst`도 독립 시도 3회 중 1회 진짜 sustained SLO 위반을 보여
+`sustained_load`와 마찬가지로 **v3 정상 학습·calibration·holdout
+profile에서 전체 제외한다** - PASS한 2개만 골라 정상 데이터로 쓰지
+않는다. §65/§67의 공식 수집 계획은 실패 결과를 포함한 **종료된
+계획**으로 그대로 보존한다(파일 수정 없음).
+
+### 69.1 최종 primary model dataset에서 제외되는 자료
+
+qualification 세션, §60 및 §61-62 진단 세션, §65/§67의 공식 low_load
+세션(180초 - v3.1은 600초로 통일해 duration 자체가 다름), 모든
+`sustained_load` 세션, 모든 `burst` 세션 - 전부 v3.1의 primary model
+dataset에 포함하지 않는다. 이 중 일부 세션이 PASS였다는 사실만으로
+정상 데이터로 재분류하지 않는다.
+
+### 69.2 Boundary challenge set - 6개 세션, 원본 그대로 재분류
+
+새 순수 함수 없이 기존 세션 JSON 6건에 메타데이터만 소급 추가했다
+(측정 재실행 없음 - 원본 raw data·모든 timestamp 그대로, 패치 전 파일
+SHA-256을 `boundary_challenge_original_file_sha256_before_this_patch`에
+기록해 무엇이 바뀌었는지 추적 가능하게 함): `boundary_challenge_set=true`,
+`included_in_training/calibration/holdout=false`(PASS 세션도 전부 False로
+강제).
+
+| session_id | `boundary_challenge_role` | 원 판정 |
+|---|---|---|
+| `q3c-sustained_load-20260920-r1` | `sustained_load_pass` | §64 qualification PASS |
+| `official-train-sustained_load-20260920` | `sustained_load_violation` | §66 진짜 sustained 위반 |
+| `q3c-burst-20260920-r1` | `burst_safe` | §64 qualification PASS |
+| `official-train-burst-20260920` | `burst_safe` | §68 공식 train PASS |
+| `official-calib-burst-20260920` | `burst_violation` | §68 진짜 sustained 위반 |
+| `qual-low_load-20260920-r6` | `non_reproduced_anomaly` | §60/§62 - A-B-A로 재현 안 됨 |
+
+모델·threshold가 **완전히 동결된 이후에만** 이 6개를 한 번 평가해
+탐색적으로 확인할 예정이다(§69.7) - 지금은 anomaly score·threshold
+검토에 쓰지 않는다.
+
+### 69.3 v3.1 최종 정상 domain - `idle`/`low_load` 2-regime, 600초 통일
+
+신규 `anomaly-detection/v3/official_collection_manifest_v31.json`에
+아래와 동일 내용을 동결한다.
+
+| regime | topology | 부하 | duration | 목표 세션 | split당 |
+|---|---|---|---|---|---|
+| `idle` | active_plus_preview | SLO probe 외 별도 부하 없음(ramp pod 자체를 안 만듦) | 600초 | 3 | 1 |
+| `low_load` | active_plus_preview | 0.025 RPS(§64/§66 근거 유지) | 600초 | 3 | 1 |
+
+feature window 60초·step 15초 - session당 예상 row `(600-60)/15+1=37`개,
+총 6세션 예상 `37*6=222`행. §58 idle 6세션 사전 배정(§65.2)도 **동일하게
+superseded** - v3.1은 새로 측정한 600초 idle 세션만 쓴다(재사용된 baseline
+구간이 아니라 이번에 직접 측정한, duration이 통일된 세션).
+
+신규 `anomaly-detection/v3/qualify_normal_profile.py` 확장(`--v31
+--split-role`) - 새 클러스터 조작 코드를 최소로만 추가했다:
+`run_idle_session()`(ramp pod 없이 probe만 `V31_SESSION_DURATION_SEC`
+동안 실행 - `run_candidate()`는 ramp+probe 쌍을 전제해 재사용 불가했음,
+단일 합성 stage로 결과를 감싸 나머지 파이프라인은 그대로 재사용).
+`low_load`는 신규 `profile_configs_v31/low-load.yaml`(payload는 §64/§66과
+동일, duration만 600초)을 쓴다. `judge_qualification`/`check_endpoint_
+isolation`/`prometheus_session_summary`/`classify_official_session`은
+전부 그대로 재사용(새 판정 로직 없음). 오프라인 테스트 4개 추가
+(v3.1 regime 검증·label 안전성).
+
+### 69.4 6세션 - 실행 순서·역할 사전 고정
+
+| 순서 | session_id | regime | split_role |
+|---|---|---|---|
+| 1 | `v31-train-idle-20260920` | idle | train |
+| 2 | `v31-train-low_load-20260920` | low_load | train |
+| 3 | `v31-calib-low_load-20260920` | low_load | calibration |
+| 4 | `v31-calib-idle-20260920` | idle | calibration |
+| 5 | `v31-holdout-idle-20260920` | idle | holdout |
+| 6 | `v31-holdout-low_load-20260920` | low_load | holdout |
+
+각 세션은 독립 preview lifecycle(생성→Ready→60초 이상 settle→profile
+실행→abort→단일 revision 복원→clean preflight→60초 이상 cooldown)을
+쓴다. holdout 역할은 결과를 본 뒤 바꾸지 않는다.
+
+### 69.5 유효 조건·중단 규칙 - 변경 없음
+
+§65.3/§67.4와 완전히 동일(성공률 100%, `t_slo=null`, restart/OOM/Node
+정상, target UID 불변, Endpoint 격리, feature 결측 없음, `window_
+boundary_ok`, cleanup 후 단일 revision). CFS throttle은 기록만 하고
+단독 제외 사유로 쓰지 않는다. `idle` 또는 `low_load`에서 진짜 `t_slo`가
+나오거나 restart·OOM·Node 이상·promotion·cleanup 실패가 나오면 그
+즉시 중단(강도·session 길이를 결과를 본 뒤 조정하지 않음, 정상으로
+보이는 일부 window만 잘라 쓰지 않음). 기술적 harness 오류만 원본 보존
+후 새 ID로 재실행 가능.
+
+### 69.6 Holdout 봉인
+
+`v31-holdout-idle-20260920`/`v31-holdout-low_load-20260920`은 수집
+직후 **schema 일치·row 수·missing/NaN/stale 여부·SLO/restart/OOM/Node/
+cleanup 유효성만** 확인한다 - feature 분포·anomaly score·FPR은 보지
+않고 threshold·feature 선택에 쓰지 않는다. 원본 raw CSV·feature 파일의
+SHA-256을 기록하고 `sealed_holdout=true`로 표시한다.
+
+### 69.7 Boundary challenge set 평가 정책(지금은 실행 안 함)
+
+§69.2의 6개 세션은 모델·threshold가 완전히 동결된 이후 **단 1회**
+평가해 탐색적으로 확인한다: safe transient(`*_pass`/`*_safe`)에서
+불필요한 탐지가 발생하는지, 진짜 sustained 위반(`*_violation`)에서
+탐지가 발생하는지, 탐지 lead time이 존재하는지. **threshold 튜닝에는
+쓰지 않는다.** 지금은 각 세션의 원 판정과 원본 hash만 manifest에
+기록한다(§69.2 표).
+
+### 69.8 범위 제한
+
+Isolation Forest 학습 금지, feature 최종 삭제 금지, threshold 결정
+금지, holdout/challenge anomaly score·FPR 계산 금지, artifact 교체
+금지, `score_server.py` 런타임 변경 금지, `memory_pressure` 3-arm
+금지, `run_all_scenarios.py` 금지, 60회 본 실험 금지, `TrialResult`
+스키마 변경 금지, Chaos 주입·promotion 금지.
+
+이 절(§69) 커밋·푸시 이후에만 6세션 실측을 시작한다.

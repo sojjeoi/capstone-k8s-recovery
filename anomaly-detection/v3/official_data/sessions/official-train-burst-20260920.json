@@ -3,7 +3,7 @@
   "profile": "burst",
   "topology": "active_plus_preview",
   "is_pilot": false,
-  "included_in_training": true,
+  "included_in_training": false,
   "purpose": "official_v3_collection",
   "split_role": "train",
   "git_commit_sha": "72611e03323fb734871ed467608c18e50f4276ee",
@@ -820,5 +820,9 @@
   "exclusion_reasons": [],
   "included_in_calibration": false,
   "included_in_holdout": false,
-  "classification": "normal_valid"
+  "classification": "normal_valid",
+  "boundary_challenge_set": true,
+  "boundary_challenge_role": "burst_safe",
+  "boundary_challenge_original_file_sha256_before_this_patch": "70aaba03b39c75e2f01fd9b04301635456031f470a06d937f145783bc3ce9ef2",
+  "boundary_challenge_score_policy": "not scored until model+threshold frozen; one-time exploratory evaluation only, not used for threshold tuning"
 }

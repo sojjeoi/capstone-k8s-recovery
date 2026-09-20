@@ -309,5 +309,11 @@
     },
     "queue_mean_nonzero_valid_rows": 0,
     "queue_mean_nonzero_fraction": 0.0
-  }
+  },
+  "boundary_challenge_set": true,
+  "boundary_challenge_role": "non_reproduced_anomaly",
+  "included_in_calibration": false,
+  "included_in_holdout": false,
+  "boundary_challenge_original_file_sha256_before_this_patch": "3d18716459838fe62350d9afa8705568453e7c36a78bdb985cc8d444fdc56d1f",
+  "boundary_challenge_score_policy": "not scored until model+threshold frozen; one-time exploratory evaluation only, not used for threshold tuning"
 }

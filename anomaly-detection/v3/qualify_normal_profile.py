@@ -26,6 +26,7 @@ import hashlib
 import json
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -40,8 +41,8 @@ sys.stdout.reconfigure(encoding="utf-8")
 import slo_judge  # noqa: E402
 from active_pod_resolver import get_active_pods  # noqa: E402
 from blue_green_prep import cleanup_unpromoted_preview, prepare_preview_with_rollback  # noqa: E402
-from explore_ramp_intensity import check_node_and_pods  # noqa: E402
-from load_ramp_adapter import _run  # noqa: E402
+from explore_ramp_intensity import IMAGE, RESULTS_DIR, bucket_stats, check_node_and_pods  # noqa: E402
+from load_ramp_adapter import SETTLE_SEC, _delete_pod, _run, _wait_pod_ready  # noqa: E402
 from memory_pressure_adapter import get_pod_details  # noqa: E402
 
 from build_dataset import _git_commit_sha, build_rows_for_session, summarize_inventory  # noqa: E402
@@ -74,6 +75,19 @@ OFFICIAL_SESSIONS_DIR = V3_DIR / "official_data" / "sessions"
 PURPOSE_QUALIFICATION = "normal_profile_qualification"
 PURPOSE_OFFICIAL = "official_v3_collection"
 SPLIT_ROLES = ("train", "calibration", "holdout")
+
+# §69(2026-09-20) v3.1 - sustained_load/burst 전부 boundary_challenge_set으로
+# 재분류된 뒤, 최종 정상 domain을 idle/low_load 두 regime·600초 통일
+# duration으로 재설계. `idle`은 ramp pod을 아예 안 만들고 probe만
+# 돌린다(SLO probe 외 별도 부하 없음) - run_candidate_with_retry() 재사용
+# 불가(ramp+probe 쌍 전제)라 `run_idle_session()`을 새로 추가했다.
+V31_CONFIGS_DIR = V3_DIR / "profile_configs_v31"
+V31_RAMP_CONFIGS = {"low_load": V31_CONFIGS_DIR / "low-load.yaml"}  # idle은 ramp config 없음
+V31_REGIMES = ("idle", "low_load")
+V31_RUN_LABELS = {"idle": "v31idle", "low_load": "v31low"}  # 밑줄 없음, RFC 1123 안전
+V31_SESSIONS_DIR = V3_DIR / "v31_data" / "sessions"
+PURPOSE_V31 = "official_v31_primary_dataset"
+V31_SESSION_DURATION_SEC = 600.0
 
 
 def _pod_name_for_hash(pod_hash: str):
@@ -208,23 +222,88 @@ def classify_official_session(passed: bool, split_role: str, t_slo) -> dict:
     }
 
 
+def run_idle_session(probe_config_path: str, label: str, duration_sec: float = V31_SESSION_DURATION_SEC) -> dict:
+    """§69 idle regime - ramp pod을 아예 만들지 않고 probe만 duration_sec
+    동안 실행한다(SLO probe 외 별도 부하 없음). `run_candidate()`와 호환되는
+    결과 구조(전체 구간을 표현하는 단일 합성 stage)를 반환해 나머지
+    파이프라인(slo_judge/build_dataset)을 그대로 재사용한다."""
+    run_id = f"{label}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    probe_pod = f"{label[:7]}-probe-{uuid.uuid4().hex[:6]}"
+    probe_config_name = Path(probe_config_path).name
+    local_raw = RESULTS_DIR / f"probe-{run_id}-raw.csv"
+    pod_sleep_sec = int(duration_sec) + 600
+
+    try:
+        _run(["kubectl", "run", probe_pod, "-n", NAMESPACE, f"--image={IMAGE}",
+              "--image-pull-policy=Never", "--restart=Never", "--", "sleep", str(pod_sleep_sec)], check=True)
+        if not _wait_pod_ready(probe_pod):
+            raise RuntimeError(f"{probe_pod} Ready 시간초과")
+        _run(["kubectl", "cp", str(Path(probe_config_path)), f"{NAMESPACE}/{probe_pod}:/{probe_config_name}"], check=True)
+        print(f"안정화 대기 {SETTLE_SEC}초...")
+        time.sleep(SETTLE_SEC)
+
+        stage_start_utc = datetime.now(timezone.utc)
+        probe_inner = (f"PYTHONUNBUFFERED=1 python /probe.py --config /{probe_config_name} "
+                       f"--run-id {run_id} --scenario {label} --arm native --rep 1 "
+                       f"--out /probe-raw.csv --duration-sec {duration_sec} "
+                       f"> /probe.log 2>&1; echo $? > /probe.exit")
+        _run(["kubectl", "exec", "-n", NAMESPACE, probe_pod, "--", "sh", "-c",
+              f"nohup sh -c '{probe_inner}' < /dev/null > /probe-wrapper.log 2>&1 &"], check=True)
+
+        print(f"probe {duration_sec:.0f}초 동안 단독 실행 중(ramp 없음 - idle regime)...")
+        time.sleep(duration_sec + 20)
+        stage_end_utc = datetime.now(timezone.utc)
+
+        r = _run(["kubectl", "exec", "-n", NAMESPACE, probe_pod, "--", "cat", "/probe-raw.csv"], check=True)
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        local_raw.write_text(r.stdout, encoding="utf-8")
+    finally:
+        _delete_pod(probe_pod)
+
+    rows = slo_judge.load_raw(local_raw)
+    stats = bucket_stats(rows)
+    stage = {"stage": f"{label}-idle", "scenario": "idle", "method": "native", "repetition": "1",
+              "target_rps": "0(no ramp - probe only)", "actual_rps": None,
+              "stage_start_utc": stage_start_utc, "stage_end_utc": stage_end_utc, **stats}
+    empty_bucket = {"n": 0, "success_rate": None, "mean": None, "p95": None, "max": None, "violates": None}
+    return {
+        "run_id": run_id, "valid": True, "reason": None, "local_raw": str(local_raw),
+        "baseline": empty_bucket, "stages": [stage], "drain": empty_bucket,
+        "all_success_100pct": bool(stats["n"] and stats["success_rate"] == 1.0),
+        "run_candidate_attempts": 1,
+    }
+
+
 def collect_qualification_session(profile: str, session_id: str, *,
-                                   official: bool = False, split_role: str = None) -> dict:
-    if profile not in PROFILE_CONFIGS:
-        raise ValueError(f"알 수 없는 profile: {profile}(허용: {list(PROFILE_CONFIGS)})")
-    if official and split_role not in SPLIT_ROLES:
-        raise ValueError(f"official 세션은 split_role이 {SPLIT_ROLES} 중 하나여야 함: {split_role!r}")
-    ramp_config = str(PROFILE_CONFIGS[profile])
-    ramp_config_sha256 = hashlib.sha256(Path(ramp_config).read_bytes()).hexdigest()
+                                   official: bool = False, split_role: str = None,
+                                   dataset_version: str = "v3") -> dict:
+    is_v31 = dataset_version == "v3.1"
+    if is_v31:
+        if profile not in V31_REGIMES:
+            raise ValueError(f"v3.1 regime이 아님: {profile}(허용: {V31_REGIMES})")
+        if split_role not in SPLIT_ROLES:
+            raise ValueError(f"v3.1 세션은 split_role이 {SPLIT_ROLES} 중 하나여야 함: {split_role!r}")
+        ramp_config = str(V31_RAMP_CONFIGS[profile]) if profile != "idle" else None
+        ramp_config_sha256 = hashlib.sha256(Path(ramp_config).read_bytes()).hexdigest() if ramp_config else None
+        run_label = V31_RUN_LABELS[profile]
+    else:
+        if profile not in PROFILE_CONFIGS:
+            raise ValueError(f"알 수 없는 profile: {profile}(허용: {list(PROFILE_CONFIGS)})")
+        if official and split_role not in SPLIT_ROLES:
+            raise ValueError(f"official 세션은 split_role이 {SPLIT_ROLES} 중 하나여야 함: {split_role!r}")
+        ramp_config = str(PROFILE_CONFIGS[profile])
+        ramp_config_sha256 = hashlib.sha256(Path(ramp_config).read_bytes()).hexdigest()
+        run_label = PROFILE_RUN_LABELS[profile]
 
     session = {
         "session_id": session_id, "profile": profile, "topology": "active_plus_preview",
-        "is_pilot": not official,
-        # official 세션은 PASS해야만(judge_qualification 결과) True로 확정한다(아래에서 갱신) -
+        "is_pilot": False if is_v31 else (not official),
+        # official/v3.1 세션은 PASS해야만(judge_qualification 결과) True로 확정한다(아래에서 갱신) -
         # qualification은 §63 지시대로 항상 False로 고정.
         "included_in_training": False,
-        "purpose": PURPOSE_OFFICIAL if official else PURPOSE_QUALIFICATION,
-        "split_role": split_role if official else None,  # §65.1 - 측정 전 고정, 결과 보고 안 바꿈
+        "purpose": PURPOSE_V31 if is_v31 else (PURPOSE_OFFICIAL if official else PURPOSE_QUALIFICATION),
+        "split_role": split_role if (is_v31 or official) else None,  # §65.1/§69 - 측정 전 고정, 결과 보고 안 바꿈
+        "dataset_version": "v3.1" if is_v31 else "v3",
         "git_commit_sha": _git_commit_sha(),
         "ramp_config_path": ramp_config, "ramp_config_sha256": ramp_config_sha256,
         "t_session_start": datetime.now(timezone.utc).isoformat(),
@@ -260,8 +339,12 @@ def collect_qualification_session(profile: str, session_id: str, *,
     session["endpoint_isolation_before"] = endpoint_isolation_before
 
     try:
-        print(f"[{session_id}] {profile} 부하 실행(run_candidate)...")
-        candidate_result = run_candidate_with_retry(ramp_config, DEFAULT_PROBE_CONFIG, label=PROFILE_RUN_LABELS[profile])
+        if is_v31 and profile == "idle":
+            print(f"[{session_id}] idle regime 실행(ramp 없음, probe {V31_SESSION_DURATION_SEC:.0f}초 단독)...")
+            candidate_result = run_idle_session(DEFAULT_PROBE_CONFIG, run_label)
+        else:
+            print(f"[{session_id}] {profile} 부하 실행(run_candidate)...")
+            candidate_result = run_candidate_with_retry(ramp_config, DEFAULT_PROBE_CONFIG, label=run_label)
     finally:
         print(f"[{session_id}] preview 정리(abort + 단일 revision 복원 확인)...")
         cleanup_ok = cleanup_unpromoted_preview(prep_info, ROLLOUT_NAME, NAMESPACE)
@@ -365,9 +448,9 @@ def collect_qualification_session(profile: str, session_id: str, *,
     )
     session["excluded"] = not passed
     session["exclusion_reasons"] = reasons
-    # official 세션만 split 소속 판정을 받는다(§67.2 - qualification은
+    # official/v3.1 세션만 split 소속 판정을 받는다(§67.2/§69 - qualification은
     # included_in_training이 항상 False로 고정돼 있었음, 위에서 이미 세팅).
-    if official:
+    if official or is_v31:
         session.update(classify_official_session(passed, split_role, t_slo))
 
     print(f"[{session_id}] 완료 - {'PASS' if passed else 'FAIL'}" + (f" - 사유: {reasons}" if reasons else ""))
@@ -375,19 +458,32 @@ def collect_qualification_session(profile: str, session_id: str, *,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="§63/§65 정상 부하 profile qualification 또는 공식 수집 - 세션 1개 실행")
-    parser.add_argument("--profile", required=True, choices=list(PROFILE_CONFIGS))
+    parser = argparse.ArgumentParser(description="§63/§65/§69 정상 부하 profile qualification·공식 수집·v3.1 수집 - 세션 1개 실행")
+    parser.add_argument("--profile", required=True, choices=sorted(set(PROFILE_CONFIGS) | set(V31_REGIMES)))
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--official", action="store_true", help="공식 v3 수집 세션(§65) - qualification이 아님")
-    parser.add_argument("--split-role", choices=list(SPLIT_ROLES), help="--official일 때 필수 - 측정 전 고정된 역할")
+    parser.add_argument("--v31", action="store_true", help="v3.1 primary dataset 세션(§69) - idle/low_load 전용")
+    parser.add_argument("--split-role", choices=list(SPLIT_ROLES), help="--official/--v31일 때 필수 - 측정 전 고정된 역할")
     args = parser.parse_args()
-    if args.official and not args.split_role:
-        parser.error("--official에는 --split-role이 필요함")
+    if args.official and args.v31:
+        parser.error("--official과 --v31은 동시에 줄 수 없음")
+    if (args.official or args.v31) and not args.split_role:
+        parser.error("--official/--v31에는 --split-role이 필요함")
+    if args.v31 and args.profile not in V31_REGIMES:
+        parser.error(f"--v31의 --profile은 {V31_REGIMES} 중 하나여야 함")
+    if not args.v31 and args.profile not in PROFILE_CONFIGS:
+        parser.error(f"--v31 없이는 --profile이 {list(PROFILE_CONFIGS)} 중 하나여야 함")
 
     session = collect_qualification_session(args.profile, args.session_id,
-                                             official=args.official, split_role=args.split_role)
+                                             official=args.official, split_role=args.split_role,
+                                             dataset_version="v3.1" if args.v31 else "v3")
 
-    sessions_dir = OFFICIAL_SESSIONS_DIR if args.official else QUALIFICATION_SESSIONS_DIR
+    if args.v31:
+        sessions_dir = V31_SESSIONS_DIR
+    elif args.official:
+        sessions_dir = OFFICIAL_SESSIONS_DIR
+    else:
+        sessions_dir = QUALIFICATION_SESSIONS_DIR
     sessions_dir.mkdir(parents=True, exist_ok=True)
     out_path = sessions_dir / f"{args.session_id}.json"
     out_path.write_text(json.dumps(session, indent=2, ensure_ascii=False, default=str), encoding="utf-8")

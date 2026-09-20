@@ -1,0 +1,59 @@
+{
+  "_purpose": "§69.2/§69.7 boundary challenge set - docs/design/phase8-blue-green-preflight-incident.md §69와 동일 내용, 기계 판독용. 이 6개 세션은 v3.1 primary normal dataset이 아니지만 삭제되지 않고 보존된다 - 원본 raw data와 모든 timestamp 불변.",
+  "sessions": [
+    {
+      "session_id": "q3c-sustained_load-20260920-r1",
+      "file": "anomaly-detection/v3/qualification_data/sessions/q3c-sustained_load-20260920-r1.json",
+      "role": "sustained_load_pass",
+      "original_verdict": "PASS (§64 qualification, 0.05 RPS, t_slo=null)",
+      "source_section": "§64"
+    },
+    {
+      "session_id": "official-train-sustained_load-20260920",
+      "file": "anomaly-detection/v3/official_data/sessions/official-train-sustained_load-20260920.json",
+      "role": "sustained_load_violation",
+      "original_verdict": "FAIL - genuine 30s-sustained SLO violation (t_slo=2026-09-20T10:54:20.545650+00:00)",
+      "source_section": "§66"
+    },
+    {
+      "session_id": "q3c-burst-20260920-r1",
+      "file": "anomaly-detection/v3/qualification_data/sessions/q3c-burst-20260920-r1.json",
+      "role": "burst_safe",
+      "original_verdict": "PASS (§64 qualification, t_slo=null, some momentary per-pulse P95 crossings)",
+      "source_section": "§64"
+    },
+    {
+      "session_id": "official-train-burst-20260920",
+      "file": "anomaly-detection/v3/official_data/sessions/official-train-burst-20260920.json",
+      "role": "burst_safe",
+      "original_verdict": "PASS (§68 official train session, t_slo=null)",
+      "source_section": "§68"
+    },
+    {
+      "session_id": "official-calib-burst-20260920",
+      "file": "anomaly-detection/v3/official_data/sessions/official-calib-burst-20260920.json",
+      "role": "burst_violation",
+      "original_verdict": "FAIL - genuine 30s-sustained SLO violation (t_slo=2026-09-20T12:07:00.434722+00:00)",
+      "source_section": "§68"
+    },
+    {
+      "session_id": "qual-low_load-20260920-r6",
+      "file": "anomaly-detection/v3/data/sessions/qual-low_load-20260920-r6.json",
+      "role": "non_reproduced_anomaly",
+      "original_verdict": "Extreme latency spike (P95=12.654s) observed once; not reproduced in §62 A-B-A (A1/B/A2 all near-threshold, statistically indistinguishable)",
+      "source_section": "§60, §61-62"
+    }
+  ],
+  "scoring_policy": {
+    "when": "only after the Isolation Forest model and its threshold are fully frozen (artifact + dependency + hash freeze)",
+    "how_many_times": "exactly once, exploratory",
+    "checks": [
+      "does scoring the safe-transient sessions (sustained_load_pass, burst_safe) produce unnecessary/false detections?",
+      "does scoring the real-violation sessions (sustained_load_violation, burst_violation) produce a detection?",
+      "if detected, is there a meaningful lead time before the violation's own t_slo?"
+    ],
+    "not_used_for": ["threshold tuning", "feature selection", "model retraining"]
+  },
+  "not_scored_yet": true,
+  "registered_at_utc": "2026-09-20T13:00:00Z"
+}

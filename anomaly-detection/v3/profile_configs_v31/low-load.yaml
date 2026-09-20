@@ -1,0 +1,16 @@
+# §69 v3.1 primary normal dataset(2026-09-20) - payload는 profile_configs_3core/
+# low-load.yaml과 완전 동일(url/model/prompt/max_tokens=10, RPS=0.025 -
+# §64 qualification PASS·§66 공식 train session PASS 근거 그대로), duration만
+# 두 regime(idle/low_load) 통일 기준인 600초로 바꿨다. §65/§67의 180초
+# 세션은 종료된 계획으로 그대로 두고(수정 안 함), 이 파일은 별도 신규
+# config다 - v3.1은 이 파일만 쓴다.
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: v31-low-load
+    rps: 0.025
+    duration_sec: 600

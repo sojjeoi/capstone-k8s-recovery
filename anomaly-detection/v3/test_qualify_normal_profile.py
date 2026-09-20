@@ -13,6 +13,9 @@ import pytest
 from qualify_normal_profile import (
     PROFILE_CONFIGS,
     PROFILE_RUN_LABELS,
+    V31_RAMP_CONFIGS,
+    V31_REGIMES,
+    V31_RUN_LABELS,
     check_endpoint_isolation,
     classify_official_session,
     collect_qualification_session,
@@ -214,6 +217,41 @@ def test_collect_official_session_requires_valid_split_role():
     with pytest.raises(ValueError):
         collect_qualification_session("low_load", "x", official=True, split_role="not-a-real-role")
     print("OK - official 세션은 유효한 split_role 없이 시작되지 않음(클러스터 호출 전 차단)")
+
+
+def test_collect_v31_session_requires_valid_regime():
+    """§69 - dataset_version='v3.1'인데 profile이 idle/low_load가 아니면
+    클러스터를 건드리기 전에 거부한다(예: 이제 영구 제외된 burst/
+    sustained_load를 v3.1로 잘못 호출하는 실수 방지)."""
+    with pytest.raises(ValueError):
+        collect_qualification_session("burst", "x", dataset_version="v3.1", split_role="train")
+    with pytest.raises(ValueError):
+        collect_qualification_session("sustained_load", "x", dataset_version="v3.1", split_role="train")
+    print("OK - v3.1은 idle/low_load 외 regime을 클러스터 호출 전에 거부")
+
+
+def test_collect_v31_session_requires_split_role():
+    with pytest.raises(ValueError):
+        collect_qualification_session("idle", "x", dataset_version="v3.1", split_role=None)
+    print("OK - v3.1 세션도 split_role 없이 시작되지 않음(official과 동일 원칙)")
+
+
+def test_v31_regime_labels_are_valid_k8s_names():
+    import re
+    k8s_name_safe = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+    assert set(V31_RUN_LABELS) == set(V31_REGIMES)
+    for regime, label in V31_RUN_LABELS.items():
+        assert "_" not in label, f"{regime} -> {label}: 밑줄이 남아있으면 kubectl run이 매번 실패함(§60 실측 확인)"
+        assert k8s_name_safe.match(label), f"{regime} -> {label}: K8s 리소스 이름 규칙 위반"
+    print("OK - v3.1 regime label도 밑줄 없이 K8s 이름 규칙을 지킴")
+
+
+def test_v31_idle_has_no_ramp_config():
+    """idle regime은 ramp pod을 아예 안 만드므로 ramp config가 없어야 한다
+    (run_idle_session()이 probe만 실행 - §69 설계)."""
+    assert "idle" not in V31_RAMP_CONFIGS
+    assert "low_load" in V31_RAMP_CONFIGS
+    print("OK - idle은 ramp config 없음, low_load만 있음")
 
 
 def test_profile_run_labels_are_valid_k8s_names():
