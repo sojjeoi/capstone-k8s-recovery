@@ -6859,3 +6859,154 @@ calibration으로 전환하지 않았다. threshold를 다시 조정하지 않�
 
 Holdout 재학습·feature 변경·threshold 재조정 없음, boundary challenge
 평가 없음, `score_server.py` 변경 없음, artifact 교체 없음.
+
+**v3.1 영구 보존**: `v3_model_freeze_commit=9caac66`과 모든 artifact·
+Holdout 실패 결과(`holdout-evaluation.json`)를 수정하거나 덮어쓰지
+않는다 - `v3.1 rejected model`로 영구 보존한다. `threshold.json`의
+0.013299를 조정하지 않고, 기존 Holdout(`v31-holdout-idle-20260920`/
+`v31-holdout-low_load-20260920`)을 다시 평가하지 않는다.
+
+## 76. Isolation Forest v3.2 - 최종 데이터 확충 재설계 사전등록 (2026-09-20)
+
+`anomaly-detection/v3/model_v32/`(신규, `model_v31/`과 별도) - v3.1의
+학습/calibration/평가 코드(`replay.py`/`feature_selection.py`/
+`integrity.py`)를 프로토콜 수준 공용 유틸로 그대로 재사용(import만,
+복제 없음 - 이 셋은 버전에 상관없이 동일한 런타임 판정·feature 선택
+규칙이라 model_v31에 있는 것을 model_v32가 그대로 불러 쓴다).
+
+### 76.1 v3.2 데이터 역할 및 development_history
+
+| split | 세션 | 근거 |
+|---|---|---|
+| **Training** | v3.1의 idle 3세션 + low_load 3세션 = **6개 독립 session** | 전부 실제 SLO·안전 조건을 통과한 정상 session(§66/§70) - v3.1에서의 원래 역할(train/calibration/holdout)과 무관하게 전부 정상 데이터이므로 v3.2의 학습 입력으로 재사용 가능. v3.1 Holdout은 이미 공개(§75에서 점수를 계산·열람)됐으므로 **평가용으로는 다시 쓸 수 없지만**, 그 raw feature 자체는 여전히 유효한 정상 관측이라 학습(training)에는 문제없이 쓸 수 있다(평가 오염과 학습 데이터 재사용은 다른 문제 - 학습은 "이 값이 정상임을 안다"는 사실만 쓰고, 평가는 "이 모델이 처음 보는 값에 어떻게 반응하는가"를 확인하는 것이라 원칙이 다르다). |
+| **Calibration** | 새 idle 3세션 + 새 low_load 3세션 = **6개 독립 session**(`calib2-*`) | v3.1 calibration 표본이 2개뿐이라 일반화가 부족했을 가능성(§75.3)에 대응 - session 수를 3배로 늘림 |
+| **Prospective Holdout** | v3.2 model·threshold 동결 이후 새로 수집하는 idle 3세션 + low_load 3세션 = **6개 독립 session**(`holdout2-*`) | 동결 전에는 존재하지 않는 완전히 새 데이터 - 사전등록한 대로 동결 커밋 push 이후에만 수집한다 |
+
+`anomaly-detection/v3/model_v32/v32_manifest.json`에 이 표와 동일 내용,
+v3.1 6세션의 원래 role(각각 train/calibration/holdout)과 세션 ID를
+`development_history`로 명시 기록한다 - "왜 training으로 편입 가능한가"
+(정상 데이터라는 사실 자체는 유효)와 "왜 평가에 재사용 불가한가"(이미
+점수를 계산·공개해 더 이상 unseen이 아님)를 둘 다 적는다.
+
+### 76.2 프로토콜 - v3.1과 완전히 동일(변경 없음)
+
+`topology=active_plus_preview`, `regime∈{idle, low_load(0.025 RPS)}`,
+세션 길이 600초, feature window 60초·step 15초, preview Ready 후 settle
+최소 60초, 동일 request payload(`profile_configs_v31/low-load.yaml`,
+idle은 ramp 없이 probe만), 독립 preview lifecycle, session 사이 clean
+preflight+최소 60초 cooldown, promotion·Chaos·detector 실행 금지. **길이·
+RPS·window·step 전부 변경하지 않는다.** 수집 도구도 그대로 재사용한다 -
+`anomaly-detection/v3/qualify_normal_profile.py --v31 --split-role
+{calibration|holdout}`(§69에서 이미 검증된 경로, 새 클러스터 조작 코드
+없음).
+
+### 76.3 새 Calibration 실행 순서(측정 전 고정)
+
+| 순서 | session_id | regime |
+|---|---|---|
+| 1 | `calib2-idle-01` | idle |
+| 2 | `calib2-low-01` | low_load |
+| 3 | `calib2-low-02` | low_load |
+| 4 | `calib2-idle-02` | idle |
+| 5 | `calib2-idle-03` | idle |
+| 6 | `calib2-low-03` | low_load |
+
+### 76.4 새 Prospective Holdout 실행 순서(측정 전 고정, 수집은 동결 이후에만)
+
+| 순서 | session_id | regime |
+|---|---|---|
+| 1 | `holdout2-low-01` | low_load |
+| 2 | `holdout2-idle-01` | idle |
+| 3 | `holdout2-idle-02` | idle |
+| 4 | `holdout2-low-02` | low_load |
+| 5 | `holdout2-low-03` | low_load |
+| 6 | `holdout2-idle-03` | idle |
+
+### 76.5 새 Calibration 유효 조건·중단 규칙
+
+§65.3/§69.5와 동일: 성공률 100%, `t_slo=null`, availability 위반 없음,
+restart·OOM 없음, Node Ready·pressure 없음, target UID 불변, Endpoint
+격리 유지, promotion 없음, feature 결측/NaN/stale 없음, cleanup 후 단일
+revision·context/부하 pod/Chaos/detector/observer 완전 정리. 실제 SLO
+위반·안전 이상이 나오면 그 즉시 이후 수집을 중단(강도 조정·결과 대체
+금지). 순수 하니스 오류만 원본 보존 후 새 ID로 재실행 가능. **6세션
+전부 유효해야만** v3.2 학습으로 진행한다.
+
+### 76.6 v3.2 학습·calibration 규칙 - v3.1과 동일
+
+Training-only feature 선택(v3.2 Training 6세션에서 **결정론적으로
+재계산** - v3.1 결과를 복사하지 않음, 정확한 0분산만 제거, near-zero는
+보고만, calibration/holdout 미사용), `IsolationForest(n_estimators=100,
+contamination="auto", random_state=42)`(v1/v3.1과 동일, 하이퍼파라미터
+탐색 없음), scaler·model은 Training 6세션에만 fit, threshold는 새
+Calibration 6세션에만 `replay.calibrate_threshold()`로 결정(`score<
+threshold` 엄격한 미만, 15초 평가, 연속 3회, 정상 1회 리셋, cooldown
+60초 - 전부 §71 감사값 그대로).
+
+### 76.7 v3.2 Artifact 동결 - v3.1과 별도 version/path
+
+`anomaly-detection/v3/model_v32/artifacts/`(v3.1과 별도 경로) -
+model/scaler/threshold/feature-schema/dataset-manifest/split-manifest/
+training-metadata/정확한 dependency lock/SHA256SUMS/재현 CLI 전부
+동결. v3.1과의 차이(Training 세션 수 2→6, Calibration 세션 수 2→6,
+feature 선택 결과가 같은지 다른지, threshold 값 차이)를 명시 기록한다.
+3회 독립 재학습으로 score·threshold·예측 결정론성을 검증한다(§74.4와
+동일 절차). 이 artifact를 별도 commit으로 push하고 **`v3.2_model_freeze_
+commit`**으로 기록한다 - 이 commit이 origin에 반영되기 전에는 새
+Holdout을 수집하거나 열지 않는다.
+
+### 76.8 Prospective Holdout 수집·평가 규칙
+
+동결 커밋 push 확인 이후에만 §76.4의 새 Holdout 6세션을 수집한다.
+**수집 중에는 model score를 실시간으로 조회하거나 결과에 따라 session을
+중단하지 않는다** - 안전·SLO·cleanup 조건(§76.5와 동일)만 확인한다.
+6세션 전부 정상·유효한 경우에만 artifact SHA를 재확인한 뒤 **단 1회**
+offline 평가한다(재학습·재보정 없음, `evaluate.py`/`evaluate_holdout.py`
+재사용). 보고 항목: 전체·regime별 point FPR, session별 point FPR, 최대
+연속 anomaly, false signal episode, score min/median/max, 독립 session
+수와 overlapping row 수 구분(window 단위 신뢰구간을 독립 표본처럼
+과장하지 않음, session-level 결과를 우선 제시).
+
+### 76.9 최종 stop-loss 규칙(사전등록, 사후 변경 없음)
+
+신규 `anomaly-detection/v3/model_v32/stop_loss.py`의
+`decide_holdout_outcome()`(순수 함수) - Prospective Holdout 6세션
+전체에서 **false signal episode가 1건이라도 발생하면**:
+
+- v3.2 채택 불가
+- threshold 재조정 금지
+- Holdout을 Calibration/Training으로 편입해 v3.3을 만드는 것 금지
+- 추가 정상 데이터 수집 금지
+- Boundary challenge 평가 금지(§76.10 실행 안 함)
+- runtime 통합·배포 금지
+- **"Isolation Forest가 현재 데이터와 구조로는 운영 신뢰성을 확보하지
+  못했다"고 기록하고, 본 실험 설계·제목·주장 조정안을 제안만 하고
+  멈춘다** - 추가 반복으로 통과 결과를 찾지 않는다.
+
+false signal episode가 0건이면(그리고 schema/hash 정합·missing/NaN
+없음이면) `model_adopted=True`로 확정하고 §76.10으로 진행한다. 이
+규칙은 holdout 결과를 보기 전에 고정된 것으로, 결과를 본 뒤 기준을
+바꾸지 않는다.
+
+### 76.10 Boundary Challenge 평가 - Holdout 통과 시에만
+
+Holdout이 통과한 경우에만, 동결된 v3.2 artifact로 `boundary_challenge_
+manifest.json`의 6세션을 **한 번만** 평가한다(safe transient: `sustained_
+load` PASS 1개+`burst` PASS 2개, actual violation: `sustained_load` FAIL
+1개+`burst` FAIL 1개+§60 anomaly 1개). 세션별: signal 발생 여부, 최초
+detection 시각, `t_slo`, lead time(`t_slo - t_detection`), SLO 이전/이후/
+미탐지 분류, safe transient의 false signal 여부, 최대 연속 anomaly,
+score 궤적. §60은 재현되지 않은 극단 사례로 별도 표시하고 다른 challenge
+와 평균을 섞지 않는다. **Challenge 결과로 threshold·feature·model을
+바꾸지 않는다** - 탐색적 외부 검증일 뿐, 표본이 작아 성능 우열을
+확정하지 않는다.
+
+### 76.11 범위 제한
+
+실험 장애 주입 금지, promotion 금지, `score_server.py` 런타임 변경·배포
+금지, `memory_pressure` 3-arm 금지, `run_all_scenarios.py` 금지, 60회
+본 실험 금지, `TrialResult` 스키마 변경 금지, 새 알고리즘(Autoencoder·
+Z-score·MAD 등) 추가 금지, v3.1 artifact 수정 금지, Holdout 결과 기반
+재조정 금지.
+
+이 절(§76) 커밋·푸시 이후에만 새 Calibration 6세션 실측을 시작한다.

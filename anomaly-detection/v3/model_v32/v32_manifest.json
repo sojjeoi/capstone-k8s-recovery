@@ -1,0 +1,100 @@
+{
+  "_purpose": "§76 v3.2 최종 데이터 확충 재설계 사전등록 - docs/design/phase8-blue-green-preflight-incident.md §76과 동일 내용, 기계 판독용.",
+  "v31_rejected_model_preserved": {
+    "freeze_commit": "9caac66",
+    "status": "v3.1 rejected model - permanently preserved, never modified or overwritten",
+    "threshold_not_readjusted": 0.013299302702671323,
+    "holdout_not_reevaluated": ["v31-holdout-idle-20260920", "v31-holdout-low_load-20260920"]
+  },
+  "development_history": {
+    "training_sessions_reused_from_v31": [
+      {"session_id": "v31-train-idle-20260920", "regime": "idle", "original_v31_role": "train"},
+      {"session_id": "v31-calib-idle-20260920", "regime": "idle", "original_v31_role": "calibration"},
+      {"session_id": "v31-holdout-idle-20260920", "regime": "idle", "original_v31_role": "holdout"},
+      {"session_id": "v31-train-low_load-20260920", "regime": "low_load", "original_v31_role": "train"},
+      {"session_id": "v31-calib-low_load-20260920", "regime": "low_load", "original_v31_role": "calibration"},
+      {"session_id": "v31-holdout-low_load-20260920", "regime": "low_load", "original_v31_role": "holdout"}
+    ],
+    "why_eligible_as_v32_training": "all 6 sessions passed real SLO/safety validity checks (§66/¡70) - being normal data is a fact independent of which v3.1 split they were originally assigned to; training only uses 'this value is known-normal', not an unseen-data guarantee.",
+    "why_not_reusable_for_v32_evaluation": "the v3.1 holdout sessions already had their scores computed and reviewed in §75 (evaluation exposure) - they are no longer unseen data, so none of the 6 can serve as v3.2 calibration or holdout candidates. All v3.2 calibration/holdout sessions are freshly collected."
+  },
+  "v32_data_roles": {
+    "training": {"source": "the 6 v3.1 sessions above, combined", "independent_sessions": 6, "regime_composition": "idle x3, low_load x3"},
+    "calibration": {"source": "6 newly collected sessions (calib2-*)", "independent_sessions": 6, "regime_composition": "idle x3, low_load x3"},
+    "prospective_holdout": {"source": "6 newly collected sessions (holdout2-*), collected only after v3.2 freeze commit is pushed", "independent_sessions": 6, "regime_composition": "idle x3, low_load x3"}
+  },
+  "protocol_unchanged_from_v31": {
+    "topology": "active_plus_preview",
+    "regimes": {"idle": "no ramp pod, probe only", "low_load": "0.025 RPS"},
+    "session_duration_sec": 600,
+    "feature_window_sec": 60,
+    "feature_step_sec": 15,
+    "settle_after_preview_ready_sec_min": 60,
+    "payload": "identical to §64/¡66/§69 (profile_configs_v31/low-load.yaml)",
+    "tooling": "qualify_normal_profile.py --v31 --split-role {calibration|holdout} (unchanged, no new cluster-mutating code)",
+    "no_change_to": ["session length", "rps", "window", "step"]
+  },
+  "new_calibration_sessions_fixed_order": [
+    {"order": 1, "session_id": "calib2-idle-01", "regime": "idle"},
+    {"order": 2, "session_id": "calib2-low-01", "regime": "low_load"},
+    {"order": 3, "session_id": "calib2-low-02", "regime": "low_load"},
+    {"order": 4, "session_id": "calib2-idle-02", "regime": "idle"},
+    {"order": 5, "session_id": "calib2-idle-03", "regime": "idle"},
+    {"order": 6, "session_id": "calib2-low-03", "regime": "low_load"}
+  ],
+  "new_prospective_holdout_sessions_fixed_order": [
+    {"order": 1, "session_id": "holdout2-low-01", "regime": "low_load"},
+    {"order": 2, "session_id": "holdout2-idle-01", "regime": "idle"},
+    {"order": 3, "session_id": "holdout2-idle-02", "regime": "idle"},
+    {"order": 4, "session_id": "holdout2-low-02", "regime": "low_load"},
+    {"order": 5, "session_id": "holdout2-low-03", "regime": "low_load"},
+    {"order": 6, "session_id": "holdout2-idle-03", "regime": "idle"}
+  ],
+  "holdout_collection_rule": "collect only after v3.2_model_freeze_commit is pushed to origin; do not query model scores live during collection or abort a session based on score - only safety/SLO/cleanup validity gates collection",
+  "valid_session_conditions": [
+    "success_rate == 100%", "t_slo == null", "no availability violation",
+    "active/preview restartCount unchanged", "no OOMKilled", "Node Ready, no pressure",
+    "target UID unchanged", "active/preview Endpoint isolation maintained", "no unexpected promotion",
+    "no missing/NaN/stale feature source metrics", "cleanup succeeds, single revision restored",
+    "no leftover context/load pod/chaos/detector/observer"
+  ],
+  "failure_rule": "a real SLO violation or safety abnormality in any new session stops remaining collection immediately - no intensity adjustment, no result substitution; pure harness errors may be fixed and rerun under a new session_id",
+  "model_training_rules_unchanged_from_v31": {
+    "feature_selection": "recomputed deterministically from v3.2 Training's 6 sessions only - not copied from v3.1's result; exact zero variance removed, near-zero reported only, calibration/holdout never used",
+    "algorithm": "IsolationForest(n_estimators=100, contamination='auto', random_state=42), no hyperparameter search",
+    "scaler_and_model_fit_on": "Training 6 sessions only",
+    "threshold_selection": "replay.calibrate_threshold() on the new Calibration 6 sessions only - most sensitive threshold with 0 false signal episodes across all 6"
+  },
+  "artifact_freeze": {
+    "path": "anomaly-detection/v3/model_v32/artifacts/ (separate from v3.1)",
+    "contents": ["model.pkl", "scaler.pkl", "threshold.json", "feature-schema.json", "dataset-manifest.json",
+                 "split-manifest.json", "training-metadata.json", "requirements-lock.txt", "SHA256SUMS.json"],
+    "must_document_diff_from_v31": ["training session count (2->6)", "calibration session count (2->6)",
+                                      "feature selection result identical or different", "threshold value difference"],
+    "reproducibility_check": "3 independent retrainings, byte-identical verification (same procedure as §74.4)",
+    "freeze_commit_label": "v3.2_model_freeze_commit",
+    "no_new_holdout_collection_before_this_commit_is_pushed": true
+  },
+  "stop_loss_rule": {
+    "trigger": "1 or more false signal episodes across the 6 prospective holdout sessions",
+    "on_trigger": [
+      "v3.2 not adopted", "threshold not readjusted",
+      "holdout not folded into calibration/training to spin up a v3.3 attempt",
+      "no additional normal data collection", "no boundary challenge evaluation",
+      "no runtime integration or deployment",
+      "record that Isolation Forest has not achieved operational reliability with the current data and structure",
+      "propose (do not execute) adjustments to the main-experiment design/framing, then stop"
+    ],
+    "on_pass": "model_adopted=true, proceed to one-time boundary challenge evaluation",
+    "registered_before_any_holdout_result_is_seen": true
+  },
+  "boundary_challenge_gate": "only evaluated if prospective holdout passes; scored exactly once; results never used to adjust threshold/feature/model",
+  "scope_limits": [
+    "no fault injection", "no promotion", "no score_server.py runtime change or deployment",
+    "no memory_pressure 3-arm", "no run_all_scenarios.py", "no 60-trial main experiment",
+    "no TrialResult schema change", "no new algorithm (Autoencoder/Z-score/MAD/etc)",
+    "no modification of v3.1 artifacts", "no readjustment based on holdout results"
+  ],
+  "registered_before_measurement": true,
+  "registered_at_utc": "2026-09-20T15:00:00Z"
+}
