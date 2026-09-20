@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 sys.stdout.reconfigure(encoding="utf-8")
 
 from explore_memory_pressure_intensity import (
+    ALLOWED_SIZES_MB,
     GIB,
     MAX_TARGET_WORKING_SET_BYTES,
     MIB,
@@ -18,6 +19,7 @@ from explore_memory_pressure_intensity import (
     judge_pass,
     node_healthy,
     run_round,
+    sufficient_headroom_for_injection,
 )
 
 HEALTHY = {"Ready": "True", "MemoryPressure": "False", "DiskPressure": "False", "PIDPressure": "False"}
@@ -222,6 +224,44 @@ def test_analyze_slo_computes_success_rate_and_sample_count(tmp_path):
     print("OK - 성공률·표본 수를 raw CSV에서 정확히 계산")
 
 
+# --- sufficient_headroom_for_injection (§52 1600MB 전용 사전 조건) --------
+
+def test_sufficient_headroom_true_when_margin_exceeds_requirement():
+    baseline = 3200 * MIB
+    projected_margin = MAX_TARGET_WORKING_SET_BYTES - (baseline + 1600.0 * MIB)
+    assert projected_margin > 128 * MIB
+    assert sufficient_headroom_for_injection(baseline, 1600.0, 128 * MIB) is True
+    print("OK - 여유가 요구치보다 크면 True")
+
+
+def test_sufficient_headroom_false_when_margin_below_requirement():
+    # 5GiB 상한 기준 1600MB 주입 후 여유가 100MiB뿐이라 128MiB 요구치 미달
+    baseline = MAX_TARGET_WORKING_SET_BYTES - 1600.0 * MIB - 100 * MIB
+    assert sufficient_headroom_for_injection(baseline, 1600.0, 128 * MIB) is False
+    print("OK - 여유가 요구치보다 작으면 False(fail-closed)")
+
+
+def test_sufficient_headroom_exact_boundary_is_true():
+    baseline = MAX_TARGET_WORKING_SET_BYTES - 1600.0 * MIB - 128 * MIB
+    assert sufficient_headroom_for_injection(baseline, 1600.0, 128 * MIB) is True
+    print("OK - 여유가 정확히 요구치와 같으면 True(>=)")
+
+
+def test_sufficient_headroom_zero_requirement_matches_old_rounds():
+    # baseline 3600MiB + 1500MB = 5100MiB, 5GiB(5120MiB) 상한까지 여유 20MiB뿐
+    # (128MiB 요구치엔 미달) - 그래도 min_headroom_bytes=0(1000MB/1500MB, §50.1엔
+    # 이 게이트가 없었음)이면 통과해야 함
+    baseline = 3600.0 * MIB
+    assert MAX_TARGET_WORKING_SET_BYTES - (baseline + 1500.0 * MIB) == 20 * MIB
+    assert sufficient_headroom_for_injection(baseline, 1500.0, 0.0) is True
+    print("OK - min_headroom_bytes=0이면 게이트 없음(기존 라운드 동작 불변)")
+
+
+def test_sufficient_headroom_false_when_baseline_unreadable():
+    assert sufficient_headroom_for_injection(None, 1600.0, 128 * MIB) is False
+    print("OK - baseline 조회 실패(None)는 항상 거부")
+
+
 # --- run_round의 사전 등록 값 검증(오프라인 - 클러스터 접근 전에 즉시 거부) ---
 
 def test_run_round_rejects_disallowed_size_before_touching_cluster():
@@ -239,7 +279,23 @@ def test_run_round_rejects_arbitrary_unregistered_size():
         assert False, "사전 등록 안 된 값은 거부돼야 함"
     except ValueError:
         pass
-    print("OK - 1000/1500 외의 임의 값도 거부(사전 등록된 값만 허용)")
+    print("OK - 1000/1500/1600 외의 임의 값도 거부(사전 등록된 값만 허용)")
+
+
+def test_run_round_rejects_1650mb_permanently():
+    try:
+        run_round(1650.0)
+        assert False, "1650MB는 자동 실행 금지(§52)"
+    except ValueError:
+        pass
+    print("OK - 1650MB는 클러스터 접근 전에 즉시 ValueError(§52 - 안전 상한 상향 없이는 영구 금지)")
+
+
+def test_allowed_sizes_registration_matches_52():
+    assert set(ALLOWED_SIZES_MB) == {1000.0, 1500.0, 1600.0}
+    assert 1650.0 not in ALLOWED_SIZES_MB
+    assert 2000.0 not in ALLOWED_SIZES_MB
+    print("OK - 사전 등록된 강도는 1000/1500/1600MB뿐, 1650/2000MB는 영구 제외")
 
 
 if __name__ == "__main__":

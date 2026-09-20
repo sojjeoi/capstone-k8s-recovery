@@ -4935,3 +4935,49 @@ Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요
 
 - **수행한 것**: 1000MB 1라운드(PASS) → cooldown 130초 + 클러스터 복원 확인 → 1500MB 1라운드(PASS) → 결과 비교 → §51.2 발견 → §51.3 제안. 매 라운드 전후 `kubectl`로 직접 chaos CR·pod·Node 상태 재확인(스크립트 자체 판정에만 의존하지 않음).
 - **하지 않은 것**: 2000MB 또는 그 밖의 미등록 강도 실행 없음(`explore_memory_pressure_intensity.py`가 애초에 1000/1500 외에는 거부), non-native arm 없음, memory_pressure 3-arm 파일럿 없음, `run_all_scenarios.py`·본 실험(60회) 없음, 안전 상한·결과 스키마 변경 없음, `claude/*` worktree 손대지 않음, force-push·rebase·hard reset 없음. 두 라운드의 원본 요약 JSON·probe raw CSV는 `experiments/results/`(top-level)에 그대로 보존되며 `.gitignore`(`*.json`/`*.csv`)에 걸려 커밋되지 않는다.
+
+## 52. `memory_pressure` 2차 강도 calibration - 사전 등록 (측정 전, 2026-09-20)
+
+§51 결과(1000MB·1500MB 둘 다 PASS, `t_slo`/`t_recovery` null) 승인에 이은 지시. **안전 상한(5GiB)은 이번에도 변경하지 않고, memory_pressure를 sub-critical 시나리오로 재정의하지도 않는다** - §51.3의 옵션 A(1600~1650MB 재확인)만 실행한다. 이 절도 §50과 동일하게 **측정 전에** 규칙을 고정한다.
+
+### 52.1 실행 조건 (§50.1과의 차이만 표기, 나머지는 전부 §50.1 그대로 - arm=native, probe profile 기본값, 결과는 본 분석 제외 등)
+
+| 항목 | §50(1차) | §52(이번, 2차) |
+|---|---|---|
+| 각 강도 유지시간 | 90초 | **120초**(`chaos/scenario-progressive-memory-pressure.yaml` 원본 각 stage 지속시간과 동일 - 재현이 아니라 그 시간만큼 지속 압박을 관찰하는 것이 목적) |
+| 대상 강도·순서 | 1000MB → 1500MB | **1500MB 먼저** → §52.4 조건을 전부 만족할 때만 **1600MB** |
+| 2000MB | 영구 금지(불변) | 영구 금지(불변) |
+| **1650MB** | (해당 없음) | **영구 금지 - 자동 실행 안 함**(1600MB 결과와 무관하게, §52.4의 "1600MB까지도 위반 없으면 보고만" 규칙으로 구조적으로 차단) |
+| 1600MB 전용 사전 조건 | (해당 없음) | §52.2 - baseline+1600MB가 5GiB 상한까지 **최소 128MiB** 여유를 남겨야 주입, 미달 시 `TrialInvalid`(주입 시도 자체를 안 함) |
+| 즉시 중단 조건(§50.5) | 그대로 | **그대로**(변경 없음) - target working set 5GiB 이상이면 즉시 CR 삭제·중단은 1600MB에서도 동일 |
+| 라운드 간 간격 | cooldown+복원확인 | **동일**(cooldown + chaos CR 0건·동일 UID·restartCount 불변·Node 2개 Ready·working set이 그 라운드 시작 전 baseline 근처 확인) |
+
+### 52.2 1600MB 전용 사전 조건 - `sufficient_headroom_for_injection()`(신규, 순수 함수)
+
+`experiments/explore_memory_pressure_intensity.py`에 baseline working set 실측치 기준으로 "baseline + 요청량(MB)"을 5GiB 안전 상한(`MAX_TARGET_WORKING_SET_BYTES`, 불변)과 비교해 **최소 128MiB 이상 여유**가 남는지 확인하는 순수 함수를 추가했다 - 미달이면 `injector.prepare()`/`inject()` 호출 자체를 하지 않고 `TrialInvalid`를 던진다(§50.2의 어댑터 자체 headroom 게이트와 별개로, 탐색 스크립트 레벨에서 한 번 더 확인하는 보수적 사전 게이트 - 어댑터의 게이트는 컨테이너 memory limit까지 포함한 일반식이라 이 128MiB 마진과 정확히 같지 않을 수 있어 명시적으로 분리했다). `min_headroom_bytes=0`(기본값, 1000MB/1500MB 라운드와 동일)이면 이 게이트는 사실상 없다 - §50.1 원래 라운드의 동작은 손대지 않는다.
+
+### 52.3 별도 도구 재사용 확인 - 신규 파일 없음
+
+새 스크립트를 만들지 않고 기존 `explore_memory_pressure_intensity.py`(§50.3)를 확장했다 - `run_round()`에 `stage_duration_sec`(기본 90.0, 이번엔 120.0 명시 전달)·`min_headroom_bytes`(기본 0.0, 1600MB에서만 128MiB 전달) 인자를 추가하고, `ALLOWED_SIZES_MB`에 1600.0을 추가했다(1650.0/2000.0은 여전히 목록 밖 - 구조적으로 거부). `run_memory_pressure_trial.py`(smoke 전용, 1GB 이상 차단)와 어댑터의 안전 상수(`MAX_TARGET_WORKING_SET_BYTES`=5GiB, `MIN_NODE_AVAILABLE_BYTES`=3GiB 등)는 전부 불변이다. 같은 크기라도 90초/120초 라운드가 결과 파일명에서 섞이지 않도록 `run_id`에 `-{stage_duration_sec:.0f}s-` 세그먼트를 추가했다(`explore-memory_pressure-native-{size_mb}mb-{stage_duration_sec}s-{timestamp}-summary.json`) - 저장 위치(`results/` top-level)와 `collect_metrics.py`가 이 파일을 절대 읽지 않는다는 사실(§49.4)은 불변.
+
+### 52.4 판정 기준 (§50.4/§50.5의 안전 기준은 그대로 - 진행 여부만 아래 규칙 추가)
+
+- **1500MB 라운드**: §50.4의 9개 PASS 조건을 전부 충족 **AND** `t_slo`가 **null**(=sustained 위반 없음, `slo_judge.find_t_slo()`가 이미 `LATENCY_PERSIST_SEC`=30초 연속 또는 즉시 availability 위반만 t_slo로 인정하므로 이 필드 자체가 "순간적 P95 초과"와 "실제 지속 위반"을 구분해 준다 - 새 판정 로직 추가 없음)일 때만 1600MB로 진행한다. `t_slo`가 not null이면(sustained 위반 확인) **1600MB는 실행하지 않고 즉시 보고**한다.
+- **1600MB 라운드**(조건부): §52.2의 headroom 사전 조건을 통과해야 주입이 실제로 시도된다. 주입 중 target working set이 5GiB 이상이면(§50.5 불변) 즉시 CR 삭제·중단.
+- **최종 해석**(사전 확정, §50.6 표에 아래 두 줄 추가):
+
+| 관측 | 해석 |
+|---|---|
+| sustained SLO 위반(`t_slo` not null) + restart/OOM 없음 | 본 실험 high-stage 후보 |
+| `p95_peak`만 순간적으로 임계치 초과, `t_slo`는 null | 아직 high-stage 후보 아님(§51.1과 동일 해석 - "감지 가능하나 확정 위반 아님") |
+| restart/OOM 또는 안전 상한(5GiB) 도달 | 과도한 강도 - 후보 제외, collapse 경계로 기록 |
+| 1600MB까지도 sustained 위반이 없으면 | **1650MB나 안전 상한 상향으로 자동 진행하지 않는다** - "현재 안전 제약 안에서는 기존 SLO 기반 memory_pressure 비교(=본 실험에서 native가 SLO를 위반하는 시나리오)가 성립하지 않을 가능성이 높다"고 결론짓고, 시나리오 재정의(§51.3 옵션 B) 여부는 **사용자의 별도 결정**으로 남긴다 |
+
+### 52.5 수행 순서 (이 절 커밋·푸시 이후)
+
+1. `explore_memory_pressure_intensity.py` 확장(§52.2~52.3) + 오프라인 테스트 추가.
+2. 전체 오프라인 스위트 재확인(존재하지 않는 KUBECONFIG).
+3. **1500MB × 120초** 1라운드 실행 → §52.4 판정(SLO 분석 항목은 §50.6과 동일: baseline P95/가용률, `t_slo`/`t_recovery`, evaluable 표본 수, 위반 지속시간, 성공률, readiness/liveness 실패, working set 최댓값과 5GiB까지의 최소 여유, cleanup 후 baseline 복귀).
+4. `t_slo`가 not null이면 여기서 중단·보고. null이면 cooldown·클러스터 복원 확인 후 **1600MB × 120초** 1라운드 실행(§52.2 사전 조건 통과 시에만 실제 주입) → 동일 항목 분석.
+5. 결과 비교, 다음 calibration 범위 제안(§52.4 표 기준).
+6. 문서화·커밋·푸시 후 정지 - 재현성 반복(3회차 등)·memory_pressure 3-arm 파일럿·`run_all_scenarios.py`·본 실험은 시작하지 않는다.

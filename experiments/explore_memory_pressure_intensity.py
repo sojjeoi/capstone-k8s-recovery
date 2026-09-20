@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""memory_pressure 강도 calibration 탐색 전용 스크립트(2026-09-20). 사전
-등록: docs/design/phase8-blue-green-preflight-incident.md §50 - 이 파일의
-동작이 그 절의 규칙과 어긋나면 §50이 맞다(측정 뒤 규칙을 사후 조정하지
-않는다는 원칙, §42와 동일).
+"""memory_pressure 강도 calibration 탐색 전용 스크립트(2026-09-20, 2차
+사전 등록 §52 추가). 사전 등록: docs/design/phase8-blue-green-preflight-
+incident.md §50(1000MB/1500MB, stage 90초) + §52(1500MB/1600MB, stage
+120초) - 이 파일의 동작이 그 절들의 규칙과 어긋나면 문서가 맞다(측정 뒤
+규칙을 사후 조정하지 않는다는 원칙, §42와 동일).
 
 run_once()/TrialResult를 쓰지 않는다(explore_ramp_intensity.py와 같은 이유
 - 정상 trial 판정이 아니라 순수 탐색용). §50.1의 커스텀 타이밍(baseline
@@ -18,9 +19,11 @@ run_once()/TrialResult를 쓰지 않는다(explore_ramp_intensity.py와 같은 �
 1GB 이상 차단은 건드리지 않는다 - 이 스크립트는 완전히 별도 경로다.
 
 산출물은 `results/`(top-level, `results/pilot/`이 아님) 아래
-`explore-memory_pressure-native-{size_mb}mb-{timestamp}-summary.json`으로
-저장한다 - `collect_metrics.py`는 `trial-*.json`만 glob하므로(§49.4에서
-코드로 확인) 이 파일은 본 실험 분석에 절대 섞이지 않는다.
+`explore-memory_pressure-native-{size_mb}mb-{stage_duration_sec}s-{timestamp}-
+summary.json`으로 저장한다(stage_duration_sec 세그먼트는 같은 크기의 90초/
+120초 라운드가 파일명에서 섞이지 않도록 §52에서 추가) - `collect_metrics.py`는
+`trial-*.json`만 glob하므로(§49.4에서 코드로 확인) 이 파일은 본 실험 분석에
+절대 섞이지 않는다.
 """
 import argparse
 import json
@@ -54,20 +57,21 @@ from run_once import HarnessCorrupted, TrialInvalid
 RESULTS_DIR = Path(__file__).parent / "results"
 DEFAULT_PROBE_CONFIG = Path(__file__).parent.parent / "chaos" / "probe-config.yaml"
 
-# 사전 등록(§50.1) - 이 값들 밖은 전부 거부한다. 2000MB는 baseline 실측
-# (~3.4~3.6GiB, §48.3) + 2000MB가 5GiB 안전 상한을 이미 넘어 영구 금지.
-ALLOWED_SIZES_MB = (1000.0, 1500.0)
+# 사전 등록(§50.1, 1600.0은 §52 - 2차 calibration) - 이 값들 밖은 전부 거부한다.
+# 1650.0/2000.0은 5GiB 안전 상한과 충돌해 영구 금지(§52 지시 - 자동 실행 금지).
+ALLOWED_SIZES_MB = (1000.0, 1500.0, 1600.0)
 
-BASELINE_MIN_SEC = 60.0        # §50.1 - probe baseline 최소 관찰시간
+BASELINE_MIN_SEC = 60.0        # §50.1/§52 - probe baseline 최소 관찰시간(공통, 불변)
 BASELINE_MAX_WAIT_SEC = 180.0  # 그 안에 안정 안 되면 이 라운드는 baseline_timeout으로 중단(안전 실패 아님)
-STAGE_DURATION_SEC = 90.0      # §50.1 - 각 강도 유지시간
-RECOVERY_OBSERVE_SEC = 60.0    # §50.1 - cleanup 후 최소 회복 관찰시간(어댑터 자신의 30초 판정을 포함)
+STAGE_DURATION_SEC = 90.0      # §50.1 원래 값(1000MB/1500MB 90초 라운드는 완료·불변) - §52 라운드는
+                                # run_round()의 stage_duration_sec 인자로 120.0을 명시 전달한다
+RECOVERY_OBSERVE_SEC = 60.0    # §50.1/§52 - cleanup 후 최소 회복 관찰시간(어댑터 자신의 30초 판정을 포함)
 POLL_INTERVAL_SEC = 5.0
 INJECTION_STARTED_TIMEOUT_SEC = 60.0  # run_memory_pressure_trial.py와 동일 근거(§49.1 - Prometheus 반영 지연)
 PROBE_STARTUP_TIMEOUT_SEC = 60.0
 
-MIN_NODE_AVAILABLE_PASS_BYTES = 4 * GIB  # §50.4 PASS 기준(즉시 중단 3GiB보다 엄격)
-REQUIRED_RISE_FRACTION = 0.80             # §50.4 - 요청량의 최소 80%
+MIN_NODE_AVAILABLE_PASS_BYTES = 4 * GIB  # §50.4 PASS 기준(즉시 중단 3GiB보다 엄격, 불변)
+REQUIRED_RISE_FRACTION = 0.80             # §50.4 - 요청량의 최소 80%(불변)
 
 
 class ExplorationAbort(Exception):
@@ -158,6 +162,18 @@ def analyze_slo(local_raw: Path, t_injection_iso) -> dict:
     }
 
 
+def sufficient_headroom_for_injection(baseline_ws_bytes, size_mb: float, min_headroom_bytes: float) -> bool:
+    """§52 1600MB 전용 조건부 사전 조건 - baseline + 요청량을 더했을 때
+    5GiB 안전 상한까지 min_headroom_bytes 이상 여유가 남아야 주입한다.
+    min_headroom_bytes=0(1000MB/1500MB 라운드 기본값)이면 이 게이트는
+    사실상 없음(§50.1에는 이 조건이 없었으므로 기존 라운드 동작 불변).
+    순수 함수 - baseline 조회 실패(None)는 항상 거부(fail-closed)."""
+    if baseline_ws_bytes is None:
+        return False
+    projected = baseline_ws_bytes + size_mb * MIB
+    return (MAX_TARGET_WORKING_SET_BYTES - projected) >= min_headroom_bytes
+
+
 def judge_pass(result: dict) -> dict:
     """§50.4의 9개 PASS 조건을 전부 확인한다 - 하나라도 어긋나면 그 사유를
     reasons에 남기고 pass=False. 순수 함수(result dict만 읽음, 오프라인
@@ -205,9 +221,14 @@ def judge_pass(result: dict) -> dict:
     return {"pass": len(reasons) == 0, "reasons": reasons}
 
 
-def run_round(size_mb: float, workers: int = 1, probe_config: str = str(DEFAULT_PROBE_CONFIG)) -> dict:
-    """§50.1~50.3 절차대로 단일 강도 1라운드를 실행한다. StressChaos 1개만
-    쓰고(단일 stage), 예외·중단 시 finally에서 즉시 정리한다."""
+def run_round(size_mb: float, workers: int = 1, probe_config: str = str(DEFAULT_PROBE_CONFIG),
+              stage_duration_sec: float = STAGE_DURATION_SEC, min_headroom_bytes: float = 0.0) -> dict:
+    """§50.1~50.3/§52 절차대로 단일 강도 1라운드를 실행한다. StressChaos 1개만
+    쓰고(단일 stage), 예외·중단 시 finally에서 즉시 정리한다.
+
+    stage_duration_sec: §50.1 원래 라운드는 90.0(1000MB/1500MB, 완료·불변),
+    §52 2차 calibration(1500MB/1600MB)은 120.0을 명시 전달한다.
+    min_headroom_bytes: §52 1600MB 전용 조건 - 0(기본값)이면 게이트 없음."""
     if size_mb not in ALLOWED_SIZES_MB:
         raise ValueError(
             f"size_mb={size_mb}는 사전 등록된 값이 아님(허용: {ALLOWED_SIZES_MB}) - "
@@ -227,7 +248,8 @@ def run_round(size_mb: float, workers: int = 1, probe_config: str = str(DEFAULT_
     if node_ip is None:
         raise ExplorationAbort(f"Node({node_name}) InternalIP 조회 실패(fail-closed)")
 
-    run_id = f"explore-memory_pressure-native-{size_mb:.0f}mb-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    run_id = (f"explore-memory_pressure-native-{size_mb:.0f}mb-{stage_duration_sec:.0f}s-"
+              f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}")
     events_before = snapshot_unhealthy_events(target_name)
     ticks = []
 
@@ -269,15 +291,16 @@ def run_round(size_mb: float, workers: int = 1, probe_config: str = str(DEFAULT_
     def adapter_log(record: dict) -> None:
         ticks.append(record)
 
-    probe_total_duration = (BASELINE_MAX_WAIT_SEC + STAGE_DURATION_SEC + 180 + RECOVERY_OBSERVE_SEC + 60)
+    probe_total_duration = (BASELINE_MAX_WAIT_SEC + stage_duration_sec + 180 + RECOVERY_OBSERVE_SEC + 60)
     prober = make_load_ramp_prober(probe_config, run_id, "memory_pressure_explore", "native", 1,
                                     probe_total_duration)
     stages = [{"name": f"stage-1-{size_mb:.0f}mb", "size_mb": size_mb, "workers": workers,
-               "duration_sec": STAGE_DURATION_SEC}]
+               "duration_sec": stage_duration_sec}]
     injector = make_memory_pressure_injector(run_id, "native", 1, stages=stages, log_fn=adapter_log)
 
     result = {
         "run_id": run_id, "size_mb": size_mb, "workers": workers,
+        "stage_duration_sec": stage_duration_sec, "min_headroom_bytes": min_headroom_bytes,
         "target_pod": target_name, "target_uid": target_uid, "node_name": node_name,
         "t_round_start": _now_iso(), "aborted": False, "abort_reason": None,
         "all_injected_confirmed": False, "cleanup_confirmed": False,
@@ -307,6 +330,11 @@ def run_round(size_mb: float, workers: int = 1, probe_config: str = str(DEFAULT_
         result["baseline_working_set_bytes"] = baseline_ws
         result["t_baseline_done"] = _now_iso()
 
+        if not sufficient_headroom_for_injection(baseline_ws, size_mb, min_headroom_bytes):
+            raise TrialInvalid(
+                f"baseline working set({baseline_ws}B) + 요청량({size_mb}MB)을 더하면 5GiB 안전 상한까지 "
+                f"{min_headroom_bytes:.0f}B 이상 여유가 없음(§52 사전 조건) - 주입하지 않음(fail-closed)")
+
         injector.prepare()
         result["t_injection_request"] = _now_iso()
         injector.inject()
@@ -317,7 +345,7 @@ def run_round(size_mb: float, workers: int = 1, probe_config: str = str(DEFAULT_
         prober.notify_injected(t_injection)
         result["t_injection"] = t_injection
 
-        stage_deadline = time.monotonic() + STAGE_DURATION_SEC + 150
+        stage_deadline = time.monotonic() + stage_duration_sec + 150
         while True:
             prober.get_baseline_status()  # raw CSV refresh 부수효과만 이용(baseline 판정 자체는 이제 안 씀)
             if injector.is_done():
@@ -375,13 +403,20 @@ def main():
     parser = argparse.ArgumentParser(
         description="memory_pressure 강도 calibration 탐색(사전 등록 §50) - native 1라운드")
     parser.add_argument("--size-mb", type=float, required=True, choices=ALLOWED_SIZES_MB,
-                         help="사전 등록된 값만 허용(1000/1500) - 2000MB는 영구 금지(§50.1)")
+                         help="사전 등록된 값만 허용(1000/1500/1600) - 1650/2000MB는 영구 금지(§50.1/§52)")
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--stage-duration-sec", type=float, default=STAGE_DURATION_SEC,
+                         help="강도 유지시간(초) - §50.1 기본 90.0, §52 2차 calibration은 120.0을 명시 전달")
+    parser.add_argument("--min-headroom-mib", type=float, default=0.0,
+                         help="§52 1600MB 전용 사전 조건(MiB) - 0(기본값)이면 게이트 없음(1000/1500MB와 동일)")
     parser.add_argument("--probe-config", default=str(DEFAULT_PROBE_CONFIG))
     args = parser.parse_args()
 
-    print(f"=== memory_pressure 강도 탐색: {args.size_mb}MB, workers={args.workers} ===")
-    result = run_round(args.size_mb, args.workers, args.probe_config)
+    print(f"=== memory_pressure 강도 탐색: {args.size_mb}MB, workers={args.workers}, "
+          f"stage_duration_sec={args.stage_duration_sec}, min_headroom_mib={args.min_headroom_mib} ===")
+    result = run_round(args.size_mb, args.workers, args.probe_config,
+                        stage_duration_sec=args.stage_duration_sec,
+                        min_headroom_bytes=args.min_headroom_mib * MIB)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out_path = RESULTS_DIR / f"{result['run_id']}-summary.json"
