@@ -6263,3 +6263,80 @@ artifact 교체 금지, `score_server.py` 런타임 변경 금지, `memory_press
 스키마 변경 금지, Chaos 주입·promotion 금지.
 
 이 절(§67) 커밋·푸시 이후에만 남은 5세션 실측을 시작한다.
+
+## 68. 개정 계획 실행 - 3번째 세션(`burst`-calibration)에서 또 진짜 sustained SLO 위반, §67.5 규칙에 따라 즉시 정지 (2026-09-20)
+
+§67 사전등록대로 순서대로 실행했다. 세션 1·2는 PASS했지만 세션 3에서
+**burst profile도 진짜 30초 sustained SLO 위반**이 나왔다 - §67.5
+지시("`low_load` 또는 `burst`에서 실제 `t_slo`가 발생하면 이후 수집 즉시
+중단")에 따라 **그 즉시 정지했다** - 세션 4~5(holdout 2개)는 실행하지
+않았다.
+
+### 68.1 세션 1 - `official-train-burst-20260920` - PASS
+
+`t_slo=null`, `included_in_training=true`, 유효/무효 window 22/0.
+참고로 `v3core3-burst-base-3`(pulse가 아닌 base 구간)의 순간 P95가
+0.657초로 threshold를 넘었지만(`violates=true`) 30초 연속으로 이어지지
+않아 `t_slo`는 null로 남았다 - §64.1에서 이미 확인한 "momentary는 정상
+transient" 판정이 base 구간에도 동일하게 적용된 사례.
+
+### 68.2 세션 2 - `official-calib-low_load-20260920` - PASS
+
+`t_slo=null`, `included_in_calibration=true`, stage P95=0.565초, 유효/무효
+window 9/0.
+
+### 68.3 세션 3 - `official-calib-burst-20260920` - 진짜 sustained 위반으로 FAIL
+
+`excluded=true`, `classification=unexpected_slo_violation`,
+`t_slo=2026-09-20T12:07:00.434722+00:00`. Stage별 순간 P95:
+`pulse-1`(0.696, 위반), `pulse-4`(0.691, 위반), **`base-5`(0.669, 위반,
+max=0.797)** - `t_slo`는 `pulse-4`(12:06:16~12:06:36) 종료 직후
+`base-5`(12:06:36~12:07:36) 구간 안(12:07:00 부근)에서 발생했다. 이번에도
+개별 stage들은 momentary 위반이었지만, `pulse-4`→`base-5`로 이어지는
+구간에서 latency가 threshold 위에 30초 이상 머물러 진짜 sustained 위반
+조건을 실제로 만족시켰다 - `extreme_latency_detected=false`(§60 규모는
+아님). Cleanup은 정상 완료(`cleanup_result=true`, `active_pod_before`/
+`after` 동일, `endpoint_isolation_after.isolated=true`).
+
+**`burst`는 이제 독립 시도 3회 중 2회 PASS(§64 qualification,
+`official-train-burst`), 1회 FAIL(`official-calib-burst`)** - `low_load`
+보다는 사정이 낫지만(`sustained_load`는 이미 1/2 FAIL로 영구 제외됨),
+burst 역시 이 환경에서 매번 안정적으로 재현되는 profile은 아니라는
+뜻이다. 원인은 판단하지 않는다.
+
+### 68.4 정지 조치 및 사후 확인
+
+지시대로 강도·pulse 구성을 조정하지 않았고 대체 세션을 실행하지 않았다.
+`official-calib-burst-20260920`을 원본 그대로 보존했다(`included_in_
+training=false`, `included_in_calibration=false`, `included_in_holdout=
+false`, `classification=unexpected_slo_violation` - `classify_official_
+session()`이 자동으로 이 값을 매겼다, 별도 소급 패치 불필요). 사후
+kubectl 확인: pod 2개(`recovery-policy`·`vllm-serving`, active restart
+0), chaos CR 없음 - 클러스터는 완전히 정상 상태로 남아있다.
+
+### 68.5 현재 확보 현황
+
+| regime | split_role | 상태 |
+|---|---|---|
+| low_load | train | PASS(`official-train-low_load-20260920`, §66) |
+| low_load | calibration | PASS(`official-calib-low_load-20260920`, §68.2) |
+| low_load | holdout | 미실행 |
+| burst | train | PASS(`official-train-burst-20260920`, §68.1) |
+| burst | calibration | FAIL(`official-calib-burst-20260920`, §68.3 - 영구 제외, 대체 없음) |
+| burst | holdout | 미실행 |
+| idle(`probe_baseline`) | train/calibration/holdout 각 2개 | §65.2에서 이미 재확인·배정(§58 이력 데이터, 이번 세션과 무관) |
+
+`sustained_load`는 §67에서 이미 영구 제외됐다. **목표 12세션(idle 6 +
+low_load 3 + burst 3) 중 이번 라운드에서 공식으로 새로 확보한 것은
+low_load 2개(train/calibration)와 burst 1개(train)뿐이고, `burst`
+calibration은 이번 시도가 실패로 영구 소진됐다.** §67.5의 "SLO 위반
+세션을 지우지 않음·대체 실행 금지" 원칙에 따라 이 상태로 남기고, 데이터
+감사(§67의 12세션 완성 조건)는 수행하지 않는다 - `burst`의 calibration/
+holdout 확보 방법(재시도 허용 여부, profile 재검토 등)은 사용자 결정으로
+남긴다.
+
+### 68.6 범위 준수
+
+강도·pulse 조정·대체 세션 없음, 모델 재학습·threshold 결정 없음, 데이터
+감사 미실행(12세션 미완성), `memory_pressure` 3-arm·`run_all_scenarios.py`
+·본 실험 없음, `TrialResult` 스키마 변경 없음, Chaos 주입·promotion 없음.
