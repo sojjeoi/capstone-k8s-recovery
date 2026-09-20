@@ -6457,3 +6457,102 @@ Isolation Forest 학습 금지, feature 최종 삭제 금지, threshold 결정
 스키마 변경 금지, Chaos 주입·promotion 금지.
 
 이 절(§69) 커밋·푸시 이후에만 6세션 실측을 시작한다.
+
+## 70. v3.1 6세션 전부 PASS + Train/Calibration 데이터 감사 (2026-09-20)
+
+§69 사전등록대로 6세션을 순서·역할 변경 없이 전량 실행했다. **6개 전부
+PASS**했다 - `idle`/`low_load` 어느 쪽에서도 sustained SLO 위반이
+재현되지 않았다.
+
+### 70.1 실행 중 발견한 버그 1건(측정 시작 전에 발견, 클러스터 부작용 없음)
+
+1차 시도(`v31-train-idle-20260920`)가 신규 `run_idle_session()`의
+`kubectl cp` 호출에 Windows 절대경로(드라이브 문자·한글 폴더명 포함)를
+그대로 넘겨 probe 시작 직전에 죽었다 - preview 준비·settle까지는
+정상이었고 cleanup도 finally 블록에서 정상 완료돼 클러스터에 남은
+영향은 없었다(세션 JSON 자체가 아직 생성 전이라 별도 ID 재실행 없이
+그대로 재시도). `explore_ramp_intensity.run_candidate()`와 동일하게
+`os.path.relpath()`로 상대경로 변환하도록 수정 후 재시도해 완전히
+통과했다.
+
+### 70.2 6세션 결과
+
+| session_id | regime | split_role | 결과 | `t_slo` | 유효/무효 row |
+|---|---|---|---|---|---|
+| `v31-train-idle-20260920` | idle | train | PASS | null | 38/0 |
+| `v31-train-low_load-20260920` | low_load | train | PASS | null | 37/0 |
+| `v31-calib-low_load-20260920` | low_load | calibration | PASS | null | 37/0 |
+| `v31-calib-idle-20260920` | idle | calibration | PASS | null | 38/0 |
+| `v31-holdout-idle-20260920` | idle | holdout | PASS(봉인) | null | 38/0 |
+| `v31-holdout-low_load-20260920` | low_load | holdout | PASS(봉인) | null | 37/0 |
+
+`idle`(ramp pod 없이 probe만 600초)은 p95=0.302초, `low_load`(0.025 RPS,
+600초)는 p95=0.477초(max=0.768초) - 둘 다 threshold(0.648초)에 근소한
+여유가 있었다(§64/§66과 일관). 사후 kubectl 확인: pod 2개(`recovery-
+policy`·`vllm-serving`, active restart 0), chaos CR 없음 - 클러스터
+완전 정상.
+
+### 70.3 Holdout 봉인 - §69.6대로 유효성만 확인
+
+`v31-holdout-idle-20260920`/`v31-holdout-low_load-20260920`은 완료
+여부·`t_slo`·유효/무효 row 수·`cleanup_result`만 확인했다(feature 분포·
+anomaly score는 보지 않음). 각 세션에 `sealed_holdout=true`,
+`sealed_holdout_raw_csv_sha256`, `sealed_holdout_feature_rows_sha256`을
+기록했다 - idle holdout raw `ed73a6fd...`/feature `9911a17b...`,
+low_load holdout raw `195c7641...`/feature `40d6dc7e...`(전체 SHA-256은
+세션 JSON 참고).
+
+### 70.4 Train/Calibration 데이터 감사 (holdout 제외, 4세션)
+
+| session_id | regime | split_role | 유효 row |
+|---|---|---|---|
+| `v31-train-idle-20260920` | idle | train | 38 |
+| `v31-train-low_load-20260920` | low_load | train | 37 |
+| `v31-calib-low_load-20260920` | low_load | calibration | 37 |
+| `v31-calib-idle-20260920` | idle | calibration | 38 |
+
+**독립 세션 4개, 총 150행**(idle 76행·low_load 74행) - 전부 이번에
+직접 측정한 별개의 실시간 구간이라 겹치는 window는 없다(독립 세션 수와
+overlapping row 수가 같은 개념으로 섞이지 않음 - 4개 세션=150개 서로
+다른 시간대 window). 예상 148행(37×4)과 실제 150행의 차이(+2)는
+`run_idle_session()`의 20초 여유(§70.1 코드) 때문에 idle 세션 2개가
+근소하게 더 길어진 것으로, invalid나 중복이 아니다.
+
+**feature별 통계(train+calibration 150행 기준)**:
+
+| feature | min | median | max | std |
+|---|---|---|---|---|
+| `cpu_mean` | 0.785 | 1.533 | 1.822 | 0.276 |
+| `cpu_slope` | -0.514 | 0.0004 | 0.520 | 0.200 |
+| `memory_mean` | 6.981e9 | 7.003e9 | 7.007e9 | 1.002e7 |
+| `memory_slope` | -1.432e6 | 3277 | 2.081e6 | 2.884e5 |
+| `queue_mean` | 0 | 0 | 0 | **0** |
+| `queue_slope` | 0 | 0 | 0 | **0** |
+| `cache_mean` | 0 | 0 | 0.00161 | 0.000571 |
+| `cache_slope` | -0.00161 | 0 | 0.00161 | 0.000441 |
+
+`queue_mean`/`queue_slope`는 150행 전부 정확히 0 - **`zero-variance
+removal candidate`로만 표시한다**(값 조작 없음, 최종 제외는 이번
+범위 밖). `cache_mean`/`cache_slope`는 150행 중 22행(14.7%)에서
+비영값이 관측돼 실제 변동이 있다 - 원자료를 보존하고 자동 제외하지
+않는다. `cpu_mean`/`cpu_slope`/`memory_mean`/`memory_slope`는 전부
+정상 변동 범위, 상수·근사상수 후보 아님. missing/stale/invalid window는
+4세션 전부 0개.
+
+regime 분포(train+calibration): `idle` 2세션(76행), `low_load` 2세션
+(74행) - 균형 잡힘. **Holdout 상세 통계는 이 절에 포함하지 않았다**
+(§69.6 봉인 원칙).
+
+### 70.5 Boundary challenge set - 변경 없음
+
+§69.2의 6개 세션은 그대로 미평가 상태로 유지한다(`boundary_challenge_
+manifest.json` 그대로) - 이번 단계에서 anomaly score·FPR을 계산하지
+않았다.
+
+### 70.6 범위 준수
+
+Isolation Forest 학습 없음, feature 최종 삭제 없음, threshold 결정
+없음, holdout/challenge anomaly score·FPR 계산 없음, artifact 교체
+없음, `score_server.py` 런타임 변경 없음, `memory_pressure` 3-arm·
+`run_all_scenarios.py`·본 실험 없음, `TrialResult` 스키마 변경 없음,
+Chaos 주입·promotion 없음.
