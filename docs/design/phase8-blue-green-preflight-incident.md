@@ -5483,3 +5483,48 @@ memory_pressure를 `1500MB×120초 direct sub-critical negative control`(§56/§
 3. **official**(qualification 전부 통과 시에만): `collect_session.py --regime {...} --official` 각 3회, 총 9개 공식 세션. 세션마다 보존: `session_id`/`regime`/`topology`, active/preview pod 이름·UID·revision(`preview_prep_info`), 정확한 시작·종료·settle 시각, 부하 설정과 실제 요청 수·성공률, Prometheus query manifest(재현 가능 - PromQL은 `features.py.METRICS` 그대로), 생성된 feature row, invalid window와 제외 사유, SLO·restart·OOM·Node·cleanup 상태, 코드 commit·config hash·feature schema version(`collection_manifest.json`).
 
 이 절 커밋·푸시 이후에만 실제 측정을 시작한다.
+
+## 60. `low_load` qualification 결과 - 예상 밖 SLO 위반으로 §59.2 규칙에 따라 정지 (2026-09-20)
+
+### 60.1 인프라 버그 두 건 발견·수정 (측정 자체와는 별개, 먼저 기록)
+
+`low_load` qualification 1회를 실제로 완주시키기까지 총 6회 시도가 실패했다 - 전부 클러스터 문제가 아니라 **이번에 새로 작성한 코드/기존 코드의 버그**였다(전부 수정·커밋·오프라인 회귀 테스트 완료, 별도 커밋 3건: `f9ff3bc`, `453a0fd`, `f06f51b`):
+
+1. **`experiments/blue_green_prep.py`의 `created_pod_hash` 캡처 시점 race condition**(모든 non-native 파일럿이 이미 쓰던 함수) - `bump_template_annotation()` 직후 곧바로 읽은 `current_pod_hash`가 직전 시도(abort로 끝난 직후 등)의 잔여값(컨트롤러 reconcile 미완료)일 수 있었다. Ready 확정/timeout 시점에 다시 읽도록 수정.
+2. **`anomaly-detection/v3/collect_session.py`의 pod 이름에 밑줄 포함**(진짜 원인, 6회 연속 100% 재현) - `label=f"v3{regime[:5]}"`가 `"low_load"[:5]="low_l"`의 밑줄을 그대로 물려받아 `kubectl run`이 K8s 리소스 이름 규칙(RFC 1123) 위반으로 매번 실패했다(`"sustained_load"`/`"burst"`는 앞 5글자에 우연히 밑줄이 없어 안 걸림). 밑줄을 하이픈으로 치환하도록 수정.
+
+이 과정에서 부수적으로 `run_candidate()` 호출에 일시 인프라 오류 재시도(최대 3회)와 `cleanup_unpromoted_preview()` 스킵 시 독립 재확인·강제 abort 안전망도 추가했다(결과적으로 이번 버그의 직접 원인은 아니었지만, 실제로 유효한 별도 안전성 개선이라 되돌리지 않았다).
+
+### 60.2 실제 측정 결과 - 예상 밖 SLO 위반 발견
+
+수정 후 6번째 시도(`qual-low_load-20260920-r6`)는 전 과정을 정상 완주했다(preview 준비 132초 → 안정화 30초 → baseline 60초+ → v3-low-load stage(0.10 RPS, 180초) → drain 60초 → cleanup 성공, `cleanup_unpromoted_preview_result=True`, 사후 kubectl 독립 확인으로 재확인). 그런데 **§59.2가 명시한 정지 조건("예상 밖 SLO 위반")에 해당하는 결과가 나왔다**:
+
+| 구간 | n | P95 | mean | max | 위반 여부 |
+|---|---|---|---|---|---|
+| baseline(주입 전, preview는 이미 떠있음) | 59 | 0.311초 | 0.257초 | 1.124초 | 아니오 |
+| **v3-low-load stage(0.10 RPS, 180초)** | 180(probe 표본), ramp 요청 18건 | **12.654초** | 1.560초 | 19.708초 | **예** |
+| drain(stage 종료 직후) | 65 | 0.318초 | 0.273초 | 0.377초 | 아니오 |
+
+- ramp 자체 요청 성공률은 100%(18/18) - 전부 결국 성공했지만 매우 오래 걸렸다(`p99=24.422초`).
+- stage 구간 동안의 `cpu_mean`(features_rows 참고)은 0.81~1.86코어 - preview+active 합산 상한(3+3=6코어)은 물론 개별 pod 한도(3코어)에도 한참 못 미친다. `queue_mean`은 0.0016~0.0048(v1/기존 12세션에서 항상 정확히 0이던 것과 달리 미세하게 0이 아님 - 처음 관측된 비영값이지만 여전히 극히 작음), `cache_mean`은 0.0 그대로.
+- `memory_mean`은 stage 내내 ~7.04GiB로 안정 - baseline(3.3~3.6GiB대, native 단독 기준)의 약 2배로, §58.3의 topology 결론(active+preview 합산)과 일치.
+- Node(`sj-worker`) 총 CPU capacity는 8코어(allocatable) - active+preview 합산 한도(6코어)보다도 여유가 있어, 단순 "코어 수 부족"은 아니다.
+
+**해석(사실만 기록, 원인 단정하지 않음)**: baseline과 drain은 정상(0.31~0.32초대)인데 stage 구간에서만 P95가 40배 이상 치솟았다 - CPU 사용량 자체는 낮고 queue/cache도 여전히 거의 0이라, 단순 CPU 포화나 큐잉 적체로는 설명되지 않는다. `active_plus_preview` topology 자체(두 vLLM 인스턴스가 같은 Node에서 동시에 서빙 대기 중인 상태)가 이 시나리오의 latency에 어떤 영향을 주는지는 이번 1회 관측만으로 원인을 확정할 수 없다 - 가설(메모리 대역폭·캐시 경합, readiness/liveness 프로브 경쟁, ramp의 `max_tokens=10` 요청 패턴과의 상호작용 등)만 나열하고 판단하지 않는다.
+
+### 60.3 §59.2 규칙에 따른 조치
+
+지시("qualification 중... 예상 밖 SLO 위반... 나오면 공식 수집으로 넘어가지 않고 멈춘다")에 따라:
+
+- `sustained_load`·`burst` qualification을 실행하지 않았다.
+- official 수집(9세션)을 시작하지 않았다.
+- 이 결과에 대해 강도·설정을 임의로 조정하지 않았다.
+- 원본 세션 JSON(`v3/data/sessions/qual-low_load-20260920-r6.json`, probe raw CSV·ramp summary 포함)을 그대로 보존했다.
+- 사후 `kubectl` 독립 확인: chaos CR 0건, active pod 동일 이름·UID·restart 0, Node 2개 Ready.
+
+이 발견의 의미(active_plus_preview topology 자체가 정상 부하에서도 SLO를 위반할 수 있는지, 이게 blue-green 복구 전략 전반에 어떤 함의를 갖는지)는 **판단하지 않고 사용자 결정으로 남긴다.**
+
+### 60.4 수행 범위
+
+- **수행한 것**: 인프라 버그 2건 발견·수정·커밋(§60.1) → `low_load` qualification 실제 완주(6번째 시도) → 결과 기록(§60.2) → §59.2 규칙대로 정지(§60.3) → 사후 kubectl 독립 확인.
+- **하지 않은 것**: `sustained_load`·`burst` qualification 없음, official 수집 없음, 강도/설정 조정 없음, memory_pressure 3-arm·`run_all_scenarios.py`·본 실험 없음, 모델 재학습·threshold 변경 없음.

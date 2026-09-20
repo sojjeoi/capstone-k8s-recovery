@@ -1,0 +1,313 @@
+{
+  "session_id": "qual-low_load-20260920-r6",
+  "regime": "low_load",
+  "topology": "active_plus_preview",
+  "is_pilot": true,
+  "included_in_training": false,
+  "t_session_start": "2026-09-20T07:42:56.935769+00:00",
+  "active_pod_before": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "preview_prep_info": {
+    "ready": true,
+    "t_prep_start": "2026-09-20T07:42:57.906456+00:00",
+    "t_preview_ready": "2026-09-20T07:45:10.329435+00:00",
+    "prep_duration_sec": 132.4230380000081,
+    "external_interference": false,
+    "rollback_attempted": false,
+    "rollback_ok": null,
+    "aborted_pod_hash": null,
+    "pre_prepare_active_selector": "6b9d88c96",
+    "created_pod_hash": "6df66c4c74"
+  },
+  "cleanup_unpromoted_preview_result": true,
+  "t_session_end": "2026-09-20T07:53:40.236577+00:00",
+  "ramp_candidate_result": {
+    "run_id": "v3low-l-20260920T074540Z",
+    "valid": true,
+    "reason": null,
+    "baseline_precheck": {
+      "n": 58,
+      "success_rate": 1.0,
+      "mean": 0.256483216316375,
+      "p95": 0.31571910917991775,
+      "max": 1.1237440300174057,
+      "violates": false
+    },
+    "ramp_completed_in_time": true,
+    "local_raw": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v3low-l-20260920T074540Z-raw.csv",
+    "local_ramp_summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\ramp-v3low-l-20260920T074540Z-summary.csv",
+    "baseline": {
+      "n": 59,
+      "success_rate": 1.0,
+      "mean": 0.257159579734681,
+      "p95": 0.31092069298028946,
+      "max": 1.1237440300174057,
+      "violates": false
+    },
+    "drain": {
+      "n": 65,
+      "success_rate": 1.0,
+      "mean": 0.2732830410536665,
+      "p95": 0.3176666750572622,
+      "max": 0.37713182996958494,
+      "violates": false
+    },
+    "all_success_100pct": true,
+    "run_candidate_attempts": 1,
+    "stages": [
+      {
+        "experiment_run_id": "v3low-l-20260920T074540Z",
+        "scenario": "low-load",
+        "method": "native",
+        "repetition": "1",
+        "stage": "v3-low-load",
+        "target_rps": "0.1",
+        "actual_rps": "0.1",
+        "sent": "18",
+        "success": "18",
+        "success_rate": 1.0,
+        "p95": 12.653634260687976,
+        "p99": "24.422",
+        "stage_start_utc": "2026-09-20T07:47:54.555760+00:00",
+        "stage_end_utc": "2026-09-20T07:50:54.558466+00:00",
+        "n": 180,
+        "mean": 1.5595407765591518,
+        "max": 19.707640269072726,
+        "violates": true
+      }
+    ]
+  },
+  "active_pod_after": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "excluded": true,
+  "exclusion_reasons": [
+    "stage에서 sustained SLO 위반(P95=12.653634260687976)"
+  ],
+  "feature_rows": [
+    {
+      "window_start_utc": "2026-09-20T07:47:54.555760+00:00",
+      "window_end_utc": "2026-09-20T07:48:54.555760+00:00",
+      "valid": true,
+      "invalid_reason": null,
+      "features": [
+        1.7655158621531264,
+        0.1696920227851028,
+        6996229324.8,
+        37292441.59999898,
+        0.0,
+        0.0,
+        0.0032258064516129,
+        -0.0008064516129032255
+      ]
+    },
+    {
+      "window_start_utc": "2026-09-20T07:48:09.555760+00:00",
+      "window_end_utc": "2026-09-20T07:49:09.555760+00:00",
+      "valid": true,
+      "invalid_reason": null,
+      "features": [
+        1.8592521018497816,
+        0.18569569668191258,
+        7022821376.0,
+        21413478.400000054,
+        0.0,
+        0.0,
+        0.004838709677419351,
+        -0.0008064516129032261
+      ]
+    },
+    {
+      "window_start_utc": "2026-09-20T07:48:24.555760+00:00",
+      "window_end_utc": "2026-09-20T07:49:24.555760+00:00",
+      "valid": true,
+      "invalid_reason": null,
+      "features": [
+        1.5345599881336545,
+        -0.2516924248038313,
+        7044231987.2,
+        10649.599999207327,
+        0.0,
+        0.0,
+        0.0032258064516129,
+        -0.0008064516129032254
+      ]
+    },
+    {
+      "window_start_utc": "2026-09-20T07:48:39.555760+00:00",
+      "window_end_utc": "2026-09-20T07:49:39.555760+00:00",
+      "valid": true,
+      "invalid_reason": null,
+      "features": [
+        1.3092109681137363,
+        -0.6757015125448055,
+        7044240998.4,
+        6963.200000107876,
+        0.0,
+        0.0,
+        0.00161290322580645,
+        -1.1858306677397936e-19
+      ]
+    },
+    {
+      "window_start_utc": "2026-09-20T07:48:54.555760+00:00",
+      "window_end_utc": "2026-09-20T07:49:54.555760+00:00",
+      "valid": true,
+      "invalid_reason": null,
+      "features": [
+        1.2465721767799824,
+        -0.22195803435954636,
+        7044247552.0,
+        4505.599999826972,
+        0.0,
+        0.0,
+        0.00161290322580645,
+        -0.0008064516129032255
+      ]
+    },
+    {
+      "window_start_utc": "2026-09-20T07:49:09.555760+00:00",
+      "window_end_utc": "2026-09-20T07:50:09.555760+00:00",
+      "valid": true,
+      "invalid_reason": null,
+      "features": [
+        1.228237927203148,
+        0.1886481947027998,
+        7044251648.0,
+        2457.600000030859,
+        0.0,
+        0.0,
+        0.0032258064516129,
+        -5.538818598233817e-19
+      ]
+    },
+    {
+      "window_start_utc": "2026-09-20T07:49:24.555760+00:00",
+      "window_end_utc": "2026-09-20T07:50:24.555760+00:00",
+      "valid": true,
+      "invalid_reason": null,
+      "features": [
+        0.8146706791876503,
+        0.20032794760408415,
+        7044254924.8,
+        3686.3999996437983,
+        0.0,
+        0.0,
+        0.00161290322580645,
+        0.0008064516129032254
+      ]
+    },
+    {
+      "window_start_utc": "2026-09-20T07:49:39.555760+00:00",
+      "window_end_utc": "2026-09-20T07:50:39.555760+00:00",
+      "valid": true,
+      "invalid_reason": null,
+      "features": [
+        1.25421138174286,
+        0.23773306943042485,
+        7044228710.4,
+        -26214.400000358757,
+        0.0,
+        0.0,
+        0.0032258064516129,
+        0.0016129032258064503
+      ]
+    },
+    {
+      "window_start_utc": "2026-09-20T07:49:54.555760+00:00",
+      "window_end_utc": "2026-09-20T07:50:54.555760+00:00",
+      "valid": true,
+      "invalid_reason": null,
+      "features": [
+        1.6805388085967639,
+        0.042202181708874346,
+        7044199219.2,
+        -44236.80000083514,
+        0.0,
+        0.0,
+        0.0032258064516129,
+        -2.3716613354795873e-19
+      ]
+    }
+  ],
+  "inventory": {
+    "num_candidate_sessions": 1,
+    "num_sessions_with_any_valid_row": 1,
+    "sessions_by_regime": {
+      "low_load": 1
+    },
+    "sessions_by_topology": {
+      "active_plus_preview": 1
+    },
+    "windows_per_session": {
+      "qual-low_load-20260920-r6": 9
+    },
+    "total_rows": 9,
+    "valid_rows": 9,
+    "invalid_rows": 0,
+    "invalid_reasons": [],
+    "feature_stats": {
+      "cpu_mean": {
+        "min": 0.8146706791876503,
+        "median": 1.3092109681137363,
+        "max": 1.8592521018497816,
+        "std": 0.31011040894717634,
+        "n": 9
+      },
+      "cpu_slope": {
+        "min": -0.6757015125448055,
+        "median": 0.1696920227851028,
+        "max": 0.23773306943042485,
+        "std": 0.2914990258827011,
+        "n": 9
+      },
+      "memory_mean": {
+        "min": 6996229324.8,
+        "median": 7044231987.2,
+        "max": 7044254924.8,
+        "std": 15733179.458050538,
+        "n": 9
+      },
+      "memory_slope": {
+        "min": -44236.80000083514,
+        "median": 4505.599999826972,
+        "max": 37292441.59999898,
+        "std": 12766643.252109038,
+        "n": 9
+      },
+      "queue_mean": {
+        "min": 0.0,
+        "median": 0.0,
+        "max": 0.0,
+        "std": 0.0,
+        "n": 9
+      },
+      "queue_slope": {
+        "min": 0.0,
+        "median": 0.0,
+        "max": 0.0,
+        "std": 0.0,
+        "n": 9
+      },
+      "cache_mean": {
+        "min": 0.00161290322580645,
+        "median": 0.0032258064516129,
+        "max": 0.004838709677419351,
+        "std": 0.001013773162991465,
+        "n": 9
+      },
+      "cache_slope": {
+        "min": -0.0008064516129032261,
+        "median": -5.538818598233817e-19,
+        "max": 0.0016129032258064503,
+        "std": 0.000801458056451537,
+        "n": 9
+      }
+    },
+    "queue_mean_nonzero_valid_rows": 0,
+    "queue_mean_nonzero_fraction": 0.0
+  }
+}
