@@ -1,0 +1,47 @@
+{
+  "manifest_version": 1,
+  "purpose": "active_plus_preview topology 정상 데이터 official 수집 - 측정 전 사전 등록(§59)",
+  "frozen_at": "2026-09-20",
+  "topology": {
+    "target": "active_plus_preview",
+    "promotion": "절대 하지 않음 - preview는 Ready(BlueGreenPause) 상태로만 유지",
+    "request_routing": "active Service(vllm-active) - 운영 시와 동일, preview에 직접 요청 안 함",
+    "preview_prep_function": "experiments/blue_green_prep.py:prepare_preview_with_rollback",
+    "preview_cleanup_function": "experiments/blue_green_prep.py:cleanup_unpromoted_preview"
+  },
+  "regimes": {
+    "low_load": {"config": "v3/regime_configs/low-load.yaml", "rps": 0.10, "duration_sec": 180,
+                 "rps_source": "load_ramp calibration(0.10~1.00 RPS 5단계, 3회 독립 반복) - 3/3 SLO 준수 확인된 값"},
+    "sustained_load": {"config": "v3/regime_configs/sustained-load.yaml", "rps": 0.50, "duration_sec": 300,
+                        "rps_source": "동일 calibration - 3/3 SLO 준수 확인된 상한값(0.75부터 위반 시작)"},
+    "burst": {"config": "v3/regime_configs/burst.yaml", "rps": 0.50, "duration_sec": 90,
+              "rps_source": "sustained_load와 동일 강도, 지속시간만 짧게 - 새 강도 선택 아님"}
+  },
+  "slo": {"changed": false, "note": "slo_judge.py의 LATENCY_THRESHOLD 등 기존 정의·값 전혀 변경 안 함"},
+  "session_rules": {
+    "one_regime_per_session": true,
+    "min_independent_sessions_per_regime": 3,
+    "each_session_independently_performs": [
+      "preview 생성(bump_template_annotation)", "Ready 대기(BlueGreenPause)",
+      "settle(30초, windows.py 기존 후보와 동일 여유)", "부하 실행(run_candidate)",
+      "수집(v3/build_dataset.py, 고정 60초/15초)", "abort(cleanup_unpromoted_preview)",
+      "단일 revision 복원 확인(wait_until_rolled_back)"
+    ]
+  },
+  "window": {"window_sec": 60, "step_sec": 15, "note": "score_server.py의 WINDOW_SEC/EVAL_INTERVAL_SEC과 동일(추론과 같은 window)"},
+  "split": {"unit": "session", "not": "row", "stratify_by": ["regime", "topology"],
+            "guarantee": "동일 (regime, topology)의 session이 train/calibration/holdout 세 분할에 최소 하나씩",
+            "seed": 20260920, "algorithm": "anomaly-detection/v3/build_dataset.py:split_sessions"},
+  "missing_metric_policy": {"policy": "invalid", "not": "0으로 대체", "function": "anomaly-detection/v3/build_dataset.py:extract_window_strict"},
+  "exclusion_criteria": [
+    "sustained SLO 위반(stage violates=True)", "restartCount 변화", "OOMKilled 관측",
+    "Node 상태 이상(NotReady 또는 pressure)", "promotion(=target pod 교체로 관측)",
+    "target replacement(예기치 않은 재시작 포함)", "cleanup_unpromoted_preview 실패(단일 revision 복원 실패)"
+  ],
+  "exploratory_vs_official": {
+    "qualification": {"is_pilot": true, "included_in_training": false, "count_per_regime": 1, "total": 3,
+                       "purpose": "metric observability qualification - §59.2"},
+    "official": {"is_pilot": false, "included_in_training": "excluded=False일 때만 true", "count_per_regime": 3, "total": 9,
+                 "purpose": "official training candidate - §59.3, qualification 통과해야만 실행"}
+  }
+}

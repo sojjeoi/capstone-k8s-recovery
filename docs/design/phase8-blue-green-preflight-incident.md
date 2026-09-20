@@ -5451,3 +5451,35 @@ memory_pressure를 `1500MB×120초 direct sub-critical negative control`(§56/§
 
 - **수행한 것**: 감사 결과 공식 결정 기록(§58.1) → v3 파이프라인 코드 작성(§58.2, 오프라인) → topology 코드 조사(§58.3, `arm_controller.py`/`run_once.py` 읽기) → Prometheus read-only 조회로 기존 3코어 정상 구간 재활용성 조사(§58.4, retention 확인 + 12세션 등록) → 실제 inventory 산출(§58.5, Prometheus 재조회, 재학습 없음) → 목표 데이터 제안(§58.6, 제안만) → 검증 계획 작성(§58.7, 계획만) → 오프라인 테스트(§58.8).
 - **하지 않은 것**: workload·Chaos 실행 없음, preview 생성·promotion 없음, live 정상 데이터 신규 수집 없음, 모델 재학습 없음, threshold 변경 없음, `model.pkl`/`scaler.pkl` 교체 없음, `score_server.py` 런타임 변경 없음, memory_pressure 3-arm 없음, `run_all_scenarios.py`·본 실험 없음. `v1`(`data/regimes.jsonl`, `artifacts/*.pkl`)은 전혀 수정하지 않았다.
+
+## 59. `active_plus_preview` 정상 데이터 live 수집 - 사전 등록 (측정 전, 2026-09-20)
+
+§58 승인 이후 지시. §58.6에서 지적한 최대 공백(`active_plus_preview` topology의 low_load/sustained_load/burst 세션이 0개)을 메운다. **곧바로 공식 대량 수집을 하지 않고** qualification(1 regime당 1회, 총 3회) → 통과 시에만 official(1 regime당 3회, 총 9회) 순서로 진행한다. 이 절과 별도 machine-readable manifest(`anomaly-detection/v3/collection_manifest.json`)를 **측정 전에** 고정하고 커밋·푸시한다.
+
+### 59.1 수집 규칙 (고정, `collection_manifest.json`과 동일 내용의 사람이 읽는 버전)
+
+| 항목 | 값 |
+|---|---|
+| topology | `active_plus_preview`(detector의 실제 운영 상태, §58.3 결론) - preview는 **Ready(BlueGreenPause)까지만**, 절대 promote 안 함 |
+| 요청 경로 | 운영 시와 동일하게 **active Service**(`vllm-active`)로만 전달 - preview에 직접 요청 안 함 |
+| regime | `low_load`(0.10 RPS/180초), `sustained_load`(0.50 RPS/300초), `burst`(0.50 RPS/90초) - **셋 다 load_ramp calibration(2026-09-16, 0.10~1.00 RPS 5단계 3회 독립 반복)에서 이미 SLO 준수로 확인된 값**(0.50까지 3/3 준수, 0.75부터 위반 시작)만 쓴다. burst는 강도가 아니라 **지속시간**으로 구분한다(v1 `regime_configs/burst.yaml`의 2 RPS는 이번 calibration 기준 미검증이라 재사용하지 않음). **SLO 정의·임계치는 전혀 변경하지 않는다.** |
+| 세션당 regime | **정확히 1개**(한 세션에서 여러 regime을 연속 측정해 독립 세션 수를 부풀리지 않음) |
+| regime당 최소 독립 세션 | 3개(official 기준) |
+| 세션마다 독립 수행 | preview 생성 → Ready 대기 → settle(30초) → 부하 실행(`run_candidate`) → 수집(`v3/build_dataset.py`) → abort → 단일 revision 복원 확인 - **전부 매 세션 처음부터 다시** |
+| window/step | 60초/15초(`score_server.py`와 동일, §58.2 그대로 재사용) |
+| train/calibration/holdout | **세션 단위**(row 단위 아님), `(regime, topology)` 조합별 층화 - 세 분할 모두에 그 조합의 세션이 최소 1개(`split_sessions()`, seed=20260920, §58.2와 동일 알고리즘·seed 재사용) |
+| 결측 metric | 0으로 대체 안 함 - 그 window를 invalid 처리(`extract_window_strict`, §58.2 그대로) |
+| 정상 학습 후보 제외 조건 | sustained SLO 위반, restartCount 변화, OOMKilled, Node 상태 이상, promotion(=target 교체로 관측), target replacement, cleanup 실패 - 하나라도 있으면 제외 |
+| exploratory vs official | **구조적으로 분리** - qualification은 `is_pilot=true`+`included_in_training=false` 고정(아무리 깨끗해도), official만 `included_in_training=true` 후보가 될 수 있음(§59.3) |
+
+### 59.2 도구 - `anomaly-detection/v3/collect_session.py`(신규)
+
+새 클러스터 조작 코드를 만들지 않았다 - 전부 이미 실전 검증된 기존 경로를 그대로 재사용한다: `experiments/blue_green_prep.py`의 `prepare_preview_with_rollback()`(모든 non-native 파일럿이 이미 쓰는 preview 준비, timeout 시 자동 rollback 포함)/`cleanup_unpromoted_preview()`(promote 안 된 preview를 abort하고 `wait_until_rolled_back()`으로 단일 revision 복원을 실측 재확인), `explore_ramp_intensity.py`의 `run_candidate()`(ramp pod+probe pod 동시 실행, baseline precheck, 기존 SLO `violates` 판정 그대로)/`check_node_and_pods()`, `v3/build_dataset.py`(고정 window·strict completeness). 순수 판정 함수 `judge_session_exclusion()`만 새로 작성했고(§59.1의 제외 조건을 기계적으로 적용), 오프라인 테스트 10개를 추가했다(`test_collect_session.py`) - 전체 오프라인 스위트 691 passed(직전 681에서 +10).
+
+### 59.3 qualification(1회씩, 총 3회) → official(3회씩, 총 9회) 순서
+
+1. **qualification**: `collect_session.py --regime {low_load|sustained_load|burst} --pilot` 각 1회. 확인 항목: cpu/memory/queue/cache 8개 feature 원천 metric 존재·신선도, PromQL이 실제로 active+preview를 합산하는지(§58.3 코드 근거 재확인), active/preview 개별 기여 분리 조회 가능 여부, queue/cache가 진짜 0인지 vs metric 이름/label 오류로 0처럼 보이는지, 요청 성공률·latency·SLO 상태, preview/active의 restart·UID·Ready 상태, missing/NaN/stale 표본 수. **queue/cache를 비영으로 만들려고 부하를 임의로 높이지 않는다** - 정상 범위에서 계속 0이면 그 자체가 결과.
+2. qualification 중 metric 쿼리 오류·결측·예상 밖 SLO 위반·restart·Node 이상·cleanup 실패가 나오면 **공식 수집으로 넘어가지 않고 멈춘다.**
+3. **official**(qualification 전부 통과 시에만): `collect_session.py --regime {...} --official` 각 3회, 총 9개 공식 세션. 세션마다 보존: `session_id`/`regime`/`topology`, active/preview pod 이름·UID·revision(`preview_prep_info`), 정확한 시작·종료·settle 시각, 부하 설정과 실제 요청 수·성공률, Prometheus query manifest(재현 가능 - PromQL은 `features.py.METRICS` 그대로), 생성된 feature row, invalid window와 제외 사유, SLO·restart·OOM·Node·cleanup 상태, 코드 commit·config hash·feature schema version(`collection_manifest.json`).
+
+이 절 커밋·푸시 이후에만 실제 측정을 시작한다.

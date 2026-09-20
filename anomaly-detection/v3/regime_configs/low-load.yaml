@@ -1,0 +1,16 @@
+# v3 정상 데이터셋용 - 저부하 구간 (ramp.py 재사용, run_candidate()가 실행)
+# RPS=0.10은 새로 고른 값이 아니라 load_ramp calibration(docs/design/
+# experiment-contract.md 변경이력, 2026-09-16)에서 0.10~1.00 RPS 5단계 중
+# 3회 독립 반복 전부 SLO를 준수한 것으로 이미 확인된 값을 그대로 가져왔다.
+# max_tokens=10은 그 calibration의 ramp 요청 자체와 동일 설정(§104 스키마
+# 표 "ramp 요청: max_tokens=10, probe와 별개") - v1 regime_configs와도 동일.
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: v3-low-load
+    rps: 0.10
+    duration_sec: 180

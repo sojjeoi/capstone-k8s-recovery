@@ -1,0 +1,15 @@
+# v3 정상 데이터셋용 - 정상 burst 구간 (ramp.py 재사용)
+# RPS는 sustained-load와 똑같이 0.50(calibration 확인 상한) - burst는
+# "강도를 더 높인 것"이 아니라 "짧은 시간만 그 상한을 유지하는 것"으로
+# 정의한다(지시: 임의로 새 강도를 고르지 말 것). v1 burst.yaml(2 RPS)은
+# 이번 calibration 기준으로는 검증되지 않은 값이라 재사용하지 않는다.
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: v3-burst
+    rps: 0.50
+    duration_sec: 90

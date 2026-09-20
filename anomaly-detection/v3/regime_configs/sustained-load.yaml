@@ -1,0 +1,15 @@
+# v3 정상 데이터셋용 - 지속 부하 구간 (ramp.py 재사용, low-load보다 긴 지속시간)
+# RPS=0.50은 load_ramp calibration에서 3회 독립 반복 전부 SLO를 준수한
+# 것으로 확인된 상한값(0.75부터 2/3회 위반 시작) - 새로 고른 값이 아니다.
+# duration_sec=300은 "지속"을 나타내기 위한 선택(강도가 아니라 시간으로
+# burst와 구분) - 강도(rps) 자체는 calibration 값 그대로 유지.
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: v3-sustained-load
+    rps: 0.50
+    duration_sec: 300
