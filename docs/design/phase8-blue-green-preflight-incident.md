@@ -7246,3 +7246,177 @@ live session 추가 실행 없음, preview 생성·promotion 없음, Chaos 주�
 교체 없음, 기존 Holdout 재평가 없음, boundary challenge score 계산
 없음, `score_server.py` 변경 없음, 기존 raw data 수정 없음(전부
 읽기 전용).
+
+## 79. Isolation Forest v3.2b - 정상 domain 재정의 사전등록 (2026-09-20)
+
+### 79.1 v3.2(§76-77) 종료 + 역할·주장 범위 재정의
+
+**§76의 v3.2 계획은 `calibration collection stopped` 상태로 종료·보존
+한다** - `model_v32/`는 손대지 않았고 남은 세션을 잇거나 재시작하지
+않는다. 새 시도는 `model_v32b/`로 명확히 분리한다.
+
+**모델의 선언된 역할을 한정한다**: Isolation Forest는 모든 latency SLO
+위반을 직접 예측하는 모델이 아니라, fault injection으로 발생하는
+자원·vLLM telemetry의 다변량 이상을 탐지하는 모델이다. 장애가 없는
+정상 인프라에서 발생하는 latency-only 변동(§78에서 확인한 B 판정
+사례)은 별도 SLO 현상이며, 모델이 반드시 탐지해야 하는 positive
+label로 간주하지 않는다. **이 재정의의 근거는 §78에서 확인된
+survivorship bias 위험이다** - `t_slo` 유무만으로 세션 전체를 정상
+데이터에서 제외하면, "이 환경이 가끔 SLO를 넘긴다"는 실제 운영
+동역학 자체가 정상 데이터에서 체계적으로 지워진다.
+
+**Latency/TTFT feature 추가는 이번 runtime 모델에 하지 않는다** - Phase 8
+이후 offline ablation 후보로만 기록한다(§78.6의 제안을 실행하지 않고
+유보).
+
+**정상 domain을 두 축으로 분리한다**:
+- **infrastructure-normal**(모델 학습 eligibility 기준) - Chaos/fault
+  injection 없음, pod restart/OOM 없음, Node Ready·pressure 없음,
+  active+preview topology 정상, Endpoint 격리 정상, promotion 없음,
+  요청 성공률 100%, metric complete, cleanup 정상. `anomaly-detection/
+  v3/model_v32b/domain.py`의 `classify_exclusion_reasons()`(오프라인
+  테스트 8개)가 기존 `judge_qualification()`의 `exclusion_reasons`
+  어휘를 이 축으로 기계적으로 분리한다 - 새 판정 로직이 아니라 기존
+  판정 결과의 재분류다.
+- **SLO label**(별도 outcome, eligibility에 영향 없음) - `t_slo` 존재
+  여부만으로 `"clean"`/`"sustained_violation"` 두 값 중 하나(`domain.
+  slo_label()`). `t_slo`가 있다는 이유만으로 session을 정상 데이터에서
+  제외하지 않고, latency-only SLO event를 숨기거나 정상으로 재해석하지도
+  않는다 - 두 필드를 독립적으로 관리한다.
+
+### 79.2 v3.2b Training registry - 9개 독립 세션, 337행
+
+포함 기준(결과를 보기 전에 고정): `idle` 또는 `low_load=0.025 RPS`,
+`active_plus_preview`, 600초, 60초 window/15초 step, strict
+completeness, infrastructure-normal. **`t_slo` 존재 여부는 포함·제외
+기준이 아니다** - `train_v32b.py`가 실행 시점에 `classify_exclusion_
+reasons()`로 9개 전부 실제 infrastructure-normal임을 fail-closed로
+재확인한다.
+
+| session_id | regime | SLO label | 유효 row |
+|---|---|---|---|
+| `v31-train-idle-20260920` | idle | clean | 38 |
+| `v31-calib-idle-20260920` | idle | clean | 38 |
+| `v31-holdout-idle-20260920` | idle | clean | 38 |
+| `calib2-idle-01` | idle | clean | 38 |
+| `v31-train-low_load-20260920` | low_load | clean | 37 |
+| `v31-calib-low_load-20260920` | low_load | clean | 37 |
+| `v31-holdout-low_load-20260920` | low_load | clean | 37 |
+| `calib2-low-01` | low_load | clean | 37 |
+| `calib2-low-02` | low_load | **sustained_violation** | 37 |
+
+**독립 session 9개(idle 4 + low_load 5), 총 337행**(overlapping window -
+독립 표본 수는 9). `calib2-low-02`가 이번에 처음으로 Training에
+포함됐다 - infrastructure-normal이고 `t_slo`는 별도 label로만 기록된다.
+
+**제외(protocol 다름, 이유 기록)**: `q3c-low_load-20260920-r2`(§64)/
+`official-train-low_load-20260920`(§66)/`official-calib-low_load-
+20260920`(§68) - 전부 180초 세션으로 v3.1/v3.2b의 600초 프로토콜과
+다르다. §60/A-B-A(0.10 RPS)도 동일 사유로 제외(이미 §78에서 등록됨).
+
+SLO 위반 시간 주변 window만 잘라내는 masking은 하지 않았다 - 현재
+feature로 latency event를 분리할 근거가 없다는 §78의 판정에 따라
+complete session 전체를 그대로 썼다.
+
+### 79.3 새 Calibration/Prospective Holdout - 전량 신규 수집, 기존 재사용 없음
+
+이전 v3.1/v3.2에 쓰였거나 이미 공개(평가)된 세션은 Calibration/Holdout
+으로 다시 쓰지 않는다. 프로토콜은 기존과 완전히 동일(600초/60초 window/
+15초 step/0.025 RPS/`active_plus_preview`, `qualify_normal_profile.py
+--v31 --split-role {calibration|holdout}` 재사용).
+
+**새 Calibration 순서(측정 전 고정)**:
+
+| 순서 | session_id | regime |
+|---|---|---|
+| 1 | `calib3-idle-01` | idle |
+| 2 | `calib3-low-01` | low_load |
+| 3 | `calib3-low-02` | low_load |
+| 4 | `calib3-idle-02` | idle |
+| 5 | `calib3-idle-03` | idle |
+| 6 | `calib3-low-03` | low_load |
+
+**새 Prospective Holdout 순서(측정 전 고정, 수집은 동결 이후에만)**:
+
+| 순서 | session_id | regime |
+|---|---|---|
+| 1 | `holdout3-low-01` | low_load |
+| 2 | `holdout3-idle-01` | idle |
+| 3 | `holdout3-idle-02` | idle |
+| 4 | `holdout3-low-02` | low_load |
+| 5 | `holdout3-low-03` | low_load |
+| 6 | `holdout3-idle-03` | idle |
+
+### 79.4 유효 조건 - infrastructure-normal만, latency-only `t_slo`는 더 이상 중단 조건 아님
+
+Calibration/Holdout 세션은 `t_slo`가 발생해도 infrastructure-normal이
+유지되면 유효하다. **반드시 중단할 조건**: restart/OOM, Node 이상,
+요청 실패, metric missing/stale, target replacement, 예기치 않은
+promotion, Endpoint 격리 실패, cleanup 실패 - 이 중 하나라도 나오면
+그 즉시 이후 수집을 중단한다(강도 조정·대체 세션 금지). **latency-only
+`t_slo`는 수집 중단 조건이 아니다** - 세션을 그대로 유효 데이터로
+쓰고 다음 세션을 이어서 진행한다.
+
+### 79.5 학습·calibration 규칙 - 동일 절차, 새 데이터 정의만 반영
+
+신규 `anomaly-detection/v3/model_v32b/`(`domain.py`/`train_v32b.py`/
+`calibrate_v32b.py`/`evaluate_holdout_v32b.py`) - `replay.py`/`feature_
+selection.py`/`evaluate.py`(model_v31)와 `stop_loss.py`(model_v32,
+1건이라도 false signal episode면 무조건 거부하는 규칙 그대로)를 전부
+재사용하고 복제하지 않는다. Feature 선택은 위 9세션 Training에서만
+결정론적으로 재계산(calibration/holdout 미사용, 정확한 0분산만 제거,
+near-zero는 보고만) - 시험 실행 결과 `queue_mean`/`queue_slope` 제거,
+`cache_mean`/`cache_slope`는 Training에서도 분산이 있어 유지(v3.1/v3.2와
+동일 결과). 모델: `IsolationForest(n_estimators=100, contamination=
+"auto", random_state=42)`(v1/v3.1/v3.2와 동일, 탐색 없음), scaler/model은
+Training에만 fit, threshold는 새 Calibration에만 fit, 런타임 판정
+(15초 간격·연속 3회·정상 1회 reset·60초 cooldown)을 그대로 replay.
+
+### 79.6 Calibration false-signal 정의 - SLO label과 무관, 코드 변경 없음
+
+Calibration session은 infrastructure-normal 상태다. 그 구간에 latency
+SLO 위반이 있더라도, Isolation Forest가 연속 3회 조건을 만족해
+predictive signal을 만들면 **운영상 false signal episode로 계산한다**
+(latency SLO가 중요하지 않다는 뜻이 아니라, 현재 모델의 선언된 역할이
+resource/LLM telemetry fault anomaly이기 때문 - §79.1). `replay.
+calibrate_threshold()`는 애초에 `t_slo`를 전혀 보지 않고 순수 score
+상태기계만 보므로 **코드 변경이 필요 없다** - 이 의미가 기존 함수
+그대로 성립한다. Threshold 기준: Calibration 6세션 전체 false signal
+episode 0, 가장 민감한 결정론적 threshold, point anomaly/FPR 별도
+기록, degenerate 여부 확인. 조건 미충족 시 동결하지 않고 실패로 멈춘다.
+
+### 79.7 Artifact 동결·Holdout·Fault challenge - v3.2와 동일 절차
+
+Calibration 통과 시에만 `anomaly-detection/v3/model_v32b/artifacts/`
+(v3.1/v3.2와 별도 경로)에 model/scaler/threshold/feature-schema/
+dataset-manifest/split-manifest/training-metadata/dependency lock/
+SHA256SUMS를 동결하고 3회 재현성을 검증한 뒤 **`v3.2b_model_freeze_
+commit`**으로 push한다. 이 push 확인 후에만 새 Holdout을 수집한다.
+Holdout 수집 중에는 model score를 실시간 조회하거나 결과로 세션을
+중단하지 않는다(§79.4의 infrastructure-normal 조건만 본다). 채택 기준은
+§76.9의 stop-loss 그대로: **false signal episode 1건이라도 있으면
+즉시 거부, threshold 재조정·데이터 편입·v3.3 즉시 재시도 금지, "현재
+데이터·구조로 운영 신뢰성 미확보"로 기록하고 멈춘다.** 통과 시에만
+`boundary_challenge_manifest.json`의 6세션을 1회 평가하되, 분류명을
+`safe load transient`/`load-induced sustained SLO violation`/`extreme
+non-reproduced latency anomaly`(§60)로 재명명하고 §78의 latency-only
+세션은 "true-positive 후보"가 아니라 "infrastructure-normal FPR
+사례"로 취급한다 - 실제 Chaos fault 자료는 아직 없다.
+
+### 79.8 주장 범위 문서화
+
+`docs/design/experiment-contract.md` §1의 `proposed` arm 설명 옆에
+범위 제한 문구를 추가한다. **허용**: "Isolation Forest는 CPU·메모리·
+KV-cache 추세를 이용해 fault-induced multivariate telemetry anomaly를
+탐지한다." **금지**: "모든 SLO 위반을 사전에 탐지한다" / "모든 latency
+spike의 원인을 탐지한다" / "root cause를 판별한다." Latency-only 자연
+변동(§78)은 별도 한계로 명시한다.
+
+### 79.9 범위 제한
+
+latency/TTFT runtime feature 추가 금지, 실험 장애 주입 금지, promotion
+금지, `score_server.py` 배포 금지, `memory_pressure` 3-arm 금지,
+`run_all_scenarios.py` 금지, 본 실험 금지, `TrialResult` 스키마 변경
+금지, 새 알고리즘 추가 금지.
+
+이 절(§79) 커밋·푸시 이후에만 새 Calibration 6세션 실측을 시작한다.

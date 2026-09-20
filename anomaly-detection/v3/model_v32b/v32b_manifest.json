@@ -1,0 +1,102 @@
+{
+  "_purpose": "§79 v3.2b 정상 domain 재정의 사전등록 - docs/design/phase8-blue-green-preflight-incident.md §79와 동일 내용, 기계 판독용.",
+  "supersedes": "model_v32/v32_manifest.json - preserved as calibration_collection_stopped, not resumed or modified",
+  "model_role_declaration": {
+    "allowed": "Isolation Forest detects fault-induced multivariate telemetry anomaly (CPU/memory/KV-cache trends), not all latency SLO violations",
+    "rationale": "§78 confirmed survivorship bias risk when sessions are excluded from normal data purely for having t_slo",
+    "latency_ttft_features": "recorded as a Phase 8+ offline ablation candidate only, NOT added to this runtime model"
+  },
+  "normal_domain_redefinition": {
+    "infrastructure_normal": ["no chaos/fault injection", "no pod restart/OOM", "Node Ready/no pressure",
+                                "active+preview topology normal", "Endpoint isolation normal", "no promotion",
+                                "success_rate == 100%", "metric complete", "cleanup normal"],
+    "slo_label": "separate outcome field - 'clean' or 'sustained_violation' based on t_slo presence only, does not affect eligibility",
+    "implementation": "anomaly-detection/v3/model_v32b/domain.py classify_exclusion_reasons()/slo_label() - reclassifies existing judge_qualification() exclusion_reasons, no new judgment logic"
+  },
+  "training_registry": {
+    "inclusion_criteria_fixed_before_results": ["idle or low_load=0.025 RPS", "active_plus_preview", "600s duration",
+                                                  "60s window / 15s step", "strict completeness", "infrastructure-normal"],
+    "t_slo_not_used_for_inclusion": true,
+    "sessions": [
+      {"session_id": "v31-train-idle-20260920", "regime": "idle", "slo_label": "clean", "rows": 38},
+      {"session_id": "v31-calib-idle-20260920", "regime": "idle", "slo_label": "clean", "rows": 38},
+      {"session_id": "v31-holdout-idle-20260920", "regime": "idle", "slo_label": "clean", "rows": 38},
+      {"session_id": "calib2-idle-01", "regime": "idle", "slo_label": "clean", "rows": 38},
+      {"session_id": "v31-train-low_load-20260920", "regime": "low_load", "slo_label": "clean", "rows": 37},
+      {"session_id": "v31-calib-low_load-20260920", "regime": "low_load", "slo_label": "clean", "rows": 37},
+      {"session_id": "v31-holdout-low_load-20260920", "regime": "low_load", "slo_label": "clean", "rows": 37},
+      {"session_id": "calib2-low-01", "regime": "low_load", "slo_label": "clean", "rows": 37},
+      {"session_id": "calib2-low-02", "regime": "low_load", "slo_label": "sustained_violation", "rows": 37}
+    ],
+    "independent_session_count": 9, "idle_count": 4, "low_load_count": 5, "total_rows": 337,
+    "excluded_protocol_mismatch": {
+      "q3c-low_load-20260920-r2": "180s session (§64) - duration differs from 600s protocol",
+      "official-train-low_load-20260920": "180s session (§66)",
+      "official-calib-low_load-20260920": "180s session (§68)"
+    },
+    "no_event_aware_masking": "complete sessions used as-is, no window trimming around t_slo (§78 found no basis to isolate latency events with current features)"
+  },
+  "new_calibration_sessions_fixed_order": [
+    {"order": 1, "session_id": "calib3-idle-01", "regime": "idle"},
+    {"order": 2, "session_id": "calib3-low-01", "regime": "low_load"},
+    {"order": 3, "session_id": "calib3-low-02", "regime": "low_load"},
+    {"order": 4, "session_id": "calib3-idle-02", "regime": "idle"},
+    {"order": 5, "session_id": "calib3-idle-03", "regime": "idle"},
+    {"order": 6, "session_id": "calib3-low-03", "regime": "low_load"}
+  ],
+  "new_prospective_holdout_sessions_fixed_order": [
+    {"order": 1, "session_id": "holdout3-low-01", "regime": "low_load"},
+    {"order": 2, "session_id": "holdout3-idle-01", "regime": "idle"},
+    {"order": 3, "session_id": "holdout3-idle-02", "regime": "idle"},
+    {"order": 4, "session_id": "holdout3-low-02", "regime": "low_load"},
+    {"order": 5, "session_id": "holdout3-low-03", "regime": "low_load"},
+    {"order": 6, "session_id": "holdout3-idle-03", "regime": "idle"}
+  ],
+  "no_reuse_of_v31_or_v32_sessions_for_calibration_or_holdout": true,
+  "collection_validity_conditions": ["success_rate == 100%", "no restart/OOM", "Node Ready, no pressure",
+                                       "target UID unchanged", "Endpoint isolation maintained", "no unexpected promotion",
+                                       "no missing/NaN/stale metric", "cleanup succeeds, single revision restored"],
+  "latency_only_t_slo_is_no_longer_a_stop_condition": true,
+  "hard_stop_conditions": ["restart/OOM", "Node abnormality", "request failure", "metric missing/stale",
+                             "target replacement", "unexpected promotion", "Endpoint isolation failure", "cleanup failure"],
+  "training_and_calibration_rules": {
+    "feature_selection": "recomputed deterministically from the 9-session v3.2b Training registry only",
+    "algorithm": "IsolationForest(n_estimators=100, contamination='auto', random_state=42), no hyperparameter search",
+    "scaler_and_model_fit_on": "Training only",
+    "threshold_selection": "replay.calibrate_threshold() on the new 6-session Calibration only",
+    "runtime_replay_unchanged": "15s interval, consecutive=3, reset on single normal reading, cooldown=60s"
+  },
+  "false_signal_definition": "a predictive signal (consecutive=3 met) during a Calibration/Holdout session counts as a false signal episode regardless of that session's SLO label - the model's declared role is fault-induced telemetry anomaly, not latency SLO prediction",
+  "artifact_freeze": {
+    "path": "anomaly-detection/v3/model_v32b/artifacts/ (separate from v3.1 and v3.2)",
+    "freeze_commit_label": "v3.2b_model_freeze_commit",
+    "reproducibility_check": "3 independent retrainings, byte-identical verification",
+    "no_new_holdout_collection_before_this_commit_is_pushed": true
+  },
+  "stop_loss_rule_reused_from_v32_unchanged": {
+    "trigger": "1 or more false signal episodes across the 6 prospective holdout sessions",
+    "on_trigger": ["v3.2b not adopted", "threshold not readjusted", "holdout not folded into calibration/training for v3.3",
+                    "no boundary challenge evaluation", "no runtime integration", "record Isolation Forest has not achieved operational reliability", "propose (do not execute) main-experiment framing adjustments, then stop"],
+    "on_pass": "proceed to one-time fault/load challenge evaluation"
+  },
+  "challenge_recategorization_if_holdout_passes": {
+    "safe_load_transient": ["q3c-sustained_load-20260920-r1 (sustained_load PASS)", "q3c-burst-20260920-r1 (burst PASS)", "official-train-burst-20260920 (burst PASS)"],
+    "load_induced_sustained_slo_violation": ["official-train-sustained_load-20260920 (sustained_load FAIL)", "official-calib-burst-20260920 (burst FAIL)"],
+    "extreme_non_reproduced_latency_anomaly": ["qual-low_load-20260920-r6 (§60)"],
+    "real_chaos_fault_data": "none exists yet",
+    "latency_only_78_sessions_are_infrastructure_normal_fpr_cases_not_true_positive_candidates": true,
+    "challenge_results_never_change_threshold_or_feature": true
+  },
+  "claims_scope": {
+    "allowed_language": "Isolation Forest detects fault-induced multivariate telemetry anomaly using CPU/memory/KV-cache trends",
+    "forbidden_language": ["predicts all SLO violations in advance", "detects the cause of every latency spike", "performs root cause determination"],
+    "natural_latency_only_variation_documented_as_a_limitation": true
+  },
+  "scope_limits": [
+    "no latency/TTFT runtime feature addition", "no fault injection", "no promotion",
+    "no score_server.py deployment", "no memory_pressure 3-arm", "no run_all_scenarios.py",
+    "no main experiment", "no TrialResult schema change", "no new algorithm"
+  ],
+  "registered_before_measurement": true,
+  "registered_at_utc": "2026-09-20T18:00:00Z"
+}
