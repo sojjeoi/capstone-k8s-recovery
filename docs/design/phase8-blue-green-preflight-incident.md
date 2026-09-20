@@ -7010,3 +7010,70 @@ Z-score·MAD 등) 추가 금지, v3.1 artifact 수정 금지, Holdout 결과 기
 재조정 금지.
 
 이 절(§76) 커밋·푸시 이후에만 새 Calibration 6세션 실측을 시작한다.
+
+## 77. 새 Calibration 수집 - 3번째 세션에서 `low_load` 자체의 진짜 SLO 위반, §76.5 규칙에 따라 즉시 정지 (2026-09-20)
+
+§76.3 순서대로 실행했다. 세션 1·2는 PASS했지만 세션 3
+(`calib2-low-02`)에서 **`low_load`(0.025 RPS) 자체가 진짜 30초
+sustained SLO 위반**을 일으켰다 - §76.5 지시("실제 SLO 위반이나 안전
+이상이 발생하면 이후 수집을 중단")에 따라 **그 즉시 정지했다**. 세션
+4~6(`calib2-idle-02`/`calib2-idle-03`/`calib2-low-03`)은 실행하지
+않았다.
+
+### 77.1 세션 1 - `calib2-idle-01`(idle) - PASS
+
+`t_slo=null`, 유효/무효 window 38/0.
+
+### 77.2 세션 2 - `calib2-low-01`(low_load) - PASS
+
+`t_slo=null`, 유효/무효 window 37/0.
+
+### 77.3 세션 3 - `calib2-low-02`(low_load) - 진짜 SLO 위반으로 FAIL
+
+`excluded=true`, `t_slo=2026-09-20T17:00:58.640856+00:00`. **stage
+전체(600초) 평균 P95는 0.497초로 threshold(0.648초) 아래**였지만
+(`violates=false`), `max=3.135초`라는 뚜렷한 이상치가 있었고
+`slo_judge`의 진짜 30초 rolling 판정이 stage 구간(16:59:20~17:09:20)
+안의 국소적 위반을 잡아냈다 - §66/§68에서 이미 반복 관측된 것과 정확히
+같은 패턴("전체 평균은 정상, 국소 구간만 sustained 위반"). Cleanup은
+정상 완료(`cleanup_result=true`, `active_pod_before`/`after` 이름·UID
+동일).
+
+### 77.4 `low_load`의 누적 재현성 기록 - 참고용, 결론 내리지 않음
+
+이번 사건까지 포함해 `low_load=0.025 RPS`는 이번 investigation
+전체에서 독립 실행 8회 중 **7회 PASS(§64, §66, §68, §70×3, `calib2-
+low-01`), 1회 FAIL**(`calib2-low-02`)을 기록했다. `sustained_load`
+(1/2 FAIL)·`burst`(1/3 FAIL)보다는 낮은 실패율이지만 0은 아니다 - 이
+수치 자체만 보고하고 원인이나 채택 가능성에 대한 결론은 내리지 않는다
+(사용자 결정 영역).
+
+### 77.5 정지 조치 및 사후 확인
+
+지시대로 강도를 조정하지 않았고 대체 세션을 실행하지 않았다. 원본
+데이터(`calib2-low-02.json`)를 그대로 보존했다. 사후 kubectl 확인:
+pod 2개(`recovery-policy`·`vllm-serving`, active restart 0), chaos
+CR 없음 - 클러스터는 완전히 정상 상태로 남아있다.
+
+### 77.6 현재 확보 현황
+
+| session_id | regime | 결과 |
+|---|---|---|
+| `calib2-idle-01` | idle | PASS |
+| `calib2-low-01` | low_load | PASS |
+| `calib2-low-02` | low_load | **FAIL(진짜 SLO 위반)** |
+| `calib2-idle-02` | idle | 미실행 |
+| `calib2-idle-03` | idle | 미실행 |
+| `calib2-low-03` | low_load | 미실행 |
+
+**목표 6세션(idle 3+low_load 3) 중 유효 세션 2개만 확보됐다** - v3.2
+Calibration 완성 조건(6세션 전부 유효)을 충족하지 못해 v3.2 학습·
+calibration·freeze로 진행하지 않는다. `calib2-low-02`는 실패 상태
+그대로 보존하고, 정상 데이터 수를 채우는 대체 세션으로 계산하지
+않는다.
+
+### 77.7 범위 준수
+
+강도 조정·대체 세션 없음, v3.2 학습·calibration·freeze 미실행(6세션
+미완성), Prospective Holdout 수집 없음, boundary challenge 평가 없음,
+`score_server.py` 변경 없음, v3.1 artifact 수정 없음.
