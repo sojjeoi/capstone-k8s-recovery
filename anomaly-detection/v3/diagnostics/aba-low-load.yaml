@@ -1,0 +1,15 @@
+# §61 A-B-A topology 진단 전용 - regime_configs/low-load.yaml과 payload는
+# 완전히 동일(url/model/prompt/max_tokens, RPS=0.10 - load_ramp calibration
+# 값 그대로, 새로 고른 강도 아님). duration_sec만 90초로 다르다(사용자
+# 지시 - baseline/recovery 60초 이상과 함께 A1/B/A2 세 구간을 짧게 반복
+# 측정하기 위한 진단 전용 설정이지 official 강도 변경이 아니다).
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: aba-low-load
+    rps: 0.10
+    duration_sec: 90

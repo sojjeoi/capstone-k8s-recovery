@@ -1,0 +1,53 @@
+{
+  "_purpose": "§61.2 A-B-A topology 진단 사전등록 - docs/design/phase8-blue-green-preflight-incident.md §61.2와 동일 내용, 기계 판독용. 측정 전 커밋·푸시하며 이후 수정하지 않는다.",
+  "trigger": "§60 qual-low_load-20260920-r6에서 active_plus_preview, 0.10 RPS에서 P95 12.654초(baseline/drain은 정상) - 원인과 재현성 분리 필요",
+  "forensic_pass_result": "오프라인 포렌식에서 하니스 스펙(payload/RPS/generator 개수/Service 격리/settle 시간) 미발견 - A-B-A 진행",
+  "topology_per_leg": {
+    "a1": "active_only",
+    "b": "active_plus_preview",
+    "a2": "active_only_post_abort"
+  },
+  "config": {
+    "ramp_config": "anomaly-detection/v3/diagnostics/aba-low-load.yaml",
+    "probe_config": "chaos/probe-config.yaml",
+    "rps": 0.10,
+    "stage_duration_sec": 90,
+    "baseline_sec_min": 60,
+    "drain_sec_min": 60,
+    "settle_after_preview_ready_sec_min": 60,
+    "tool": "explore_ramp_intensity.run_candidate (via collect_session.run_candidate_with_retry)",
+    "target_service": "vllm-active only - preview never receives completion traffic",
+    "order": "A1 -> B -> A2, fixed, not reordered",
+    "detector_chaos_promotion": "none of these run during the diagnostic"
+  },
+  "comparison_metrics": [
+    "request_count", "success_rate", "median_latency", "p95_latency", "max_latency",
+    "sustained_slo_violation", "t_slo",
+    "active_cpu_usage", "preview_cpu_usage", "active_cfs_throttle_ratio", "preview_cfs_throttle_ratio",
+    "active_working_set", "preview_working_set",
+    "node_cpu_utilization", "node_load1", "node_iowait", "node_mem_available",
+    "pod_uid", "pod_ready", "pod_restart_count", "pod_oom_killed",
+    "service_endpointslice_status",
+    "preview_create_ready_abort_timestamps",
+    "cleanup_and_single_revision_restore_ok"
+  ],
+  "note": "active_plus_preview memory ~2x is expected topology difference, not evidence of cause by itself",
+  "judgment_rules": {
+    "topology_interference_reproduced": "A1 and A2 normal, B alone reproduces the same latency spike -> record 'active_plus_preview topology performance interference reproduced', cause still not asserted, official collection and retraining remain paused, propose (don't execute) architecture/safe-load-range redesign",
+    "environment_or_harness_variance": "A1, B, A2 all slow -> classify as time-of-day/cluster/harness/workload variance (notably: 0.10 RPS never re-validated under the post-2026-09-18 3-core CPU limit in any topology, per §61.1) rather than topology cause; stop official collection, propose further diagnostics only",
+    "non_reproduced_diagnostic_anomaly": "B normal, only §60 qualification was abnormal -> keep §60 result as-is (not deleted), label 'non-reproduced diagnostic anomaly', leave resumption decision to the user",
+    "immediate_stop": "restart, OOM, Node abnormality, unexpected promotion, or cleanup failure in any leg -> stop immediately, do not proceed to remaining legs"
+  },
+  "scope_limits": [
+    "no model retraining, threshold change, or artifact replacement",
+    "not counted as official training sessions (is_pilot=true, included_in_training=false, all three legs)",
+    "no load intensity change",
+    "no sustained_load or burst execution",
+    "no memory_pressure 3-arm",
+    "no run_all_scenarios.py or main experiment",
+    "no TrialResult schema change",
+    "no new fault injection"
+  ],
+  "registered_before_measurement": true,
+  "registered_at_utc": "2026-09-20T08:30:00Z"
+}

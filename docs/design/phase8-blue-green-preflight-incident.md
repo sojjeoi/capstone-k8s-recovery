@@ -5528,3 +5528,139 @@ memory_pressure를 `1500MB×120초 direct sub-critical negative control`(§56/§
 
 - **수행한 것**: 인프라 버그 2건 발견·수정·커밋(§60.1) → `low_load` qualification 실제 완주(6번째 시도) → 결과 기록(§60.2) → §59.2 규칙대로 정지(§60.3) → 사후 kubectl 독립 확인.
 - **하지 않은 것**: `sustained_load`·`burst` qualification 없음, official 수집 없음, 강도/설정 조정 없음, memory_pressure 3-arm·`run_all_scenarios.py`·본 실험 없음, 모델 재학습·threshold 변경 없음.
+
+## 61. §60 지연 급증의 원인·재현성 분리 - 오프라인 포렌식 + A-B-A 진단 사전등록 (2026-09-20)
+
+§60의 원인을 판단하지 않고 사용자 결정으로 남긴 데 대해, 사용자가 우선순위를
+Isolation Forest에서 "`active_plus_preview`에서 0.10 RPS 지연이 급증한 원인과
+재현성 분리"로 전환했다. 추가 live 실행 전에 먼저 원본 자료·코드를 오프라인
+대조했고(§61.1), 측정 오류가 확인되지 않아 A-B-A 진단을 사전 등록한다(§61.2).
+
+### 61.1 오프라인·읽기 전용 포렌식 결과
+
+**요청 사양 - 하니스 오류 없음.** `v3/diagnostics는 아직 없고 qualification 당시
+사용한 `v3/regime_configs/low-load.yaml`을 그대로 대조했다: URL/model/prompt는
+`chaos/probe-config.yaml`(SLO 판정용 상시 probe)과 동일 서비스(`vllm-active`)를
+가리키고, `max_tokens=10`은 `docs/design/experiment-contract.md`(2026-09-16
+변경이력)에 기록된 대로 "probe의 observer effect(당시 max_tokens=10 probe가
+CPU 4코어를 거의 다 씀)를 확인한 뒤 probe만 `max_tokens=1`로 낮추고 ramp
+요청은 그대로 `max_tokens=10`을 유지"한 SLO v2 확정값과 정확히 일치한다 - 이번
+qualification이 payload를 새로 고르거나 잘못 베낀 사실이 없다. `ramp.py`의
+`interval=1.0/rps` 계산대로 180초 동안 정확히 18건(0.10 RPS)이 나갔다(실측
+`sent=18` 일치) - RPS 설정 오류 없음, timeout은 `aiohttp.ClientTimeout(total=30)`
+그대로.
+
+**단일 load generator, 잔존 pod 없음(Prometheus 실측 확인).** 측정 구간
+(07:42~07:54 UTC) 동안 `vllm-serving` namespace에 존재한 pod은 정확히 5개뿐이었다
+- `recovery-policy`(상시), `vllm-serving-6b9d88c96-64k7r`(active),
+`vllm-serving-6df66c4c74-l7r2s`(preview), `v3low-l-ramp-5ef305`,
+`v3low-l-probe-878448`(이번 qualification이 만든 것 각 1개씩). 이전 5회 실패
+시도의 잔존 pod이나 중복 load generator는 없었다.
+
+**active/preview 격리 - 코드·상태 양쪽으로 확인.** `gitops/apps/vllm-serving/
+rollout.yaml`의 `strategy.blueGreen.activeService: vllm-active` /
+`previewService: vllm-preview`를 Argo Rollouts 컨트롤러가 관리하며, ramp/probe
+요청은 전부 `http://vllm-active...`만 사용한다(`vllm-preview`를 가리키는 설정은
+어디에도 없음). 세션 기록의 `active_pod_before`/`active_pod_after`가 이름·UID
+모두 동일(`vllm-serving-6b9d88c96-64k7r` / `630f21a9-...`)해 measurement 도중
+promotion·selector 전환이 없었음을 직접 확인했다 - preview로 트래픽이 샐 경로
+자체가 없었다. preview Ready(07:45:10)부터 stage 시작(07:47:54)까지 실제
+settle은 약 164초로 요구한 30초를 크게 웃돌았다.
+
+**정량적 원인 후보 발견(Prometheus 이력 조회, 읽기 전용) - CPU 배분 병목.**
+stage 구간(07:47:54~07:50:54)에서 **active pod 자신의 CFS throttle 비율**
+(`container_cpu_cfs_throttled_periods_total`/`container_cpu_cfs_periods_total`의
+1분 rate)이 idle 시 약 3%에서 stage 진행 중 **50~60%대로 지속 상승**했고, 이는
+active pod 자신의 CPU 사용량이 idle ~0.1~0.6코어에서 stage 중 **~2.0~2.25코어
+(3코어 한도 대비)로 상승**한 시점과 정확히 겹친다. 반면 preview pod 자신의 CPU
+사용량은 stage 내내 0.01~0.02코어로 거의 무시할 수준이었다(즉 preview가 직접
+CPU를 많이 쓰고 있던 게 아니다). Node(`sj-worker`, 8코어) 전체 CPU 사용률은
+같은 구간에서 33%→43%, `load1`은 약 1.9→4.6(8코어 대비) 수준으로 Node 전체가
+포화 상태는 아니었다 - 즉 이번에 관측된 지연 급증은 "Node 전체 자원 고갈"이
+아니라 **active pod 자신의 3코어 CFS quota 안에서의 배분 문제**로 보인다(원인은
+여전히 단정하지 않음 - CFS throttling과 latency 급증의 시간적 일치만 실측
+확인한 사실이다). 메모리는 양쪽 pod 모두 3.4~3.5GiB로 6GiB 한도에 한참 못
+미쳤다.
+
+**중요한 교란 변수 후보 - CPU 3-core cutover가 calibration보다 나중.** `0.10
+RPS가 안전하다`는 원래 calibration(`explore-20260916T064939Z`/`070319Z`/
+`071454Z`, §4 표)은 2026-09-16 06:49~07:14 UTC에 실행됐다. CPU 한도를 4→3코어로
+내린 커밋(`a479f842`, `lab-cpu3-v1`)은 2026-09-18에 들어갔다 - **calibration
+자체가 3-core cutover보다 먼저 끝났다.** 게다가 Prometheus는 2026-09-16T09:14:52
+UTC부터 스크레이프를 시작해(retention 확인됨, `storageRetention=30d or 15GiB`)
+calibration 시각(06:49~07:14)보다 약 2시간15분 뒤라 **원래 calibration 자체의
+CPU/throttle 실측치는 Prometheus에 아예 없다.** 즉 "0.10 RPS는 안전하다"는
+지금까지 **현재의 3코어 한도, 어떤 topology(active_only 포함)에서도 한 번도
+재검증된 적이 없다** - `active_plus_preview` topology 때문인지, 3-core cutover
+자체가 이 RPS 자체를 이미 위험하게 만들었는지가 아직 분리되지 않았다.
+
+**측정하지 못한 항목(코드 한계, 이번 포렌식으로 확인).** `chaos/loadgen/
+ramp.py`/`experiments/probe.py`는 요청을 `aiohttp.ClientSession.post()` ~
+`resp.read()` 전체 왕복만 `time.monotonic()`으로 재는 단일 타이머 구조라 connect
+time과 TTFB(서버 처리 시간)를 분리할 계측이 코드에 없다 - 이번 포렌식으로
+새로 추가하지 않았고(코드 변경 범위 밖), 아래 A-B-A 결과도 이 구분 없이 왕복
+latency만으로 판정한다는 한계를 그대로 안고 간다.
+
+**결론: 하니스 스펙 오류 없음 → A-B-A 진단이 필요하다.** payload·RPS·generator
+개수·Service 격리·settle 시간 전부 정상이었고, 유일하게 발견한 것은 (a) 실제
+CPU 배분 병목(CFS throttling)과 (b) calibration-cutover 시점 불일치라는 **진짜
+환경 조건**이지 하니스 버그가 아니다 - 코드를 고치고 재실행할 사유가 없어
+아래 A-B-A를 실측으로 진행한다.
+
+### 61.2 A-B-A 진단 사전등록 (측정 전 커밋·푸시 - 이후 변경 없음)
+
+별도 매니페스트: `anomaly-detection/v3/diagnostics/aba_manifest.json`(이 절과
+동일 내용, 기계 판독용). 도구: `anomaly-detection/v3/diagnostics/aba_diagnostic.py`
+(신규, `--leg {a1,b,a2}`) - 새 클러스터 조작 코드를 만들지 않고 `blue_green_prep.
+{prepare_preview_with_rollback, abort_preview, wait_until_rolled_back,
+get_blue_green_status}` / `explore_ramp_intensity.check_node_and_pods` /
+`memory_pressure_adapter.get_pod_details` / `collect_session.run_candidate_with_
+retry`를 그대로 재사용, `A1→B→A2` 순서로만 묶는다. ramp 설정은
+`anomaly-detection/v3/diagnostics/aba-low-load.yaml`(payload는 `low-load.yaml`과
+완전 동일, `duration_sec`만 90초로 축소 - 강도 변경 아님).
+
+| 구간 | topology | 내용 |
+|---|---|---|
+| A1 | active-only | preview 없이 바로 측정(이번 진단 세션에서 preview를 아직 한 번도 만들지 않은 상태) |
+| B | active_plus_preview | preview 준비→Ready→**60초 이상 settle**→측정(§61.1에서 확인한 것보다 긴 settle) |
+| A2 | active-only(복원 후) | B의 preview를 abort하고 단일 revision 복원을 실측 확인한 뒤 다시 측정 |
+
+공통 규칙: 세 구간 모두 동일 payload(`aba-low-load.yaml`, RPS=0.10)·동일 도구
+(`run_candidate`)·90초 stage·60초 이상 baseline·60초 이상 drain(`explore_ramp_
+intensity.py`의 기존 `BASELINE_SEC=60`/`POST_RAMP_DRAIN_SEC=60` 그대로, 새 상수
+아님) 사용. preview에는 completion 트래픽을 보내지 않고(probe/ramp 둘 다
+`vllm-active` Service만 사용, `vllm-preview`를 가리키는 설정 없음) 오직 active
+Service만 부하를 받는다. detector·Chaos·promotion은 어디서도 실행하지 않는다.
+순서(A1→B→A2)와 강도(0.10 RPS)는 중간에 바꾸지 않는다. 전량 `diagnostic pilot`
+- 학습·threshold 결정에서 제외.
+
+**비교 지표(각 구간 동일 방식 기록)**: 요청 수·성공률·median/P95/max latency,
+sustained SLO 위반 여부와 `t_slo`(연결시간/TTFB 분리는 §61.1에 기록한 대로
+코드 한계로 불가능 - 왕복 latency만), active/preview 각각의 CPU·working set·
+CFS throttle 비율(Prometheus 이력 조회), Node utilization·`load1`·iowait·
+MemAvailable, pod UID·Ready·restartCount·OOM, Service/EndpointSlice 상태,
+preview 생성·Ready·abort 시각, cleanup 및 단일 revision 복원 여부.
+`active_plus_preview`의 memory가 topology 특성상 대략 2배가 되는 것 자체는
+정상이며 그 사실만으로 원인을 단정하지 않는다.
+
+**판정 규칙(측정 전 확정, 사후 변경 없음)**:
+- A1·A2는 정상이고 B에서만 같은 지연 급증이 재현되면 → `active_plus_preview
+  topology performance interference reproduced`로 기록, 원인은 여전히 확정하지
+  않음, 공식 정상 데이터 수집·모델 재학습은 계속 중지, 아키텍처 또는 정상 부하
+  범위 재설계안은 제안만 하고 멈춤.
+- A1·A2·B 모두 느리면 → topology 원인이 아니라 시간대·클러스터·하니스·
+  워크로드(특히 §61.1에서 확인한 3-core cutover 이후 미검증 상태) 변동
+  가능성으로 분류, 공식 수집 중지 후 추가 진단안만 제시.
+- B가 정상이고 §60의 qualification만 비정상이면 → §60 결과를 삭제하지 않고
+  `non-reproduced diagnostic anomaly`로 유지, 공식 수집 재개 여부는 사용자
+  결정으로 남김.
+- 어느 구간에서든 restart·OOM·Node 이상·예기치 않은 promotion·cleanup 실패가
+  나오면 그 즉시 중단(이후 구간 진행하지 않음).
+
+**범위 제한(§61 전체 공통)**: 모델 재학습·threshold 변경·artifact 교체 금지,
+공식 학습 세션으로 포함 금지, 부하 강도 변경 금지, `sustained_load`·`burst`
+실행 금지, `memory_pressure` 3-arm 금지, `run_all_scenarios.py`·본 실험 금지,
+`TrialResult` 스키마 변경 금지, 새로운 장애 주입 금지.
+
+이 절(§61.1 포렌식 + §61.2 사전등록) 커밋·푸시 이후에만 A1/B/A2 실측을
+시작한다.
