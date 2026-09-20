@@ -6655,3 +6655,62 @@ calibration degenerate 판정, feature fail-closed(NaN/Inf/None/빈 입력/
 
 이 절 커밋·푸시 이후에만 실제 train/calibration feature 값을 이 함수들에
 넣는다(§73).
+
+## 73. 학습·calibration 실행 결과 (2026-09-20, Holdout 미개봉)
+
+§72 코드를 실제 Train/Calibration 세션에 적용한다. Holdout은 여전히
+열지 않는다.
+
+### 73.1 Feature 선택 결과 - Train 전용 재계산
+
+Train 2세션(`v31-train-idle-20260920` 38행 + `v31-train-low_load-20260920`
+37행, **총 75행 - 독립 session 2개**, overlapping window를 75개의 독립
+표본으로 표현하지 않음)만으로 `compute_feature_schema()`를 실행했다.
+결과: **`queue_mean`/`queue_slope` 제거(`zero_variance_in_train`, Train
+75행 전부 정확히 0)**, **`cache_mean`/`cache_slope`는 Train에서도 실제
+0이 아닌 분산이 확인돼 유지**(§70의 train+calibration 합산 감사와
+일관 - 이번엔 train만으로 재확인). 최종 `kept_feature_names` = `[cpu_mean,
+cpu_slope, memory_mean, memory_slope, cache_mean, cache_slope]`(6개,
+순서 유지).
+
+### 73.2 학습 결과
+
+`anomaly-detection/v3/model_v31/train.py` 실행: `StandardScaler()`를
+Train 6-feature 행렬에만 fit, `IsolationForest(n_estimators=100,
+contamination="auto", random_state=42)`(나머지 sklearn 기본값 - v1과
+동일, 하이퍼파라미터 탐색 없음)를 스케일된 Train 행렬에만 fit.
+Calibration/Holdout/Challenge로 재학습하지 않았다. `model.offset_`
+(sklearn 내부값, 참고용) = `-0.5` - **운영 threshold로 쓰지 않음**.
+
+**재현성 실측 확인**: 동일 코드·동일 환경에서 `train.py`+`calibrate.py`
+를 연속 2회 실행해 `model.pkl`/`scaler.pkl`/`feature-schema.json`/
+`threshold.json`/`training-metadata.json` 전부 **SHA-256 완전 일치**를
+확인했다(byte-identical, 환경 특성에 따른 차이 없음 - `n_jobs=None`
+단일 스레드라 nondeterminism 소스 자체가 없었음). 합성 데이터로도
+`decision_function` 점수가 완전히 재현됨을 오프라인 테스트로 고정
+(`test_training_reproducible_with_same_seed`).
+
+### 73.3 Calibration 결과 - `calibration_failed=False`
+
+Calibration 2세션(`v31-calib-low_load-20260920` 37행,
+`v31-calib-idle-20260920` 38행)의 decision_function 점수에
+`replay.calibrate_threshold()`를 실행했다.
+
+| session | n | score min | score median | score max | point anomaly | point FPR | false signal episode | max 연속 |
+|---|---|---|---|---|---|---|---|---|
+| `v31-calib-low_load-20260920` | 37 | 0.0054 | 0.0730 | 0.1189 | 1 | 2.70% | **0** | 1 |
+| `v31-calib-idle-20260920` | 38 | -0.0416 | 0.0365 | 0.1075 | 8 | 21.05% | **0** | 2 |
+
+**선택된 threshold = 0.013299**(두 calibration session 모두 false signal
+episode 0을 만족하는 가장 민감한 값). **degenerate가 아니다** - 두
+session 합쳐 9개의 point anomaly가 실제로 관측됐고(calibration score
+범위 전체보다 낮은 "아무것도 못 잡는" 값이 아님), 다만 최대 연속
+이상 판정이 2회에 그쳐(`CONSECUTIVE_THRESHOLD=3` 미달) 어느 session도
+실제 신호(POST)로는 이어지지 않았다 - 이것이 정확히 "가장 민감하면서도
+false signal이 없는" 경계값이다. Threshold 선택 후 Train/Calibration
+feature나 모델을 다시 건드리지 않았다.
+
+### 73.4 아직 하지 않은 것
+
+Holdout 개봉 없음, artifact freeze(§74) 없음, `score_server.py` 변경
+없음, 모델 배포 없음.
