@@ -61,6 +61,17 @@ REGIME_CONFIG_PATHS = {
     "burst": REGIME_CONFIGS_DIR / "burst.yaml",
 }
 
+# 2026-09-20 실측 발견(6회 연속 재현, stderr 확보 후 확정) - explore_ramp_
+# intensity.run_candidate()는 label[:7]을 그대로 pod 이름에 쓰는데
+# (f"{label[:7]}-ramp-{uuid}"), regime 이름의 "_"가 label에 그대로
+# 들어가면(f"v3{regime[:5]}") K8s 리소스 이름 규칙(RFC 1123, 소문자
+# 영숫자·하이픈만 허용)을 어겨 kubectl run이 매번 실패한다 - "low_load"는
+# 앞 5글자("low_l")에 밑줄이 걸려 있어 100% 재현됐고, "sustained_load"/
+# "burst"는 우연히 앞 5글자에 밑줄이 없어 안 걸렸을 뿐이다. 결측/일시
+# 오류가 아니라 이름 규칙 위반이었다 - 밑줄을 하이픈으로 바꿔 규칙을
+# 지킨다(모든 regime에 안전하게 적용).
+REGIME_RUN_LABELS = {regime: f"v3{regime[:5]}".replace("_", "-") for regime in REGIME_CONFIG_PATHS}
+
 RUN_CANDIDATE_MAX_ATTEMPTS = 3
 RUN_CANDIDATE_RETRY_BACKOFF_SEC = 15.0
 
@@ -85,6 +96,11 @@ def run_candidate_with_retry(ramp_config: str, probe_config: str, label: str) ->
         except subprocess.CalledProcessError as e:
             last_error = e
             print(f"run_candidate() 시도 {attempt}/{RUN_CANDIDATE_MAX_ATTEMPTS} 실패(일시 kubectl 오류로 판단): {e}")
+            # 2026-09-20 추가 - CalledProcessError.__str__()은 stdout/stderr를
+            # 안 보여준다(반복 재현 중 실제 원인을 못 봐서 진단이 막혔음).
+            # 재시도 여부 판단과 무관하게 항상 실제 stderr/stdout을 남긴다.
+            print(f"  stdout={e.stdout!r}")
+            print(f"  stderr={e.stderr!r}")
             if attempt < RUN_CANDIDATE_MAX_ATTEMPTS:
                 time.sleep(RUN_CANDIDATE_RETRY_BACKOFF_SEC)
     raise last_error
@@ -187,7 +203,7 @@ def collect_one_session(regime: str, session_id: str, is_pilot: bool,
     try:
         print(f"[{session_id}] {regime} 부하 실행(run_candidate, ramp+probe 동시, 일시 오류 시 최대 "
               f"{RUN_CANDIDATE_MAX_ATTEMPTS}회 재시도)...")
-        candidate_result = run_candidate_with_retry(ramp_config, DEFAULT_PROBE_CONFIG, label=f"v3{regime[:5]}")
+        candidate_result = run_candidate_with_retry(ramp_config, DEFAULT_PROBE_CONFIG, label=REGIME_RUN_LABELS[regime])
     finally:
         print(f"[{session_id}] preview 정리(abort + 단일 revision 복원 확인)...")
         cleanup_ok = cleanup_unpromoted_preview(prep_info, ROLLOUT_NAME, NAMESPACE)

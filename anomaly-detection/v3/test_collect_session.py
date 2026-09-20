@@ -9,7 +9,17 @@ from unittest.mock import patch
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from collect_session import judge_session_exclusion, run_candidate_with_retry, verify_and_force_cleanup
+import re
+
+from collect_session import (
+    REGIME_CONFIG_PATHS,
+    REGIME_RUN_LABELS,
+    judge_session_exclusion,
+    run_candidate_with_retry,
+    verify_and_force_cleanup,
+)
+
+_K8S_NAME_SAFE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
 
 HEALTHY_NODE = {"node_ok": True, "restart_count": 0}
 UNHEALTHY_NODE = {"node_ok": False, "restart_count": 0}
@@ -221,6 +231,21 @@ def test_run_candidate_with_retry_does_not_retry_domain_errors():
     mock_rc.assert_called_once()
     mock_sleep.assert_not_called()
     print("OK - 도메인 판정(valid=False)은 재시도하지 않고 그대로 반환")
+
+
+# --- REGIME_RUN_LABELS (2026-09-20 실측 발견 - 6회 연속 kubectl run 실패의 진짜 원인) ---
+
+def test_regime_run_labels_are_valid_k8s_names_for_every_regime():
+    """"low_load"[:5]="low_l"에 밑줄이 걸려 실제 pod 생성이 100% 재현되게
+    실패했다("sustained_load"/"burst"는 우연히 앞 5글자에 밑줄이 없어서
+    안 걸렸을 뿐) - 모든 등록된 regime에 대해 결과 label이 K8s 리소스
+    이름 규칙(RFC 1123, run_candidate()가 label[:7]을 그대로 pod 이름
+    접두어로 씀)을 지키는지 명시적으로 고정한다."""
+    assert set(REGIME_RUN_LABELS) == set(REGIME_CONFIG_PATHS)
+    for regime, label in REGIME_RUN_LABELS.items():
+        assert "_" not in label, f"{regime} -> {label}: 밑줄이 남아있으면 kubectl run이 매번 실패함(실측 확인)"
+        assert _K8S_NAME_SAFE.match(label), f"{regime} -> {label}: K8s 리소스 이름 규칙 위반"
+    print("OK - 모든 regime의 run_candidate label이 밑줄 없이 K8s 이름 규칙을 지킴")
 
 
 if __name__ == "__main__":
