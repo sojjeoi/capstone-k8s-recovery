@@ -29,7 +29,7 @@ import argparse
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -132,9 +132,18 @@ def diff_unhealthy_events(before: dict, after: dict) -> dict:
     return result
 
 
-def analyze_slo(local_raw: Path, t_injection_iso) -> dict:
+def analyze_slo(local_raw: Path, t_injection_iso, upper_bound_iso=None, upper_margin_sec: float = 30.0) -> dict:
     """§50.6 SLO 분석 - probe raw CSV 완주 후 사후분석(slo_judge.py 재사용,
-    새 판정 로직 없음)."""
+    새 판정 로직 없음).
+
+    upper_bound_iso(선택, §54 - 후보 재현성 검증의 stage별 분석 지원): 주어지면
+    `t_slo`가 이 시각(+upper_margin_sec 여유) 이내인지도 함께 판정해
+    `t_slo_within_window`에 담는다 - 특정 stage 구간에 국한해 위반을 볼 때,
+    그 위반이 실제로 그 stage 안에서 확정됐는지(다음 stage나 drain 구간까지
+    번진 게 아닌지) 확인하는 용도. 하한(not_before)은 기존과 동일하게
+    `find_t_slo(not_before=t_injection_iso)`가 이미 보장한다(그 이전 시각은
+    스트릭 시작점으로도 t_slo 후보로도 못 쓰임). 기존 호출부(§50~§53, 단일
+    라운드 전체 분석)는 이 인자를 안 넘기므로 반환 dict 구조가 그대로다."""
     if not local_raw.exists():
         return {"error": "probe raw CSV 없음(probe 시작 실패 등)"}
     rows = slo_judge.load_raw(local_raw)
@@ -149,7 +158,7 @@ def analyze_slo(local_raw: Path, t_injection_iso) -> dict:
     success_count = sum(1 for r in rows if r["success"])
     p95_values = [p["p95"] for p in points if p["p95"] is not None]
     availability_values = [p["success_rate"] for p in points]
-    return {
+    result = {
         "local_raw_csv": str(local_raw),
         "total_samples": len(rows),
         "success_rate": success_count / len(rows),
@@ -160,6 +169,10 @@ def analyze_slo(local_raw: Path, t_injection_iso) -> dict:
         "p95_peak": max(p95_values) if p95_values else None,
         "availability_min": min(availability_values) if availability_values else None,
     }
+    if upper_bound_iso is not None:
+        upper = datetime.fromisoformat(upper_bound_iso) + timedelta(seconds=upper_margin_sec)
+        result["t_slo_within_window"] = t_slo is not None and t_slo <= upper
+    return result
 
 
 def sufficient_headroom_for_injection(baseline_ws_bytes, size_mb: float, min_headroom_bytes: float) -> bool:

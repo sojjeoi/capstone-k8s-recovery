@@ -4,7 +4,7 @@
 자체는 explore_ramp_intensity.py의 run_candidate()와 같은 이유로 오프라인
 테스트 대상이 아니다(실클러스터·kubectl exec·probe pod 의존)."""
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -206,6 +206,48 @@ def test_analyze_slo_empty_file_returns_error(tmp_path):
     result = analyze_slo(path, None)
     assert "error" in result
     print("OK - 표본이 0개면 error 필드로 명시")
+
+
+def _minimal_csv(tmp_path):
+    path = tmp_path / "raw.csv"
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    lines = ["sent_at,latency,success"] + [
+        f"{t0.replace(second=i % 60).isoformat()},0.1,True" for i in range(25)]
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path, t0
+
+
+def test_analyze_slo_upper_bound_true_when_t_slo_within_margin(tmp_path, monkeypatch):
+    path, t0 = _minimal_csv(tmp_path)
+    fixed_t_slo = t0 + timedelta(seconds=100)
+    monkeypatch.setattr("explore_memory_pressure_intensity.slo_judge.find_t_slo",
+                         lambda points, not_before=None: fixed_t_slo)
+    monkeypatch.setattr("explore_memory_pressure_intensity.slo_judge.find_t_recovery",
+                         lambda points, t_slo: None)
+    stage_end = (t0 + timedelta(seconds=110)).isoformat()  # t_slo(100s)가 이미 stage_end(110s) 이전
+    result = analyze_slo(path, t0.isoformat(), upper_bound_iso=stage_end)
+    assert result["t_slo_within_window"] is True
+    print("OK - t_slo가 stage 종료 시각(+여유) 이내면 t_slo_within_window=True")
+
+
+def test_analyze_slo_upper_bound_false_when_t_slo_beyond_margin(tmp_path, monkeypatch):
+    path, t0 = _minimal_csv(tmp_path)
+    fixed_t_slo = t0 + timedelta(seconds=200)  # stage_end(110s)+margin(30s)=140s보다 한참 뒤
+    monkeypatch.setattr("explore_memory_pressure_intensity.slo_judge.find_t_slo",
+                         lambda points, not_before=None: fixed_t_slo)
+    monkeypatch.setattr("explore_memory_pressure_intensity.slo_judge.find_t_recovery",
+                         lambda points, t_slo: None)
+    stage_end = (t0 + timedelta(seconds=110)).isoformat()
+    result = analyze_slo(path, t0.isoformat(), upper_bound_iso=stage_end)
+    assert result["t_slo_within_window"] is False
+    print("OK - t_slo가 stage 종료 시각(+여유)을 넘으면 t_slo_within_window=False(다른 구간 위반 오분류 방지)")
+
+
+def test_analyze_slo_no_upper_bound_key_when_not_requested(tmp_path):
+    path, t0 = _minimal_csv(tmp_path)
+    result = analyze_slo(path, t0.isoformat())
+    assert "t_slo_within_window" not in result, "기존 호출부(단일 라운드 분석)는 반환 구조가 그대로여야 함"
+    print("OK - upper_bound_iso를 안 넘기면 반환 dict 구조가 기존과 동일")
 
 
 def test_analyze_slo_computes_success_rate_and_sample_count(tmp_path):

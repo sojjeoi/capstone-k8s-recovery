@@ -646,6 +646,33 @@ def test_classify_stage_after_truncation_is_drain_not_missing_stage():
     print("OK - truncation: 만들어진 stage만 창이 있고 그 뒤는 drain(누락 stage로 오분류 안 함)")
 
 
+# --- get_stage_windows (2026-09-20 추가 - 후보 재현성 검증 도구 지원) ------
+
+def test_get_stage_windows_records_all_injected_per_stage():
+    injector = _make_healthy_injector(stages=TWO_FAST_STAGES, now_fn=_StepClock())
+    injector.prepare()
+    injector.inject()
+    assert _wait_for(injector.is_done)
+    injector.cleanup()
+    windows = injector.get_stage_windows()
+    assert [w["name"] for w in windows] == ["stage-1-500mb", "stage-2-1000mb"]
+    assert all(w["all_injected"] is True for w in windows), "is_stage_injected_fn이 항상 True라 두 stage 모두 확인돼야 함"
+    assert all(isinstance(w["start"], str) and w["end"] is not None for w in windows)
+    print("OK - get_stage_windows()가 실제 시작/종료 시각과 stage별 AllInjected 확인 결과를 담아 반환")
+
+
+def test_get_stage_windows_all_injected_false_when_never_confirmed():
+    injector = _make_healthy_injector(stages=FAST_STAGE, now_fn=_StepClock(),
+                                       is_stage_injected_fn=lambda cr_name: False)
+    injector.prepare()
+    injector.inject()
+    assert _wait_for(injector.is_done), "AllInjected 미확인은 관측 전용이라 stage 진행 자체는 막지 않아야 함"
+    injector.cleanup()
+    windows = injector.get_stage_windows()
+    assert windows[0]["all_injected"] is False
+    print("OK - AllInjected가 끝내 확인 안 돼도(관측 전용) stage는 정상 진행되고 all_injected=False로만 기록됨")
+
+
 if __name__ == "__main__":
     tests = [obj for name, obj in list(globals().items()) if name.startswith("test_") and callable(obj)]
     for t in tests:

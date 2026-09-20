@@ -5032,3 +5032,96 @@ Phase 5(`docs/design/phase5-memory-pressure-investigation.md` §3)의 실제 요
 
 - **수행한 것**: Prometheus port-forward 재연결 + 실측 확인(§53.1) → 1500MB×120초 1라운드 실행(PASS, sustained SLO 위반 확인) → 사후 클러스터 확인 → §52.4 게이트에 따라 1600MB 미실행 결정.
 - **하지 않은 것**: 1600MB·1650MB·2000MB 실행 없음, 재현성 반복 없음, non-native arm 없음, memory_pressure 3-arm 파일럿 없음, `run_all_scenarios.py`·본 실험(60회) 없음, 안전 상한·결과 스키마·sub-critical 재정의 변경 없음. 1차(실패)·2차(성공) 라운드의 원본 요약 JSON·probe raw CSV는 `experiments/results/`(top-level)에 그대로 보존되며 `.gitignore`(`*.json`/`*.csv`/`*.jsonl`)에 걸려 커밋되지 않는다.
+
+## 54. `memory_pressure` 최종 후보 3회 재현성 검증 - 사전 등록 (측정 전, 2026-09-20)
+
+§53 승인(1500MB×120초 sustained 위반 확인) 이후 지시. **안전 상한(5GiB)은 변경하지 않고, 1600MB·1650MB는 실행하지 않는다.** 후보를 `500MB → 1000MB → 1500MB`(각 120초, native, worker 1개) progressive 시퀀스로 확정하고, 이 시퀀스 전체를 3회 독립 반복해 재현성을 확인한다. 이 절도 §50/§52와 동일하게 **측정 전에** 규칙을 고정한다.
+
+### 54.1 후보 구성 (모든 반복 공통)
+
+| 항목 | 값 |
+|---|---|
+| stage 구성 | stage-1 500MB → stage-2 1000MB → stage-3 1500MB, **각 120초**(원본 `scenario-progressive-memory-pressure.yaml`의 stage 지속시간과 동일 기준) |
+| worker | 1개 |
+| arm | `native`만 |
+| probe profile | 기본 readiness/liveness profile(overlay 없음) |
+| baseline 관찰 | 최소 60초(§50.1과 동일 정의 - 안정 조건과 60초 하한 중 늦게 만족되는 쪽) |
+| 마지막 stage 종료 후 recovery 관찰 | 최소 60초(어댑터 자신의 `cleanup_recovery_check` 30초 판정 포함) |
+| 반복 횟수 | **3회** |
+| `is_pilot` | 개념상 true와 동등(§50.1과 동일 논리 - `TrialResult`를 안 쓰므로 필드 자체는 없지만 실질은 동일하게 보장) |
+| 결과 취급 | **본 실험(60회) 분석에서 제외** - `collect_metrics.py`가 절대 읽지 않는 위치(§50.3과 동일 원칙)에 저장 |
+| stage 시각 | 명목 계산이 아니라 어댑터가 실제로 기록한 시작/종료 시각(§54.3의 `get_stage_windows()`)만 쓴다 |
+
+### 54.2 별도 검증 도구 - `experiments/verify_memory_pressure_candidate.py`(신규)
+
+- **`run_memory_pressure_trial.py`(smoke 전용)의 1GB 이상 차단은 그대로 둔다** - 해제하지 않는다. 이 도구는 완전히 별도 파일·별도 CLI다.
+- `memory_pressure_adapter.make_memory_pressure_injector()`를 그대로 재사용한다(안전 감시·headroom 게이트·duration 안전망·target replacement 규칙 전부 불변) - 세 stage를 **하나의 `stages` 리스트로 한 번에 `inject()`** 호출한다(어댑터가 원래부터 지원하던 다단계 순차 처리 기능 - 지금까지는 calibration용으로 단일 stage만 써왔을 뿐, 새 로직을 추가한 게 아니다).
+- baseline·recovery 구간(어댑터 스레드가 안 도는 동안)은 `explore_memory_pressure_intensity.py`의 `own_tick`과 동일한 독립 감시(Node MemAvailable·target working set·restartCount·OOMKilled·target UID 변경)를 재사용한다.
+- **stage별 AllInjected 확인**(§54.4 기준 1번)을 위해 `memory_pressure_adapter.py`에 최소한의 관측 훅을 추가했다 - 어댑터가 이미 매 5초 도는 안전 tick 루프에 `is_stage_injected()` 확인을 얹어 `stage_windows[i]["all_injected"]`에 기록할 뿐(추가 대기시간 없음, 기존 안전/중단 로직 완전 불변), 새 `Injector.get_stage_windows()`(선택 구현 훅, `run_once()`는 호출하지 않음)로 실제 시작/종료 시각과 함께 노출한다.
+- 안전 로그(`log_fn` 콜백)로 잡히는 모든 기록에 실제 시각(`ts`)을 남기도록 어댑터의 `_log()`를 통일했다(이전엔 파일 기록 경로에만 시각이 붙고 콜백 경로엔 없어 비대칭이었음 - stage별로 tick을 나누려면 둘 다 필요) - 이 변경은 순수 관측 보강이라 안전 판정·`TrialResult`에는 영향이 없다.
+- `explore_memory_pressure_intensity.analyze_slo()`에 `upper_bound_iso` 선택 인자를 추가해 **stage 경계 안에서만** SLO 판정을 할 수 있게 했다(하한은 기존 `not_before`가 그대로 보장, 상한은 stage 종료+30초 여유 이내인지 `t_slo_within_window`로 기록) - 기존 호출부(§50~§53)는 이 인자를 안 넘기므로 동작 불변.
+- 산출물은 `results/`(top-level) 아래 `verify-memory_pressure-candidate-rep{N}-{timestamp}-summary.json` + 최종 판정 `verify-memory_pressure-candidate-verdict-{timestamp}.json`으로 저장한다 - `trial-*.json` 패턴이 아니라 본 실험과 절대 안 섞인다. probe raw CSV·안전 tick·실제 stage 시각 전부 원본 그대로 보존한다.
+- 예외(`TrialInvalid`/`HarnessCorrupted`/`RuntimeError`/독자 정의 즉시중단)나 `KeyboardInterrupt` 발생 시 `finally`에서 `injector.cleanup()`을 즉시 호출한다(idempotent).
+- 반복 사이 **cooldown 120초** + 클러스터 원상복구 확인(Node 정상, vLLM pod restartCount 불변) - 확인 안 되면 다음 반복을 시작하지 않는다.
+
+### 54.3 stage별 분석 방법 - 실제 경계로만 판정(명목 경계·이전 stage 잔여효과 오분류 방지)
+
+`get_stage_windows()`가 반환하는 실제 `[start, end)`로 (1) probe raw CSV를 stage별로 `analyze_slo(not_before=start, upper_bound_iso=end)` 호출해 그 stage 안에서 확정된 `t_slo`/`t_recovery`만 계산하고, (2) 어댑터의 안전 tick(working set 등)도 같은 경계로 나눠 stage별 최대 working set을 구한다(`bucket_ticks_by_stage()`, 순수 함수). `not_before`가 이전 stage의 위반 스트릭이 다음 stage로 스며드는 것을 막고, `upper_bound_iso`(+30초 여유)가 반대로 drain 구간의 사건을 이 stage 위반으로 잘못 세는 것을 막는다 - 두 방향 다 명목 시각이 아니라 실측 경계로만 자른다.
+
+### 54.4 회차별 안전 재현성 기준 (3회 모두 충족해야 "재현성 확인")
+
+1. 모든 stage `AllInjected=True`
+2. completion 성공률 100%(probe raw CSV 전체, stage 무관)
+3. restartCount 불변
+4. OOMKilled 없음
+5. Node Ready·pressure 없음
+6. Node MemAvailable 4GiB 이상(전체 관측 구간)
+7. target working set 5GiB 미만(전체 관측 구간)
+8. CR·observer(probe pod) 완전 정리
+9. 최종 recovery 후 baseline ±150MiB 복귀(30초 이내, 어댑터 자체 판정 재사용)
+
+### 54.5 stage별 SLO 재현성 기준 (사전 확정, §50.6/§52.4와 같은 `t_slo` 정의 재사용 - 새 판정 로직 없음)
+
+- 500MB stage: **3회 모두** sustained latency SLO 미위반(`t_slo is None`)
+- 1000MB stage: **3회 모두** sustained latency SLO 미위반
+- 1500MB stage: **최소 2/3회** sustained latency SLO 위반(`t_slo is not None`)
+- availability 위반은 필수 조건이 아니다(latency 경로 위반만으로 충분 - `find_t_slo()`의 기존 OR 정의 그대로)
+- 1500MB의 위반 판정은 `MIN_SAMPLES_FOR_RELIABLE_P95`(20개) 이상 evaluable한 rolling P95와 `LATENCY_PERSIST_SEC`(30초) 연속 조건을 그대로 만족해야 한다(`slo_judge.evaluate()`/`find_t_slo()` 재사용, 새 기준 추가 없음)
+- **순간 P95 초과(`p95_peak`)만으로는 위반 처리하지 않는다** - 반드시 `t_slo not None`(30초 연속 스트릭 또는 즉시 availability 위반 확정)이어야 함
+
+### 54.6 추가 확인 (판정에 직접 관여하지 않는 보고 항목)
+
+- stage별 최대 working set이 강도에 따라 대체로 증가하는지(`working_set_monotonic_nondecreasing`)
+- 1500MB stage의 `t_slo`가 실제 그 stage 경계(+30초 여유) 안에 있는지(`t_slo_within_window`)
+- recovery(`t_recovery`)가 실제 마지막 stage 종료 이후인지(`recovery_after_stage_end`)
+- 위 두 항목이 §54.3의 실제 경계 기반 분석으로 이전 stage 잔여효과나 명목 경계 오분류 없이 나왔는지
+
+### 54.7 즉시 중단 조건 (아래 중 하나라도 - 그 즉시 해당 반복을 끝내고 이후 반복을 실행하지 않는다)
+
+- target working set 5GiB 이상
+- Node MemAvailable 3GiB 미만
+- restart 증가 또는 OOMKilled
+- Node 상태 이상(NotReady 또는 pressure)
+- target UID 변경
+- CR·observer cleanup 실패
+- stage 시각·observer 데이터 손실(예상 stage 수와 실제 기록 불일치, 시작/종료 시각 미기록)
+- `HarnessCorrupted`
+
+### 54.8 판정에 따른 조치 (사전 확정, 결과를 본 뒤 바꾸지 않는다)
+
+**모든 기준(§54.4·§54.5) 충족 시**:
+1. `chaos/scenario-progressive-memory-pressure.yaml`의 최종 구성을 500/1000/1500MB × 각 120초로 동결(문서에 명시).
+2. 기존 2500MB·5000MB 구성은 과거 설계로 문서에 그대로 보존(YAML 자체도 이력으로 두고 손대지 않음, §48.3과 동일 원칙).
+3. "실제 OOM 유도" 계열 표현 제거(§48.3에서 이미 "잠정 무효"로 표시한 것을 이 결과로 확정).
+4. 1500MB stage를 "안전한 high-stage latency degradation"으로 정의(계약서에 반영).
+5. 원본 probe raw CSV·안전 tick(observer)·stage summary(실제 시각) 보존.
+6. 전체 오프라인 테스트 재확인.
+7. 문서화·커밋·푸시.
+
+**기준을 충족하지 못하면**: 강도나 지속시간을 그 자리에서 조정하지 않는다 - 결과만 있는 그대로 보고하고 다음 지시를 기다린다.
+
+완료(또는 중단) 후 정지 - memory_pressure 3-arm 파일럿·`run_all_scenarios.py`·본 실험은 시작하지 않는다.
+
+### 54.9 구현 확인
+
+`experiments/verify_memory_pressure_candidate.py`(신규) + `experiments/test_verify_memory_pressure_candidate.py`(신규 19개, `bucket_ticks_by_stage`/`judge_safety`/`judge_reproducibility` 순수 함수만 - 라이브 오케스트레이션은 `explore_ramp_intensity.run_candidate()`와 같은 이유로 오프라인 테스트 대상 아님). 지원을 위해 `run_once.Injector`에 선택 훅 `get_stage_windows` 추가(1개), `memory_pressure_adapter.py`에 stage별 AllInjected 관측(`_stage_wait_with_safety`)과 `_log()` 시각 통일 추가(신규 테스트 2개), `explore_memory_pressure_intensity.analyze_slo()`에 `upper_bound_iso` 확장(신규 테스트 3개) - **`TrialResult` 스키마·기존 안전 상수·기존 단일 라운드 도구(§50/§52) 동작 전부 불변**. 전체 오프라인 스위트(`pytest experiments recovery-policy anomaly-detection -q -m "not live_cluster"`, 존재하지 않는 KUBECONFIG) 640 passed(직전 616에서 +24), 3 deselected.

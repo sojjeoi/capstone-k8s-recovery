@@ -300,14 +300,15 @@ def _safety_log_path(run_id: str) -> Path:
 
 def _append_safety_log(run_id: str, record: dict) -> None:
     """안전 관측값(evidence)을 JSONL로 남긴다 - TrialResult 스키마에는 없는
-    보조 기록. 기록 실패(디스크 문제 등)는 trial 판정에 영향을 주면 안 되므로
-    예외를 삼키고 stderr에만 남긴다(읽기 전용 관측이 판정 경로를 오염시키지
-    않는다는 원칙, trial_observer.py와 동일)."""
+    보조 기록. record는 _log()가 이미 "ts"를 찍어서 넘긴다(2026-09-20부터).
+    기록 실패(디스크 문제 등)는 trial 판정에 영향을 주면 안 되므로 예외를
+    삼키고 stderr에만 남긴다(읽기 전용 관측이 판정 경로를 오염시키지 않는다는
+    원칙, trial_observer.py와 동일)."""
     try:
         path = _safety_log_path(run_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": datetime.now(timezone.utc).isoformat(), **record}, default=str) + "\n")
+            f.write(json.dumps(record, default=str) + "\n")
     except OSError as e:
         print(f"[memory_pressure_adapter] 안전 로그 기록 실패(무시하고 계속): {e}", file=sys.stderr)
 
@@ -353,10 +354,20 @@ def make_memory_pressure_injector(
         raise ValueError("stages는 비어있지 않은 리스트여야 함(기본값 없음 - 명시적으로 전달할 것)")
 
     def _log(record: dict) -> None:
+        """모든 안전 로그 기록에 시각(ts)을 여기서 한 번만 찍는다(2026-09-20
+        추가 - 후보 재현성 검증 도구 지원). 이전에는 log_fn 경로(테스트·
+        explore/verify 도구)로 가는 기록에는 ts가 안 붙고 파일 기록
+        경로(_append_safety_log)에만 붙어 비대칭이었다 - 여러 stage에 걸친
+        기록을 시각으로 구간 분류하려면 log_fn 쪽도 ts가 있어야 한다. 실제
+        벽시계(now_fn 아님)를 쓴다 - now_fn은 stage 경계 기록 전용 주입
+        지점(_StepClock 등 결정론적 테스트 시계)이라, 여기서 같이 소비하면
+        매 안전 tick마다 그 시계가 추가로 진행해 stage 경계 타이밍이
+        틀어진다(실측 확인됨 - classify_stage 테스트가 깨짐)."""
+        stamped = {"ts": datetime.now(timezone.utc).isoformat(), **record}
         if log_fn is not None:
-            log_fn(record)
+            log_fn(stamped)
         else:
-            _append_safety_log(run_id, record)
+            _append_safety_log(run_id, stamped)
 
     cr_names = [_sanitize_cr_name(run_id, i) for i in range(len(stages))]
     target = {"name": None, "uid": None, "node_name": None, "node_ip": None, "memory_limit_bytes": None}
@@ -506,11 +517,18 @@ def make_memory_pressure_injector(
                               f"{details['restart_count']}, 원인=기타(liveness 등으로 추정, OOMKilled 아님)"}
         return None
 
-    def _stage_wait_with_safety(stage_duration_sec: float, stop_reason: dict) -> bool:
+    def _stage_wait_with_safety(stage_duration_sec: float, stop_reason: dict,
+                                 window: Optional[dict] = None, stage_idx: Optional[int] = None) -> bool:
         """stage_duration_sec 동안 안전 감시를 하며 대기한다. cleanup()이
         stop_event를 세우면 stop_reason을 건드리지 않고 즉시 True(정상
         중단)를 반환한다. 안전 위반이 감지되면 stop_reason["v"]를 채우고
-        True를 반환한다. 정상 만료면 False."""
+        True를 반환한다. 정상 만료면 False.
+
+        window/stage_idx(선택, 2026-09-20 추가 - 후보 재현성 검증 도구 지원):
+        주어지면 이 stage의 AllInjected를 이미 도는 안전 tick 주기에 얹어서
+        확인만 하고 window["all_injected"]에 기록한다(판정에 관여하지 않는
+        순수 관측 - 기존 안전/중단 로직은 전혀 안 바뀐다, 추가 대기시간도
+        없다). 못 확인해도 stage 진행 자체는 막지 않는다."""
         deadline = time.monotonic() + stage_duration_sec
         while True:
             remaining = deadline - time.monotonic()
@@ -518,6 +536,9 @@ def make_memory_pressure_injector(
                 return False
             if stop_event.wait(min(safety_poll_interval_sec, remaining)):
                 return True  # cleanup()이 요청한 정상 중단
+            if window is not None and not window.get("all_injected") and stage_idx is not None:
+                if is_stage_injected_fn(cr_names[stage_idx]):
+                    window["all_injected"] = True
             violation = _check_safety_once()
             if violation is not None:
                 stop_reason["v"] = violation
@@ -539,11 +560,11 @@ def make_memory_pressure_injector(
 
                 cr_duration = f"{stage['duration_sec'] + stage_duration_safety_margin_sec:.0f}s"
                 create_chaos_fn(cr_names[i], run_id, arm, target["name"], stage, duration=cr_duration)
-                window = {"name": stage["name"], "start": now_fn(), "end": None}
+                window = {"name": stage["name"], "start": now_fn(), "end": None, "all_injected": False}
                 stage_windows.append(window)
                 current_stage_index["i"] = i
 
-                stopped = _stage_wait_with_safety(stage["duration_sec"], stop_reason)
+                stopped = _stage_wait_with_safety(stage["duration_sec"], stop_reason, window=window, stage_idx=i)
                 delete_chaos_fn(cr_names[i])
                 if stopped:
                     window["end"] = now_fn()
@@ -632,6 +653,15 @@ def make_memory_pressure_injector(
     def classify_stage(timestamp_iso: str) -> str:
         return _classify_timestamp_against_windows(timestamp_iso, [dict(w) for w in list(stage_windows)])
 
+    def get_stage_windows() -> list:
+        """어댑터가 실제로 기록한 stage 경계를 그대로 반환한다(명목 계산
+        아님) - run_once.Injector.get_stage_windows 참고. 스냅샷(list(...))
+        후 변환해 classify_stage()와 동일한 스레드 안전 패턴을 쓴다."""
+        return [{"name": w["name"], "start": w["start"].isoformat(),
+                 "end": w["end"].isoformat() if w["end"] is not None else None,
+                 "all_injected": w.get("all_injected", False)}
+                for w in list(stage_windows)]
+
     def is_done() -> bool:
         if thread_exception["e"] is not None:
             raise thread_exception["e"]
@@ -686,4 +716,5 @@ def make_memory_pressure_injector(
                      get_injection_observation_error_sec=get_injection_observation_error_sec,
                      get_last_seen_present_time=get_last_seen_present_time,
                      get_target_replacement=get_target_replacement,
-                     classify_stage=classify_stage)
+                     classify_stage=classify_stage,
+                     get_stage_windows=get_stage_windows)

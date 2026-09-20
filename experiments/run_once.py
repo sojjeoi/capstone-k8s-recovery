@@ -181,6 +181,18 @@ class Injector:
     # (prepare 성공/실패 무관하게) 한 번 호출해 TrialResult에 반영한다.
     # 미구현(None 필드)이면 native 등 preview 자체가 없는 arm이라 스킵.
     get_preview_prep_info: Optional[Callable[[], Optional[dict]]] = None
+    # 선택 구현(2026-09-20 추가 - memory_pressure 후보 재현성 검증 도구 지원).
+    # classify_stage()가 "이 시각이 어느 stage인가"만 알려주는 것과 달리, 이
+    # 훅은 어댑터가 실제로 기록한 stage 경계 자체를 그대로 반환한다 - 여러
+    # stage에 걸친 사후분석(예: stage별 SLO를 실제 시작/종료 시각으로 구간을
+    # 잘라 판정)에는 이름 분류만으로는 부족하고 경계값 자체가 필요하다.
+    # [{"name": str, "start": ISO문자열, "end": ISO문자열|None(아직 진행 중
+    # 또는 중단으로 못 채움), "all_injected": bool}, ...] 실행 순서대로.
+    # run_once()는 이 훅을 호출하지 않는다(TrialResult에 대응 필드 없음) -
+    # run_once() 밖에서 어댑터를 직접 쓰는 도구(explore_*, verify_* 스크립트)
+    # 전용. 미구현(None)이면 그런 도구가 이 훅 없이 classify_stage()나 명목
+    # 시각으로 대신해야 한다.
+    get_stage_windows: Optional[Callable[[], list]] = None
 
 
 @dataclass
