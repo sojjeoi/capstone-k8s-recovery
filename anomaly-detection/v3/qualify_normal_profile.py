@@ -14,8 +14,15 @@ window는 `build_dataset.build_rows_for_session()` 그대로 재사용. 이
 진짜 30초 sustained SLO 판정(런타임 `run_candidate()`의 stage별 `violates`는
 "이 stage 순간 P95 여부"일 뿐이라 그대로 PASS/FAIL 기준으로 쓰면 안 됨),
 (3) Endpoint 격리 확인, (4) Prometheus 사후 조회로 CPU/throttle/Node 요약
-기록뿐이다."""
+기록뿐이다.
+
+§65(2026-09-20) 확장 - 같은 세션 로직을 공식 v3 정상 데이터 9세션 수집에도
+그대로 재사용한다(`--official --split-role {train,calibration,holdout}`).
+qualification과 다른 점은 `purpose`/`is_pilot`/`included_in_training`
+태그와 결과 저장 경로(`official_data/sessions/`)뿐 - PASS 조건·측정
+절차·재사용 코드는 완전히 동일하다(중복 스크립트를 만들지 않음)."""
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -37,7 +44,7 @@ from explore_ramp_intensity import check_node_and_pods  # noqa: E402
 from load_ramp_adapter import _run  # noqa: E402
 from memory_pressure_adapter import get_pod_details  # noqa: E402
 
-from build_dataset import build_rows_for_session, summarize_inventory  # noqa: E402
+from build_dataset import _git_commit_sha, build_rows_for_session, summarize_inventory  # noqa: E402
 from collect_session import run_candidate_with_retry, verify_and_force_cleanup  # noqa: E402
 from windows import CandidateSession  # noqa: E402
 
@@ -62,7 +69,11 @@ PROFILE_CONFIGS = {
 # 밑줄 버그 재발 방지 - 규제 테스트로 고정).
 PROFILE_RUN_LABELS = {"low_load": "q3clow", "sustained_load": "q3csus", "burst": "q3cbrst"}
 DEFAULT_PROBE_CONFIG = str(Path(__file__).parent.parent.parent / "chaos" / "probe-config.yaml")
-SESSIONS_DIR = V3_DIR / "qualification_data" / "sessions"
+QUALIFICATION_SESSIONS_DIR = V3_DIR / "qualification_data" / "sessions"
+OFFICIAL_SESSIONS_DIR = V3_DIR / "official_data" / "sessions"
+PURPOSE_QUALIFICATION = "normal_profile_qualification"
+PURPOSE_OFFICIAL = "official_v3_collection"
+SPLIT_ROLES = ("train", "calibration", "holdout")
 
 
 def _pod_name_for_hash(pod_hash: str):
@@ -132,9 +143,14 @@ def judge_qualification(*, t_slo, success_rate_ok, node_before_ok, node_after_ok
                          active_restart_changed, preview_restart_changed,
                          oom_observed, target_replaced, endpoint_isolated_before,
                          endpoint_isolated_after, invalid_window_count, cleanup_ok,
-                         extreme_latency_detected) -> tuple:
-    """§63.3 PASS 조건 + §63.5 중단 규칙을 기계적으로 적용하는 순수 함수
-    (judge_session_exclusion과 동일한 스타일 - 오프라인 테스트 대상)."""
+                         extreme_latency_detected, window_boundary_ok=True) -> tuple:
+    """§63.3/§65.3 PASS 조건 + 중단 규칙을 기계적으로 적용하는 순수 함수
+    (judge_session_exclusion과 동일한 스타일 - 오프라인 테스트 대상).
+    `window_boundary_ok`는 §65.3 "feature timestamp와 session 경계 정합"
+    조건 - `build_dataset.iter_window_starts()`가 애초에 세션 밖으로 새는
+    창을 만들지 않아 항상 참이어야 하지만, 회귀 방지를 위해 실제로
+    확인한 결과를 그대로 받는다(기본값 True는 이 검사를 하지 않는 기존
+    qualification 호출부와의 하위호환용)."""
     reasons = []
     if t_slo is not None:
         reasons.append(f"sustained SLO 위반(t_slo={t_slo})")
@@ -158,6 +174,8 @@ def judge_qualification(*, t_slo, success_rate_ok, node_before_ok, node_after_ok
         reasons.append("cleanup 또는 단일 revision 복원 실패")
     if extreme_latency_detected:
         reasons.append("§60 수준의 비정상적인 다초 단위 latency 재발 의심")
+    if not window_boundary_ok:
+        reasons.append("feature window가 session 경계를 벗어남")
     return (len(reasons) == 0, reasons)
 
 
@@ -165,14 +183,25 @@ def _iso(dt):
     return dt.isoformat() if hasattr(dt, "isoformat") else dt
 
 
-def collect_qualification_session(profile: str, session_id: str) -> dict:
+def collect_qualification_session(profile: str, session_id: str, *,
+                                   official: bool = False, split_role: str = None) -> dict:
     if profile not in PROFILE_CONFIGS:
         raise ValueError(f"알 수 없는 profile: {profile}(허용: {list(PROFILE_CONFIGS)})")
+    if official and split_role not in SPLIT_ROLES:
+        raise ValueError(f"official 세션은 split_role이 {SPLIT_ROLES} 중 하나여야 함: {split_role!r}")
     ramp_config = str(PROFILE_CONFIGS[profile])
+    ramp_config_sha256 = hashlib.sha256(Path(ramp_config).read_bytes()).hexdigest()
 
     session = {
         "session_id": session_id, "profile": profile, "topology": "active_plus_preview",
-        "is_pilot": True, "included_in_training": False, "purpose": "normal_profile_qualification",
+        "is_pilot": not official,
+        # official 세션은 PASS해야만(judge_qualification 결과) True로 확정한다(아래에서 갱신) -
+        # qualification은 §63 지시대로 항상 False로 고정.
+        "included_in_training": False,
+        "purpose": PURPOSE_OFFICIAL if official else PURPOSE_QUALIFICATION,
+        "split_role": split_role if official else None,  # §65.1 - 측정 전 고정, 결과 보고 안 바꿈
+        "git_commit_sha": _git_commit_sha(),
+        "ramp_config_path": ramp_config, "ramp_config_sha256": ramp_config_sha256,
         "t_session_start": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -264,6 +293,15 @@ def collect_qualification_session(profile: str, session_id: str) -> dict:
         inventory = summarize_inventory(rows_feat, [cand])
         session["inventory"] = inventory
         invalid_window_count = inventory["invalid_rows"]
+        # §65.3 "feature timestamp와 session 경계 정합" - iter_window_starts()가
+        # 애초에 세션 밖으로 새는 창을 안 만들지만(build_dataset.py 구조상
+        # 보장됨), 회귀 방지로 실제 값을 직접 확인한다.
+        window_boundary_ok = all(
+            cand.start_utc <= datetime.fromisoformat(r.window_start_utc)
+            and datetime.fromisoformat(r.window_end_utc) <= cand.end_utc
+            for r in rows_feat
+        )
+        session["window_boundary_ok"] = window_boundary_ok
         stats = inventory.get("feature_stats") or {}
         session["observed_constant_zero"] = {
             "queue": (stats.get("queue_mean", {}).get("max") == 0) if inventory["valid_rows"] else None,
@@ -281,6 +319,7 @@ def collect_qualification_session(profile: str, session_id: str) -> dict:
         session["inventory"] = None
         session["observed_constant_zero"] = None
         session["prometheus_summary"] = None
+        session["window_boundary_ok"] = True  # 창 자체가 없으므로 위반도 없음
         invalid_window_count = 0
 
     passed, reasons = judge_qualification(
@@ -297,24 +336,35 @@ def collect_qualification_session(profile: str, session_id: str) -> dict:
         invalid_window_count=invalid_window_count,
         cleanup_ok=cleanup_ok,
         extreme_latency_detected=extreme_latency_detected,
+        window_boundary_ok=session.get("window_boundary_ok", True),
     )
     session["excluded"] = not passed
     session["exclusion_reasons"] = reasons
+    # official 세션만 학습 후보 자격을 얻는다(§65.1 - PASS해야만 True,
+    # qualification은 항상 False로 고정돼 있었음 - 위에서 이미 세팅).
+    if official:
+        session["included_in_training"] = passed
 
     print(f"[{session_id}] 완료 - {'PASS' if passed else 'FAIL'}" + (f" - 사유: {reasons}" if reasons else ""))
     return session
 
 
 def main():
-    parser = argparse.ArgumentParser(description="§63 3-core 정상 부하 profile qualification - 1개 profile 실행")
+    parser = argparse.ArgumentParser(description="§63/§65 정상 부하 profile qualification 또는 공식 수집 - 세션 1개 실행")
     parser.add_argument("--profile", required=True, choices=list(PROFILE_CONFIGS))
     parser.add_argument("--session-id", required=True)
+    parser.add_argument("--official", action="store_true", help="공식 v3 수집 세션(§65) - qualification이 아님")
+    parser.add_argument("--split-role", choices=list(SPLIT_ROLES), help="--official일 때 필수 - 측정 전 고정된 역할")
     args = parser.parse_args()
+    if args.official and not args.split_role:
+        parser.error("--official에는 --split-role이 필요함")
 
-    session = collect_qualification_session(args.profile, args.session_id)
+    session = collect_qualification_session(args.profile, args.session_id,
+                                             official=args.official, split_role=args.split_role)
 
-    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = SESSIONS_DIR / f"{args.session_id}.json"
+    sessions_dir = OFFICIAL_SESSIONS_DIR if args.official else QUALIFICATION_SESSIONS_DIR
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    out_path = sessions_dir / f"{args.session_id}.json"
     out_path.write_text(json.dumps(session, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
     print(f"[{args.session_id}] 결과 저장: {out_path}")
     sys.exit(1 if session.get("excluded") else 0)

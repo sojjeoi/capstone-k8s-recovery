@@ -5962,3 +5962,137 @@ profile_qualification`. 공식 9세션 수집 없음, 모델 재학습 없음, f
 실험 없음, `TrialResult` 스키마 변경 없음, Chaos 주입·promotion 없음.
 사후 kubectl 확인: pod 2개(`recovery-policy`·`vllm-serving`, active
 restart 0), chaos CR 없음.
+
+## 65. Isolation Forest v3 공식 정상 데이터 9세션 수집 사전등록 (2026-09-20)
+
+§63/§64 승인에 따라 세 profile을 3-core `active_plus_preview` 정상 부하
+qualification 통과로 확정한다. 이번 절차는 **데이터 수집·품질 감사까지만**
+이다 - 모델 학습·threshold 결정은 하지 않는다.
+
+### 65.1 공식 9세션 계획 - Latin square 순서, block=역할 사전 고정
+
+profile 설정(payload/RPS/pulse 구조/`active_plus_preview`/60초 이상
+settle/60초 window·15초 step)은 §63.2와 완전히 동일 - 새로 바꾸지 않는다.
+신규 `anomaly-detection/v3/official_collection_manifest.json`에 아래
+표와 동일한 내용을 기계 판독용으로 동결한다.
+
+| 실행 순서 | session_id | regime | 사전 고정된 역할 |
+|---|---|---|---|
+| 1 | `official-train-low_load-20260920` | low_load | **train** |
+| 2 | `official-train-sustained_load-20260920` | sustained_load | **train** |
+| 3 | `official-train-burst-20260920` | burst | **train** |
+| 4 | `official-calib-burst-20260920` | burst | **calibration** |
+| 5 | `official-calib-low_load-20260920` | low_load | **calibration** |
+| 6 | `official-calib-sustained_load-20260920` | sustained_load | **calibration** |
+| 7 | `official-holdout-sustained_load-20260920` | sustained_load | **holdout** |
+| 8 | `official-holdout-burst-20260920` | burst | **holdout** |
+| 9 | `official-holdout-low_load-20260920` | low_load | **holdout** |
+
+역할은 Block 단위로 고정된다(Block 1=train, Block 2=calibration,
+Block 3=holdout) - 결과를 본 뒤 교환하지 않는다. holdout은 이 단계
+이후에도 threshold·feature 선택에 쓰지 않는다(§65.6). 세션 사이:
+preview abort → 단일 revision 복원 확인 → clean preflight(활성 pod 1개·
+Node 정상, 다음 세션 시작 시 fail-closed 체크가 겸함) → **최소 60초
+cooldown**. `qualify_normal_profile.py`를 `--official --split-role
+{train,calibration,holdout}`로 확장 재사용한다(§63과 완전히 동일한
+측정 절차·PASS 조건 로직 - 코드 중복 없음) - `is_pilot=False`,
+`purpose=official_v3_collection`, `split_role`은 세션 JSON에 그대로
+기록되고 이후 절대 바뀌지 않는다. `git_commit_sha`·ramp config
+SHA-256을 세션마다 추가로 기록한다(§65.5).
+
+### 65.2 과거 데이터 역할 분리 - 확정
+
+**§58의 `active_plus_preview` 6세션을 `idle` regime 후보로 재확인**
+(offline+Prometheus 이력 재조회, 신규 강도 없음): `windows.
+ACTIVE_PLUS_PREVIEW_SESSIONS` 6개 전부를 `build_dataset.build_rows_for_
+session()`으로 다시 통과시켜 strict completeness를 재확인한 결과, **6개
+전부 무효 window 0개**로 통과했다(`pk-ft`/`pk-proposed`/`nd-ft`/
+`nd-proposed` 각 4행, `lr-ft`/`lr-proposed` 각 8행, 합계 32행 - `windows.
+validate_sessions()`도 문제 없음 확인). 측정 전 고정 규칙(session_id
+알파벳 순 + train/calibration/holdout 라운드로빈, 결과를 보고 정하지
+않음)으로 역할을 배정한다:
+
+| session_id | 역할 | 유효 row |
+|---|---|---|
+| `lr-ft-20260918-baseline` | train | 8 |
+| `nd-proposed-20260919-baseline` | train | 4 |
+| `lr-proposed-20260918-baseline` | calibration | 8 |
+| `pk-ft-20260919-baseline` | calibration | 4 |
+| `nd-ft-20260919-baseline` | holdout | 4 |
+| `pk-proposed-20260919-baseline` | holdout | 4 |
+
+regime은 `probe_baseline`(v1/§58 taxonomy 그대로, low_load/sustained_load/
+burst와 다른 별도 `idle` 성격 regime)로 유지한다 - 강제로 세 regime
+이름 중 하나로 재명명하지 않는다.
+
+**`windows.ACTIVE_ONLY_SESSIONS` 6개는 train/calibration/holdout 어디에도
+포함하지 않는다** - `proposed`/`fixed_threshold` detector가 실제로
+동작하는 topology(`active_plus_preview`)와 다르기 때문(§58.3 topology
+조사 결론 재확인). 삭제하지 않고 topology 변화에 대한 out-of-domain
+진단 참고 자료로만 `windows.py`에 그대로 보존한다.
+
+**§60 qualification, §61-62 A-B-A 3세션, §63-64 qualification 3세션은
+전부 이미 `is_pilot=true`/`included_in_training=false`로 고정돼 있다**
+(추가 코드 변경 없이 재확인만 함) - 공식 모델 데이터에 포함하지 않는다.
+
+### 65.3 공식 세션 유효 조건
+
+`qualify_normal_profile.judge_qualification()`을 그대로 재사용한다(§63.4
+와 동일 - 새 판정 로직 없음) + 신규 `window_boundary_ok`(feature
+timestamp가 session 경계 안에 있는지 - `build_dataset.iter_window_
+starts()`가 구조적으로 보장하지만 회귀 방지로 실제 값을 확인, 오프라인
+테스트 추가): 성공률 100%, `t_slo=null`(30초 sustained·availability
+위반 모두 포함), active/preview restartCount 불변, OOMKilled 없음,
+Node Ready·pressure 없음, active/preview Endpoint 격리 유지, target UID
+불변(예기치 않은 promotion 없음), 8개 feature 원천 metric 결측/무효
+window 0개, feature timestamp가 session 경계 안, cleanup 후 단일
+revision 복원(`wait_until_rolled_back()` 재확인). **CFS throttle은
+3코어 환경의 관찰 특성으로 기록만 하고 제외 사유로 쓰지 않는다**(judge_
+qualification에 애초에 이 조건이 없음 - 코드 변경 없음).
+
+### 65.4 실패·재실행 규칙
+
+측정 외적 기술 오류(harness·저장·경로 오류 등)는 원본을 보존하고
+`invalid_session`+정확한 이유를 기록한 뒤, 코드 수정·오프라인 테스트
+통과 후 **새 session ID**로 처음부터 재실행한다(§64에서 이미 이
+패턴대로 처리한 전례 - `EXPERIMENTS_DIR`/`fromisoformat` 버그). sustained
+SLO 위반·restart·OOM·Node 이상은 정상 profile의 재현성 실패로 보고 그
+즉시 이후 세션을 중단한다(강도 조정·임의 대체 세션 금지). metric
+결측은 0으로 대체하지 않고 해당 세션을 invalid 처리 후 원인을 조사·
+보고한다. **각 regime은 공식 유효 세션 3개(train/calibration/holdout
+각 1개)를 모두 확보해야 하며, 결과가 마음에 들지 않는다는 이유로 세션을
+제외·교체하지 않는다.**
+
+### 65.5 세션별 보존 항목
+
+session manifest+사전 지정 역할, `git_commit_sha`+config SHA-256, pod
+이름·UID·revision·topology, 실제 시작·종료·settle·cleanup 시각, raw
+Prometheus 응답(재현 가능한 query manifest - `features.py.METRICS` 그대로),
+raw completion latency, 생성된 feature rows, 요청 수·성공률, SLO 판정
+(`t_slo`), restart/OOM/Node/cleanup 결과, invalid window와 이유,
+active/preview별 CPU·memory·CFS throttle(Prometheus 이력 조회),
+queue/cache non-zero 샘플·window 수.
+
+### 65.6 수집 후 데이터 감사 - 학습·threshold 결정 없음
+
+regime별 세션 수·유효 row 수, block별 train/calibration/holdout 후보
+session ID, feature별 min/median/max/std(training 후보 기준), 세션별
+feature 분포, queue/cache non-zero window 수, 상수·근사상수 feature
+후보, missing/stale/invalid window 수, regime 간 분포 중첩, `idle`
+세션 포함 시 최종 후보 matrix 크기, 목표 session-level split 가능
+여부만 계산·보고한다. **holdout은 이 단계에서 schema·row 수·결측·
+세션 유효성만 확인** - anomaly score·FPR 계산은 모델·threshold 동결
+이후 단 1회만 수행한다(이번 범위 아님). `queue`가 training 후보에서
+계속 상수면 값을 조작하지 않고 `zero-variance removal candidate`로만
+표시한다. `cache`는 실제 변동이 관찰됐으므로(§64.3) 원자료를 보존하고
+자동으로 제외하지 않는다.
+
+### 65.7 범위 제한
+
+Isolation Forest 학습 금지, feature 최종 삭제 금지, threshold 결정
+금지, holdout anomaly score/FPR 계산 금지, model/scaler artifact 교체
+금지, `score_server.py` 런타임 변경 금지, `memory_pressure` 3-arm 금지,
+`run_all_scenarios.py` 금지, 60회 본 실험 금지, `TrialResult` 스키마
+변경 금지, promotion·Chaos 주입 금지.
+
+이 절(§65) 커밋·푸시 이후에만 9세션 실측을 시작한다.

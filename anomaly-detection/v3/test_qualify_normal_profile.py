@@ -8,10 +8,13 @@ from unittest.mock import patch
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+import pytest
+
 from qualify_normal_profile import (
     PROFILE_CONFIGS,
     PROFILE_RUN_LABELS,
     check_endpoint_isolation,
+    collect_qualification_session,
     judge_qualification,
 )
 
@@ -20,6 +23,7 @@ _CLEAN = dict(
     active_restart_changed=False, preview_restart_changed=False, oom_observed=False,
     target_replaced=False, endpoint_isolated_before=True, endpoint_isolated_after=True,
     invalid_window_count=0, cleanup_ok=True, extreme_latency_detected=False,
+    window_boundary_ok=True,
 )
 
 
@@ -99,6 +103,13 @@ def test_judge_qualification_extreme_latency_fails():
     print("OK - §60 수준 비정상 latency 재발 의심이면 FAIL")
 
 
+def test_judge_qualification_window_boundary_violation_fails():
+    passed, reasons = judge_qualification(**{**_CLEAN, "window_boundary_ok": False})
+    assert passed is False
+    assert any("session 경계" in r for r in reasons)
+    print("OK - feature window가 session 경계를 벗어나면(§65.3) FAIL")
+
+
 def test_judge_qualification_accumulates_multiple_reasons():
     passed, reasons = judge_qualification(**{**_CLEAN, "oom_observed": True, "target_replaced": True})
     assert passed is False and len(reasons) >= 2
@@ -149,6 +160,17 @@ def test_check_endpoint_isolation_no_preview_expected_empty():
         result = check_endpoint_isolation("active-pod", None)
     assert result["isolated"] is True
     print("OK - preview가 없어야 하는 상태(cleanup 후)에서 vllm-preview Endpoint가 비어 있으면 isolated=True")
+
+
+def test_collect_official_session_requires_valid_split_role():
+    """official=True인데 split_role이 없거나 잘못됐으면 클러스터를 건드리기
+    전에(get_active_pods() 호출 전) fail-closed로 거부한다(§65.1 - 역할은
+    측정 전에 고정돼야 하므로, 빠뜨린 채로 세션이 시작되면 안 됨)."""
+    with pytest.raises(ValueError):
+        collect_qualification_session("low_load", "x", official=True, split_role=None)
+    with pytest.raises(ValueError):
+        collect_qualification_session("low_load", "x", official=True, split_role="not-a-real-role")
+    print("OK - official 세션은 유효한 split_role 없이 시작되지 않음(클러스터 호출 전 차단)")
 
 
 def test_profile_run_labels_are_valid_k8s_names():

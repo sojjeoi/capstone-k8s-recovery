@@ -1,0 +1,118 @@
+{
+  "_purpose": "§65 공식 v3 정상 데이터 9세션 수집 사전등록 - docs/design/phase8-blue-green-preflight-incident.md §65와 동일 내용, 기계 판독용. 측정 전 커밋·푸시, 이후 수정하지 않는다.",
+  "scope": "data collection and quality audit only - no model training, no threshold determination",
+  "profiles_reused_from_63_64": {
+    "low_load": {"rps": 0.025, "pattern": "steady", "duration_sec": 180},
+    "sustained_load": {"rps": 0.05, "pattern": "steady", "duration_sec": 300},
+    "burst": {"pattern": "0.025 RPS base (60s) x5 alternating with 0.10 RPS pulse (20s) x4"}
+  },
+  "topology": "active_plus_preview",
+  "settle_after_preview_ready_sec_min": 60,
+  "feature_window_sec": 60,
+  "feature_step_sec": 15,
+  "payload_identical_to_qualification": true,
+  "official_sessions": [
+    {"order": 1, "session_id": "official-train-low_load-20260920", "regime": "low_load", "split_role": "train"},
+    {"order": 2, "session_id": "official-train-sustained_load-20260920", "regime": "sustained_load", "split_role": "train"},
+    {"order": 3, "session_id": "official-train-burst-20260920", "regime": "burst", "split_role": "train"},
+    {"order": 4, "session_id": "official-calib-burst-20260920", "regime": "burst", "split_role": "calibration"},
+    {"order": 5, "session_id": "official-calib-low_load-20260920", "regime": "low_load", "split_role": "calibration"},
+    {"order": 6, "session_id": "official-calib-sustained_load-20260920", "regime": "sustained_load", "split_role": "calibration"},
+    {"order": 7, "session_id": "official-holdout-sustained_load-20260920", "regime": "sustained_load", "split_role": "holdout"},
+    {"order": 8, "session_id": "official-holdout-burst-20260920", "regime": "burst", "split_role": "holdout"},
+    {"order": 9, "session_id": "official-holdout-low_load-20260920", "regime": "low_load", "split_role": "holdout"}
+  ],
+  "roles_fixed_before_measurement": true,
+  "roles_never_swapped_after_seeing_results": true,
+  "holdout_not_used_for_threshold_or_feature_selection_at_this_stage": true,
+  "inter_session_procedure": [
+    "preview abort", "confirm single active revision restored (wait_until_rolled_back)",
+    "clean preflight (next session's own fail-closed start check covers this)", "cooldown >= 60s"
+  ],
+  "historical_data_roles": {
+    "idle_regime_from_section_58": {
+      "source": "windows.ACTIVE_PLUS_PREVIEW_SESSIONS (6 sessions, re-verified strict completeness: 0 invalid windows across all 6, 32 total valid rows)",
+      "regime_label": "probe_baseline (kept as-is, not renamed to low_load/sustained_load/burst)",
+      "role_assignment_rule": "session_id alphabetical order, round-robin train/calibration/holdout, fixed before checking pass/fail - not chosen after seeing results",
+      "assignments": [
+        {"session_id": "lr-ft-20260918-baseline", "split_role": "train", "valid_rows": 8},
+        {"session_id": "nd-proposed-20260919-baseline", "split_role": "train", "valid_rows": 4},
+        {"session_id": "lr-proposed-20260918-baseline", "split_role": "calibration", "valid_rows": 8},
+        {"session_id": "pk-ft-20260919-baseline", "split_role": "calibration", "valid_rows": 4},
+        {"session_id": "nd-ft-20260919-baseline", "split_role": "holdout", "valid_rows": 4},
+        {"session_id": "pk-proposed-20260919-baseline", "split_role": "holdout", "valid_rows": 4}
+      ]
+    },
+    "active_only_from_section_58": {
+      "source": "windows.ACTIVE_ONLY_SESSIONS (6 sessions)",
+      "status": "excluded from train/calibration/holdout - topology differs from detector's real operating condition",
+      "retained_as": "out-of-domain topology diagnostic reference only, not deleted"
+    },
+    "excluded_not_training_data": [
+      "section 60 qualification session (qual-low_load-20260920-r6)",
+      "section 61-62 A-B-A sessions (aba-a1, aba-b, aba-a2)",
+      "section 63-64 qualification sessions (q3c-low_load-20260920-r2, q3c-sustained_load-20260920-r1, q3c-burst-20260920-r1)"
+    ]
+  },
+  "valid_session_conditions": [
+    "success_rate == 100%",
+    "t_slo == null (covers both 30s-sustained latency violation and immediate availability violation)",
+    "active and preview restartCount unchanged",
+    "no OOMKilled",
+    "Node Ready, no pressure",
+    "active/preview Endpoint isolation maintained",
+    "target UID unchanged (no unexpected promotion)",
+    "no missing/NaN/stale on any of the 8 feature source metrics (zero invalid windows)",
+    "feature window timestamps fall within session boundaries (window_boundary_ok)",
+    "cleanup succeeds, single revision restored"
+  ],
+  "cfs_throttle_policy": "recorded as an observed characteristic of the current 3-core environment, not a session-exclusion criterion",
+  "failure_and_rerun_rules": {
+    "technical_harness_error": "preserve raw data, record invalid_session with exact reason, fix code + pass offline tests, rerun from scratch under a NEW session_id",
+    "sustained_slo_violation_or_restart_or_oom_or_node_abnormality": "treat as a reproducibility failure of the normal profile - stop remaining sessions immediately, do not adjust intensity or run an ad hoc substitute session",
+    "missing_metric": "never zero-substitute - mark session invalid, investigate cause, report",
+    "no_cherry_picking": "each regime must obtain exactly 3 valid sessions (one per split role) - never settle for 2 of 3 because a result looks unfavorable for the model"
+  },
+  "preserved_per_session": [
+    "session manifest and pre-assigned role", "git_commit_sha and config SHA-256",
+    "pod name/UID/revision/topology", "actual start/end/settle/cleanup timestamps",
+    "raw Prometheus response or reproducible query manifest (features.py.METRICS as-is)",
+    "raw completion latency", "generated feature rows", "request count and success rate",
+    "SLO determination (t_slo)", "restart/OOM/Node/cleanup results", "invalid windows and reasons",
+    "active/preview CPU, memory, CFS throttle", "queue/cache non-zero sample and window counts"
+  ],
+  "post_collection_audit_only": [
+    "session and valid-row counts per regime",
+    "train/calibration/holdout candidate session IDs per block",
+    "per-feature min/median/max/std on training-candidate data",
+    "per-session feature distribution",
+    "queue/cache non-zero window counts",
+    "constant/near-constant feature candidates",
+    "missing/stale/invalid window counts",
+    "distribution overlap across regimes",
+    "final candidate matrix size including idle sessions",
+    "whether the targeted session-level split is achievable"
+  ],
+  "holdout_stage_gate": "at this stage: schema, row count, missing-data, and session-validity checks only - actual anomaly score and FPR computation happens exactly once, after model and threshold are frozen (out of this task's scope)",
+  "queue_policy": "if constant across training candidates, mark as zero-variance removal candidate - do not fabricate variance",
+  "cache_policy": "real variance was observed (§64.3) - preserve raw data, do not auto-exclude",
+  "scope_limits": [
+    "no Isolation Forest training",
+    "no final feature deletion",
+    "no threshold determination",
+    "no holdout anomaly score or FPR computation",
+    "no model/scaler artifact replacement",
+    "no score_server.py runtime change",
+    "no memory_pressure 3-arm",
+    "no run_all_scenarios.py",
+    "no 60-trial main experiment",
+    "no TrialResult schema change",
+    "no promotion or chaos injection"
+  ],
+  "tooling": {
+    "script": "anomaly-detection/v3/qualify_normal_profile.py (extended with --official --split-role, reuses the exact §63 session logic)",
+    "reused_unchanged": ["blue_green_prep.py", "explore_ramp_intensity.run_candidate", "build_dataset.build_rows_for_session", "slo_judge.evaluate/find_t_slo", "collect_session.run_candidate_with_retry/verify_and_force_cleanup", "judge_qualification (extended with window_boundary_ok)"]
+  },
+  "registered_before_measurement": true,
+  "registered_at_utc": "2026-09-20T10:30:00Z"
+}
