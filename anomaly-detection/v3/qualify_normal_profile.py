@@ -270,8 +270,11 @@ def collect_qualification_session(profile: str, session_id: str) -> dict:
             "cache": (stats.get("cache_mean", {}).get("max") == 0) if inventory["valid_rows"] else None,
         }
 
-        prom_start = (datetime.fromisoformat(candidate_result["stages"][0]["stage_start_utc"]) - timedelta(seconds=70)).isoformat()
-        prom_end = (datetime.fromisoformat(candidate_result["stages"][-1]["stage_end_utc"]) + timedelta(seconds=70)).isoformat()
+        # candidate_result["stages"]는 run_candidate()가 만든 원본(datetime
+        # 객체 그대로) - session["ramp_candidate_result"]["stages"]에 넣은
+        # _iso() 직렬화 버전과 다르다. 여기선 원본을 그대로 산술에 쓴다.
+        prom_start = (candidate_result["stages"][0]["stage_start_utc"] - timedelta(seconds=70)).isoformat()
+        prom_end = (candidate_result["stages"][-1]["stage_end_utc"] + timedelta(seconds=70)).isoformat()
         session["prometheus_summary"] = prometheus_session_summary(prom_start, prom_end)
     else:
         session["feature_rows"] = []
