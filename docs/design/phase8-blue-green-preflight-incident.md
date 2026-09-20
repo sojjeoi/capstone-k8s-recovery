@@ -7077,3 +7077,172 @@ calibration·freeze로 진행하지 않는다. `calib2-low-02`는 실패 상태
 강도 조정·대체 세션 없음, v3.2 학습·calibration·freeze 미실행(6세션
 미완성), Prospective Holdout 수집 없음, boundary challenge 평가 없음,
 `score_server.py` 변경 없음, v3.1 artifact 수정 없음.
+
+## 78. `idle`/`low_load` 무장애 SLO 위반 - 오프라인 전수 재검증 (2026-09-20, 완전 read-only)
+
+추가 live 측정 없이, 이번 investigation 전체에서 수집된 `idle`·
+`low_load=0.025 RPS` 세션의 보존된 raw CSV·session JSON만으로 재검증
+했다. 신규 `anomaly-detection/v3/slo_reaudit/`(`stats_utils.py`·
+`loso.py`·`analyze.py`, 오프라인 테스트 13개) - 원본 데이터는 전혀
+수정하지 않았다.
+
+### 78.1 Registry - 누락 없이 등록, 결과를 보기 전 기준 고정
+
+`active_plus_preview` topology·전용 `idle`/`low_load=0.025 RPS` regime과
+정확히 일치하는 세션만 1차 목록에, RPS나 topology가 다른 것은 별도
+등록(위반율 계산 제외)했다. 기술 오류로 미완결된 세션은 없었다(§70의
+`kubectl cp` 경로 버그는 세션 JSON 생성 전에 죽어 애초에 파일 자체가
+없음).
+
+**idle(4개, 전부 §70/§77에서 이미 PASS로 기록)**: `v31-train-idle-
+20260920`/`v31-calib-idle-20260920`/`v31-holdout-idle-20260920`/
+`calib2-idle-01`.
+
+**low_load=0.025 RPS(8개)**: `q3c-low_load-20260920-r2`(§64)/
+`official-train-low_load-20260920`(§66)/`official-calib-low_load-
+20260920`(§68)/`v31-train-low_load-20260920`/`v31-calib-low_load-
+20260920`/`v31-holdout-low_load-20260920`(이상 §70)/`calib2-low-01`/
+`calib2-low-02`(이상 §77).
+
+**프로토콜 불일치(등록만, 위반율 계산 제외)**: `qual-low_load-20260920-
+r6`(§60 - 0.10 RPS, 4-core 시절 값), A-B-A `aba-a1`/`aba-b`/`aba-a2`
+(§61-62 - 0.10 RPS, A1/A2는 topology도 `active_only`).
+
+세션별 session_id·수집 시각·profile/topology·split·raw CSV/session
+JSON SHA-256·성공률·`t_slo`·cleanup 상태·기존 판정·완결성 전체 표는
+`anomaly-detection/v3/slo_reaudit/reaudit_report.json`에 기록했다.
+
+### 78.2 SLO 판정 독립 재검증 - 12개 세션 전부 원본과 완전 일치
+
+동결된 `experiments/slo_judge.py`를 raw probe CSV에 그대로 재적용
+(`evaluate()`→`find_t_slo()`→`find_t_recovery()`) - **12개 세션 전부
+재계산 결과가 원본 기록과 정확히 일치**했다(`calib2-low-02`는 마이크로
+초 단위까지 동일한 `t_slo=2026-09-20T17:00:58.640856+00:00`, 나머지
+11개는 전부 `t_slo=null`로 일치). 과거 발견됐던 small-sample 오판정·
+baseline gate·timestamp ordering·stage 경계 버그(모두 코드에 이미
+반영·동결됨)가 재발한 흔적은 없다.
+
+### 78.3 세션 단위 자연 SLO 위반율
+
+| profile | 위반 세션 / 전체 | 비율 | 95% 정확 이항 CI(Clopper-Pearson) |
+|---|---|---|---|
+| `idle` | 0/4 | 0% | [0%, 60.2%] |
+| `low_load=0.025 RPS` | 1/8 | 12.5% | [0.3%, 52.7%] |
+
+두 CI 모두 매우 넓다 - 표본이 각 4개·8개뿐이라 "idle이 low_load보다
+안전하다"고 통계적으로 단정할 근거는 아직 약하다(두 CI가 크게
+겹친다). Overlapping window(idle 151행, low_load 337행)를 독립 표본으로
+쓰지 않았다 - 위 표는 전부 session 단위다.
+
+### 78.4 실패 세션의 원본 latency 구조 - 연속 저하가 아니라 두 번의 짧은 스파이크 뭉치
+
+`calib2-low-02`의 raw probe CSV(1RPS, 정상 latency 0.2~0.3초대)를 직접
+보면 **위반은 연속적인 저하가 아니라 두 번의 짧은 스파이크 뭉치**였다:
+`17:00:12~13`(1.83초, 1.38초, 2건) 그리고 `17:00:28~31`(3.14초, 2.61초,
+1.61초, 0.61초, 4건) - 그 사이·전후는 전부 0.2~0.3초대 정상. `slo_judge`
+의 60초 trailing rolling window가 이 두 스파이크 뭉치의 잔여 영향을
+각각 최대 60초씩 끌고 가면서 P95를 계속 threshold 위로 유지시켰고,
+`17:00:24.33`부터 시작된 위반 스트릭이 30초를 채운 `17:00:58.64`에
+`t_slo`가 확정됐다(스트릭 자체는 `17:01:30.33`까지 총 약 66초간
+지속). **요청 성공률은 100% - 전부 결국 성공했고 완전히 끊긴 요청은
+없었다.**
+
+**7개 PASS 세션 전부 30초 문턱에 근접해 있었다는 게 더 중요한 발견이다**
+- `max_consecutive_violation_sec`(가장 길게 이어진 연속 위반 스트릭
+길이, 30초를 못 채워 `t_slo`가 안 찍힌 경우도 포함)가 PASS 세션에서
+**12~22초**로, `calib2-low-02`의 61초와 질적으로 다른 게 아니라 **같은
+분포의 꼬리**로 보인다:
+
+| session | 최장 연속 위반 스트릭 | raw latency max | 판정 |
+|---|---|---|---|
+| `q3c-low_load-20260920-r2` | 12.0초 | 1.162초 | PASS |
+| `official-calib-low_load-20260920` | 14.0초 | 1.194초 | PASS |
+| `v31-train-low_load-20260920` | 17.0초 | 1.047초 | PASS |
+| `official-train-low_load-20260920` | 19.0초 | 1.281초 | PASS |
+| `v31-calib-low_load-20260920` | 19.0초 | 1.186초 | PASS |
+| `calib2-low-01` | 21.0초 | 1.109초 | PASS |
+| `v31-holdout-low_load-20260920` | 22.0초 | 1.124초 | PASS |
+| **`calib2-low-02`** | **61.0초** | **3.135초** | **FAIL** |
+
+### 78.5 실패 세션 vs PASS 세션 feature 비교 - 풀링 quartile은 오도됨, 세션 단위 LOSO는 근소한 초과만 확인
+
+1차로 실패 세션의 `t_slo` 120초 이전 feature 값을 **PASS 7세션의 row를
+풀링한 사분위수**와 비교하니 6개 feature 중 4개(`cpu_mean`/`cpu_slope`/
+`memory_slope`/`cache_slope`)가 "범위 밖"으로 나왔다. 그런데 이건
+**세션 간 이질성 때문에 오도된 결과**였다 - 개별 PASS 세션들의 자체
+min/max를 보면(예: `v31-holdout-low_load-20260920`의 `cpu_mean` 최솟값
+0.799, `calib2-low-01`의 `cpu_slope` 범위 [-0.524, 0.537]) 실패 세션과
+비슷하거나 더 극단적인 값을 이미 정상적으로 보이고 있었다.
+
+**세션을 통계 단위로 삼은 LOSO(`loso.py`, "다른 7개 세션이 실제로
+도달한 값의 전체 범위"와 비교)로 교정하면**:
+
+| feature | `calib2-low-02` 범위 | 나머지 7세션 범위 | 초과 여부 |
+|---|---|---|---|
+| `cpu_mean` | [0.685, 1.814] | [0.799, 1.822] | 최솟값이 근소하게(14%) 낮음 |
+| `cpu_slope` | [-0.482, 0.550] | [-0.585, 0.537] | 최댓값이 근소하게(2%) 높음 |
+| `memory_mean` | 정상 범위 안 | - | 초과 없음 |
+| `memory_slope` | [-2.70e6, 2.32e6] | [-1.92e6, 2.20e6] | 양쪽 다 근소하게(5~40%) 초과 |
+| `cache_mean` | 정상 범위 안 | - | 초과 없음 |
+| `cache_slope` | 정상 범위 안(다른 세션과 정확히 일치) | - | 초과 없음 |
+
+6개 중 2개(`memory_mean`, `cache_mean`/`cache_slope`)는 **전혀 초과가
+없고**, 나머지 3개는 **10~40% 수준의 근소한 초과**일 뿐이다 - PASS
+세션이 7개뿐인 좁은 참조 표본에서 자연스럽게 나올 수 있는 차이와
+뚜렷이 구분되지 않는다. Prometheus 이력에 남은 **CPU/CFS throttle
+평균값도 8개 세션 전부 사실상 동일**했다(active pod CPU avg
+1.38~1.63코어, throttle avg 22.9~31.5% - `calib2-low-02`도 이 범위
+안에 완전히 들어감, §61에서 이미 확인된 배경 현상이 모든 세션에
+동일하게 존재).
+
+### 78.6 판정 - **B: Latency-only unexplained violation**
+
+§78.4·§78.5를 종합하면 A(feature-correlated organic anomaly)로 보기엔
+근거가 약하다 - "하나 이상의 feature가 PASS 범위를 **일관되게**
+벗어났다"는 기준을 충족하지 못한다(6개 중 2개는 초과 자체가 없고,
+나머지도 10~40% 수준의 근소한 초과뿐이며 방향도 혼재됨). C(harness
+artifact)도 아니다 - §78.2에서 동결된 판정 로직이 원본에서 정확히
+재현됐다. 따라서 **B로 판정한다**: 현재 6개 feature(및 Prometheus
+CPU/throttle 지표까지 넓혀 봐도)로 이 위반을 사전에 구분·탐지할 근거가
+없다. §78.4의 "7개 PASS 세션 전부 30초 문턱에 근접"이라는 관측은
+이것이 희귀한 별종 사건이 아니라 **현재 3-core 환경에서 `low_load`
+자체의 SLO 여유가 원래 얇다**는 것을 시사한다(원인은 여전히 단정하지
+않음). 추가 정상 세션만 늘린다고 해결된다고 단정하지 않는다 - 표본이
+늘어도 "가끔 30초를 넘는" 근본 분포 자체가 바뀌는 건 아니다.
+
+**B의 지시에 따른 제안(구현·재학습 없이 제안만)**:
+1. **feature 추가**: latency/TTFT 계열 서비스 품질 feature(현재 8개는
+   K8s/vLLM 자원 지표뿐, 요청 latency 자체를 feature로 쓴 적이 없음)를
+   추가하면 이런 "자원 지표는 정상, latency만 튀는" 사건을 탐지할 수
+   있을지 검토 - 단, 이는 새 feature schema라 이번 범위 밖.
+2. **주장 축소안**: "Isolation Forest가 자원 지표만으로 SLO 저하를
+   선제 탐지한다"는 주장을 유지하려면, 이번 재검증에서 확인된 "저하가
+   순수 latency 레벨에서만 나타나고 자원 지표에는 안 나타나는 사건이
+   최소 1건 존재한다"는 한계를 명시해야 한다.
+
+### 78.7 정상 데이터 정의 재검토 - survivorship bias 위험 있음
+
+지금까지 **infrastructure-normal**(Chaos 없음·restart/OOM/Node 이상
+없음·topology/cleanup 정상)과 **SLO-normal**(sustained SLO 위반 없음)
+두 조건을 동시에 만족한 세션만 정상 데이터로 썼다. §78.3~78.4가 보여준
+그림 - `low_load`뿐 아니라 `sustained_load`(§66, 1/2 위반)·`burst`
+(§68, 1/3 위반)까지 이번 investigation에서 시도한 모든 부하 profile이
+독립 실행에서 최소 1회는 SLO를 위반했고, 심지어 PASS한 세션들도
+30초 문턱에 근접해 있었다는 사실(§78.4) - 은 **survivorship bias
+위험이 실재한다**는 쪽을 가리킨다: 세션 전체를 통째로 버리는 현재
+방식은 "이 환경이 실제로 가끔 SLO를 넘긴다"는, 정상 운영의 일부일
+수 있는 동역학 자체를 정상 데이터에서 체계적으로 지워버릴 수 있다.
+
+세션 전체 제외 대신 **시간 구간 단위**로 정상/이상 구간을 나누는
+event-aware 설계(SLO 위반 사건과 그 lead window만 별도 anomaly/
+challenge 후보로 떼어내고, 나머지 정상 구간은 그대로 정상 데이터로
+쓰는 방식)가 타당할 수 있다고 **제안만** 한다 - 실제 dataset manifest·
+세션 포함 기준은 이번에 변경하지 않았다.
+
+### 78.8 범위 준수
+
+live session 추가 실행 없음, preview 생성·promotion 없음, Chaos 주입
+없음, 모델 재학습 없음, threshold 변경 없음, v3.1/v3.2 artifact 생성·
+교체 없음, 기존 Holdout 재평가 없음, boundary challenge score 계산
+없음, `score_server.py` 변경 없음, 기존 raw data 수정 없음(전부
+읽기 전용).

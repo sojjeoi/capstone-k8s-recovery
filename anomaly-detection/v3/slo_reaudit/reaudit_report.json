@@ -1,0 +1,1532 @@
+{
+  "idle": [
+    {
+      "session_id": "v31-train-idle-20260920",
+      "note": "v3.1 train",
+      "t_session_start": "2026-09-20T12:40:03.050377+00:00",
+      "profile": "idle",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "train",
+      "session_json_sha256": "3b7fe66eb14ab4faebcf08664d04979c35de8ff4db15bbb72b3197e5e83971a5",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31idle-20260920T124337Z-raw.csv",
+      "raw_csv_sha256": "6410b3b5d5fc353e625bc427e41f55e376cac184f22a40b2d2f61f555aef9551",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 600,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.2607899809954688,
+        "raw_latency_p95": 0.30159648053813726,
+        "raw_latency_max": 1.1939894340466708,
+        "max_consecutive_violation_sec": 14.004723
+      }
+    },
+    {
+      "session_id": "v31-calib-idle-20260920",
+      "note": "v3.1 calibration",
+      "t_session_start": "2026-09-20T13:39:06.768572+00:00",
+      "profile": "idle",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "calibration",
+      "session_json_sha256": "48c0e7d1e3bc58c61e94f9fb555bf4a8d533fed8ae2288a56905dc01808a3233",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31idle-20260920T134230Z-raw.csv",
+      "raw_csv_sha256": "c9bce8d9dd21fa7ebea3c3558a6a435a7781ec137e4a73e159e7f19a8e413e7f",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 600,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.25561674451455474,
+        "raw_latency_p95": 0.3429620452108793,
+        "raw_latency_max": 1.3284070501103997,
+        "max_consecutive_violation_sec": 16.993012
+      }
+    },
+    {
+      "session_id": "v31-holdout-idle-20260920",
+      "note": "v3.1 holdout",
+      "t_session_start": "2026-09-20T13:56:59.107896+00:00",
+      "profile": "idle",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "holdout",
+      "session_json_sha256": "d13a307811571f1509890319b1e51212d16abc1975392c0116231dd52bef0fce",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31idle-20260920T140022Z-raw.csv",
+      "raw_csv_sha256": "ed73a6fd46d3ab628793e02f9cd4f55e6a4df916ba533aeb1b11ce70dc994fc1",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 600,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.2597988840425387,
+        "raw_latency_p95": 0.2959553167340346,
+        "raw_latency_max": 0.9671311411075294,
+        "max_consecutive_violation_sec": 9.000516
+      }
+    },
+    {
+      "session_id": "calib2-idle-01",
+      "note": "v3.2 calibration attempt",
+      "t_session_start": "2026-09-20T16:13:28.962908+00:00",
+      "profile": "idle",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "calibration",
+      "session_json_sha256": "34a84cb63f9f3aba9aa7e9ab9b692b161935e3c4c279a9df4c554e1e1aae4dba",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31idle-20260920T161713Z-raw.csv",
+      "raw_csv_sha256": "0f0db7b2d36344aaa365fa719f3f076ca2317c8f483fcc11acdd61f0c943ef5f",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 600,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.2530465704621747,
+        "raw_latency_p95": 0.33872285063844176,
+        "raw_latency_max": 1.1730796811170876,
+        "max_consecutive_violation_sec": 12.998344
+      }
+    }
+  ],
+  "low_load": [
+    {
+      "session_id": "q3c-low_load-20260920-r2",
+      "note": "§64 qualification",
+      "t_session_start": "2026-09-20T09:30:08.943671+00:00",
+      "profile": "low_load",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "normal_profile_qualification",
+      "session_json_sha256": "2c5ac2ae6fb0cffbb613019b60a97f73fcc2310f44aebe6f9df4af08021b4c69",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-q3clow-20260920T093347Z-raw.csv",
+      "raw_csv_sha256": "834eba897ad01deb2c4b2ebca5e0f16e3e503ce9da7d828968a0006ee2a399ac",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 299,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.29439212987199426,
+        "raw_latency_p95": 0.3967505490873009,
+        "raw_latency_max": 1.162196337012574,
+        "max_consecutive_violation_sec": 12.000264
+      }
+    },
+    {
+      "session_id": "official-train-low_load-20260920",
+      "note": "§66 official train",
+      "t_session_start": "2026-09-20T10:34:35.770502+00:00",
+      "profile": "low_load",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "train",
+      "session_json_sha256": "a14b0282e04a5bb3d593399495be3cf3678422dc131516f85be286b36c7cede4",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-q3clow-20260920T103809Z-raw.csv",
+      "raw_csv_sha256": "bf3db4da7c4b8d962c75dbb1a347448f6be2fcfc73e175b5dc06e1019c079e2a",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 302,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.25943520257715136,
+        "raw_latency_p95": 0.47460561590269207,
+        "raw_latency_max": 1.2806408430915326,
+        "max_consecutive_violation_sec": 18.999986
+      }
+    },
+    {
+      "session_id": "official-calib-low_load-20260920",
+      "note": "§68 official calibration",
+      "t_session_start": "2026-09-20T11:41:48.708858+00:00",
+      "profile": "low_load",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "calibration",
+      "session_json_sha256": "d37a73e59ac67962a6c396e76ad42ae96a1e441c517ef6c85af193cb93e69449",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-q3clow-20260920T114527Z-raw.csv",
+      "raw_csv_sha256": "e918bffbdc86bcc9d6a7b9eca25b952a97342a44b891454f27e28bcaae39f9bb",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 305,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.2596911429427564,
+        "raw_latency_p95": 0.45931456608232113,
+        "raw_latency_max": 1.1936400579288602,
+        "max_consecutive_violation_sec": 13.999847
+      }
+    },
+    {
+      "session_id": "v31-train-low_load-20260920",
+      "note": "v3.1 train",
+      "t_session_start": "2026-09-20T12:58:16.501957+00:00",
+      "profile": "low_load",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "train",
+      "session_json_sha256": "3acf521eb5bb784cc476f2114443b15836c8cd53b16484897fad02cee0028496",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31low-20260920T130144Z-raw.csv",
+      "raw_csv_sha256": "c682effdee60d50c13541d0a7390e5cabeb1e754298a37870a12afc9f8d6b76a",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 727,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.2554236059077084,
+        "raw_latency_p95": 0.46455266983248295,
+        "raw_latency_max": 1.04668338294141,
+        "max_consecutive_violation_sec": 17.000107
+      }
+    },
+    {
+      "session_id": "v31-calib-low_load-20260920",
+      "note": "v3.1 calibration",
+      "t_session_start": "2026-09-20T13:18:50.963679+00:00",
+      "profile": "low_load",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "calibration",
+      "session_json_sha256": "b0d8b0fe4b87569295530a6ea9eb76844166fe39eada2d5f99996b4492e4fcab",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31low-20260920T132214Z-raw.csv",
+      "raw_csv_sha256": "4b357ac862b41d58e48280c44e871967894b983dbfa035eb867bac2c6bf14d5c",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 725,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.2666957371402532,
+        "raw_latency_p95": 0.49047866617329416,
+        "raw_latency_max": 1.1858924408443272,
+        "max_consecutive_violation_sec": 18.999899
+      }
+    },
+    {
+      "session_id": "v31-holdout-low_load-20260920",
+      "note": "v3.1 holdout",
+      "t_session_start": "2026-09-20T14:14:57.446926+00:00",
+      "profile": "low_load",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "holdout",
+      "session_json_sha256": "fb278ff642b74b188fe156acc46e2a6ba496c2d5293107e0431648cfed17de59",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31low-20260920T141820Z-raw.csv",
+      "raw_csv_sha256": "195c76419a4924510b6b294079a0f42a6c4467224262c763056e3cf23a6639fa",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 724,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.27910990291275084,
+        "raw_latency_p95": 0.518840128032025,
+        "raw_latency_max": 1.1238529537804425,
+        "max_consecutive_violation_sec": 21.996945
+      }
+    },
+    {
+      "session_id": "calib2-low-01",
+      "note": "v3.2 calibration attempt",
+      "t_session_start": "2026-09-20T16:32:04.834025+00:00",
+      "profile": "low_load",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "calibration",
+      "session_json_sha256": "3e5f661d639b0868dff3b2cbd2db027b98fc238f9db997ee37c072198dc44440",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31low-20260920T163604Z-raw.csv",
+      "raw_csv_sha256": "ec864cb4fd424b3ace953fd4fcdf2a55a82dff88558cfe5165b006cb603cd5d8",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": false,
+      "stored_exclusion_reasons": [],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 725,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.27031441079452634,
+        "raw_latency_p95": 0.5020159353967756,
+        "raw_latency_max": 1.1087565661873668,
+        "max_consecutive_violation_sec": 20.992246
+      }
+    },
+    {
+      "session_id": "calib2-low-02",
+      "note": "v3.2 calibration attempt",
+      "t_session_start": "2026-09-20T16:53:00.017122+00:00",
+      "profile": "low_load",
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": "calibration",
+      "session_json_sha256": "fc15b3280960a21ce7c5a6171453c892086167f6b949b41f45c48cc25d121b38",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31low-20260920T165709Z-raw.csv",
+      "raw_csv_sha256": "313a0485d70eceb116ff9fa59fa88710711e47eb92fd19dcdad67dc075dc0319",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": "2026-09-20T17:00:58.640856+00:00",
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": true,
+      "stored_excluded": true,
+      "stored_exclusion_reasons": [
+        "sustained SLO 위반(t_slo=2026-09-20T17:00:58.640856+00:00)"
+      ],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 721,
+        "recomputed_t_slo": "2026-09-20T17:00:58.640856+00:00",
+        "recomputed_t_recovery": "2026-09-20T17:01:30.623244+00:00",
+        "matches_stored": true,
+        "raw_latency_median": 0.2923383379820734,
+        "raw_latency_p95": 0.4422005084110424,
+        "raw_latency_max": 3.13526279409416,
+        "max_consecutive_violation_sec": 60.998579
+      }
+    }
+  ],
+  "protocol_mismatched": [
+    {
+      "session_id": "qual-low_load-20260920-r6",
+      "note": "§60 - 0.10 RPS(4-core 시절 값), boundary_challenge_set",
+      "t_session_start": "2026-09-20T07:42:56.935769+00:00",
+      "profile": null,
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": null,
+      "session_json_sha256": "c4e7ff64538705430fea24a1859c4232df9220bb5b76c4e6266fc86cd37bb18f",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v3low-l-20260920T074540Z-raw.csv",
+      "raw_csv_sha256": "0adb2953aebf6fcb91ead491df72db7be58064ea58f54cf4e85e40e614c3d93a",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": null,
+      "stored_excluded": true,
+      "stored_exclusion_reasons": [
+        "stage에서 sustained SLO 위반(P95=12.653634260687976)"
+      ],
+      "invalid_windows": 0,
+      "data_complete": true,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 304,
+        "recomputed_t_slo": "2026-09-20T07:48:27.261214+00:00",
+        "recomputed_t_recovery": "2026-09-20T07:50:57.036830+00:00",
+        "matches_stored": false,
+        "raw_latency_median": 0.2930331826210022,
+        "raw_latency_p95": 6.455429256428033,
+        "raw_latency_max": 19.707640269072726,
+        "max_consecutive_violation_sec": 100.000945
+      }
+    },
+    {
+      "session_id": null,
+      "note": "§61-62 A-B-A A1 - 0.10 RPS, active_only",
+      "t_session_start": null,
+      "profile": null,
+      "topology": "active_only",
+      "split_role_or_purpose": null,
+      "session_json_sha256": "56c5d4a6158bf058432f3af227ef7569e8686d1e2b967dbf84076d069ecc895d",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-aba-a1-20260920T082247Z-raw.csv",
+      "raw_csv_sha256": "867fe8315b567510dd52c53b9e5be1366f0c1bea7e4bd5d7ebdb9daef63ee83c",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": null,
+      "stored_excluded": null,
+      "stored_exclusion_reasons": null,
+      "invalid_windows": null,
+      "data_complete": null,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 212,
+        "recomputed_t_slo": "2026-09-20T08:26:28.336042+00:00",
+        "recomputed_t_recovery": null,
+        "matches_stored": false,
+        "raw_latency_median": 0.26812607096508145,
+        "raw_latency_p95": 0.6069281107629649,
+        "raw_latency_max": 1.2317702900618315,
+        "max_consecutive_violation_sec": 70.984888
+      }
+    },
+    {
+      "session_id": null,
+      "note": "§61-62 A-B-A B - 0.10 RPS, active_plus_preview",
+      "t_session_start": null,
+      "profile": null,
+      "topology": "active_plus_preview",
+      "split_role_or_purpose": null,
+      "session_json_sha256": "fe4ad0ede20f665a57421d53172de9f602c81980f8357ae88aecf9e91cea204d",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-aba-b-20260920T083222Z-raw.csv",
+      "raw_csv_sha256": "f12c7e9e910b44603ae2712739bc430d7b6fb584e87ae66f958a9378d4175005",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": null,
+      "stored_excluded": null,
+      "stored_exclusion_reasons": null,
+      "invalid_windows": null,
+      "data_complete": null,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 208,
+        "recomputed_t_slo": "2026-09-20T08:35:51.124131+00:00",
+        "recomputed_t_recovery": "2026-09-20T08:36:10.753818+00:00",
+        "matches_stored": false,
+        "raw_latency_median": 0.2712230485631153,
+        "raw_latency_p95": 0.5640876639052295,
+        "raw_latency_max": 1.202579852193594,
+        "max_consecutive_violation_sec": 49.989687
+      }
+    },
+    {
+      "session_id": null,
+      "note": "§61-62 A-B-A A2 - 0.10 RPS, active_only_post_abort",
+      "t_session_start": null,
+      "profile": null,
+      "topology": "active_only_post_abort",
+      "split_role_or_purpose": null,
+      "session_json_sha256": "246dee070f35864dad709c6b231fbd963c46e3e7f85db92b3a86ea7bc5cb8ca9",
+      "raw_csv_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-aba-a2-20260920T083933Z-raw.csv",
+      "raw_csv_sha256": "a330214cb45f0367f144629bc5af3ab56f37c92690f358bc44edc59670107d34",
+      "success_rate_all_stages_100pct": true,
+      "stored_t_slo": null,
+      "restart_changed": null,
+      "oom_or_node_issue_reasons": [],
+      "cleanup_result": null,
+      "stored_excluded": null,
+      "stored_exclusion_reasons": null,
+      "invalid_windows": null,
+      "data_complete": null,
+      "reverify": {
+        "reverify_status": "ok",
+        "n_raw_samples": 213,
+        "recomputed_t_slo": null,
+        "recomputed_t_recovery": null,
+        "matches_stored": true,
+        "raw_latency_median": 0.3132490881253034,
+        "raw_latency_p95": 0.5571356758708135,
+        "raw_latency_max": 1.153299065073952,
+        "max_consecutive_violation_sec": 20.000865
+      }
+    }
+  ],
+  "violation_rates": {
+    "idle": {
+      "violations": 0,
+      "n": 4,
+      "rate": 0.0,
+      "ci_95_exact_binomial": [
+        0.0,
+        0.6023646356164746
+      ]
+    },
+    "low_load": {
+      "violations": 1,
+      "n": 8,
+      "rate": 0.125,
+      "ci_95_exact_binomial": [
+        0.003159723531251909,
+        0.5265096708752065
+      ]
+    }
+  },
+  "failed_vs_passed_feature_comparison": [
+    {
+      "session_id": "calib2-low-02",
+      "t_slo": "2026-09-20T17:00:58.640856+00:00",
+      "n_pass_reference_sessions": 7,
+      "n_pass_reference_rows": 175,
+      "per_feature": {
+        "cpu_mean": {
+          "pass_session_robust_range": {
+            "median": 1.6801764346640986,
+            "q1": 1.367461522152934,
+            "q3": 1.7560876620071153,
+            "iqr": 0.38862613985418126,
+            "mad": 0.09572657336734669,
+            "min": 0.7986647533026014,
+            "max": 1.8217211019065946,
+            "n": 175
+          },
+          "values_in_120s_before_t_slo": [
+            1.2163251916504645,
+            1.0753121228562048,
+            0.9118967892041507,
+            0.6959138900123101,
+            0.6849042243860056,
+            1.0592692176769627,
+            1.1938900545028925
+          ],
+          "any_outside_pass_range": true,
+          "all_outside_pass_range": false
+        },
+        "cpu_slope": {
+          "pass_session_robust_range": {
+            "median": 0.0034351961044615307,
+            "q1": -0.049242526205424526,
+            "q3": 0.051954528667466866,
+            "iqr": 0.10119705487289139,
+            "mad": 0.051077896666433135,
+            "min": -0.5851960358504212,
+            "max": 0.5365904614362333,
+            "n": 175
+          },
+          "values_in_120s_before_t_slo": [
+            -0.32395965412059163,
+            -0.24596673991226492,
+            -0.12722627346432444,
+            -0.25424257700463987,
+            0.23027516081541397,
+            0.2676212419775,
+            0.34724337680711787
+          ],
+          "any_outside_pass_range": true,
+          "all_outside_pass_range": false
+        },
+        "memory_mean": {
+          "pass_session_robust_range": {
+            "median": 7004692480.0,
+            "q1": 7003125350.4,
+            "q3": 7021296025.6,
+            "iqr": 18170675.200000763,
+            "mad": 1938227.1999998093,
+            "min": 6990952038.4,
+            "max": 7029268480.0,
+            "n": 175
+          },
+          "values_in_120s_before_t_slo": [
+            7015757414.4,
+            7017259008.0,
+            7018762240.0,
+            7020330188.8,
+            7019217715.2,
+            7019325030.4,
+            7017933209.6
+          ],
+          "any_outside_pass_range": false,
+          "all_outside_pass_range": false
+        },
+        "memory_slope": {
+          "pass_session_robust_range": {
+            "median": 4095.9999987737287,
+            "q1": 2457.599999261977,
+            "q3": 6143.9999990852675,
+            "iqr": 3686.3999998232907,
+            "mad": 1638.399999737455,
+            "min": -1921433.6000003214,
+            "max": 2203238.399999036,
+            "n": 175
+          },
+          "values_in_120s_before_t_slo": [
+            3686.3999987954094,
+            1502412.7999990645,
+            2251980.7999996883,
+            2316697.59999936,
+            -1078886.4000008637,
+            -2698444.8000002117,
+            -2122956.8000001633
+          ],
+          "any_outside_pass_range": true,
+          "all_outside_pass_range": false
+        },
+        "queue_mean": {
+          "pass_session_robust_range": {
+            "median": 0.0,
+            "q1": 0.0,
+            "q3": 0.0,
+            "iqr": 0.0,
+            "mad": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "n": 175
+          },
+          "values_in_120s_before_t_slo": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "any_outside_pass_range": false,
+          "all_outside_pass_range": false
+        },
+        "queue_slope": {
+          "pass_session_robust_range": {
+            "median": 0.0,
+            "q1": 0.0,
+            "q3": 0.0,
+            "iqr": 0.0,
+            "mad": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "n": 175
+          },
+          "values_in_120s_before_t_slo": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "any_outside_pass_range": false,
+          "all_outside_pass_range": false
+        },
+        "cache_mean": {
+          "pass_session_robust_range": {
+            "median": 0.0,
+            "q1": 0.0,
+            "q3": 0.00161290322580645,
+            "iqr": 0.00161290322580645,
+            "mad": 0.0,
+            "min": 0.0,
+            "max": 0.00161290322580645,
+            "n": 175
+          },
+          "values_in_120s_before_t_slo": [
+            0.0,
+            0.0,
+            0.00161290322580645,
+            0.00161290322580645,
+            0.00161290322580645,
+            0.00161290322580645,
+            0.00161290322580645
+          ],
+          "any_outside_pass_range": false,
+          "all_outside_pass_range": false
+        },
+        "cache_slope": {
+          "pass_session_robust_range": {
+            "median": 0.0,
+            "q1": 0.0,
+            "q3": 0.0,
+            "iqr": 0.0,
+            "mad": 0.0,
+            "min": -0.0016129032258064514,
+            "max": 0.0016129032258064503,
+            "n": 175
+          },
+          "values_in_120s_before_t_slo": [
+            0.0,
+            0.0,
+            0.0016129032258064503,
+            0.0008064516129032254,
+            -1.1858306677397936e-19,
+            -0.0008064516129032255,
+            -0.0016129032258064514
+          ],
+          "any_outside_pass_range": true,
+          "all_outside_pass_range": false
+        }
+      }
+    }
+  ],
+  "leave_one_session_out": [
+    {
+      "session_id": "q3c-low_load-20260920-r2",
+      "per_feature": {
+        "cpu_mean": {
+          "target_min": 1.7008278463416004,
+          "target_max": 1.7616068329077976,
+          "target_mean": 1.741319363075193,
+          "other_sessions_full_range": {
+            "min": 0.6849042243860056,
+            "max": 1.8217211019065946
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cpu_slope": {
+          "target_min": -0.04621283094989901,
+          "target_max": 0.04488046688092884,
+          "target_mean": 0.005781710967955261,
+          "other_sessions_full_range": {
+            "min": -0.5851960358504212,
+            "max": 0.5504355889907546
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_mean": {
+          "target_min": 7029252096.0,
+          "target_max": 7029268480.0,
+          "target_mean": 7029257557.333333,
+          "other_sessions_full_range": {
+            "min": 6990952038.4,
+            "max": 7024176332.8
+          },
+          "target_min_outside_others_full_range": true,
+          "target_max_outside_others_full_range": true,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_slope": {
+          "target_min": -9.179658059891442e-07,
+          "target_max": 4915.199998918745,
+          "target_mean": 1820.4444435653322,
+          "other_sessions_full_range": {
+            "min": -2698444.8000002117,
+            "max": 2316697.59999936
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.00161290322580645
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": -0.0016129032258064514,
+            "max": 0.0016129032258064503
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        }
+      }
+    },
+    {
+      "session_id": "official-train-low_load-20260920",
+      "per_feature": {
+        "cpu_mean": {
+          "target_min": 1.7195338759695482,
+          "target_max": 1.8005617600166732,
+          "target_mean": 1.7551928642570642,
+          "other_sessions_full_range": {
+            "min": 0.6849042243860056,
+            "max": 1.8217211019065946
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cpu_slope": {
+          "target_min": -0.08247151317253526,
+          "target_max": 0.064343440595605,
+          "target_mean": 0.010071291442988364,
+          "other_sessions_full_range": {
+            "min": -0.5851960358504212,
+            "max": 0.5504355889907546
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_mean": {
+          "target_min": 6990952038.4,
+          "target_max": 6991743385.6,
+          "target_mean": 6991331601.066667,
+          "other_sessions_full_range": {
+            "min": 6999334092.8,
+            "max": 7029268480.0
+          },
+          "target_min_outside_others_full_range": true,
+          "target_max_outside_others_full_range": true,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_slope": {
+          "target_min": -114688.00000003097,
+          "target_max": 278527.9999993684,
+          "target_mean": 76413.1555548753,
+          "other_sessions_full_range": {
+            "min": -2698444.8000002117,
+            "max": 2316697.59999936
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_mean": {
+          "target_min": 0.0,
+          "target_max": 0.00161290322580645,
+          "target_mean": 0.0008960573476702501,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.00161290322580645
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_slope": {
+          "target_min": -0.0016129032258064514,
+          "target_max": 0.0016129032258064503,
+          "target_mean": -1.4568949516755938e-19,
+          "other_sessions_full_range": {
+            "min": -0.0016129032258064514,
+            "max": 0.0016129032258064503
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        }
+      }
+    },
+    {
+      "session_id": "official-calib-low_load-20260920",
+      "per_feature": {
+        "cpu_mean": {
+          "target_min": 1.2469832092162725,
+          "target_max": 1.7320419093442787,
+          "target_mean": 1.4766336511168965,
+          "other_sessions_full_range": {
+            "min": 0.6849042243860056,
+            "max": 1.8217211019065946
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cpu_slope": {
+          "target_min": -0.36582672524912446,
+          "target_max": 0.41466150478388747,
+          "target_mean": 0.00018321808998530745,
+          "other_sessions_full_range": {
+            "min": -0.5851960358504212,
+            "max": 0.5504355889907546
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_mean": {
+          "target_min": 7013924044.8,
+          "target_max": 7013955174.4,
+          "target_mean": 7013940246.755556,
+          "other_sessions_full_range": {
+            "min": 6990952038.4,
+            "max": 7029268480.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_slope": {
+          "target_min": 2457.599999036274,
+          "target_max": 5734.399999686513,
+          "target_mean": 3913.955554912163,
+          "other_sessions_full_range": {
+            "min": -2698444.8000002117,
+            "max": 2316697.59999936
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_mean": {
+          "target_min": 0.0,
+          "target_max": 0.00161290322580645,
+          "target_mean": 0.0010752688172043,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.00161290322580645
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_slope": {
+          "target_min": -0.0016129032258064514,
+          "target_max": 0.0016129032258064503,
+          "target_mean": 8.96057347670249e-05,
+          "other_sessions_full_range": {
+            "min": -0.0016129032258064514,
+            "max": 0.0016129032258064503
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": true
+        }
+      }
+    },
+    {
+      "session_id": "v31-train-low_load-20260920",
+      "per_feature": {
+        "cpu_mean": {
+          "target_min": 1.0250510234693513,
+          "target_max": 1.796090702038845,
+          "target_mean": 1.5311030886431318,
+          "other_sessions_full_range": {
+            "min": 0.6849042243860056,
+            "max": 1.8217211019065946
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cpu_slope": {
+          "target_min": -0.5138634723802576,
+          "target_max": 0.5198058172551906,
+          "target_mean": 0.029262174182332776,
+          "other_sessions_full_range": {
+            "min": -0.5851960358504212,
+            "max": 0.5504355889907546
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_mean": {
+          "target_min": 7002530611.2,
+          "target_max": 7006679859.2,
+          "target_mean": 7006138279.437839,
+          "other_sessions_full_range": {
+            "min": 6990952038.4,
+            "max": 7029268480.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_slope": {
+          "target_min": -1431552.000000058,
+          "target_max": 2081177.5999990478,
+          "target_mean": 135356.19459394977,
+          "other_sessions_full_range": {
+            "min": -2698444.8000002117,
+            "max": 2316697.59999936
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_mean": {
+          "target_min": 0.0,
+          "target_max": 0.00161290322580645,
+          "target_mean": 0.0009590235396687001,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.00161290322580645
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_slope": {
+          "target_min": -0.0016129032258064514,
+          "target_max": 0.0016129032258064503,
+          "target_mean": -6.53879686137752e-05,
+          "other_sessions_full_range": {
+            "min": -0.0016129032258064514,
+            "max": 0.0016129032258064503
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        }
+      }
+    },
+    {
+      "session_id": "v31-calib-low_load-20260920",
+      "per_feature": {
+        "cpu_mean": {
+          "target_min": 1.1219396703896112,
+          "target_max": 1.8217211019065946,
+          "target_mean": 1.6086342376601495,
+          "other_sessions_full_range": {
+            "min": 0.6849042243860056,
+            "max": 1.8141613861298338
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": true,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cpu_slope": {
+          "target_min": -0.41423602640626794,
+          "target_max": 0.2591646267751724,
+          "target_mean": -0.008341592280241714,
+          "other_sessions_full_range": {
+            "min": -0.5851960358504212,
+            "max": 0.5504355889907546
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_mean": {
+          "target_min": 7002845184.0,
+          "target_max": 7003155660.8,
+          "target_mean": 7003072988.021622,
+          "other_sessions_full_range": {
+            "min": 6990952038.4,
+            "max": 7029268480.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_slope": {
+          "target_min": -58982.400000517984,
+          "target_max": 83967.99999911127,
+          "target_mean": 7738.118918296459,
+          "other_sessions_full_range": {
+            "min": -2698444.8000002117,
+            "max": 2316697.59999936
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.00161290322580645
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": -0.0016129032258064514,
+            "max": 0.0016129032258064503
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        }
+      }
+    },
+    {
+      "session_id": "v31-holdout-low_load-20260920",
+      "per_feature": {
+        "cpu_mean": {
+          "target_min": 0.7986647533026014,
+          "target_max": 1.7835101582065125,
+          "target_mean": 1.4842003585455652,
+          "other_sessions_full_range": {
+            "min": 0.6849042243860056,
+            "max": 1.8217211019065946
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cpu_slope": {
+          "target_min": -0.5851960358504212,
+          "target_max": 0.5169632493324445,
+          "target_mean": -0.01766631976085772,
+          "other_sessions_full_range": {
+            "min": -0.5237590598131411,
+            "max": 0.5504355889907546
+          },
+          "target_min_outside_others_full_range": true,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": true
+        },
+        "memory_mean": {
+          "target_min": 6999334092.8,
+          "target_max": 7004000256.0,
+          "target_mean": 7003557888.0,
+          "other_sessions_full_range": {
+            "min": 6990952038.4,
+            "max": 7029268480.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_slope": {
+          "target_min": -1369292.8000012317,
+          "target_max": 2203238.399999036,
+          "target_mean": 102743.17837769122,
+          "other_sessions_full_range": {
+            "min": -2698444.8000002117,
+            "max": 2316697.59999936
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_mean": {
+          "target_min": 0.0,
+          "target_max": 0.00161290322580645,
+          "target_mean": 0.0010462074978203999,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.00161290322580645
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_slope": {
+          "target_min": -0.0016129032258064514,
+          "target_max": 0.0016129032258064503,
+          "target_mean": -4.359197907585018e-05,
+          "other_sessions_full_range": {
+            "min": -0.0016129032258064514,
+            "max": 0.0016129032258064503
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        }
+      }
+    },
+    {
+      "session_id": "calib2-low-01",
+      "per_feature": {
+        "cpu_mean": {
+          "target_min": 1.0064169759200028,
+          "target_max": 1.7860775802330544,
+          "target_mean": 1.5182693005190835,
+          "other_sessions_full_range": {
+            "min": 0.6849042243860056,
+            "max": 1.8217211019065946
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cpu_slope": {
+          "target_min": -0.5237590598131411,
+          "target_max": 0.5365904614362333,
+          "target_mean": 0.007296814144222041,
+          "other_sessions_full_range": {
+            "min": -0.5851960358504212,
+            "max": 0.5504355889907546
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_mean": {
+          "target_min": 7021166592.0,
+          "target_max": 7024176332.8,
+          "target_mean": 7023681004.6270275,
+          "other_sessions_full_range": {
+            "min": 6990952038.4,
+            "max": 7029268480.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_slope": {
+          "target_min": -1921433.6000003214,
+          "target_max": 2202419.1999988845,
+          "target_mean": 38258.85405346818,
+          "other_sessions_full_range": {
+            "min": -2698444.8000002117,
+            "max": 2316697.59999936
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.00161290322580645
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": -0.0016129032258064514,
+            "max": 0.0016129032258064503
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        }
+      }
+    },
+    {
+      "session_id": "calib2-low-02",
+      "per_feature": {
+        "cpu_mean": {
+          "target_min": 0.6849042243860056,
+          "target_max": 1.8141613861298338,
+          "target_mean": 1.49197443382635,
+          "other_sessions_full_range": {
+            "min": 0.7986647533026014,
+            "max": 1.8217211019065946
+          },
+          "target_min_outside_others_full_range": true,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cpu_slope": {
+          "target_min": -0.4822336647798044,
+          "target_max": 0.5504355889907546,
+          "target_mean": 0.005987643689712652,
+          "other_sessions_full_range": {
+            "min": -0.5851960358504212,
+            "max": 0.5365904614362333
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": true,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_mean": {
+          "target_min": 7015084032.0,
+          "target_max": 7020330188.8,
+          "target_mean": 7016721922.767568,
+          "other_sessions_full_range": {
+            "min": 6990952038.4,
+            "max": 7029268480.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "memory_slope": {
+          "target_min": -2698444.8000002117,
+          "target_max": 2316697.59999936,
+          "target_mean": 18210.5945939465,
+          "other_sessions_full_range": {
+            "min": -1921433.6000003214,
+            "max": 2203238.399999036
+          },
+          "target_min_outside_others_full_range": true,
+          "target_max_outside_others_full_range": true,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_mean": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "queue_slope": {
+          "target_min": 0.0,
+          "target_max": 0.0,
+          "target_mean": 0.0,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_mean": {
+          "target_min": 0.0,
+          "target_max": 0.00161290322580645,
+          "target_mean": 0.00100261551874455,
+          "other_sessions_full_range": {
+            "min": 0.0,
+            "max": 0.00161290322580645
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        },
+        "cache_slope": {
+          "target_min": -0.0016129032258064514,
+          "target_max": 0.0016129032258064503,
+          "target_mean": 6.538796861377487e-05,
+          "other_sessions_full_range": {
+            "min": -0.0016129032258064514,
+            "max": 0.0016129032258064503
+          },
+          "target_min_outside_others_full_range": false,
+          "target_max_outside_others_full_range": false,
+          "target_mean_outside_others_mean_robust_range": false
+        }
+      }
+    }
+  ]
+}
