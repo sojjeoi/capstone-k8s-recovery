@@ -1,0 +1,94 @@
+{
+  "_purpose": "§63 3-core 정상 부하 profile qualification 사전등록 - docs/design/phase8-blue-green-preflight-incident.md §63과 동일 내용, 기계 판독용. 측정 전 커밋·푸시, 이후 수정하지 않는다.",
+  "decisions_from_61_62": {
+    "section_60_status": "preserved as-is, labeled non-reproduced diagnostic anomaly",
+    "topology_causation": "not concluded - A-B-A showed A1/B/A2 had statistically indistinguishable active-pod CPU, CFS throttle, and latency regardless of preview presence",
+    "low_load_0_10_rps_excluded": "yes - derived from 4-core (2026-09-16) calibration; A-B-A under 3-core showed 0.10 RPS sits at the SLO boundary in every leg"
+  },
+  "purpose": "normal_profile_qualification (not official data collection)",
+  "topology": "active_plus_preview (matches detector's real operating condition)",
+  "profiles": {
+    "low_load": {"rps": 0.025, "pattern": "steady", "duration_sec": 180},
+    "sustained_load": {"rps": 0.05, "pattern": "steady", "duration_sec": 300},
+    "burst": {
+      "pattern": "base 0.025 RPS (60s) x5 alternating with pulse 0.10 RPS (20s) x4",
+      "stage_order": ["base-1(60s)", "pulse-1(20s)", "base-2(60s)", "pulse-2(20s)", "base-3(60s)", "pulse-3(20s)", "base-4(60s)", "pulse-4(20s)", "base-5(60s)"],
+      "nominal_total_duration_sec": 380,
+      "pulse_length_rationale": "20s < slo_judge.LATENCY_PERSIST_SEC (30s) so a single pulse cannot mechanically satisfy the sustained-violation window by construction; genuine violation still depends on measured latency"
+    }
+  },
+  "payload": {
+    "url": "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions",
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "prompt": "Hello",
+    "max_tokens": 10,
+    "note": "identical to existing load generator payload - only RPS/structure changed"
+  },
+  "session_order": ["low_load", "sustained_load", "burst"],
+  "session_procedure": [
+    "preview create (prepare_preview_with_rollback)",
+    "confirm Ready",
+    "settle >= 60s",
+    "baseline check (BASELINE_SEC=60, existing constant)",
+    "run assigned load profile",
+    "recovery/drain observation (POST_RAMP_DRAIN_SEC=60, existing constant)",
+    "preview abort",
+    "confirm single active revision restored (wait_until_rolled_back)",
+    "cooldown 60s + clean preflight before next session"
+  ],
+  "one_regime_per_session": true,
+  "tags": {"is_pilot": true, "included_in_training": false, "purpose": "normal_profile_qualification"},
+  "pass_conditions": [
+    "success_rate == 100%",
+    "t_slo == null (true 30s-sustained violation via slo_judge.evaluate/find_t_slo over full baseline+load+drain probe timeline, NOT run_candidate's instantaneous per-stage P95 flag)",
+    "active and preview restartCount unchanged",
+    "no OOMKilled",
+    "Node Ready, no pressure",
+    "no unexpected promotion (active pod UID unchanged)",
+    "active/preview Endpoint isolation maintained (checked via actual Endpoints objects, not Service selector)",
+    "no missing/NaN/stale metric windows (existing build_dataset strict window validation, no new logic)",
+    "cleanup succeeds, Rollout Healthy, single revision restored",
+    "no extreme_latency_detected (P95 > 5x SLO threshold or max > 10x SLO threshold, a §60-recurrence check independent of the formal 30s-sustained rule)"
+  ],
+  "reported_not_pass_fail": ["p95_latency", "max_latency", "cfs_throttle_ratio"],
+  "observed_constant_zero_policy": "if queue/cache stay exactly 0 across all valid windows, record as observed_constant_zero and do not fail the profile or raise load intensity",
+  "feature_preservation": [
+    "8 raw feature time series and generated 60s/15s windows (spanning the full multi-stage load period for burst)",
+    "active/preview CPU and working set (Prometheus historical query)",
+    "active pod CFS throttled-periods ratio (throttled-seconds metric does not exist on this cluster per §61.1 - periods ratio only)",
+    "queue/cache non-zero sample and window counts",
+    "completion latency median/P95/max",
+    "Node CPU utilization/load1/iowait/MemAvailable (PSI attempted, recorded as unavailable if absent - not newly implemented)",
+    "valid/invalid window counts and exclusion reasons"
+  ],
+  "stop_conditions": [
+    "sustained SLO violation (t_slo is not null)",
+    "restart or OOM",
+    "Node abnormality",
+    "missing/stale metric (invalid window)",
+    "unexpected promotion",
+    "cleanup or single-revision-restore failure",
+    "extreme_latency_detected (§60-scale multi-second latency recurrence)"
+  ],
+  "stop_behavior": "stop immediately, do not run remaining profiles, do not adjust intensity/pulse on the spot, preserve raw data and report",
+  "scope_limits": [
+    "no official 9-session collection",
+    "no model retraining",
+    "no feature deletion",
+    "no threshold determination",
+    "no model/scaler artifact replacement",
+    "no score_server.py runtime change",
+    "no memory_pressure 3-arm",
+    "no run_all_scenarios.py",
+    "no 60-trial main experiment",
+    "no TrialResult schema change",
+    "no chaos injection or promotion"
+  ],
+  "tooling": {
+    "script": "anomaly-detection/v3/qualify_normal_profile.py",
+    "configs": "anomaly-detection/v3/profile_configs_3core/{low-load,sustained-load,burst}.yaml",
+    "reused_unchanged": ["blue_green_prep.py", "explore_ramp_intensity.run_candidate", "build_dataset.build_rows_for_session", "slo_judge.evaluate/find_t_slo", "collect_session.run_candidate_with_retry/verify_and_force_cleanup"]
+  },
+  "registered_before_measurement": true,
+  "registered_at_utc": "2026-09-20T09:15:00Z"
+}

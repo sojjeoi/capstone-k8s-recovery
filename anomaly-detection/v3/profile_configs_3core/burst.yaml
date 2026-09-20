@@ -1,0 +1,48 @@
+# §63 3-core 정상 부하 profile qualification 후보(2026-09-20) - burst만
+# duration이 아니라 구조 자체를 새로 설계한다(사용자 지시: pulse 길이·반복
+# 횟수·session 길이를 측정 전에 고정, 측정 후 바꾸지 않음).
+#
+# 설계: 0.025 RPS(base) 5개 segment(각 60초) 사이에 0.10 RPS(pulse) 4개를
+# 끼워 넣는다(base-pulse-base-pulse-base-pulse-base-pulse-base, 총 9 stage).
+# pulse 길이는 20초로 고정한다 - slo_judge.LATENCY_PERSIST_SEC(30초) 미만이라
+# pulse 하나만으로는 sustained SLO 위반의 30초 연속 조건을 구조적으로
+# 만족시킬 수 없다(pulse 자체가 30초가 안 되므로 "인위적으로 위반을
+# 만드는" 설계가 아님 - 실제 위반 여부는 여전히 그 시점의 실측 latency에
+# 달려있다). base 60초 동안 0.025 RPS(요청 간격 40초)로는 약 2건, pulse
+# 20초 동안 0.10 RPS(요청 간격 10초)로는 약 2건이 나가 총 세션 요청 수는
+# low_load(180초/0.025 RPS, 약 5건)보다 조금 많은 수준(~18건)이 된다.
+# 명목 총 길이 = 5*60 + 4*20 = 380초. payload는 low-load.yaml과 동일.
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: v3core3-burst-base-1
+    rps: 0.025
+    duration_sec: 60
+  - name: v3core3-burst-pulse-1
+    rps: 0.10
+    duration_sec: 20
+  - name: v3core3-burst-base-2
+    rps: 0.025
+    duration_sec: 60
+  - name: v3core3-burst-pulse-2
+    rps: 0.10
+    duration_sec: 20
+  - name: v3core3-burst-base-3
+    rps: 0.025
+    duration_sec: 60
+  - name: v3core3-burst-pulse-3
+    rps: 0.10
+    duration_sec: 20
+  - name: v3core3-burst-base-4
+    rps: 0.025
+    duration_sec: 60
+  - name: v3core3-burst-pulse-4
+    rps: 0.10
+    duration_sec: 20
+  - name: v3core3-burst-base-5
+    rps: 0.025
+    duration_sec: 60

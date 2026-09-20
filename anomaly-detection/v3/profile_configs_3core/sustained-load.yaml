@@ -1,0 +1,13 @@
+# §63 3-core 정상 부하 profile qualification 후보(2026-09-20) - low-load.yaml과
+# 동일한 근거·payload, duration_sec=300은 기존 sustained_load 관례 유지
+# (강도만 재선정).
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+stages:
+  - name: v3core3-sustained-load
+    rps: 0.05
+    duration_sec: 300

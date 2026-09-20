@@ -5751,3 +5751,123 @@ pod 자신의 CPU quota 내 배분 문제로 보이며, preview 존재 여부와
 실험 없음. 부하 강도(RPS)는 세 구간 내내 0.10으로 고정, 순서 변경 없음.
 사후 kubectl 확인: pod 1개(`vllm-serving-6b9d88c96-64k7r`, restart 0),
 chaos CR 없음.
+
+## 63. 3-core 기준 정상 부하 profile qualification 사전등록 (2026-09-20)
+
+### 63.1 §61/§62에 대한 공식 결정 확정
+
+사용자 승인 사항을 공식 기록한다: **§60은 원본 그대로 `non-reproduced
+diagnostic anomaly`로 보존한다** - `active_plus_preview` topology 자체의
+성능 간섭이 원인이라는 결론은 내리지 않는다(§62에서 A1/B/A2 세 구간의
+active pod CPU·CFS throttle·latency가 preview 유무와 무관하게 사실상
+동일했으므로, topology 자체의 간섭은 **확인되지 않은 것**으로 기록한다).
+대신 **기존 `low_load=0.10 RPS` 정의는 4-core calibration(2026-09-16)에서
+나온 값이라 v3 정상 학습 profile에서 제외한다** - §62의 3-core A-B-A에서
+A1·B·A2 전부 SLO v3 threshold(0.648초) 경계에 있었다는 사실이 근거다. 이
+결과(§60 qualification, §61 포렌식, §62 A-B-A 세션 3건)는 어느 것도 v3
+학습 데이터로 쓰지 않는다(전부 `is_pilot=true`/`included_in_training=false`
+로 이미 고정돼 있었음 - 추가 조치 없음).
+
+### 63.2 3-core 정상 부하 profile 후보
+
+공식 데이터 수집이 아니라 **qualification**이다 - PASS해도 곧바로
+official 세션으로 세지 않는다(§63.3). 신규 `anomaly-detection/v3/
+profile_configs_3core/`(기존 `regime_configs/`는 4-core 시절 후보로 이력
+보존, 손대지 않음):
+
+| profile | 강도 | 근거 |
+|---|---|---|
+| `low_load` | 0.025 RPS steady, 180초 | §62 A-B-A에서 0.10 RPS가 3-core 하에 SLO 경계였으므로 더 낮춘 값 |
+| `sustained_load` | 0.05 RPS steady, 300초 | 위와 동일 근거, `low_load`보다는 높지만 여전히 0.10 RPS 미만 |
+| `burst` | 0.025 RPS base + 0.10 RPS pulse(20초) × 4회, base 60초 × 5개 | 아래 참고 |
+
+payload(url/model/prompt/`max_tokens`=10)는 기존 low-load.yaml/load
+generator와 완전히 동일 - 강도(RPS)만 재선정했다.
+
+**burst 설계(측정 전 고정, 이후 변경 안 함)**: `base(0.025 RPS, 60초)` →
+`pulse(0.10 RPS, 20초)` 를 4회 반복하고 마지막에 `base` 1개를 더 붙인다
+(base-pulse-base-pulse-base-pulse-base-pulse-base, 총 9 stage, 명목
+길이 5×60+4×20=380초). pulse 길이를 `slo_judge.LATENCY_PERSIST_SEC`(30초)
+미만인 20초로 고정한 이유는, pulse 하나만으로는 sustained SLO 위반의
+30초 연속 조건을 구조적으로 만족시킬 수 없게 하기 위함이다(실제 위반
+여부는 그 시점의 실측 latency에 여전히 달려있음 - 판정 자체를 조작하는
+게 아니라, "pulse 길이 자체가 우연히 판정 기준과 같아서" 인위적으로
+위반이 만들어지는 경우를 배제하는 설계). 세 profile 모두
+`active_plus_preview`(detector의 실제 운영 topology)에서 측정한다.
+
+### 63.3 세션 절차 - `low_load → sustained_load → burst` 순서, 각 1회, 독립 세션
+
+신규 `anomaly-detection/v3/qualify_normal_profile.py`(`--profile
+{low_load,sustained_load,burst} --session-id <id>`) - 새 클러스터 조작
+코드 없이 기존 경로 재사용: `blue_green_prep.{prepare_preview_with_
+rollback, cleanup_unpromoted_preview}`, `explore_ramp_intensity.
+run_candidate()`(burst.yaml 같은 멀티스테이지 YAML도 그대로 지원),
+`build_dataset.build_rows_for_session()`. 세션 하나 = profile 하나(연속
+실행 없음). 순서: preview 생성 → Ready 확인 → **최소 60초 settle**(공식
+수집의 30초보다 김) → baseline 확인(`BASELINE_SEC=60`, 기존 상수 그대로)
+→ 지정 부하 실행 → recovery/drain 관찰(`POST_RAMP_DRAIN_SEC=60`, 기존
+상수 그대로) → preview abort → 단일 revision 복원 확인(`wait_until_
+rolled_back()` 재사용) → 다음 세션 전 cooldown 60초 + clean preflight
+(active pod 1개·Node 정상 재확인, 다음 세션의 "세션 시작 전" 체크가 이를
+겸함 - fail-closed로 이미 구현됨). 전량 `is_pilot=true`,
+`included_in_training=false`, `purpose=normal_profile_qualification`.
+
+### 63.4 PASS 조건 - 진짜 30초 sustained 판정 재사용(새 SLO 로직 없음)
+
+`run_candidate()`가 만드는 stage별 `violates`는 "그 stage 구간 순간
+P95>threshold"일 뿐이라 그대로 PASS/FAIL 기준으로 쓰지 않는다 - probe
+raw 전체(baseline+load+drain)에 `experiments/slo_judge.evaluate()`/
+`find_t_slo()`를 그대로 적용해 **진짜 30초 연속 위반 또는 즉시
+availability 위반**만 PASS/FAIL 기준(`t_slo`)으로 삼는다(§60에서 지적한
+"P95 순간 초과만으로 실패 처리하지 않는다"는 지시를 코드로 그대로
+반영). PASS 조건(전부 충족해야 함, `qualify_normal_profile.
+judge_qualification()`, 오프라인 테스트 16개):
+
+성공률 100%, `t_slo=null`, active/preview restartCount 불변, OOMKilled
+없음, Node Ready·pressure 없음, 예기치 않은 promotion 없음(target UID
+불변), **active/preview Endpoint 격리 유지**(신규 `check_endpoint_
+isolation()` - Service selector가 아니라 실제 Endpoints 객체를 읽어
+active Endpoint가 active pod 하나만, preview Endpoint가 preview pod
+하나만 가리키는지 확인), metric 결측/무효 window 없음(`build_dataset`의
+기존 strict 판정 그대로 재사용, 새 판정 없음), cleanup 후 Rollout
+Healthy·단일 revision. P95·max·CFS throttle 비율은 PASS 조건이 아니라
+**별도 보고 항목**(Prometheus 이력 조회, `prometheus_session_summary()`)
+이다. 추가로 §60 수준(P95=12.654초)의 재발을 30초-sustained 기준과
+별개로도 잡기 위해 "P95>threshold×5 또는 max>threshold×10"이면
+`extreme_latency_detected`로 별도 FAIL 사유를 붙인다(formal
+t_slo=null이어도 이 정도 규모의 순간 급증은 그 자체로 이상 신호로 본다).
+
+### 63.5 feature·metric 관측 보존 항목
+
+세션마다 보존: 8개 feature의 원본 시계열과 생성된 60초/15초 window(전체
+load 구간 - burst는 9 stage 전체를 아우르는 하나의 연속 구간으로 취급),
+active/preview별 CPU·working set(Prometheus 이력 조회), active pod의
+CFS throttled periods 비율(이 cluster는 `container_cpu_cfs_throttled_
+seconds_total` 자체가 없음을 §61.1에서 이미 확인함 - periods 비율만
+가능, seconds는 "가능하면"에 해당하지 않아 기록 안 함), queue/cache의
+non-zero 샘플·window 수, completion latency median/P95/max, Node
+CPU 사용률·`load1`·iowait·MemAvailable(PSI는 조회를 시도하되 이
+cluster에 없으면 없다고만 기록 - 새로 만들지 않음), 유효·무효 window
+수와 제외 사유. **queue/cache가 이번에도 전부 0이면 profile을
+실패시키거나 부하를 올리지 않고 `observed_constant_zero`로만 기록**하고
+최종 feature 선택 단계의 제외 후보로만 남긴다(신규 SLO/제외 로직
+아님).
+
+### 63.6 중단 규칙
+
+sustained SLO 위반, restart·OOM, Node 이상, metric 결측/stale(무효
+window), 예기치 않은 promotion, cleanup·단일 revision 복원 실패,
+§60 수준의 비정상적인 다초 단위 latency 재발 의심
+(`extreme_latency_detected`) 중 하나라도 나오면 그 즉시 멈추고 이후
+profile을 실행하지 않는다. 중단 시 강도·pulse를 즉석 조정하지 않고
+원자료를 그대로 보존해 보고한다.
+
+### 63.7 범위 제한
+
+공식 9세션 수집 금지, 모델 재학습 금지, feature 삭제 금지, threshold
+결정 금지, model/scaler artifact 교체 금지, `score_server.py` 런타임
+변경 금지, `memory_pressure` 3-arm 금지, `run_all_scenarios.py` 금지,
+60회 본 실험 금지, `TrialResult` 스키마 변경 금지, Chaos 주입·promotion
+금지.
+
+이 절(§63) 커밋·푸시 이후에만 세 profile 실측을 시작한다.
