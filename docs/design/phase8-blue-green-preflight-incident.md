@@ -5664,3 +5664,90 @@ preview 생성·Ready·abort 시각, cleanup 및 단일 revision 복원 여부.
 
 이 절(§61.1 포렌식 + §61.2 사전등록) 커밋·푸시 이후에만 A1/B/A2 실측을
 시작한다.
+
+## 62. A-B-A 실측 결과 - §60 지연 급증은 재현되지 않았고, 세 구간 모두 topology와 무관한 동일한 CPU 배분 현상을 보였다 (2026-09-20)
+
+§61.2 사전등록대로 A1→B→A2를 순서·강도 변경 없이 전량 실행했다. 세 구간 모두
+`stop_condition_triggered=False`(restart·OOM·Node 이상·예기치 않은 promotion
+없음), `target_replaced=False`, B의 `abort_and_rollback_ok=True`(A2 시작 전
+단일 revision 복원 실측 확인). 원본 결과: `anomaly-detection/v3/diagnostics/
+aba-{a1,b,a2}-result.json`.
+
+### 62.1 latency 비교
+
+| 구간 | topology | baseline P95 | **stage P95** | stage max | stage 위반?(threshold=0.648s, SLO v3) | drain P95 |
+|---|---|---|---|---|---|---|
+| A1 | active-only | 0.352초 | **0.683초** | 0.702초 | 예(근소, +0.035초) | 0.300초 |
+| B | active_plus_preview | 0.374초 | **0.628초** | 0.692초 | 아니오(근소, -0.020초) | 0.352초 |
+| A2 | active-only(abort 후) | 0.414초 | **0.651초** | 0.670초 | 예(근소, +0.003초) | 0.342초 |
+
+세 구간 모두 stage 요청 수는 동일(9건 ramp, probe 90건, 성공률 100%). **§60
+qualification의 P95=12.654초(threshold의 약 20배)에 준하는 지연 급증은 A1·B·
+A2 어디에서도 재현되지 않았다** - 세 구간 모두 0.63~0.68초대에 몰려 있고
+SLO v3 threshold(0.648초) 안팎을 근소한 차이로 오르내릴 뿐이다(표본이 stage당
+9건뿐이라 이 정도 차이는 표본 변동 범위 안으로 보임 - 그 이상의 통계적
+의미는 부여하지 않는다).
+
+### 62.2 CPU·CFS throttle 비교(Prometheus 이력 조회, active pod)
+
+| 구간 | active pod CPU(avg/max, 코어) | active pod CFS throttle 비율(avg/max) | preview pod CPU | preview throttle | Node(sj-worker) 사용률 |
+|---|---|---|---|---|---|
+| A1 | 1.463 / 2.101 | 0.339 / 0.524 | (없음) | (없음) | 48.1%avg |
+| B | 1.674 / 2.111 | 0.374 / 0.523 | 0.010 / 0.017 | 0.000 / 0.000 | 49.7%avg |
+| A2 | 1.570 / 2.083 | 0.342 / 0.515 | (없음) | (없음) | 48.1%avg |
+
+**active pod 자신의 CPU 사용량과 CFS throttle 비율이 세 구간에서 사실상
+동일하다**(CPU avg 1.46~1.67코어, throttle avg 33.9~37.4%, max throttle
+51.5~52.4% - 전부 같은 범위). preview가 존재하는 B에서도 preview 자신의
+CPU 사용량은 무시할 수준(0.01~0.02코어)이고 자신은 전혀 throttle되지 않았다
+(0%). Node 전체 사용률도 세 구간이 48~50%로 거의 동일했다. 즉 §61.1에서
+발견한 "active pod가 자기 3코어 quota 안에서 30~50%대로 throttle된다"는
+현상은 **preview 존재 여부와 무관하게 A1(active-only)에서도 동일하게
+나타났다** - active_plus_preview topology가 이 throttling을 만들거나
+악화시킨다는 증거는 이번 A-B-A에서 나오지 않았다.
+
+메모리는 topology 차이만큼만 다르다(active pod 자신은 세 구간 모두
+3.47GiB로 동일, B에서만 preview가 추가로 3.51GiB를 더 씀) - §61.2에
+명시한 대로 이 차이 자체를 원인으로 해석하지 않는다.
+
+### 62.3 판정(§61.2 사전등록 규칙 그대로 적용)
+
+사전등록한 4갈래 판정 중 하나에 깔끔하게 들어맞지 않는다(사전등록 시
+"topology가 재현되거나 안 되거나"의 이분법을 가정했으나, 실측은 "원래
+발견 자체가 재현 안 됨" + "세 구간 모두 동일한 근소 수준의 변동"이 동시에
+나온 경우다) - 해당하는 두 규칙을 그대로, 확대 해석 없이 병기한다:
+
+- **"B가 정상이고 기존 qualification만 비정상이면 → non-reproduced
+  diagnostic anomaly로 유지"**: B의 stage는 `violates=False`(정상)였고,
+  §60의 P95=12.654초는 A1·B·A2 어디에서도 재현되지 않았다. §60 원본
+  기록은 삭제하지 않고 그대로 두되, **재현되지 않은 진단 이상치
+  (non-reproduced diagnostic anomaly)로 분류한다.** 공식 수집 재개 여부는
+  사용자 결정으로 남긴다.
+- **"A1·B·A2 모두 느리면 → topology 원인이 아니라 시간대·클러스터·하니스·
+  워크로드 변동 가능성으로 분류"**: 세 구간 모두 stage P95가 SLO v3
+  threshold(0.648초) 바로 안팎(0.628~0.683초)에 몰려 있고, active pod의
+  CPU/CFS throttle 프로필이 preview 유무와 무관하게 사실상 동일했다 - 이
+  근소한 공통 열화(§61.1에서 지적한 대로, 0.10 RPS는 4-core 시절
+  calibration 이후 3-core cutover 하에서 어떤 topology로도 재검증된 적이
+  없었다)는 **topology가 아니라 현재 CPU 3코어 한도 자체가 이 RPS(+상시
+  1.0 RPS probe) 조합에 근소하게 부담을 준다는 환경적 설명과 일치한다.**
+  공식 정상 데이터 수집은 계속 중지한다.
+
+**결론(사실만, 원인 단정 없음)**: (a) §60에서 관측된 극단적 지연 급증(P95
+12.654초)은 이번 통제된 A-B-A 재현 시도에서 나타나지 않았다 - 어느 topology
+에서도. (b) 세 구간 모두에서 공통으로 관측된, threshold 근처의 훨씬 작은
+규모의 변동은 active_plus_preview topology 고유의 현상이 아니라 active
+pod 자신의 CPU quota 내 배분 문제로 보이며, preview 존재 여부와 무관하게
+동일하게 나타났다. (c) §60의 12.654초가 왜 그때만 나왔는지는 이번 A-B-A로
+설명되지 않는다 - 재현 실패 자체가 하나의 결과다(측정 오류·특정 시점의
+일시적 외부 요인·표본 1회의 우연 등 여러 가능성이 남아있으나 사전등록에
+없던 추가 조사이므로 지금 판단하지 않는다).
+
+### 62.4 범위 준수
+
+전량 diagnostic pilot(`is_pilot=true`, `included_in_training=false`, 3건
+모두). 모델 재학습·threshold 변경·artifact 교체 없음. `sustained_load`·
+`burst`·공식 9세션 수집·`memory_pressure` 3-arm·`run_all_scenarios.py`·본
+실험 없음. 부하 강도(RPS)는 세 구간 내내 0.10으로 고정, 순서 변경 없음.
+사후 kubectl 확인: pod 1개(`vllm-serving-6b9d88c96-64k7r`, restart 0),
+chaos CR 없음.

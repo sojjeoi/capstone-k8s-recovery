@@ -1,0 +1,14 @@
+{
+  "preview_prep_info": {
+    "ready": true,
+    "t_prep_start": "2026-09-20T08:29:04.927621+00:00",
+    "t_preview_ready": "2026-09-20T08:31:22.206275+00:00",
+    "prep_duration_sec": 137.2786758999864,
+    "external_interference": false,
+    "rollback_attempted": false,
+    "rollback_ok": null,
+    "aborted_pod_hash": null,
+    "pre_prepare_active_selector": "6b9d88c96",
+    "created_pod_hash": "59796b499d"
+  }
+}

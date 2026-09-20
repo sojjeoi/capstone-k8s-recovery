@@ -1,0 +1,112 @@
+{
+  "leg": "b",
+  "topology": "active_plus_preview",
+  "is_pilot": true,
+  "included_in_training": false,
+  "diagnostic_only": true,
+  "t_leg_start": "2026-09-20T08:29:04.275015+00:00",
+  "active_pod_before": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "node_before": {
+    "node_ok": true,
+    "conditions": {
+      "NetworkUnavailable": "False",
+      "MemoryPressure": "False",
+      "DiskPressure": "False",
+      "PIDPressure": "False",
+      "Ready": "True"
+    },
+    "restart_count": 0
+  },
+  "oom_before": false,
+  "preview_prep_info": {
+    "ready": true,
+    "t_prep_start": "2026-09-20T08:29:04.927621+00:00",
+    "t_preview_ready": "2026-09-20T08:31:22.206275+00:00",
+    "prep_duration_sec": 137.2786758999864,
+    "external_interference": false,
+    "rollback_attempted": false,
+    "rollback_ok": null,
+    "aborted_pod_hash": null,
+    "pre_prepare_active_selector": "6b9d88c96",
+    "created_pod_hash": "59796b499d"
+  },
+  "ramp_candidate_result": {
+    "run_id": "aba-b-20260920T083222Z",
+    "valid": true,
+    "reason": null,
+    "baseline_precheck": {
+      "n": 56,
+      "success_rate": 1.0,
+      "mean": 0.26553292059439365,
+      "p95": 0.38497572860214857,
+      "max": 1.202579852193594,
+      "violates": false
+    },
+    "ramp_completed_in_time": true,
+    "local_raw": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-aba-b-20260920T083222Z-raw.csv",
+    "local_ramp_summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\ramp-aba-b-20260920T083222Z-summary.csv",
+    "baseline": {
+      "n": 58,
+      "success_rate": 1.0,
+      "mean": 0.2643814680913206,
+      "p95": 0.3735263689188287,
+      "max": 1.202579852193594,
+      "violates": false
+    },
+    "drain": {
+      "n": 60,
+      "success_rate": 1.0,
+      "mean": 0.2586401855961109,
+      "p95": 0.3521643566549756,
+      "max": 0.38298973091877997,
+      "violates": false
+    },
+    "all_success_100pct": true,
+    "run_candidate_attempts": 1,
+    "stages": [
+      {
+        "experiment_run_id": "aba-b-20260920T083222Z",
+        "scenario": "aba-low-load",
+        "method": "native",
+        "repetition": "1",
+        "stage": "aba-low-load",
+        "target_rps": "0.1",
+        "actual_rps": "0.1",
+        "sent": "9",
+        "success": "9",
+        "success_rate": 1.0,
+        "p95": 0.6282893944066018,
+        "p99": "3.345",
+        "stage_start_utc": "2026-09-20T08:34:37.685348+00:00",
+        "stage_end_utc": "2026-09-20T08:36:07.686149+00:00",
+        "n": 90,
+        "mean": 0.3311090657280551,
+        "max": 0.6915534508880228,
+        "violates": false
+      }
+    ]
+  },
+  "target_replaced": false,
+  "active_pod_after": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "node_after": {
+    "node_ok": true,
+    "conditions": {
+      "NetworkUnavailable": "False",
+      "MemoryPressure": "False",
+      "DiskPressure": "False",
+      "PIDPressure": "False",
+      "Ready": "True"
+    },
+    "restart_count": 0
+  },
+  "oom_after": false,
+  "stop_condition_triggered": false,
+  "stop_reasons": [],
+  "t_leg_end": "2026-09-20T08:38:16.862070+00:00"
+}

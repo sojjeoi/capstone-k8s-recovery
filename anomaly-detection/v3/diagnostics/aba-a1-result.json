@@ -1,0 +1,100 @@
+{
+  "leg": "a1",
+  "topology": "active_only",
+  "is_pilot": true,
+  "included_in_training": false,
+  "diagnostic_only": true,
+  "t_leg_start": "2026-09-20T08:22:46.482174+00:00",
+  "active_pod_before": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "node_before": {
+    "node_ok": true,
+    "conditions": {
+      "NetworkUnavailable": "False",
+      "MemoryPressure": "False",
+      "DiskPressure": "False",
+      "PIDPressure": "False",
+      "Ready": "True"
+    },
+    "restart_count": 0
+  },
+  "oom_before": false,
+  "ramp_candidate_result": {
+    "run_id": "aba-a1-20260920T082247Z",
+    "valid": true,
+    "reason": null,
+    "baseline_precheck": {
+      "n": 60,
+      "success_rate": 1.0,
+      "mean": 0.2693582266607943,
+      "p95": 0.35489647535141555,
+      "max": 1.2317702900618315,
+      "violates": false
+    },
+    "ramp_completed_in_time": true,
+    "local_raw": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-aba-a1-20260920T082247Z-raw.csv",
+    "local_ramp_summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\ramp-aba-a1-20260920T082247Z-summary.csv",
+    "baseline": {
+      "n": 61,
+      "success_rate": 1.0,
+      "mean": 0.2682734298306044,
+      "p95": 0.35212806779891254,
+      "max": 1.2317702900618315,
+      "violates": false
+    },
+    "drain": {
+      "n": 61,
+      "success_rate": 1.0,
+      "mean": 0.2429332708649826,
+      "p95": 0.3003795054741204,
+      "max": 0.36680983495898545,
+      "violates": false
+    },
+    "all_success_100pct": true,
+    "run_candidate_attempts": 1,
+    "stages": [
+      {
+        "experiment_run_id": "aba-a1-20260920T082247Z",
+        "scenario": "aba-low-load",
+        "method": "native",
+        "repetition": "1",
+        "stage": "aba-low-load",
+        "target_rps": "0.1",
+        "actual_rps": "0.1",
+        "sent": "9",
+        "success": "9",
+        "success_rate": 1.0,
+        "p95": 0.6825602779514156,
+        "p99": "3.237",
+        "stage_start_utc": "2026-09-20T08:24:56.716805+00:00",
+        "stage_end_utc": "2026-09-20T08:26:26.718215+00:00",
+        "n": 90,
+        "mean": 0.3366423310556759,
+        "max": 0.7024599041324109,
+        "violates": true
+      }
+    ]
+  },
+  "target_replaced": false,
+  "active_pod_after": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "node_after": {
+    "node_ok": true,
+    "conditions": {
+      "NetworkUnavailable": "False",
+      "MemoryPressure": "False",
+      "DiskPressure": "False",
+      "PIDPressure": "False",
+      "Ready": "True"
+    },
+    "restart_count": 0
+  },
+  "oom_after": false,
+  "stop_condition_triggered": false,
+  "stop_reasons": [],
+  "t_leg_end": "2026-09-20T08:28:36.353695+00:00"
+}
