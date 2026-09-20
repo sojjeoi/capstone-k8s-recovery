@@ -6096,3 +6096,78 @@ Isolation Forest 학습 금지, feature 최종 삭제 금지, threshold 결정
 변경 금지, promotion·Chaos 주입 금지.
 
 이 절(§65) 커밋·푸시 이후에만 9세션 실측을 시작한다.
+
+## 66. 공식 v3 정상 데이터 수집 - 2번째 세션에서 진짜 sustained SLO 위반으로 §65.4 규칙에 따라 즉시 정지 (2026-09-20)
+
+§65 사전등록대로 세션 1(`official-train-low_load-20260920`)을 실행해
+PASS했다. 세션 2(`official-train-sustained_load-20260920`)에서 **진짜
+30초 sustained SLO 위반**(`t_slo=2026-09-20T10:54:20.545650+00:00`)이
+나왔고, §65.4 지시("sustained SLO 위반... 이후 session을 중단, 강도
+조정이나 임의 대체 session 실행 금지")에 따라 **그 즉시 정지했다** - 세션
+3~9는 실행하지 않았다.
+
+### 66.1 세션 1 - PASS
+
+`official-train-low_load-20260920`(low_load, 0.025 RPS, `split_role=
+train`): `excluded=False`, `t_slo=null`, `window_boundary_ok=True`,
+유효/무효 window 9/0, `included_in_training=True`로 확정.
+
+### 66.2 세션 2 - 진짜 sustained 위반으로 FAIL, §64와 재현 안 됨
+
+`official-train-sustained_load-20260920`(sustained_load, 0.05 RPS):
+`excluded=True`, 사유 `sustained SLO 위반(t_slo=2026-09-20T10:54:20
+.545650+00:00)`. 흥미로운 세부사항: `run_candidate()`가 계산한 **stage
+전체(300초) 평균 P95는 0.571초로 여전히 threshold(0.648초) 아래**였다
+(`violates=False`) - 하지만 `slo_judge.evaluate()`/`find_t_slo()`가
+probe raw 전체에 60초 rolling window로 판정한 결과, stage 구간
+(10:53:28~10:58:28) 안의 특정 시점(10:54:20 부근)에서 **30초 연속 위반이
+실제로 발생**했다. 300초 평균 P95만 봤으면 놓쳤을 국소적 위반을 §63.4에서
+사전등록한 "stage 순간/평균 P95가 아니라 진짜 30초 sustained 판정을
+쓴다"는 방법론이 정확히 잡아낸 사례다. `extreme_latency_detected=False`
+(max=0.783초로 §60 수준의 파국적 규모는 아님) - 국소적이지만 진짜인
+sustained 위반이다.
+
+**어제(§64) 같은 강도(0.05 RPS)의 qualification은 PASS했는데, 오늘
+독립적인 2번째 측정에서는 FAIL했다** - sustained_load profile이 이
+환경에서 안정적으로 재현 가능한 정상 profile인지 아직 확인되지 않았다는
+뜻이다(원인은 판단하지 않는다 - 시간대·클러스터 변동 가능성과 profile
+자체의 경계선적 안전성 둘 다 남아있는 설명 후보).
+
+### 66.3 정지 조치 및 사후 확인
+
+지시대로 강도를 조정하지 않았고 대체 세션을 실행하지 않았다. 원본
+데이터(`official_data/sessions/official-train-sustained_load-20260920
+.json`)를 그대로 보존했다. cleanup은 정상 완료됐다(`cleanup_result=
+True`, `active_pod_before`/`after` 이름·UID 동일, `endpoint_isolation_
+after.isolated=True`). 사후 kubectl 확인: pod 2개(`recovery-policy`·
+`vllm-serving`, active restart 0), chaos CR 없음 - 클러스터는 완전히
+정상 상태로 남아있다.
+
+### 66.4 현재 확보 현황
+
+| regime | split_role | 확보된 공식 유효 세션 |
+|---|---|---|
+| low_load | train | 1/1 (PASS) |
+| low_load | calibration | 0/1 |
+| low_load | holdout | 0/1 |
+| sustained_load | train | 0/1 (FAIL, 재시도 안 함) |
+| sustained_load | calibration | 0/1 |
+| sustained_load | holdout | 0/1 |
+| burst | train | 0/1 |
+| burst | calibration | 0/1 |
+| burst | holdout | 0/1 |
+
+**목표한 9세션(각 regime 3개) 중 1개만 확보됐다** - §65.4의 "각 regime은
+공식 유효 세션 3개를 모두 확보해야 하며, 결과가 마음에 들지 않는다는
+이유로 세션을 제외·교체하지 않는다"는 원칙에 따라, 이 상태로 데이터
+감사(§65.6)를 계속 진행하지 않는다 - 감사할 만한 완결된 공식 데이터셋이
+아직 없다. `official-train-sustained_load-20260920`을 FAIL 상태 그대로
+보존하고, sustained_load profile의 재현성을 어떻게 다룰지(재시도 횟수
+확대, 강도 재검토, 또는 다른 결정)는 사용자 결정으로 남긴다.
+
+### 66.5 범위 준수
+
+강도 조정·대체 세션 없음, 모델 재학습·threshold 결정 없음, 데이터 감사
+(§65.6) 미실행(완결된 데이터셋이 없어 수행하지 않음), `memory_pressure`
+3-arm·`run_all_scenarios.py`·본 실험 없음, `TrialResult` 스키마 변경
+없음, Chaos 주입·promotion 없음.
