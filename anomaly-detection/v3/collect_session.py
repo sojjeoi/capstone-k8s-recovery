@@ -23,6 +23,7 @@ qualification(`--pilot`, `is_pilot=true`)과 official 수집은 이 스크립트
 §59.1 지시)."""
 import argparse
 import json
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -59,6 +60,34 @@ REGIME_CONFIG_PATHS = {
     "sustained_load": REGIME_CONFIGS_DIR / "sustained-load.yaml",
     "burst": REGIME_CONFIGS_DIR / "burst.yaml",
 }
+
+RUN_CANDIDATE_MAX_ATTEMPTS = 3
+RUN_CANDIDATE_RETRY_BACKOFF_SEC = 15.0
+
+
+def run_candidate_with_retry(ramp_config: str, probe_config: str, label: str) -> dict:
+    """`explore_ramp_intensity.run_candidate()`를 감싸 일시적 kubectl 오류
+    (`subprocess.CalledProcessError`)에 한해 재시도한다(2026-09-20 실측
+    발견 - qualification 1~3차 시도가 전부 preview settle 직후 ramp pod
+    생성 단계에서 kubectl run이 이유 불명의 일시 오류로 실패했다가, 별도
+    진단 재현에서는 완전히 같은 순서로 정상 성공함 - 클러스터 쪽의
+    간헐적 문제로 판단). `run_candidate()`는 매 호출마다 uuid로 새 pod
+    이름을 만들고 자기 finally에서 자기 pod를 정리하므로 재시도가
+    안전하다(이전 시도의 잔여물과 충돌하지 않음). 도메인 판정(baseline_
+    violating 등 valid=False)은 재시도 대상이 아니다 - 인프라 오류만
+    재시도한다, 새 SLO/도메인 판정 로직을 만들지 않는다."""
+    last_error = None
+    for attempt in range(1, RUN_CANDIDATE_MAX_ATTEMPTS + 1):
+        try:
+            result = run_candidate(ramp_config, probe_config, label=label)
+            result["run_candidate_attempts"] = attempt
+            return result
+        except subprocess.CalledProcessError as e:
+            last_error = e
+            print(f"run_candidate() 시도 {attempt}/{RUN_CANDIDATE_MAX_ATTEMPTS} 실패(일시 kubectl 오류로 판단): {e}")
+            if attempt < RUN_CANDIDATE_MAX_ATTEMPTS:
+                time.sleep(RUN_CANDIDATE_RETRY_BACKOFF_SEC)
+    raise last_error
 
 
 def verify_and_force_cleanup(prep_info, cleanup_ok, get_status_fn=None, abort_fn=None, wait_rolled_back_fn=None):
@@ -156,8 +185,9 @@ def collect_one_session(regime: str, session_id: str, is_pilot: bool,
     time.sleep(SETTLE_AFTER_PREVIEW_READY_SEC)
 
     try:
-        print(f"[{session_id}] {regime} 부하 실행(run_candidate, ramp+probe 동시)...")
-        candidate_result = run_candidate(ramp_config, DEFAULT_PROBE_CONFIG, label=f"v3{regime[:5]}")
+        print(f"[{session_id}] {regime} 부하 실행(run_candidate, ramp+probe 동시, 일시 오류 시 최대 "
+              f"{RUN_CANDIDATE_MAX_ATTEMPTS}회 재시도)...")
+        candidate_result = run_candidate_with_retry(ramp_config, DEFAULT_PROBE_CONFIG, label=f"v3{regime[:5]}")
     finally:
         print(f"[{session_id}] preview 정리(abort + 단일 revision 복원 확인)...")
         cleanup_ok = cleanup_unpromoted_preview(prep_info, ROLLOUT_NAME, NAMESPACE)
