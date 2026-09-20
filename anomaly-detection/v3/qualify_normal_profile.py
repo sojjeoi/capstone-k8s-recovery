@@ -24,6 +24,7 @@ qualification과 다른 점은 `purpose`/`is_pilot`/`included_in_training`
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 import uuid
@@ -238,7 +239,11 @@ def run_idle_session(probe_config_path: str, label: str, duration_sec: float = V
               "--image-pull-policy=Never", "--restart=Never", "--", "sleep", str(pod_sleep_sec)], check=True)
         if not _wait_pod_ready(probe_pod):
             raise RuntimeError(f"{probe_pod} Ready 시간초과")
-        _run(["kubectl", "cp", str(Path(probe_config_path)), f"{NAMESPACE}/{probe_pod}:/{probe_config_name}"], check=True)
+        # explore_ramp_intensity.run_candidate()와 동일 이유 - kubectl cp에
+        # Windows 절대경로(드라이브 문자·한글 폴더명 포함)를 그대로 주면
+        # 실패한다(실측 확인, 2026-09-20) - 상대경로로 변환해서 넘긴다.
+        _run(["kubectl", "cp", os.path.relpath(probe_config_path), f"{NAMESPACE}/{probe_pod}:/{probe_config_name}"],
+             check=True)
         print(f"안정화 대기 {SETTLE_SEC}초...")
         time.sleep(SETTLE_SEC)
 
