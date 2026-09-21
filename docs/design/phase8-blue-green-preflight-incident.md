@@ -9001,3 +9001,160 @@ model·threshold·feature 변경, 재학습, 기존 Holdout/challenge
 `TrialResult` 스키마 변경. 이 절(§89.1~89.9)까지는 계획·코드·테스트만
 포함한다 - 실제 measurement는 이 커밋이 origin에 반영된 뒤 별도
 커밋(§90)에서 정확히 1회 수행한다.
+
+## §90 - lifecycle-aligned diagnostic smoke 결과 (§89 계획의 정확히 1회 실행)
+
+§89에서 사전 등록한 프로토콜을 **정확히 1회** 실행했다. run_id
+`smoke-v32b-lifecycle-aligned-01`, evidence 접두사
+`smoke-v32b-lifecycle-aligned-20260921T091602Z-*`. §87의 원본 파일
+(`smoke-v32b-no-action-20260921T080346Z-*`)은 전혀 건드리지 않았고
+그 FAIL 판정도 변경하지 않는다 - 이 절은 §87을 뒤집는 재시도가 아니라
+별도의 최종 진단이다.
+
+### 90.1 Detector 노출 타임라인 (실측)
+
+| 이벤트 | 시각(UTC) |
+|---|---|
+| preview Ready | (§89.4 로그 기준, run_candidate 진입 이전) |
+| `run_candidate_with_retry()` 진입 | 2026-09-21T09:20:17Z 부근(run_id `v31low-20260921T092017Z`) |
+| **detector 시작**(baseline 확보 근사, `SETTLE_SEC+BASELINE_SEC=120초` 경과) | `2026-09-21T09:22:17.922454+00:00` |
+| ramp 완료(경과 602.3초) | ~09:32:20Z |
+| post-ramp drain 60초 종료 | ~09:33:20Z |
+| **detector 정지**(cleanup 직전, `run_once()`의 phase 10→11과 동일 순서) | `2026-09-21T09:34:42.980371+00:00` |
+
+detector 총 노출 시간 = 745.06초. §89.2 표의 phase 6(시작)/phase
+11(정지) 전이 순서와 정확히 일치 - baseline 관찰 중 detector 없음,
+drain(post-injection 관찰) 구간까지 detector 활성 유지, cleanup 시작
+전 정지.
+
+### 90.2 Phase별 evaluation point 집계
+
+structured evidence(`*-score-server-evidence.jsonl`, 47 레코드)에
+`DetectorLifecycleController`의 실측 on/off 시각으로 `lifecycle_phase`
+를 사후 결합한 결과(`*-score-server-evidence-annotated.jsonl`):
+
+| lifecycle_phase | n | signal_attempted | point_anomaly | max_consecutive_anomalous |
+|---|---|---|---|---|
+| baseline_window(detector_active) | 1 | 0 | 0 | 0 |
+| steady(stage) | 38 | 0 | 1 | 1 |
+| drain(detector_active_post_injection) | 8 | 0 | 0 | 0 |
+| **합계** | **47** | **0** | **1** | **1** |
+
+steady point 수 38개는 §89.6의 최소 요구치(38개)를 정확히 충족한다.
+score 범위 -0.10084893119661675 ~ 0.13949659046954033(threshold
+`-0.0742929709960305`), 전체 47 레코드에서 `artifact_hashes` 집합이
+단 1종류로 일관 - 실행 중 artifact drift 없음.
+
+### 90.3 Capture sink 신호 (독립 검증, §87 재발 방지)
+
+§87에서 "신호 0건" 보고가 틀렸던 전례가 있어, 이번에는 보고를
+그대로 믿지 않고 3가지 독립 경로로 직접 확인했다:
+
+1. sink 출력 파일 `*-sink-captured.jsonl` 자체가 **존재하지 않음**
+   (파일은 첫 write 시점에만 lazily 생성되므로, 파일 부재 = POST
+   요청 0건의 직접 증거).
+2. `*-sink.rejected.jsonl`(run_id 불일치 격리 파일)도 존재하지 않음.
+3. sink 자신의 stdout 로그(`*-sink.stdout.log`)에 기동 배너 한 줄만
+   있고 수신/거부 로그가 전혀 없음.
+
+runtime 내부 기록(`signal_attempted=0`, §90.2)과 sink 측 독립 관측이
+서로 일치한다 - "capture sink에 신호가 0건 도달"이 실제로 참이다.
+
+### 90.4 Runtime/Offline parity 검증 (§89.7, authoritative)
+
+structured evidence의 `ordered_feature_vector` 47건 전부를 동결
+offline evaluator(`model_v31/evaluate.py`의 `load_frozen_artifacts()`,
+scaler·model 변경 없음)에 그대로 입력해 `scaler.transform()` +
+`model.decision_function()`으로 score를 재계산하고, runtime이 기록한
+`score`/`is_anomalous`와 비교했다:
+
+- **score 불일치(허용오차 1e-9 초과) 또는 anomaly boolean 불일치:
+  0/47건.**
+- 재계산한 score 배열을 `model_v31/replay.py`의 `replay_detector()`
+  (offline 표준 streak 로직, 변경 없음)에 그대로 넣어 재생한 결과:
+  `point_anomaly_count=1`, `max_consecutive_anomalous=1`,
+  `signal_count=0` - runtime이 실제로 기록한 값(`point_anomaly=1`,
+  `max_consecutive=1`, `signal_attempted=0`, §90.2)과 **완전히
+  일치**.
+
+post-hoc Prometheus 재추출은 이번 검증에서 authoritative input으로
+쓰지 않았다(§89.7 명시, §88.5에서 이미 online/post-hoc 차이를 별도
+확인했으므로 재추출을 기준으로 삼지 않음) - structured runtime
+feature vector만을 유일한 입력으로 사용했다.
+
+### 90.5 §87 residual 2건(signal 4/5) 재현 여부
+
+steady(38점) + drain(8점) 어느 구간에서도 `signal_attempted=0`이며,
+point anomaly는 steady 구간에 1건뿐이고 `max_consecutive_anomalous
+=1`(3-consecutive 임계값에 전혀 도달하지 않음)이다. 즉 **§87의
+residual 2건(signal 4/5)은 이번 lifecycle-aligned 프로토콜에서
+재현되지 않았다** - drain 구간 포함 전체 노출 구간에서 signal이 단
+한 건도 발생하지 않았다. 이는 §88의 가설(§87의 신호 대부분이
+lifecycle-timing 불일치로 인한 artifact라는 분류 C)과 일치하는
+결과이나, **표본 1회의 diagnostic smoke이므로 그 자체로 §87을
+무효화하거나 원인을 확정하지 않는다** - 아래 90.8 참고.
+
+### 90.6 클러스터/프로세스 정리 상태
+
+- Node: `sj-control`/`sj-worker` 둘 다 `Ready`, 압박 상태 없음.
+- Active pod `vllm-serving-6b9d88c96-64k7r`: `1/1 Running`,
+  `RESTARTS=0`, `AGE=41h` - smoke 이전과 동일(UID/재시작 불변),
+  smoke가 active 경로에 어떤 영향도 주지 않았음을 확인.
+  preview revision `vllm-serving-6888c4694f`는 `DESIRED/CURRENT/
+  READY=0/0/0`으로 정상 정리됨.
+- Chaos CR(`podchaos`/`networkchaos`/`stresschaos`): 전 네임스페이스
+  0건.
+- Endpoints: `vllm-active -> 10.244.36.49:8000`(active pod IP와
+  일치), `vllm-preview -> <none>`(정상 격리·정리).
+- `recovery-policy` pod: `RESTARTS=0`, `AGE=2d3h` - smoke 도중 전혀
+  건드리지 않았음(capture sink만 사용, 실제 recovery-policy 미접촉
+  확인).
+- 잔여 프로세스: `score_server.py`/`capture_sink.py` 계열 프로세스
+  0개(smoke가 쓴 PID는 detector=34812, sink=31412였고 둘 다 세션
+  종료 시 `_stop_subprocess()`로 정리됨, `cleanup_ok=True`). 시스템에
+  남아 있던 `python.exe`(PID 24500/17544)는 커맨드라인 확인 결과
+  `-m http.server 8743`으로 이번 smoke와 무관한 완전히 별개의
+  프로세스였다(포트·커맨드 모두 불일치) - 그대로 두었다.
+
+### 90.7 판정 (§89.8 기준 적용)
+
+§89.8에서 사전 고정한 PASS 조건을 항목별로 확인:
+
+| 조건 | 결과 |
+|---|---|
+| lifecycle 일치(§89.2 순서와 동일) | 충족 (90.1) |
+| capture signal 0 | 충족, 3중 독립 확인 (90.3) |
+| runtime would-signal 0 (steady+drain 전부) | 충족 (90.2) |
+| runtime/offline parity 완전 일치 | 충족, 0/47 불일치 (90.4) |
+| 최소 point 충족(steady>=38) | 충족, 정확히 38 (90.2) |
+| 인프라·cleanup 정상 | 충족 (90.6) |
+
+모든 조건 충족 -> **PASS**.
+
+- `offline_validation_status = adopted` (§88 그대로 유지, 변경 없음)
+- `runtime_safety_status = passed_on_lifecycle_aligned_diagnostic`
+- `deployment_status = eligible_for_controlled_e2e_pilot`
+
+### 90.8 한계 및 명시적 비확정 사항
+
+- 이번 결과는 **정확히 1회의 diagnostic smoke**이다. 반복 재현성,
+  다른 부하 프로파일, 실제 Chaos 주입 조건에서의 안전성은 여전히
+  확인되지 않았다 - "완전히 채택되어 운영 가능"이 아니다.
+  `deployment_status=eligible_for_controlled_e2e_pilot`는 "통제된
+  E2E pilot을 진행해볼 자격이 생겼다"는 뜻이지, 실제 promotion이나
+  본 실험(60-trial) 투입을 뜻하지 않는다.
+- §87 FAIL의 정확한 근본 원인(왜 misaligned 프로토콜에서 stage
+  경계 부근 신호 2건이 나왔는지)은 여전히 확정되지 않았다 - 이번
+  결과는 "lifecycle-aligned 조건에서는 재현되지 않는다"는 반증적
+  증거일 뿐, "원인이 timing이었다"는 것을 직접 증명하지는 않는다.
+  §88의 분류(A+C+E)와 §87의 FAIL 기록은 그대로 유지한다.
+- model·threshold·feature·streak 로직은 이번 턴에서 전혀 변경하지
+  않았다(0 변경, §89.9 범위 제한 그대로 준수).
+
+### 90.9 변경 범위 확인
+
+이번 결과 커밋은 §89 계획 커밋(`c7f4ca0`)과 분리된 results-only
+커밋이다 - 코드 변경 없음(smoke_evidence 산출물 + 본 문서 §90
+추가만 포함). recovery-policy 연결·실제 promotion·Chaos 주입·모델
+재학습·기존 Holdout/challenge 재평가·`memory_pressure` 3-arm·본
+실험 관련 파일은 전혀 건드리지 않았다.

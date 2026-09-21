@@ -1,0 +1,53 @@
+{
+  "run_id": "smoke-v32b-lifecycle-aligned-20260921T091602Z",
+  "session_id": "smoke-v32b-lifecycle-aligned-01",
+  "sink_url": "http://127.0.0.1:63416/signal",
+  "sink_port": 63416,
+  "real_recovery_policy_url": "http://localhost:8080/signal",
+  "t_detector_start_utc": "2026-09-21T09:22:17.922454+00:00",
+  "t_detector_stop_utc": "2026-09-21T09:34:42.980371+00:00",
+  "detector_start_delay_sec_used": 120,
+  "run_candidate_attempts": 1,
+  "cleanup_ok": true,
+  "session_excluded": false,
+  "session_exclusion_reasons": [],
+  "session_t_slo": null,
+  "session_cleanup_result": true,
+  "session_active_pod_before": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "session_active_pod_after": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "session_endpoint_isolation_before": {
+    "active_endpoints": [
+      "vllm-serving-6b9d88c96-64k7r"
+    ],
+    "preview_endpoints": [
+      "vllm-serving-6888c4694f-282j4"
+    ],
+    "isolated": true
+  },
+  "session_endpoint_isolation_after": {
+    "active_endpoints": [
+      "vllm-serving-6b9d88c96-64k7r"
+    ],
+    "preview_endpoints": [],
+    "isolated": true
+  },
+  "score_server_evidence_cycles": 47,
+  "score_server_evidence_phase_breakdown": {
+    "baseline_window(detector_active)": 1,
+    "steady(stage)": 38,
+    "drain(detector_active_post_injection)": 8
+  },
+  "steady_observation_points": 38,
+  "steady_points_meets_minimum_38": true,
+  "capture_sink_signal_count": 0,
+  "capture_sink_signals": [],
+  "capture_sink_rejected_count": 0,
+  "score_server_evidence_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\anomaly-detection\\v3\\model_v32b\\smoke_evidence\\smoke-v32b-lifecycle-aligned-20260921T091602Z-score-server-evidence.jsonl",
+  "score_server_evidence_annotated_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\anomaly-detection\\v3\\model_v32b\\smoke_evidence\\smoke-v32b-lifecycle-aligned-20260921T091602Z-score-server-evidence-annotated.jsonl"
+}
