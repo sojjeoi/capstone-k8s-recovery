@@ -1,0 +1,85 @@
+{
+  "train_sessions": [
+    {
+      "session_id": "v31-train-idle-20260920",
+      "regime": "idle",
+      "slo_label": "clean",
+      "valid_rows": 38,
+      "session_json_sha256": "3b7fe66eb14ab4faebcf08664d04979c35de8ff4db15bbb72b3197e5e83971a5",
+      "git_commit_sha": "492a603aec5ad617b7dc0a7066f6b98307f4a1a2",
+      "ramp_config_sha256": null
+    },
+    {
+      "session_id": "v31-calib-idle-20260920",
+      "regime": "idle",
+      "slo_label": "clean",
+      "valid_rows": 38,
+      "session_json_sha256": "48c0e7d1e3bc58c61e94f9fb555bf4a8d533fed8ae2288a56905dc01808a3233",
+      "git_commit_sha": "492a603aec5ad617b7dc0a7066f6b98307f4a1a2",
+      "ramp_config_sha256": null
+    },
+    {
+      "session_id": "v31-holdout-idle-20260920",
+      "regime": "idle",
+      "slo_label": "clean",
+      "valid_rows": 38,
+      "session_json_sha256": "d13a307811571f1509890319b1e51212d16abc1975392c0116231dd52bef0fce",
+      "git_commit_sha": "492a603aec5ad617b7dc0a7066f6b98307f4a1a2",
+      "ramp_config_sha256": null
+    },
+    {
+      "session_id": "calib2-idle-01",
+      "regime": "idle",
+      "slo_label": "clean",
+      "valid_rows": 38,
+      "session_json_sha256": "34a84cb63f9f3aba9aa7e9ab9b692b161935e3c4c279a9df4c554e1e1aae4dba",
+      "git_commit_sha": "1d0f41a0c0f7c94e2fd72a4db1f121eca5bb2b06",
+      "ramp_config_sha256": null
+    },
+    {
+      "session_id": "v31-train-low_load-20260920",
+      "regime": "low_load",
+      "slo_label": "clean",
+      "valid_rows": 37,
+      "session_json_sha256": "3acf521eb5bb784cc476f2114443b15836c8cd53b16484897fad02cee0028496",
+      "git_commit_sha": "492a603aec5ad617b7dc0a7066f6b98307f4a1a2",
+      "ramp_config_sha256": "a99abef8106c4160bf73c66a555a2cdb28450eeabfe3d1ac80f5b6369ff919d4"
+    },
+    {
+      "session_id": "v31-calib-low_load-20260920",
+      "regime": "low_load",
+      "slo_label": "clean",
+      "valid_rows": 37,
+      "session_json_sha256": "b0d8b0fe4b87569295530a6ea9eb76844166fe39eada2d5f99996b4492e4fcab",
+      "git_commit_sha": "492a603aec5ad617b7dc0a7066f6b98307f4a1a2",
+      "ramp_config_sha256": "a99abef8106c4160bf73c66a555a2cdb28450eeabfe3d1ac80f5b6369ff919d4"
+    },
+    {
+      "session_id": "v31-holdout-low_load-20260920",
+      "regime": "low_load",
+      "slo_label": "clean",
+      "valid_rows": 37,
+      "session_json_sha256": "fb278ff642b74b188fe156acc46e2a6ba496c2d5293107e0431648cfed17de59",
+      "git_commit_sha": "492a603aec5ad617b7dc0a7066f6b98307f4a1a2",
+      "ramp_config_sha256": "a99abef8106c4160bf73c66a555a2cdb28450eeabfe3d1ac80f5b6369ff919d4"
+    },
+    {
+      "session_id": "calib2-low-01",
+      "regime": "low_load",
+      "slo_label": "clean",
+      "valid_rows": 37,
+      "session_json_sha256": "3e5f661d639b0868dff3b2cbd2db027b98fc238f9db997ee37c072198dc44440",
+      "git_commit_sha": "1d0f41a0c0f7c94e2fd72a4db1f121eca5bb2b06",
+      "ramp_config_sha256": "a99abef8106c4160bf73c66a555a2cdb28450eeabfe3d1ac80f5b6369ff919d4"
+    },
+    {
+      "session_id": "calib2-low-02",
+      "regime": "low_load",
+      "slo_label": "sustained_violation",
+      "valid_rows": 37,
+      "session_json_sha256": "fc15b3280960a21ce7c5a6171453c892086167f6b949b41f45c48cc25d121b38",
+      "git_commit_sha": "1d0f41a0c0f7c94e2fd72a4db1f121eca5bb2b06",
+      "ramp_config_sha256": "a99abef8106c4160bf73c66a555a2cdb28450eeabfe3d1ac80f5b6369ff919d4"
+    }
+  ]
+}

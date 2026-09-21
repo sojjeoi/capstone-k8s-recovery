@@ -1,0 +1,94 @@
+{
+  "threshold": -0.0742929709960305,
+  "decision_rule": "anomaly if decision_function(x) < threshold (strict, score_server.py:82와 동일)",
+  "selected_from": "v3.2b calibration split only (6 new sessions)",
+  "consecutive_threshold": 3,
+  "cooldown_sec": 60.0,
+  "eval_interval_sec": 15.0,
+  "calibration_sessions": [
+    "calib3-idle-01",
+    "calib3-low-01",
+    "calib3-low-02",
+    "calib3-idle-02",
+    "calib3-idle-03",
+    "calib3-low-03"
+  ],
+  "calibration_session_slo_labels": {
+    "calib3-idle-01": "clean",
+    "calib3-low-01": "clean",
+    "calib3-low-02": "clean",
+    "calib3-idle-02": "sustained_violation",
+    "calib3-idle-03": "clean",
+    "calib3-low-03": "sustained_violation"
+  },
+  "per_session_result": {
+    "calib3-idle-01": {
+      "n_points": 38,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.04980206066082915,
+      "score_median": 0.10642056451213067,
+      "score_max": 0.10893144604702265
+    },
+    "calib3-low-01": {
+      "n_points": 37,
+      "point_anomaly_count": 1,
+      "point_fpr": 0.02702702702702703,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 1,
+      "score_min": -0.08594196326399961,
+      "score_median": 0.026965022975597885,
+      "score_max": 0.10023388720516896
+    },
+    "calib3-low-02": {
+      "n_points": 37,
+      "point_anomaly_count": 5,
+      "point_fpr": 0.13513513513513514,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "score_min": -0.11881233692581206,
+      "score_median": -0.03344846387527811,
+      "score_max": 0.12613311533100924
+    },
+    "calib3-idle-02": {
+      "n_points": 38,
+      "point_anomaly_count": 2,
+      "point_fpr": 0.05263157894736842,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "score_min": -0.11121459265573574,
+      "score_median": 0.09179807516423713,
+      "score_max": 0.10163319506752017
+    },
+    "calib3-idle-03": {
+      "n_points": 38,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.03389412868538888,
+      "score_median": 0.08586603675395618,
+      "score_max": 0.13147110319963445
+    },
+    "calib3-low-03": {
+      "n_points": 37,
+      "point_anomaly_count": 5,
+      "point_fpr": 0.13513513513513514,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "score_min": -0.12174816613821127,
+      "score_median": -0.013048102744741108,
+      "score_max": 0.13230791879639664
+    }
+  },
+  "calibration_failed": false,
+  "note": "false signal episode는 t_slo와 무관하게 순수 score 상태기계 기준(§79.6) - latency-only SLO 위반이 있어도 모델이 연속 3회 조건을 안 만들면 episode 0으로 유효."
+}

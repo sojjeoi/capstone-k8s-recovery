@@ -1,0 +1,69 @@
+{
+  "model_version": "v3.2b",
+  "normal_domain_definition": "infrastructure-normal (Chaos/fault/restart/OOM/Node/Endpoint/promotion/cleanup/success-rate/metric-completeness) - t_slo excluded from eligibility, tracked as separate SLO label",
+  "model_params": {
+    "n_estimators": 100,
+    "contamination": "auto",
+    "random_state": 42,
+    "max_samples": "auto",
+    "max_features": 1.0,
+    "bootstrap": false,
+    "n_jobs": null,
+    "verbose": 0,
+    "warm_start": false
+  },
+  "scaler_class": "sklearn.preprocessing.StandardScaler (defaults)",
+  "python_version": "3.14.3 (tags/v3.14.3:323c59a, Feb  3 2026, 16:04:56) [MSC v.1944 64 bit (AMD64)]",
+  "sklearn_version": "1.9.0",
+  "numpy_version": "2.5.1",
+  "training_commit_sha": "fece045c6335fe660dad1c8f673533ec76c2815c",
+  "model_offset_sklearn_internal_not_used_as_threshold": -0.5,
+  "reproducibility": {
+    "verified_independent_retrainings": 3,
+    "byte_identical": true,
+    "verified_files": ["model.pkl", "scaler.pkl", "feature-schema.json"]
+  },
+  "threshold": {
+    "value": -0.0742929709960305,
+    "comparison_operator": "anomaly if decision_function(x) < threshold (strict, score_server.py:82와 동일)",
+    "selected_from": "v3.2b calibration split only (6 new sessions, 225 rows)",
+    "calibration_failed": false
+  },
+  "runtime_replay_rules": {
+    "eval_interval_sec": 15.0,
+    "consecutive_threshold": 3,
+    "cooldown_sec": 60.0,
+    "reset_on_single_normal_reading": true
+  },
+  "calibration_result_summary": {
+    "sessions": 6,
+    "false_signal_episodes_total": 0,
+    "overall_point_anomaly_count": 13,
+    "overall_point_count": 225,
+    "overall_point_fpr": 0.05777777777777778,
+    "sustained_violation_sessions_had_signal_episode": false,
+    "note": "false signal episode 판정은 SLO label과 무관 - latency-only SLO 위반 세션(calib3-idle-02, calib3-low-03)도 episode 0으로 통과함(§79.6)"
+  },
+  "slo_label_separation_rationale": "§78 오프라인 재감사에서 무장애·infrastructure-normal 세션에서도 latency-only sustained SLO 위반이 자연 발생함을 확인했다(idle/low_load 세션 일부, 원인 미상 - 8개 feature로 통계적으로 구분되지 않음). 이 발견 이전에는 t_slo가 있는 세션을 정상 데이터에서 통째로 제외해왔는데, 이는 survivorship bias 위험이 있었다(§78) - 우연히 SLO를 넘지 않은 세션만 정상으로 취급하면 모델이 그 편향된 부분집합에만 맞춰진다. v3.2b는 이 문제에 대응해 infrastructure-normal(장애·재시작·OOM·Node·Endpoint·promotion·정리 이상 없음)과 SLO label(t_slo 유무)을 별도 축으로 분리했다 - Isolation Forest의 선언된 역할이 fault-induced multivariate telemetry anomaly 탐지이지 모든 latency SLO 위반의 예측이 아니기 때문에(§79.1), latency-only 자연 변동은 모델이 반드시 탐지해야 하는 positive label로 간주하지 않는다.",
+  "diff_from_v31_rejected_model": {
+    "v31_freeze_commit": "9caac66",
+    "v31_outcome": "holdout 실패(false signal episode 5건, point FPR 40%) - 미채택, 영구 보존, 재조정 없음",
+    "v31_training_domain": "idle/low_load, t_slo가 있는 세션은 정상 데이터에서 배제(9세션 중 t_slo 있는 세션 없음)",
+    "v32b_training_domain": "idle/low_load, infrastructure-normal이면 t_slo 유무와 무관하게 포함(calib2-low-02 포함, 9세션 중 1개는 sustained_violation)",
+    "v32b_calibration_domain": "전량 신규 수집(calib3-*), infrastructure-normal이면 t_slo 유무와 무관하게 포함(6세션 중 2개는 sustained_violation)",
+    "code_reuse": "replay.py(calibrate_threshold/replay_detector)·feature_selection.py·evaluate.py는 model_v31에서 변경 없이 그대로 재사용"
+  },
+  "v32_stop_history": {
+    "status": "calibration_collection_stopped",
+    "detail": "model_v32/의 계획된 Calibration 6세션 중 2개(calib2-idle-01, calib2-low-01)만 수집된 상태에서 3번째(calib2-low-02)가 진짜 sustained SLO 위반으로 중단됐다(§76-77). 이 중단은 재개하지 않고 그대로 보존했다 - v3.2b는 별도 시도이며, calib2-idle-01/calib2-low-01/calib2-low-02 세 세션은 모두 v3.2b Training(원래 Calibration 역할이 아니라 Training으로 재배정)에 포함됐다."
+  },
+  "claims_scope": {
+    "allowed": "Isolation Forest는 CPU·메모리·KV-cache 추세를 이용해 fault-induced multivariate telemetry anomaly를 탐지한다",
+    "forbidden": [
+      "모든 SLO 위반을 사전에 탐지한다",
+      "모든 latency spike의 원인을 탐지한다",
+      "root cause를 판별한다"
+    ],
+    "known_limitation": "무장애·infrastructure-normal 상태에서도 latency-only SLO 위반이 자연 발생할 수 있으며(§78), 이는 현재 8-feature 셋으로 구분되지 않는다 - 별도 한계로 문서화(experiment-contract.md §1)"
+  }
+}

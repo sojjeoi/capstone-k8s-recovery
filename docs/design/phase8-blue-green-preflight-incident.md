@@ -7698,3 +7698,144 @@ threshold 결정, artifact freeze, Prospective Holdout 수집, challenge
 평가, `score_server.py` 변경·배포, 본 실험. `train_v32b.py`/
 `calibrate_v32b.py`를 실제 데이터로 실행하는 것은 다음 단계이며 이번
 커밋에는 포함하지 않는다.
+
+## 81. v3.2b Training-only 학습·Calibration threshold 결정·artifact 동결 (2026-09-21)
+
+### 81.1 시작 전 무결성 확인 (측정 전)
+
+`HEAD==origin/master==fece045` 확인, working tree clean(추적된 파일
+변경 없음, 이전과 같은 dry-run `artifacts/` 미추적 잔재만 존재).
+`train_v32b.TRAIN_SESSIONS`(9)·`CALIBRATION_SESSIONS`(6)·
+`HOLDOUT_SESSIONS`(6) 세 목록 간 session_id 중복 0건. 실측 재확인 -
+Training 9세션(idle 4 + low_load 5) 337행 전부
+`infrastructure_normal=true`(calib2-low-02의 `slo_label=
+sustained_violation`도 그대로 포함), Calibration 6세션(idle 3 +
+low_load 3) 225행 전부 `infrastructure_normal=true`(calib3-idle-02/
+calib3-low-03의 `slo_label=sustained_violation` 2건도 제외 없이
+포함). v3.1 freeze(`9caac66`) 이후 `model_v31/artifacts/`에 대한
+git 이력 없음(§75 문서 커밋 `a6d316c` 이후 무변경) - rejected model
+그대로 보존 확인. `model_v32/`(v3.2 중단 이력)도 git 추적 변경 없음.
+`holdout3-*` session 파일 존재하지 않음, `boundary_challenge_
+manifest.json` git 상태 무변경 - Holdout·challenge 자료를 읽거나
+score하지 않았음을 확인. non-degenerate 정의는 `model_v31/replay.py`
+`calibrate_threshold()`의 `degenerate = total_point_anomalies == 0`
+로 이미 코드에 고정돼 있음(v3.1/v3.2와 동일, 이번에 새로 정의하지
+않음) - 이 정의가 없었다면 결과를 보기 전에 중단했어야 하나, 이미
+확정돼 있어 그대로 진행.
+
+### 81.2 Training-only feature 선택 (`train_v32b.py`, 사전 등록 규칙 그대로)
+
+Training 9세션·337행에서만 계산, exact zero-variance만 제거·
+near-zero variance는 보고만·Calibration 값 미사용·feature 순서 고정
+(v3.1/v3.2와 완전히 동일한 절차, 코드 변경 없음):
+
+- **제거**: `queue_mean`, `queue_slope` - 337행 전부 정확히 0.0
+  (mean=std=min=max=range=0.0, `zero_variance_in_train`).
+- **유지**: `cpu_mean`, `cpu_slope`, `memory_mean`, `memory_slope`,
+  `cache_mean`, `cache_slope`(6개, 원래 순서 그대로).
+- **cache는 non-zero + 실제 variance 보유**(제거 대상 아님) -
+  `cache_mean` mean=0.00033/std=0.00065/range=0.00161,
+  `cache_slope` mean≈-4.8e-6/std=0.00051/range=0.00323 - 절대값은
+  작지만 정확히 0은 아님(v3.1/v3.2와 동일 패턴, 데이터를 손대지
+  않고 그대로 반영).
+- **queue는 정확히 zero-variance**(제거 대상) - 위 수치 그대로.
+
+결과가 v3.1/v3.2와 동일한 feature 선택으로 나왔다고 해서 데이터를
+수정하거나 사전에 결과를 맞춘 것이 아니다 - Training 세션 구성이
+달라졌음(calib2-low-02 등 §79 재정의로 새로 포함된 세션)에도 같은
+zero-variance 패턴이 재현됐을 뿐이다.
+
+### 81.3 모델 학습 및 3회 독립 재현성 검증
+
+사전 등록 설정 그대로: `IsolationForest(n_estimators=100,
+contamination="auto", random_state=42)`, `StandardScaler`는
+Training에만 fit, model도 Training에만 fit(Calibration/Holdout/
+challenge로 재학습 없음). 하이퍼파라미터 탐색 없음.
+
+3회 독립 재학습(`train_v32b.py` 3회 별도 실행) - `model.pkl`/
+`scaler.pkl`/`feature-schema.json` 전부 **byte-identical**(SHA-256
+완전 일치, 3회 모두):
+- `model.pkl`: `2102e4f5f0d06809402f6f11c0396f0249bda3864bf6eeb18c52ac626e1a9243`
+- `scaler.pkl`: `8d9faaa113227467a8ba206661d9fc0b89a663d87306a0eb5d49dc38b837eaba`
+- `feature-schema.json`: `fc452bc45eb8c85fbe3dfd8890b0ac1b306d86b8f77aec336ec64543b6ce7da2`
+
+byte-identical이므로 선택 feature·순서·scaler parameter·score·
+예측이 전부 동일함이 구조적으로 보장된다(같은 직렬화 객체) - 별도
+score 비교 없이도 결정론성이 성립. threshold 입력 전 model artifact
+단계에서 hash가 달라진 경우는 없었다(재확인 불필요).
+
+### 81.4 Calibration threshold 결정 (`calibrate_v32b.py`, 사전 등록 규칙 그대로)
+
+실제 runtime replay 그대로(`model_v31/replay.py`, 변경 없음):
+`decision_function` < threshold(엄격한 미만), 15초 평가 간격, 연속
+3회 anomaly, 정상 1회 시 reset, cooldown 60초. Calibration 6세션
+모두 infrastructure-normal이므로 `slo_label`과 무관하게 false signal
+episode를 계산(§79.6, 코드 변경 없음).
+
+**선택된 threshold: `-0.0742929709960305`**(calibration score
+분포 내에서 가장 민감한(=가장 높은) 값 중 0-episode 조건을 만족하는
+첫 값 - `calibrate_threshold()`의 내림차순 탐색 결과 그대로).
+
+| session | n | point anomaly | point FPR | max consecutive | false signal episodes | slo_label | score min/median/max |
+|---|---|---|---|---|---|---|---|
+| calib3-idle-01 | 38 | 0 | 0.0000 | 0 | 0 | clean | -0.0498 / 0.1064 / 0.1089 |
+| calib3-low-01 | 37 | 1 | 0.0270 | 1 | 0 | clean | -0.0859 / 0.0270 / 0.1002 |
+| calib3-low-02 | 37 | 5 | 0.1351 | 2 | 0 | clean | -0.1188 / -0.0334 / 0.1261 |
+| calib3-idle-02 | 38 | 2 | 0.0526 | 2 | **0** | **sustained_violation** | -0.1112 / 0.0918 / 0.1016 |
+| calib3-idle-03 | 38 | 0 | 0.0000 | 0 | 0 | clean | -0.0339 / 0.0859 / 0.1315 |
+| calib3-low-03 | 37 | 5 | 0.1351 | 2 | **0** | **sustained_violation** | -0.1217 / -0.0130 / 0.1323 |
+
+**전체**: n=225, point anomaly 13개, 전체 point FPR=13/225=**5.78%**.
+**regime별**: idle 2/114=1.75%(idle-01 0, idle-02 2, idle-03 0),
+low_load 11/111=9.91%(low-01 1, low-02 5, low-03 5). **SLO label별**:
+clean 6/150=4.00%, sustained_violation 7/75=9.33%(둘 다 point
+anomaly는 있었으나 연속 3회에 못 미쳐 - max_consecutive 2 - episode
+0으로 종결). threshold(-0.0743)는 이 6세션 관측 score 분포(약
+-0.122~+0.132) 중간보다 낮은 쪽(median 부근)에 위치 - 관측된 음수
+score의 상당수를 이상으로 잡으면서도(13건) 연속 3회 조건 때문에
+episode로는 한 번도 이어지지 않음.
+
+**필수 조건 전부 충족**: Calibration 6/6 false signal episode=0,
+불필요한 predictive recovery signal 0(전부 `signal_count=0`),
+threshold non-degenerate(`calibration_failed=false`, 13개 point
+anomaly 관측 - "아무것도 못 잡는" 자명해 아님), feature/schema
+정합(같은 model/scaler/schema로 계산), missing/NaN/Inf 없음(6세션
+모두 valid feature row 100%). **sustained_violation 2세션(idle-02,
+low-03) 모두 signal episode 0** - latency-only SLO 위반이 있어도
+모델이 조용했다는 뜻(§79.6이 의도한 그대로).
+
+### 81.5 Artifact 동결 (`anomaly-detection/v3/model_v32b/artifacts/`)
+
+Calibration 통과로 다음을 동결:
+`model.pkl`·`scaler.pkl`·`threshold.json`·`feature-schema.json`·
+`dataset-manifest.json`·`split-manifest.json`(Training 9/337 +
+Calibration 6/225 독립 session/row 수 구분 명시)·
+`training-metadata.json`(하이퍼파라미터·seed·threshold·runtime
+replay 규칙·Calibration 결과 요약·SLO label 분리 근거(§78
+survivorship bias)·v3.1 rejected model과의 차이·v3.2 중단 이력·
+claims-scope 전부 포함)·`requirements-lock.txt`(v3.1과 동일 환경:
+scikit-learn 1.9.0/numpy 2.5.1/scipy 1.18.1/joblib 1.6.0/
+threadpoolctl 3.6.0)·`SHA256SUMS.json`. 재현 가능한 CLI는
+`train_v32b.py`/`calibrate_v32b.py`(둘 다 코드 변경 없음, 그대로
+재실행 가능).
+
+**검증**: `integrity.verify_sha256sums()`(model_v31, 변경 없음)로
+전체 파일 해시 0건 불일치. 오프라인 재로드(`load_frozen_artifacts()`
++ `evaluate_session()`, 둘 다 변경 없음)로 `calib3-low-02`를 다시
+채점해 `calibrate_v32b.py` 실행 당시 기록과 **완전히 일치**(point
+anomaly/FPR/max_consecutive/score_min·median·max 전부 동일) -
+artifact가 실제로 결정론적으로 재현 가능함을 재확인. 전체 오프라인
+스위트(`pytest experiments recovery-policy anomaly-detection -q -m
+"not live_cluster"`, 존재하지 않는 KUBECONFIG) 808 passed(변경 없음
+- feature 선택·학습·calibration 코드 자체는 이미 커밋된 것을 그대로
+실행했을 뿐).
+
+### 81.6 범위 준수
+
+이번 턴에서 하지 않은 것 - Prospective Holdout 수집·열람·평가,
+boundary challenge 평가, threshold 재조정, latency/TTFT feature
+추가, `score_server.py` 변경·배포, preview·Chaos·promotion 등 live
+cluster 작업, `memory_pressure` 3-arm, `run_all_scenarios.py`, 60회
+본 실험, `TrialResult` 스키마 변경, v3.1 artifact 수정. Calibration이
+전부 통과했으므로 다음 단계(Prospective Holdout 수집)로 진입 가능한
+상태이나, 이번 커밋에서는 시작하지 않는다.

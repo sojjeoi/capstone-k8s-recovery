@@ -1,0 +1,81 @@
+{
+  "train_sessions": [
+    "v31-train-idle-20260920",
+    "v31-calib-idle-20260920",
+    "v31-holdout-idle-20260920",
+    "calib2-idle-01",
+    "v31-train-low_load-20260920",
+    "v31-calib-low_load-20260920",
+    "v31-holdout-low_load-20260920",
+    "calib2-low-01",
+    "calib2-low-02"
+  ],
+  "calibration_sessions": [
+    "calib3-idle-01",
+    "calib3-low-01",
+    "calib3-low-02",
+    "calib3-idle-02",
+    "calib3-idle-03",
+    "calib3-low-03"
+  ],
+  "holdout_sessions": [
+    "holdout3-low-01",
+    "holdout3-idle-01",
+    "holdout3-idle-02",
+    "holdout3-low-02",
+    "holdout3-low-03",
+    "holdout3-idle-03"
+  ],
+  "train_row_counts_by_session": {
+    "v31-train-idle-20260920": 38,
+    "v31-calib-idle-20260920": 38,
+    "v31-holdout-idle-20260920": 38,
+    "calib2-idle-01": 38,
+    "v31-train-low_load-20260920": 37,
+    "v31-calib-low_load-20260920": 37,
+    "v31-holdout-low_load-20260920": 37,
+    "calib2-low-01": 37,
+    "calib2-low-02": 37
+  },
+  "train_slo_labels_by_session": {
+    "v31-train-idle-20260920": "clean",
+    "v31-calib-idle-20260920": "clean",
+    "v31-holdout-idle-20260920": "clean",
+    "calib2-idle-01": "clean",
+    "v31-train-low_load-20260920": "clean",
+    "v31-calib-low_load-20260920": "clean",
+    "v31-holdout-low_load-20260920": "clean",
+    "calib2-low-01": "clean",
+    "calib2-low-02": "sustained_violation"
+  },
+  "train_independent_session_count": 9,
+  "train_idle_session_count": 4,
+  "train_low_load_session_count": 5,
+  "train_total_rows": 337,
+  "train_excluded_protocol_mismatch": {
+    "q3c-low_load-20260920-r2": "180초 세션(§64 qualification) - v3.1/v3.2b 600초 프로토콜과 다름",
+    "official-train-low_load-20260920": "180초 세션(§66) - 프로토콜 다름",
+    "official-calib-low_load-20260920": "180초 세션(§68) - 프로토콜 다름"
+  },
+  "calibration_row_counts_by_session": {
+    "calib3-idle-01": 38,
+    "calib3-low-01": 37,
+    "calib3-low-02": 37,
+    "calib3-idle-02": 38,
+    "calib3-idle-03": 38,
+    "calib3-low-03": 37
+  },
+  "calibration_slo_labels_by_session": {
+    "calib3-idle-01": "clean",
+    "calib3-low-01": "clean",
+    "calib3-low-02": "clean",
+    "calib3-idle-02": "sustained_violation",
+    "calib3-idle-03": "clean",
+    "calib3-low-03": "sustained_violation"
+  },
+  "calibration_independent_session_count": 6,
+  "calibration_idle_session_count": 3,
+  "calibration_low_load_session_count": 3,
+  "calibration_total_rows": 225,
+  "note": "t_slo 존재 여부는 Training/Calibration 포함 기준이 아니다(§79.1/§79.4) - infrastructure-normal이면 포함. row 수는 겹치는 window라 독립 표본 수는 session 수를 봐야 한다(Training 9 independent sessions/337 rows, Calibration 6 independent sessions/225 rows)."
+}
