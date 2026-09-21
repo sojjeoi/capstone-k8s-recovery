@@ -1,0 +1,88 @@
+{
+  "holdout_sessions": [
+    {
+      "session_id": "holdout3-low-01",
+      "regime": "low_load",
+      "slo_label": "clean",
+      "infrastructure_normal": true,
+      "valid_rows": 37,
+      "session_json_sha256": "a9bf08b56d8a8fa39e3a53e7342db1d841034fb56d38a4eafd4998d8c52532fe",
+      "git_commit_sha": "57d4440d76b9bc476942c05df61d72c77be8e31d",
+      "t_session_start": "2026-09-21T05:12:10.970201+00:00",
+      "t_session_end": "2026-09-21T05:31:19.055715+00:00"
+    },
+    {
+      "session_id": "holdout3-idle-01",
+      "regime": "idle",
+      "slo_label": "clean",
+      "infrastructure_normal": true,
+      "valid_rows": 38,
+      "session_json_sha256": "43cfcaf421937e4a5acbbf3067f31c17c295983f9ba7798da708b91a15432c3d",
+      "git_commit_sha": "57d4440d76b9bc476942c05df61d72c77be8e31d",
+      "t_session_start": "2026-09-21T05:32:23.034170+00:00",
+      "t_session_end": "2026-09-21T05:49:35.582914+00:00"
+    },
+    {
+      "session_id": "holdout3-idle-02",
+      "regime": "idle",
+      "slo_label": "clean",
+      "infrastructure_normal": true,
+      "valid_rows": 38,
+      "session_json_sha256": "aa4589a2937c7cdeb84e004b2bbe68eefa2b21eab2c75cb57f0406112b89809b",
+      "git_commit_sha": "57d4440d76b9bc476942c05df61d72c77be8e31d",
+      "t_session_start": "2026-09-21T05:50:27.363848+00:00",
+      "t_session_end": "2026-09-21T06:07:42.265121+00:00"
+    },
+    {
+      "session_id": "holdout3-low-02",
+      "regime": "low_load",
+      "slo_label": "clean",
+      "infrastructure_normal": true,
+      "valid_rows": 37,
+      "session_json_sha256": "c5bd6f5c8c2f14c2501ae9717ffa8abd22c2ea5b93b5e9923d44b0d20871d0c5",
+      "git_commit_sha": "57d4440d76b9bc476942c05df61d72c77be8e31d",
+      "t_session_start": "2026-09-21T06:08:28.258020+00:00",
+      "t_session_end": "2026-09-21T06:27:25.039840+00:00"
+    },
+    {
+      "session_id": "holdout3-low-03",
+      "regime": "low_load",
+      "slo_label": "clean",
+      "infrastructure_normal": true,
+      "valid_rows": 37,
+      "session_json_sha256": "4e1b670c7142de61c77ea79647604bbb4c4abe447b5542ea61049ee9bda1fa65",
+      "git_commit_sha": "57d4440d76b9bc476942c05df61d72c77be8e31d",
+      "t_session_start": "2026-09-21T06:28:06.975088+00:00",
+      "t_session_end": "2026-09-21T06:46:57.778682+00:00"
+    },
+    {
+      "session_id": "holdout3-idle-03",
+      "regime": "idle",
+      "slo_label": "clean",
+      "infrastructure_normal": true,
+      "valid_rows": 38,
+      "session_json_sha256": "8922dbdd8118bf77d4b533db082797f789ea94025635faf949e598488f4fc3d6",
+      "git_commit_sha": "57d4440d76b9bc476942c05df61d72c77be8e31d",
+      "t_session_start": "2026-09-21T06:47:50.896284+00:00",
+      "t_session_end": "2026-09-21T07:04:10.404576+00:00"
+    }
+  ],
+  "independent_session_count": 6,
+  "idle_count": 3,
+  "low_load_count": 3,
+  "total_rows": 225,
+  "model_freeze_commit": "57d4440d76b9bc476942c05df61d72c77be8e31d",
+  "model_freeze_commit_timestamp_utc": "2026-09-21T05:07:01+00:00",
+  "all_sessions_collected_after_freeze": true,
+  "collection_order_fixed": [
+    "holdout3-low-01",
+    "holdout3-idle-01",
+    "holdout3-idle-02",
+    "holdout3-low-02",
+    "holdout3-low-03",
+    "holdout3-idle-03"
+  ],
+  "collection_commit_sha": "57d4440d76b9bc476942c05df61d72c77be8e31d",
+  "scored_at_manifest_time": false,
+  "note": "평가 전 데이터 동결(§6단계 5) - score/FPR/episode 미계산, raw/feature/session hash만 기록"
+}

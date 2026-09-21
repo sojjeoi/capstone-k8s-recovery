@@ -7839,3 +7839,72 @@ cluster 작업, `memory_pressure` 3-arm, `run_all_scenarios.py`, 60회
 본 실험, `TrialResult` 스키마 변경, v3.1 artifact 수정. Calibration이
 전부 통과했으므로 다음 단계(Prospective Holdout 수집)로 진입 가능한
 상태이나, 이번 커밋에서는 시작하지 않는다.
+
+## 82. v3.2b Prospective Holdout 수집 - 데이터 동결(평가 전, 봉인) (2026-09-21)
+
+### 82.1 시작 전 동결 확인
+
+`HEAD==origin/master==57d4440`, working tree clean, `SHA256SUMS.json`
+무결성 재확인 0건 불일치, threshold `-0.0742929709960305`·6개
+feature(순서 동일)·runtime replay 규칙(15초/연속3/cooldown60) 전부
+freeze artifact와 일치. `holdout3-*` session 파일이 시작 전엔
+존재하지 않았음, evaluator 코드(`evaluate.py`/`replay.py`/
+`stop_loss.py`/`domain.py`/`evaluate_holdout_v32b.py`)가
+`57d4440` 이후 변경 없음(git log 확인). Node Ready·pressure 없음,
+Rollout 단일 revision·실제 preview 없음, Chaos CR·experiment
+context·detector 프로세스 없음, Prometheus port-forward 정상 -
+전부 확인 후 시작.
+
+### 82.2 고정 순서 실측 (봉인 수집 - score 미계산)
+
+§79.3 순서 그대로: `holdout3-low-01` -> `holdout3-idle-01` ->
+`holdout3-idle-02` -> `holdout3-low-02` -> `holdout3-low-03` ->
+`holdout3-idle-03`. 각 session은 기존과 동일한 절차(600초,
+active_plus_preview, Ready 후 60초 settle, 독립 preview lifecycle,
+cleanup+단일 revision 복원, 세션 간 60초+ cooldown)를 따랐다.
+**수집 도중에는 어떤 score·point anomaly·threshold 적용·streak/
+episode 계산도 하지 않았다** - session마다 확인한 것은
+infrastructure-normal 유효성(`classify_exclusion_reasons()`)·
+feature row 수·cleanup 결과·SLO label뿐이다.
+
+| session_id | infrastructure_normal | slo_label | valid rows | cleanup |
+|---|---|---|---|---|
+| `holdout3-low-01` | true | clean | 37/37 | true |
+| `holdout3-idle-01` | true | clean | 38/38 | true |
+| `holdout3-idle-02` | true | clean | 38/38 | true |
+| `holdout3-low-02` | true | clean | 37/37 | true |
+| `holdout3-low-03` | true | clean | 37/37 | true |
+| `holdout3-idle-03` | true | clean | 38/38 | true |
+
+6세션 전부 infrastructure-normal, 독립 session 6개·총 valid row
+225개(37+38+38+37+37+38). 이번 6세션은 전부 `slo_label=clean`(genuine
+latency-only SLO 위반 없음 - Calibration의 2건과 달리 이번엔
+재현되지 않음, 원인론적 결론 없음). 각 session 사이 클러스터 재확인 -
+Node Ready·pressure 없음, active pod `vllm-serving-6b9d88c96-64k7r`
+restartCount=0 무변화(수집 전 구간 내내 동일 pod), Chaos CR 없음,
+Endpoint 격리 정상 - 인프라 중단 조건 0건 발동. port-forward 단절도
+없었음(§80.5 health check가 매 session마다 `reachable=true` 기록,
+historical re-extraction 불필요).
+
+### 82.3 평가 전 데이터 동결
+
+score 계산 없이 다음만 수행: raw/feature/session-JSON SHA-256 계산,
+session별 row 수 재확인, Training/Calibration/Holdout 세 split 간
+session_id 중복 0건(재확인), artifact(`SHA256SUMS.json`) 무결성
+재확인 0건 불일치, **model freeze commit(`57d4440`,
+2026-09-21T05:07:01+00:00)이 6개 holdout session의 `t_session_start`
+전부(05:12~06:48 UTC)보다 앞섬을 확인**(`holdout-data-manifest.json`).
+전체 오프라인 스위트 808 passed(변경 없음).
+
+이 단계까지 `model.pkl`/`scaler.pkl`/`threshold.json`을 전혀 읽지
+않았다 - `holdout-data-manifest.json` 생성은 session JSON의 raw
+필드(`profile`/`exclusion_reasons`/`feature_rows`/`t_session_start`
+등)만 사용했다.
+
+### 82.4 범위 준수
+
+이번 절에서 하지 않은 것 - anomaly score 계산, point anomaly 확인,
+threshold 적용, streak/episode 계산, session별 score 분포 조회,
+중간 FPR 계산, 결과를 보고 나머지 session 중단, model/scaler/
+threshold 변경. sealed evaluation은 이 데이터 커밋이 origin에 반영된
+뒤 별도 절(§83)에서 정확히 한 번 수행한다.
