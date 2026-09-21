@@ -25,6 +25,7 @@ import pickle
 import re
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
@@ -229,31 +230,86 @@ def advance_streak(score: float, threshold: float, consecutive_anomalous: int, l
     }
 
 
-def post_to_recovery_policy(score: float, experiment_run_id: str = None, detector: str = "isolation_forest") -> dict:
-    """§88.6 - 반환값(성공/연결실패/기타 예외 + payload)을 추가했다(기존
-    호출부인 `fixed_threshold.py`는 반환값을 쓰지 않으므로 영향 없음) -
-    evidence 로그에 signal_response를 남기기 위함, 실제 전송 로직·payload
-    구성은 전혀 바뀌지 않았다."""
+# §92 - promote()의 실측 지연(§91: t_api_request~t_switch 7.543초, 서버측
+# rollouts_client.promote()의 CLI_TIMEOUT_SEC=30 + verify_timeout=5.0이
+# 이론적 상한)이 기존 5초 read timeout보다 길 수 있음이 §91 실제 파일럿
+# 데이터로 확인됐다 - 서버 처리가 5초를 넘기면 클라이언트가 응답을 못 받고
+# ReadTimeout을 던지는데, 이 예외가 서버측 실제 조치(승격)를 막지는 않지만
+# (서버는 독립적으로 계속 처리) 클라이언트 쪽 관찰(evidence)이 이 신호의
+# 결과를 놓치는 원인이 될 수 있다(§92 forensic 참고). 서버측 문서화된
+# 상한(30+5=35초)보다 넉넉한 여유를 둔다 - 판정 로직(언제 신호를 보낼지)은
+# 전혀 안 바꾸고, 신호를 보낸 뒤 응답을 기다리는 시간만 늘린다.
+SIGNAL_CONNECT_TIMEOUT_SEC = 5.0
+SIGNAL_READ_TIMEOUT_SEC = 45.0
+
+
+def post_to_recovery_policy(score: float, experiment_run_id: str = None, detector: str = "isolation_forest", *,
+                             correlation_id: str = None, evaluation_seq: int = None,
+                             model_version: str = None, artifact_hashes: dict = None,
+                             threshold: float = None, consecutive_anomalous: int = None) -> dict:
+    """§88.6/§92 - 반환값(성공/실패 종류 + payload + 진단 정보)을 추가했다
+    (기존 호출부인 `fixed_threshold.py`는 이 함수를 쓰지 않으므로 영향
+    없음) - evidence 로그에 signal_result를 남기기 위함, 실제 신호
+    판정(언제 보낼지)은 전혀 안 바뀌었다.
+
+    §92 provenance 필드(전부 선택 인자, 기본값 None이면 payload에 아예
+    안 붙음 - 기존 payload와 100% 동일) - recovery-policy의
+    `AnomalySignalRequest`가 `Optional[...] = None`으로 선언한 필드만
+    실제로 감사기록에 반영되고, 그 외 필드는 Pydantic이 조용히 무시한다
+    (요청 자체는 항상 성공 - 서버 결정 로직·기존 필드 의미 무변경).
+
+    §92 예외 처리 - 기존엔 `ConnectionError`만 잡아서 `ReadTimeout`류가
+    새 나가 while 루프 전체가 죽을 위험이 있었다(§92 forensic). 이제
+    `RequestException`(그 상위 클래스, `ConnectionError` 포함) 전체를
+    잡아 어떤 실패든 while 루프를 절대 죽이지 않는다."""
+    timestamp = datetime.now(timezone.utc).isoformat()
     payload = {
         "signal_type": "anomaly_risk", "score": score,
-        "timestamp": datetime.now(timezone.utc).isoformat(), "detector": detector,
+        "timestamp": timestamp, "detector": detector,
     }
     if experiment_run_id:
         payload["experiment_run_id"] = experiment_run_id
+    if correlation_id is not None:
+        payload["correlation_id"] = correlation_id
+    if evaluation_seq is not None:
+        payload["evaluation_seq"] = evaluation_seq
+    if model_version is not None:
+        payload["model_version"] = model_version
+    if artifact_hashes is not None:
+        payload["model_hash"] = artifact_hashes.get("model.pkl")
+        payload["feature_schema_hash"] = artifact_hashes.get("feature-schema.json")
+    if threshold is not None:
+        payload["threshold"] = threshold
+    if consecutive_anomalous is not None:
+        payload["consecutive_count"] = consecutive_anomalous
+
+    idempotency_key_hint = f"{experiment_run_id}:{payload['signal_type']}" if experiment_run_id else None
     try:
-        r = requests.post(RECOVERY_POLICY_URL, json=payload, timeout=5)
+        r = requests.post(RECOVERY_POLICY_URL, json=payload,
+                           timeout=(SIGNAL_CONNECT_TIMEOUT_SEC, SIGNAL_READ_TIMEOUT_SEC))
         print(f"  -> 신호 발행: {payload}")
-        return {"outcome": "sent", "http_status": r.status_code, "payload": payload}
+        return {
+            "outcome": "sent", "http_status": r.status_code,
+            "response_body_summary": r.text[:500],
+            "idempotency_key_hint": idempotency_key_hint, "payload": payload,
+        }
     except requests.exceptions.ConnectionError as e:
         print(f"  -> recovery-policy 서비스 없음(Phase 7 미구현) - 신호 발행 스킵: {payload}")
-        return {"outcome": "connection_error", "error": str(e), "payload": payload}
+        return {"outcome": "connection_error", "error": str(e),
+                "idempotency_key_hint": idempotency_key_hint, "payload": payload}
+    except requests.exceptions.RequestException as e:
+        print(f"  -> 신호 발행 실패({type(e).__name__}): {payload}")
+        return {"outcome": "request_exception", "error": f"{type(e).__name__}: {e}",
+                "idempotency_key_hint": idempotency_key_hint, "payload": payload}
 
 
-def _write_evidence_line(evidence_file, record: dict) -> None:
-    """§88.6 - append-only JSONL, 매 evaluation 직후 flush+fsync(가능하면).
-    관찰 전용 - 이 함수의 존재·실패 여부가 판정 로직에 전혀 영향을
-    주지 않는다(evidence 기록 실패는 evaluation을 막지 않음, 로그만
-    남기고 계속 진행)."""
+def _write_evidence_line(evidence_file, record: dict) -> bool:
+    """§88.6/§92 - append-only JSONL, 매 evaluation 직후 flush+fsync(가능하면).
+    반환값(성공 여부)을 추가했다(§92) - evaluation 자체를 막지는 않지만
+    (기존과 동일하게 예외를 삼키고 계속 진행), `main()`이 이 반환값을 보고
+    "이 cycle의 write-ahead가 실패했으면 신호를 보내지 않는다"는 별도의
+    fail-closed 게이트를 걸 수 있게 한다(§92.3 - 신호만 조건부로 막지,
+    evaluation 자체를 막지는 않음)."""
     try:
         evidence_file.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
         evidence_file.flush()
@@ -261,12 +317,32 @@ def _write_evidence_line(evidence_file, record: dict) -> None:
             os.fsync(evidence_file.fileno())
         except OSError:
             pass  # 일부 파일시스템/스트림은 fsync 미지원 - 관찰 전용이므로 무시
+        return True
     except Exception as e:  # noqa: BLE001 - evidence 기록 실패가 evaluation을 막으면 안 됨
         print(f"  -> [evidence] 기록 실패(무시하고 계속): {e}")
+        return False
 
 
 def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_run_id: str = None,
-         evidence_log_path: str = None):
+         evidence_log_path: str = None, stop_file_path: str = None):
+    """§92 - main loop을 write-ahead evidence 순서로 재구성했다(판정
+    로직은 전혀 안 바꿈, IO 순서만 강화):
+      1) feature/score/streak 계산(변경 없음)
+      2) `evaluation_decision` record를 **외부 HTTP 신호 전에** 먼저
+         flush+fsync(§92 forensic이 지목한 §91의 근본 취약점 - 기존엔
+         신호 HTTP 호출이 끝난 "뒤에만" 기록해서, 그 호출이 멈추거나
+         (예외 처리 밖으로 새 나가는 경우) 프로세스가 죽으면 그 cycle의
+         결정 자체가 통째로 유실됐다).
+      3) `would_signal`이면 신호를 보내고, 성공/실패/예외 무엇이든
+         별도의 `signal_result` record로(먼저 쓴 `evaluation_decision`을
+         절대 덮어쓰지 않음) correlation_id로 연결해 flush+fsync.
+      4) 매 cycle 끝에 `stop_file_path`(선택)가 존재하는지 확인 - §92
+         graceful shutdown: 오케스트레이터가 이 파일을 만들면(정지 요청)
+         "이번 cycle을 끝까지 완료한 뒤" 스스로 종료한다(OS 시그널
+         강제종료와 달리 진행 중이던 evidence 기록이 항상 완결된 채로
+         남는다) - `detector_shutdown` record를 남기고 정상 반환한다.
+         강제종료(terminate/kill)는 여전히 오케스트레이터 쪽의 최후
+         수단으로 남아있다(이 파일이 없거나 grace 기간을 넘기면)."""
     artifacts = load_and_verify_artifacts(Path(artifacts_dir), model_version)
     model, scaler, schema, threshold = artifacts["model"], artifacts["scaler"], artifacts["schema"], artifacts["threshold"]
     print(f"[score_server v3.2b] model_version={model_version} artifacts_dir={artifacts['artifacts_dir']} "
@@ -275,10 +351,13 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
 
     consecutive_anomalous = 0
     last_signal_at = None
+    evaluation_seq = 0
     evidence_file = open(evidence_log_path, "a", encoding="utf-8") if evidence_log_path else None
 
     try:
         while True:
+            evaluation_seq += 1
+            correlation_id = uuid.uuid4().hex
             wall_clock_before = datetime.now(timezone.utc).isoformat()
             verbose = _evaluate_v32b_verbose(model, scaler, schema)
             score = verbose["score"]
@@ -287,20 +366,28 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
             consecutive_anomalous, last_signal_at = step["consecutive_anomalous"], step["last_signal_at"]
 
             status = "이상" if step["is_anomalous"] else "정상"
-            print(f"[{datetime.now(timezone.utc).isoformat()}] score={score:.4f} ({status}), 연속={consecutive_anomalous}")
+            print(f"[{datetime.now(timezone.utc).isoformat()}] score={score:.4f} ({status}), 연속={consecutive_anomalous}"
+                  f" seq={evaluation_seq} corr={correlation_id}")
 
-            signal_response = None
-            if consecutive_anomalous >= CONSECUTIVE_THRESHOLD and not step["should_signal"]:
+            cooldown_active = bool(consecutive_anomalous >= CONSECUTIVE_THRESHOLD and not step["should_signal"])
+            if cooldown_active:
                 remaining = COOLDOWN_SEC - (now - last_signal_at)
                 print(f"  -> cooldown 중 (남은 {remaining:.0f}초) - 신호 스킵")
-            elif step["should_signal"]:
-                signal_response = post_to_recovery_policy(score, experiment_run_id)
 
+            # §92 - write-ahead: 신호를 보내기 전에 이 cycle의 결정을 먼저
+            # 영구 기록한다. would_signal=True인 cycle도 예외 없이 여기서
+            # 먼저 flush+fsync된 뒤에만 아래에서 실제 HTTP 요청을 보낸다.
+            # evidence_log_path 미지정(기존 대부분의 로컬/테스트 호출)이면
+            # decision_write_ok=True(기록할 것 자체가 없음 - 기존과 동일하게
+            # 신호는 evidence와 무관하게 그대로 나간다).
+            decision_write_ok = True
             if evidence_file is not None:
-                _write_evidence_line(evidence_file, {
+                decision_write_ok = _write_evidence_line(evidence_file, {
+                    "record_type": "evaluation_decision",
                     "wall_clock_before_utc": wall_clock_before,
                     "wall_clock_after_utc": datetime.now(timezone.utc).isoformat(),
                     "run_id": experiment_run_id, "model_version": model_version,
+                    "evaluation_seq": evaluation_seq, "correlation_id": correlation_id,
                     "artifact_hashes": artifacts["artifact_hashes"],
                     "window_start_utc": verbose["window_start_utc"], "window_end_utc": verbose["window_end_utc"],
                     "raw_feature_vector": verbose["raw_feature_vector"],
@@ -308,13 +395,62 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
                     "scaled_feature_vector": verbose["scaled_feature_vector"],
                     "score": score, "threshold": threshold, "is_anomalous": step["is_anomalous"],
                     "consecutive_anomalous": consecutive_anomalous,
-                    "cooldown_active": bool(consecutive_anomalous >= CONSECUTIVE_THRESHOLD and not step["should_signal"]),
-                    "signal_attempted": step["should_signal"], "signal_response": signal_response,
+                    "cooldown_active": cooldown_active,
+                    "would_signal": step["should_signal"],
+                    "target_signal_url": RECOVERY_POLICY_URL,
                     "lifecycle_phase": None,  # 오케스트레이터가 세션 자체 타임스탬프로 사후 결합(§88.6 - 외부 timeline 방식)
                 })
 
+            signal_response = None
+            if step["should_signal"]:
+                if not decision_write_ok:
+                    # §92.3 - fail-closed: evidence-log가 설정돼 있는데(opt-in)
+                    # 이 cycle의 write-ahead 기록 자체가 실패했으면, 그 결정의
+                    # 근거를 영구히 남길 수 없는 채로 실제 조치(recovery-policy
+                    # promotion)를 유발하지 않는다. 판정 로직(연속 3회 이상)은
+                    # 그대로 유지되고, 다음 cycle에서 여전히 anomalous면 그때
+                    # 다시 시도한다(cooldown/consecutive 상태는 이미 위에서
+                    # advance_streak()가 갱신했으므로 영향 없음).
+                    print(f"  -> [fail-closed] evidence write-ahead 실패 - 신호를 보내지 않음(seq={evaluation_seq})")
+                    signal_response = {"outcome": "skipped_evidence_write_failed", "payload": None}
+                else:
+                    attempted_at = datetime.now(timezone.utc).isoformat()
+                    signal_response = post_to_recovery_policy(
+                        score, experiment_run_id,
+                        correlation_id=correlation_id, evaluation_seq=evaluation_seq,
+                        model_version=model_version, artifact_hashes=artifacts["artifact_hashes"],
+                        threshold=threshold, consecutive_anomalous=consecutive_anomalous,
+                    )
+                    completed_at = datetime.now(timezone.utc).isoformat()
+                    if evidence_file is not None:
+                        _write_evidence_line(evidence_file, {
+                            "record_type": "signal_result",
+                            "correlation_id": correlation_id, "evaluation_seq": evaluation_seq,
+                            "run_id": experiment_run_id,
+                            "attempted_at_utc": attempted_at, "completed_at_utc": completed_at,
+                            "outcome": signal_response.get("outcome"),
+                            "http_status": signal_response.get("http_status"),
+                            "error": signal_response.get("error"),
+                            "response_body_summary": signal_response.get("response_body_summary"),
+                            "idempotency_key_hint": signal_response.get("idempotency_key_hint"),
+                        })
+
             if once:
                 return
+
+            if stop_file_path is not None and os.path.exists(stop_file_path):
+                print(f"  -> [shutdown] stop-file 감지({stop_file_path}) - 정상 종료(seq={evaluation_seq})")
+                if evidence_file is not None:
+                    _write_evidence_line(evidence_file, {
+                        "record_type": "detector_shutdown",
+                        "run_id": experiment_run_id,
+                        "requested_via": "stop_file",
+                        "exited_at_utc": datetime.now(timezone.utc).isoformat(),
+                        "last_evaluation_seq": evaluation_seq,
+                        "exit_reason": "graceful_stop_file",
+                    })
+                return
+
             time.sleep(EVAL_INTERVAL_SEC)
     finally:
         if evidence_file is not None:
@@ -333,12 +469,18 @@ if __name__ == "__main__":
                          help="training-metadata.json의 model_version과 정확히 일치해야 함(예: v3.2b) - "
                               "기본값 없음(fail-closed)")
     parser.add_argument("--evidence-log", default=None,
-                         help="§88.6 - append-only structured JSONL evidence 파일 경로(선택). stdout 로그가 "
+                         help="§88.6/§92 - append-only structured JSONL evidence 파일 경로(선택). stdout 로그가 "
                               "리다이렉트·버퍼링으로 유실돼도(§87.1) 매 evaluation 직후 flush+fsync되는 이 파일로 "
-                              "판정 세부값을 남긴다 - 판정 로직에는 영향 없음(관찰 전용)")
+                              "판정 세부값을 남긴다 - 판정 로직에는 영향 없음(관찰 전용). §92부터 신호 전 "
+                              "evaluation_decision을 먼저 쓰고 신호 후 signal_result를 별도로 남긴다(write-ahead)")
+    parser.add_argument("--stop-file", default=None,
+                         help="§92 - graceful shutdown 요청 파일 경로(선택). 이 파일이 생기면 진행 중이던 "
+                              "cycle을 끝까지 완료(신호·evidence 기록 포함)한 뒤 스스로 정상 종료한다. "
+                              "미지정 시 기존과 동일하게 오케스트레이터의 terminate/kill만으로 종료된다")
     args = parser.parse_args()
     try:
         main(artifacts_dir=args.artifacts_dir, model_version=args.model_version,
-             once=args.once, experiment_run_id=args.run_id, evidence_log_path=args.evidence_log)
+             once=args.once, experiment_run_id=args.run_id, evidence_log_path=args.evidence_log,
+             stop_file_path=args.stop_file)
     except RuntimeError as e:
         parser.error(str(e))

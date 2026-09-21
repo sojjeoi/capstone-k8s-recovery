@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urlsplit, urlunsplit
@@ -150,16 +151,45 @@ def _build_detector_command(arm: str, run_id: str, evidence_log_path: Optional[s
         cmd += ["--artifacts-dir", str(PROPOSED_ARTIFACTS_DIR), "--model-version", PROPOSED_MODEL_VERSION]
         if evidence_log_path is not None:
             cmd += ["--evidence-log", evidence_log_path]
+            cmd += ["--stop-file", _stop_file_for(evidence_log_path)]
     return cmd
 
 
-def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None) -> Detector:
+def _stop_file_for(evidence_log_path: str) -> str:
+    """§92 - evidence_log_path에서 결정적으로 유도(별도 인자 추가 없이
+    opt-in 표면을 evidence-log 하나로 유지) - score_server.py --stop-file과
+    같은 값을 오케스트레이터도 계산할 수 있어야 graceful stop을 요청할 수
+    있다."""
+    return f"{evidence_log_path}.stopfile"
+
+
+# §92 - score_server.py의 SIGNAL_READ_TIMEOUT_SEC(45초, §91 forensic이
+# 실측한 promote() 지연 7.543초 + 서버측 이론적 상한 35초에 대한 여유)보다
+# 넉넉하게 잡는다 - 진행 중이던 신호 HTTP 요청이 자연 종료(성공/자체
+# 타임아웃)되고 evidence까지 다 쓸 시간을 준다. trial outcome/t_recovery는
+# 이 단계 훨씬 전에 이미 확정돼 있으므로(run_once.py의 OBSERVING 루프가
+# cleanup 진입 전에 break) 이 대기가 판정을 지연·변경하지 않는다.
+GRACEFUL_STOP_TIMEOUT_SEC = 50.0
+
+
+def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None,
+                          stop_file_path: Optional[str] = None) -> Detector:
     """서브프로세스 생명주기 관리 자체를 detector 스크립트 내용과 분리한
     작은 헬퍼(2026-09-18 추가, 테스트 용이성) - make_detector_for_arm()이
     실제 detector 스크립트로 이걸 쓰고, 테스트는 어떤 명령이든(예:
     python -c "...") 넣어서 start/is_alive/stop 자체의 정확성만 검증할 수
     있다(fixed_threshold.py/score_server.py는 Prometheus·모델 파일 등
-    외부 의존성이 있어 오프라인 테스트 대상이 아님)."""
+    외부 의존성이 있어 오프라인 테스트 대상이 아님).
+
+    §92 - stop_file_path가 주어지면(§91 forensic 이후 evidence-log와
+    함께만 opt-in) stop()이 먼저 그 파일을 만들어 "진행 중이던 cycle을
+    끝까지 완료하고 정상 종료해달라"는 graceful 요청을 보내고, 최대
+    GRACEFUL_STOP_TIMEOUT_SEC까지 스스로 종료하길 기다린다. 그 안에
+    종료하면 강제종료(terminate/kill)는 전혀 안 쓴다 - Windows의
+    Popen.terminate()==TerminateProcess()는 대상 프로세스에 어떤 정리
+    기회도 주지 않는 즉시종료라(§92 forensic), 이 경로가 유일하게 실제
+    "정상 종료"를 만들 수 있다. stop_file_path가 None이면(기본값, 기존
+    모든 호출부) 동작이 기존과 100% 동일 - 즉시 terminate()부터 시작."""
     state = {"proc": None}
 
     def start():
@@ -174,16 +204,31 @@ def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None) -> Det
         proc = state["proc"]
         return proc is not None and proc.poll() is None
 
-    def stop():
+    def stop() -> dict:
         proc = state["proc"]
         if proc is None or proc.poll() is not None:
-            return  # 시작 전이거나 이미 죽어있음 - idempotent
+            return {"already_stopped": True, "graceful": None, "exit_code": proc.returncode if proc else None}
+
+        if stop_file_path is not None:
+            try:
+                Path(stop_file_path).touch()
+            except OSError:
+                pass  # stop-file을 못 만들어도 아래 강제종료 경로로 자연스럽게 이어짐
+            try:
+                proc.wait(timeout=GRACEFUL_STOP_TIMEOUT_SEC)
+                return {"already_stopped": False, "graceful": True, "exit_code": proc.returncode,
+                         "stopped_at_utc": datetime.now(timezone.utc).isoformat()}
+            except subprocess.TimeoutExpired:
+                pass  # grace 기간 초과 - 아래 강제종료로 폴백
+
         proc.terminate()
         try:
             proc.wait(timeout=STOP_TIMEOUT_SEC)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=STOP_TIMEOUT_SEC)
+        return {"already_stopped": False, "graceful": False, "exit_code": proc.returncode,
+                 "stopped_at_utc": datetime.now(timezone.utc).isoformat()}
 
     return Detector(start=start, is_alive=is_alive, stop=stop, name=name)
 
@@ -217,7 +262,8 @@ def make_detector_for_arm(
     check_fn = reachability_check_fn or _recovery_policy_reachable
     prom_fn = prometheus_check_fn or _prometheus_reachable_and_fresh
     cmd = _build_detector_command(arm, run_id, evidence_log_path=evidence_log_path)
-    base = _subprocess_detector(cmd, spec["name"], cwd=str(ANOMALY_DETECTION_DIR))
+    stop_file_path = _stop_file_for(evidence_log_path) if evidence_log_path is not None else None
+    base = _subprocess_detector(cmd, spec["name"], cwd=str(ANOMALY_DETECTION_DIR), stop_file_path=stop_file_path)
 
     def start_with_reachability_preflight():
         signal_url = _resolved_signal_url()

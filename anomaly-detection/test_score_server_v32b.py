@@ -431,6 +431,191 @@ def test_long_continuous_anomalous_streak_produces_multiple_signals_not_collapse
           f"episode 정의(cooldown 기반 재무장)가 두 경로에서 어긋나지 않음(classification B 반증)")
 
 
+def _anomalous_verbose(model, scaler, schema, **kwargs):
+    """§92 회귀 테스트 전용 fake - 항상 threshold보다 훨씬 낮은 score를
+    내어 3회 연속 이상 상태를 손쉽게 재현한다(어떤 raw_feature_vector를
+    쓰든 상관없음 - score 자체를 직접 고정)."""
+    return {"window_start_utc": "t0s", "window_end_utc": "t0e", "raw_feature_vector": [1.0] * 8,
+            "ordered_feature_vector": [1.0] * 6, "scaled_feature_vector": [1.0] * 6,
+            "score": -999.0, "freshness": {"fresh": True}}
+
+
+class _apply_all:
+    """여러 patch를 한 번에 걸고 원복하는 작은 헬퍼(contextlib.ExitStack과 동일한 목적)."""
+    def __init__(self, patches):
+        self._patches = patches
+
+    def __enter__(self):
+        for p in self._patches:
+            p.start()
+        return self
+
+    def __exit__(self, *exc):
+        for p in reversed(self._patches):
+            p.stop()
+        return False
+
+
+def _run_main_n_cycles(evidence_path, n, *, post_side_effect=None, stop_file_path=None):
+    """§92 - main()을 once=False로 n cycle만 돌리고 멈추게 하는 테스트
+    헬퍼(sleep은 무력화, n번째 cycle 뒤 StopIteration으로 빠져나옴). 판정
+    로직(advance_streak)은 전혀 건드리지 않고 IO 계층(_evaluate_v32b_verbose/
+    post_to_recovery_policy/time.sleep)만 가짜로 대체한다."""
+    calls = {"n": 0}
+
+    def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] >= n:
+            raise StopIteration("test: n cycles reached")
+
+    patches = [patch.object(ss, "_evaluate_v32b_verbose", side_effect=_anomalous_verbose),
+               patch.object(ss.time, "sleep", side_effect=fake_sleep)]
+    if post_side_effect is not None:
+        patches.append(patch.object(ss, "post_to_recovery_policy", side_effect=post_side_effect))
+    with _apply_all(patches):
+        try:
+            ss.main(str(V32B_ARTIFACTS_DIR), "v3.2b", once=False, experiment_run_id="test-run",
+                    evidence_log_path=str(evidence_path), stop_file_path=stop_file_path)
+        except StopIteration:
+            pass
+
+
+def _read_jsonl(path):
+    return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines()]
+
+
+def test_write_ahead_decision_recorded_before_signal_http_call():
+    """§92 - evaluation_decision이 실제로 신호 HTTP 호출보다 "먼저" 파일에
+    있어야 한다(§91 forensic이 지목한 기존 순서의 정반대) - mock 안에서
+    파일을 직접 읽어 확인한다."""
+    observed = {}
+
+    def fake_post(score, run_id=None, detector="isolation_forest", **kwargs):
+        recs = _read_jsonl(observed["path"])
+        decisions = [r for r in recs if r["record_type"] == "evaluation_decision"]
+        assert len(decisions) == 3, "3번째(신호) cycle의 evaluation_decision이 신호 전송 전에 이미 기록돼 있어야 함"
+        assert decisions[-1]["would_signal"] is True
+        observed["checked"] = True
+        return {"outcome": "sent", "http_status": 200}
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        observed["path"] = evidence_path
+        _run_main_n_cycles(evidence_path, 3, post_side_effect=fake_post)
+    assert observed.get("checked") is True, "post_to_recovery_policy가 아예 호출 안 됨"
+    print("OK - evaluation_decision이 신호 HTTP 호출보다 먼저 파일에 flush됨(write-ahead 순서 직접 확인)")
+
+
+def test_write_ahead_decision_preserved_even_if_signal_raises_unexpected_exception():
+    """§92 - 신호를 보내다 예상 밖 예외(§91 forensic 후보였던 시나리오의
+    일반화)가 나도 그 cycle의 evaluation_decision은 이미 신호 시도 전에
+    flush+fsync돼 있어 유실되지 않는다."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        try:
+            _run_main_n_cycles(evidence_path, 3, post_side_effect=RuntimeError("simulated crash mid-signal"))
+        except RuntimeError:
+            pass
+        recs = _read_jsonl(evidence_path)
+        decisions = [r for r in recs if r["record_type"] == "evaluation_decision"]
+        assert len(decisions) == 3, decisions
+        assert decisions[-1]["would_signal"] is True
+        assert decisions[-1]["evaluation_seq"] == 3
+        signal_results = [r for r in recs if r["record_type"] == "signal_result"]
+        assert signal_results == [], "예외가 났으므로 signal_result는 아예 안 남아야 함(있으면 안 됨)"
+    print("OK - 신호 시도 중 예상 밖 예외가 나도 그 cycle의 evaluation_decision은 이미 보존됨(write-ahead)")
+
+
+def test_signal_result_recorded_as_separate_record_linked_by_correlation_id():
+    """§92 - 성공적인 신호는 evaluation_decision과 signal_result 두 개의
+    별도 record로 남고(하나를 덮어쓰지 않음), 같은 correlation_id/
+    evaluation_seq로 연결된다."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        _run_main_n_cycles(evidence_path, 3,
+                            post_side_effect=lambda *a, **k: {"outcome": "sent", "http_status": 200,
+                                                                "idempotency_key_hint": "test-run:anomaly_risk"})
+        recs = _read_jsonl(evidence_path)
+        decisions = [r for r in recs if r["record_type"] == "evaluation_decision"]
+        results = [r for r in recs if r["record_type"] == "signal_result"]
+        assert len(decisions) == 3 and len(results) == 1, (len(decisions), len(results))
+        assert results[0]["correlation_id"] == decisions[-1]["correlation_id"]
+        assert results[0]["evaluation_seq"] == decisions[-1]["evaluation_seq"] == 3
+        assert results[0]["outcome"] == "sent"
+    print("OK - evaluation_decision과 signal_result가 correlation_id/evaluation_seq로 연결된 별도 record로 남음")
+
+
+def test_evaluation_seq_monotonic_and_correlation_id_unique_per_cycle():
+    """§92 - evaluation_seq는 gap 없이 1부터 단조증가, correlation_id는
+    cycle마다 서로 달라야 한다."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        _run_main_n_cycles(evidence_path, 5)
+        decisions = [r for r in _read_jsonl(evidence_path) if r["record_type"] == "evaluation_decision"]
+        seqs = [r["evaluation_seq"] for r in decisions]
+        assert seqs == list(range(1, len(seqs) + 1)), seqs
+        corr_ids = [r["correlation_id"] for r in decisions]
+        assert len(set(corr_ids)) == len(corr_ids), "correlation_id가 cycle 간에 중복됨"
+    print("OK - evaluation_seq는 gap 없이 단조증가, correlation_id는 cycle마다 고유함")
+
+
+def test_broadened_exception_handling_survives_read_timeout():
+    """§92 - ReadTimeout처럼 ConnectionError가 아닌 RequestException이 나도
+    post_to_recovery_policy()가 절대 예외를 새 나가게 하면 안 된다(§91
+    forensic의 root cause 후보에 대한 직접 회귀 테스트 - 이게 새 나가면
+    main()의 while 루프 전체가 죽는다)."""
+    with patch.object(ss.requests, "post", side_effect=ss.requests.exceptions.ReadTimeout("simulated read timeout")):
+        result = ss.post_to_recovery_policy(-0.5, "run-1")
+    assert result["outcome"] == "request_exception", result
+    assert "ReadTimeout" in result["error"], result
+    print("OK - ReadTimeout이 나도 post_to_recovery_policy()가 예외를 삼키고 request_exception으로 반환(while 루프 안 죽음)")
+
+
+def test_signal_not_sent_when_evidence_write_ahead_fails():
+    """§92.3 - evidence-log가 설정돼 있는데 write-ahead 자체가 실패하면
+    (fail-closed) 신호를 보내지 않아야 한다."""
+    sent = {"called": False}
+
+    def fake_post(*a, **k):
+        sent["called"] = True
+        return {"outcome": "sent", "http_status": 200}
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        with patch.object(ss, "_write_evidence_line", return_value=False), \
+             patch.object(ss, "post_to_recovery_policy", side_effect=fake_post):
+            _run_main_n_cycles(evidence_path, 3)
+    assert sent["called"] is False, "write-ahead가 실패했는데 신호가 나가면 안 됨(fail-closed 위반)"
+    print("OK - write-ahead evidence 기록 실패 시 신호를 보내지 않음(fail-closed)")
+
+
+def test_graceful_stop_file_exits_after_current_cycle_and_records_shutdown():
+    """§92 - stop-file이 이미 존재하면 진행 중이던 cycle을 끝까지 완료한
+    뒤 스스로 정상 종료하고 detector_shutdown record를 남긴다(once=False로
+    돌려도 무한루프에 안 빠짐)."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        stop_file = Path(d) / "stop.flag"
+        stop_file.touch()  # 첫 cycle 시작 전부터 이미 정지 요청이 있는 상태
+        with patch.object(ss, "_evaluate_v32b_verbose", side_effect=_anomalous_verbose):
+            ss.main(str(V32B_ARTIFACTS_DIR), "v3.2b", once=False, experiment_run_id="test-run",
+                    evidence_log_path=str(evidence_path), stop_file_path=str(stop_file))
+        recs = _read_jsonl(evidence_path)
+        decisions = [r for r in recs if r["record_type"] == "evaluation_decision"]
+        shutdowns = [r for r in recs if r["record_type"] == "detector_shutdown"]
+        assert len(decisions) == 1, "stop-file이 미리 있으면 딱 1 cycle만 완료하고 종료해야 함"
+        assert len(shutdowns) == 1, shutdowns
+        assert shutdowns[0]["last_evaluation_seq"] == 1
+        assert shutdowns[0]["exit_reason"] == "graceful_stop_file"
+    print("OK - stop-file이 있으면 현재 cycle을 완료한 뒤 정상 종료하고 detector_shutdown을 기록함(무한루프 없음)")
+
+
 if __name__ == "__main__":
     import tempfile
     tests = [obj for name, obj in list(globals().items()) if name.startswith("test_") and callable(obj)]

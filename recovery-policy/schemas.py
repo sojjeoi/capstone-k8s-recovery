@@ -33,6 +33,18 @@ class AnomalySignalRequest(BaseModel):
     timestamp: datetime
     experiment_run_id: Optional[str] = None  # Phase 8 오케스트레이터가 채움 - score_server.py/fixed_threshold.py 둘 다 --run-id로 지원
     detector: Optional[str] = None  # "isolation_forest" | "fixed_threshold" - 결과 스키마의 detection_source 구분용
+    # §92 - signal payload provenance(전부 선택, 기본값 None) - score_server.py의
+    # §91 forensic(evidence-log 공백 발견)에서 추가된 필드들. 전부 감사기록
+    # evidence에만 pass-through되고 정책 결정(policy.decide/safety.*)에는
+    # 전혀 관여하지 않는다 - 기존 필드 의미·결정 로직 무변경, 이 필드들이
+    # 없어도(구버전 detector/fixed_threshold.py) 요청은 기존과 100% 동일하게 동작.
+    correlation_id: Optional[str] = None
+    evaluation_seq: Optional[int] = None
+    model_version: Optional[str] = None
+    model_hash: Optional[str] = None
+    feature_schema_hash: Optional[str] = None
+    threshold: Optional[float] = None
+    consecutive_count: Optional[int] = None
 
 
 def normalize_anomaly_signal(req: AnomalySignalRequest) -> NormalizedSignal:

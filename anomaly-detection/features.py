@@ -7,12 +7,16 @@ vLLM 큐 길이/캐시 사용률)만 쓴다.
 # ponytail: 재시작 횟수·OOM 등은 빠짐 - Phase 6 본 구현에서 필요해지면 추가.
 """
 import argparse
+import os
 from datetime import datetime
 
 import numpy as np
 import requests
 
-PROM_URL = "http://localhost:9090"
+# §92 - 환경변수 override 추가(기본값 불변) - RECOVERY_POLICY_SIGNAL_URL과
+# 동일 패턴. 실클러스터 없이 score_server.py를 실제 subprocess로 띄워
+# deterministic fake Prometheus에 붙이는 로컬 synthetic E2E 테스트에 필요.
+PROM_URL = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
 NAMESPACE = "vllm-serving"
 
 METRICS = {

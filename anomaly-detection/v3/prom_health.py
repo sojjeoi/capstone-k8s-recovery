@@ -5,13 +5,15 @@ port-forward 단절 사고(§80.2) 재발 방지용, 부하·feature·SLO·모�
 전혀 바꾸지 않는다. `qualify_normal_profile.py`(세션 시작 전/feature
 extraction 직전 health 확인)와 `model_v32b/historical_reextraction.py`
 (offline 복구)가 공용으로 쓴다."""
+import os
 import time
 from datetime import datetime
 from typing import Callable, Optional
 
 import requests
 
-PROM_URL = "http://localhost:9090"
+# §92 - 환경변수 override 추가(기본값 불변) - features.py와 동일 이유/패턴.
+PROM_URL = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
 DEFAULT_FRESHNESS_MAX_AGE_SEC = 120.0  # score_server.py WINDOW_SEC(60s)보다 넉넉히 큰 상한 - experiments/arm_controller.py의 동일 상수와 같은 값
 
 

@@ -528,6 +528,34 @@ def test_state_predictive_promotion_success():
     _clear_run("state-pred-promote-01")
 
 
+def test_state_predictive_promotion_carries_provenance_fields_into_audit_evidence():
+    # §92 - score_server.py가 evaluation_seq/correlation_id/model_version/
+    # model_hash/feature_schema_hash/threshold/consecutive_count를 함께
+    # 보내면(전부 선택 필드) 정책 결정에는 영향 없이 감사기록 evidence에만
+    # 그대로 반영돼야 한다.
+    _reset_state()
+    _register_run("state-pred-provenance-01")
+    payload = _predictive_payload("state-pred-provenance-01")
+    payload.update({
+        "correlation_id": "corr-xyz", "evaluation_seq": 26, "model_version": "v3.2b",
+        "model_hash": "deadbeef", "feature_schema_hash": "cafef00d",
+        "threshold": -0.0742929709960305, "consecutive_count": 3,
+    })
+    with patch("main.is_paused_pre_promotion", return_value=True), patch("main.promote", return_value=_PROMOTE_OK):
+        resp = client.post("/signal", json=payload)
+    assert resp.json()["outcome"] == "executed_verified"
+
+    record = mock_enqueue.call_args.args[1]
+    assert record.evidence == {
+        "experiment_run_id": "state-pred-provenance-01", "detector": "isolation_forest",
+        "correlation_id": "corr-xyz", "evaluation_seq": 26, "model_version": "v3.2b",
+        "model_hash": "deadbeef", "feature_schema_hash": "cafef00d",
+        "threshold": -0.0742929709960305, "consecutive_count": 3,
+    }, "provenance 필드가 감사기록 evidence에 그대로 반영돼야 함"
+    print("OK - signal payload provenance가 정책 결정 변경 없이 감사기록 evidence에 그대로 전달됨")
+    _clear_run("state-pred-provenance-01")
+
+
 def test_state_reactive_fallback_promotion():
     _reset_state()
     _register_run("state-reactive-promote-01")

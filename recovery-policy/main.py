@@ -404,17 +404,32 @@ def _record_decision(signal: NormalizedSignal, record: DecisionRecord) -> None:
             _current_experiment.idempotency_key = record.idempotency_key
 
 
+_PROVENANCE_EVIDENCE_FIELDS = (
+    "correlation_id", "evaluation_seq", "model_version",
+    "model_hash", "feature_schema_hash", "threshold", "consecutive_count",
+)
+
+
 def _audit_evidence(signal: NormalizedSignal) -> dict:
     """감사기록 evidence에 run 귀속 근거와 detector를 남긴다(2026-09-19 추가) -
     Alertmanager 경로의 idempotency_key(fingerprint:startsAt)에는 run_id가 없어서,
     기록 자체에 귀속 근거가 없으면 나중에 그 기록이 어느 trial 것인지 검증할 수
     없다(계약서 §5.6 primary 선택 규칙). 예전엔 evidence가 항상 {}라 신호의
-    detector 태그도 감사기록 어디에도 남지 않았다."""
+    detector 태그도 감사기록 어디에도 남지 않았다.
+
+    §92(2026-09-21) - score_server.py의 signal payload provenance 필드를
+    있는 것만 그대로 pass-through한다(정책 결정에는 전혀 안 쓰임, 감사
+    evidence에만 추가) - 옛 detector/fixed_threshold.py가 안 보내면
+    `signal.raw`에 키 자체가 없거나 값이 None이라 자연히 생략된다."""
     evidence = {}
     if signal.raw.get("experiment_run_id"):
         evidence["experiment_run_id"] = signal.raw["experiment_run_id"]
     if signal.raw.get("detector"):
         evidence["detector"] = signal.raw["detector"]
+    for field in _PROVENANCE_EVIDENCE_FIELDS:
+        value = signal.raw.get(field)
+        if value is not None:
+            evidence[field] = value
     return evidence
 
 

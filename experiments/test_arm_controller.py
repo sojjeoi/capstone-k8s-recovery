@@ -5,12 +5,16 @@ fixed_threshold.py/score_server.py(Prometheus·모델 파일 의존)나 실클�
 trivial한 python -c 커맨드를 직접 넣어 검증하고, preview 준비는
 prepare_preview_fn을, RECOVERY_POLICY_SIGNAL_URL reachability(2026-09-19
 추가)는 reachability_check_fn을 가짜로 주입해 검증한다."""
+import os
 import sys
+import tempfile
 import time
+import uuid
 from unittest.mock import MagicMock, patch
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+import arm_controller
 from arm_controller import (
     _DETECTOR_SCRIPTS,
     FIXED_THRESHOLD_CPU_LIMIT_CORES,
@@ -19,6 +23,7 @@ from arm_controller import (
     _build_detector_command,
     _prometheus_reachable_and_fresh,
     _resolved_signal_url,
+    _stop_file_for,
     _subprocess_detector,
     make_detector_for_arm,
     wrap_injector_with_preview_prep,
@@ -160,6 +165,86 @@ def test_subprocess_detector_crash_is_observed_as_not_alive():
         time.sleep(0.05)
     assert detector.is_alive() is False, "즉시 종료되는 프로세스는 곧 is_alive()=False여야 함"
     print("OK - 서브프로세스가 크래시하면 is_alive()가 False로 관측됨")
+
+
+def test_stop_file_for_derives_deterministic_path_from_evidence_log():
+    assert _stop_file_for("/a/b/evidence.jsonl") == "/a/b/evidence.jsonl.stopfile"
+    print("OK - stop-file 경로가 evidence_log_path에서 결정적으로 유도됨")
+
+
+def test_build_detector_command_includes_stop_file_only_with_evidence_log():
+    cmd_with = _build_detector_command("proposed", "run-1", evidence_log_path="/tmp/e.jsonl")
+    assert "--stop-file" in cmd_with, cmd_with
+    idx = cmd_with.index("--stop-file")
+    assert cmd_with[idx + 1] == "/tmp/e.jsonl.stopfile", cmd_with
+    cmd_without = _build_detector_command("proposed", "run-1")
+    assert "--stop-file" not in cmd_without, cmd_without
+    print("OK - --stop-file은 evidence_log_path가 있을 때만 proposed 커맨드에 붙음")
+
+
+def test_subprocess_detector_stop_default_unchanged_immediate_terminate():
+    # §92 - stop_file_path 미지정(기본값, 기존 모든 호출부)이면 grace 대기
+    # 없이 기존과 동일하게 즉시 terminate()부터 시작해야 한다.
+    detector = _subprocess_detector([sys.executable, "-c", "import time; time.sleep(30)"], "trivial")
+    detector.start()
+    time.sleep(0.3)
+    t0 = time.monotonic()
+    result = detector.stop()
+    elapsed = time.monotonic() - t0
+    assert detector.is_alive() is False
+    assert result["graceful"] is False, result
+    assert elapsed < 5.0, f"stop_file_path 없으면 즉시 종료돼야 하는데 {elapsed:.1f}초 걸림"
+    print("OK - stop_file_path 미지정 시 기존과 동일하게 즉시 terminate(grace 대기 없음, 회귀 방지)")
+
+
+def test_subprocess_detector_stop_with_stop_file_graceful_exit():
+    # §92 - stop-file을 스스로 확인해 정상 종료하는 프로세스는 강제종료 없이
+    # graceful=True로 관측돼야 한다.
+    stop_file = os.path.join(tempfile.gettempdir(), f"test-stopfile-{uuid.uuid4().hex}.stopfile")
+    script = (
+        "import os, sys, time\n"
+        f"stop_file = {stop_file!r}\n"
+        "for _ in range(200):\n"
+        "    if os.path.exists(stop_file):\n"
+        "        sys.exit(0)\n"
+        "    time.sleep(0.05)\n"
+        "sys.exit(1)\n"
+    )
+    detector = _subprocess_detector([sys.executable, "-c", script], "trivial", stop_file_path=stop_file)
+    try:
+        detector.start()
+        time.sleep(0.3)
+        assert detector.is_alive() is True
+        t0 = time.monotonic()
+        result = detector.stop()
+        elapsed = time.monotonic() - t0
+        assert result["graceful"] is True, result
+        assert result["exit_code"] == 0, result
+        assert elapsed < 5.0, f"stop-file을 즉시 확인하는 프로세스인데 {elapsed:.1f}초나 걸림"
+        assert detector.is_alive() is False
+    finally:
+        if os.path.exists(stop_file):
+            os.remove(stop_file)
+    print("OK - stop-file을 스스로 확인해 정상 종료하는 프로세스는 강제종료 없이 graceful=True로 관측됨")
+
+
+def test_subprocess_detector_stop_falls_back_to_terminate_after_grace_timeout():
+    # §92 - stop-file을 절대 확인하지 않는 프로세스는 grace timeout 뒤
+    # 강제종료(terminate/kill)로 폴백해야 한다(무한 대기 금지).
+    stop_file = os.path.join(tempfile.gettempdir(), f"test-stopfile-{uuid.uuid4().hex}.stopfile")
+    detector = _subprocess_detector([sys.executable, "-c", "import time; time.sleep(30)"], "trivial",
+                                     stop_file_path=stop_file)
+    try:
+        detector.start()
+        time.sleep(0.3)
+        with patch.object(arm_controller, "GRACEFUL_STOP_TIMEOUT_SEC", 0.3):
+            result = detector.stop()
+        assert result["graceful"] is False, result
+        assert detector.is_alive() is False
+    finally:
+        if os.path.exists(stop_file):
+            os.remove(stop_file)
+    print("OK - grace 기간 안에 stop-file을 확인 안 하는 프로세스는 강제종료로 폴백(무한 대기 없음)")
 
 
 def test_wrap_injector_with_preview_prep_native_passthrough():
@@ -468,6 +553,11 @@ if __name__ == "__main__":
     test_run_id_propagated_into_detector_command()
     test_subprocess_detector_lifecycle_start_alive_stop()
     test_subprocess_detector_crash_is_observed_as_not_alive()
+    test_stop_file_for_derives_deterministic_path_from_evidence_log()
+    test_build_detector_command_includes_stop_file_only_with_evidence_log()
+    test_subprocess_detector_stop_default_unchanged_immediate_terminate()
+    test_subprocess_detector_stop_with_stop_file_graceful_exit()
+    test_subprocess_detector_stop_falls_back_to_terminate_after_grace_timeout()
     test_wrap_injector_with_preview_prep_native_passthrough()
     test_wrap_injector_with_preview_prep_success_calls_original_prepare()
     test_wrap_injector_with_preview_prep_failure_blocks_original_prepare()
@@ -482,4 +572,7 @@ if __name__ == "__main__":
     test_prometheus_check_blocks_start_when_unreachable()
     test_prometheus_reachable_and_fresh_rejects_stale_or_missing_data()
     test_resolved_signal_url_prefers_env_override()
+    test_evidence_log_path_default_none_leaves_command_unchanged()
+    test_evidence_log_path_appended_only_for_proposed()
+    test_evidence_log_path_ignored_for_fixed_threshold()
     print("\n모두 통과")

@@ -9413,3 +9413,347 @@ feature 변경, 재학습, runtime 판정 규칙 변경, `run_all_scenarios`,
 60회 본 실험, `TrialResult` 스키마 변경 - 전부 준수(0건). 다음
 단계(다른 시나리오·arm 파일럿 확대, 본 실험 착수 여부 등)는 사용자
 승인 이후에만 진행한다.
+
+## §92 - §91 evidence 공백의 offline forensic + write-ahead durability 수정 (실클러스터 미접촉)
+
+§91 E2E 배선 PASS 승인 후속. §91에서 실제 신호를 촉발한 26번째
+evaluation cycle이 structured evidence에서 누락된 원인을 기존 코드와
+증거만으로 조사하고(라이브 재실행 없음), 판정 로직은 전혀 바꾸지
+않은 채 evidence 기록 순서·durability만 강화했다. 로컬 synthetic
+E2E 테스트로 §91과 동일한 race를 재현해 수정을 검증했다.
+
+### 92.1 상태 기록
+
+- `offline_validation_status = adopted` (§88, 변경 없음)
+- `runtime_safety_status = passed_on_lifecycle_aligned_diagnostic` (§90, 변경 없음)
+- `e2e_wiring_status = passed` (§91, 변경 없음)
+- `promotion_and_audit_status = verified` (§91, 변경 없음)
+- `evidence_completeness = partial` (§91 원본 갭 - 이 절 착수 시점 상태)
+- `main_experiment_readiness = blocked`
+
+§91의 결과·timestamp·audit commit·판정(§91.1~§91.10)은 이 절에서
+전혀 수정하지 않았다 - 원본 그대로 보존.
+
+### 92.2 26번째 cycle forensic - 확정/probable 구분
+
+**요청받은 순서대로 확인**(feature 계산 -> score 계산 -> anomaly/streak
+갱신 -> structured evidence write -> evidence flush/fsync -> signal
+HTTP 요청 -> signal 응답 -> recovery-policy decision -> promotion ->
+run_once 완료 판정 -> detector cleanup/terminate -> stdout/stderr 종료):
+
+| 단계 | 상태 | 근거 |
+|---|---|---|
+| feature/score 계산 | **정상 완료(추정 근거 있음)** | 신호가 실제로 recovery-policy에 도달했다는 사실 자체가(§91.5, 감사기록+K8s Events로 확인) 이 앞 단계들이 끝났음을 함의한다(§91 당시 코드의 실행 순서상 signal 전송은 evaluate+advance_streak 완료 "이후"에만 일어날 수 있었음) |
+| anomaly/streak 갱신(3회 연속) | **정상 완료** | 위와 동일 근거 - `should_signal=True`가 되지 않으면애초에 신호 자체가 안 나감 |
+| structured evidence write | **미도달(이번 갭의 핵심)** | §91 당시 코드는 evidence를 신호 HTTP 호출이 "끝난 뒤에만" 썼다(아래 92.2.1) - 그 전에 사이클이 어떤 이유로든 끊기면 이 write 자체가 실행되지 않는다 |
+| evidence flush/fsync | 위와 동일 이유로 미도달 | write 호출 자체가 없었으므로 flush/fsync도 없음 |
+| signal HTTP 요청 | **발생함(확인)** | recovery-policy 감사기록(git 커밋 `3f71f52c`)이 이 요청을 실제로 처리했음을 증명 |
+| **signal 응답(클라이언트가 실제로 받았는지)** | **불확실 - 이번 forensic의 핵심 미확정 지점** | score_server.py 쪽에는 이 cycle의 어떤 기록도 없다(stdout도 캡처 안 됐음, 92.2.2) - 응답을 받았는지 여부를 직접 증명할 방법이 없음 |
+| recovery-policy decision/promotion | **정상 완료(3중 확인)** | §91.5 - 감사기록·git 커밋·Kubernetes Events가 초 단위로 완전히 일치 |
+| run_once 완료 판정 | **정상(`recovered`/`completed`, `TrialInvalid` 아님)** | `run_once()`의 OBSERVING 루프가 `detector.is_alive()`를 `poll_interval_sec=1.0`초 간격으로 반복 확인하는데(코드 확인, `run_once.py:602-604,758-763`), 이 판정에 도달하려면 그 사이 모든 확인에서 계속 "살아있음"으로 나왔어야 한다 |
+| detector cleanup/terminate | **정상 호출(코드상 확실), 그러나 대상이 이미 응답을 못 받는 상태였을 가능성** | §89.2 순서상 `detector.stop()`은 `t_recovery` 확정 이후 cleanup 시작 시점에 호출됨(§91 timeline상 12:49:57+) |
+| stdout/stderr 종료 | **확인 불가(§92 신규 발견 - 관찰성 자체의 갭)** | `arm_controller.py`의 `_subprocess_detector.start()`가 자식 프로세스의 stdout/stderr를 `subprocess.PIPE`로 리다이렉트하지만, 그 파이프를 읽는 코드가 어디에도 없다(§92에서 처음 지적) - 크래시했다면 나왔을 traceback이 영구히 유실됨. 이번 사고 건에 대해서는 이제 와서 복구 불가능 |
+
+**세부 확인 항목**:
+- **evaluation record가 HTTP 전인지 후인지**: **후**(확정, 코드 읽기) - §91 당시 `main()`은 `elif step["should_signal"]: signal_response = post_to_recovery_policy(...)` 다음에야 `_write_evidence_line(...)`을 호출했다(`score_server.py`, §92 수정 전 268-321행).
+- **signal 응답을 받은 뒤에만 record를 쓰는 구조인지**: **예, 정확히 그 구조**(확정) - 위와 동일.
+- **promotion 완료로 run_once가 detector를 종료하면서 마지막 write가 잘렸는지**: 이 정확한 인과관계는 **확정할 수 없다**. 아래 92.2.3의 두 가설 중 H1("신호 직후 우발적 크래시")은 `detector.is_alive()`가 그 뒤로도 ~99초간 계속 성공했다는 사실과 정면으로 모순돼 **반증됨**. H2("신호 응답을 무한정 기다리다 cleanup의 강제종료로 끝남")가 모든 증거와 일치하는 **probable** 가설이다.
+- **SIGTERM 후 grace period가 있는지**: §91 당시엔 **없었다**(확정, 코드 읽기) - `_subprocess_detector.stop()`은 `proc.terminate()`를 즉시 호출하고 10초 대기 후 `kill()`했다. 더 중요한 신규 발견(§92.2.2): Windows에서 `subprocess.Popen.terminate()`는 `TerminateProcess()`를 직접 호출하는데, 이는 POSIX의 `SIGTERM`과 달리 대상 프로세스에 **어떤 정리 기회도 주지 않는 즉시 종료**다 - 이 프로젝트 전체가 Windows(win32)에서 실행되므로, 기존 "터미네이트 후 10초 대기"라는 grace period는 사실 "종료 확인까지 기다리는 시간"이었을 뿐 "정리할 시간을 주는" 진짜 grace period가 아니었다.
+- **stdout JSONL과 별도 evidence JSONL의 write 순서**: stdout(print)이 각 단계마다 evidence보다 먼저 나가지만, 92.2.2에서 확인했듯 그 출력이 애초에 아무도 읽지 않는 파이프로만 가서 관찰 가능한 기록이 아니었다 - 순서 자체는 참고용일 뿐 authoritative가 아니다.
+- **access log가 응답 완료 후 기록되는 구조라 cleanup과 경쟁했는지**: **probable** - uvicorn의 access log는 일반적으로 응답을 클라이언트에 성공적으로 전송한 "뒤"에 기록된다. H2가 맞다면(클라이언트가 응답을 못 받고 끊김) 서버 쪽에서 응답 전송 자체가 실패해(클라이언트 소켓이 이미 닫힘) 그 access log 줄이 아예 안 찍혔을 수 있다 - 이는 §91에서 recovery-policy pod 자체 접근 로그에 이 요청의 `POST /signal` 줄이 없었다는 관측과 정확히 들어맞는 설명이다.
+- **25번째와 audit signal 사이 monotonic sequence gap**: §91 당시 코드에는 evaluation_seq 개념 자체가 없었다 - "25번째 기록 다음이 정말 신호를 촉발한 26번째였는지"조차 정황(시간 간격)으로만 추정 가능했다. §92가 이 개념 자체를 새로 도입한다(92.3).
+- **recovery-policy audit payload에 26번째 score·threshold·streak 정보가 남았는지**: §91 당시엔 **안 남았다**(확정, §91.5의 감사기록 evidence는 `{"experiment_run_id":..., "detector":...}` 두 필드뿐). §92의 signal payload provenance(92.4)가 이 공백을 메운다.
+
+#### 92.2.1 §91 당시 `main()`의 정확한 순서(수정 전 코드, 근거)
+
+```
+평가(feature/score) -> advance_streak() -> [연속>=3이면] post_to_recovery_policy()
+  -> (그 응답을 기다린 뒤에만) _write_evidence_line() -> sleep(15) -> 다음 cycle
+```
+`post_to_recovery_policy()`의 예외 처리는 `except requests.exceptions.
+ConnectionError`만 잡았다 - `ReadTimeout`을 포함한 다른 모든
+`requests.exceptions.RequestException`은 잡히지 않고 `main()`의
+`while True` 루프(그 바깥의 `try/finally`는 `except` 없이 evidence
+파일을 닫기만 함)를 뚫고 나가 프로세스 전체를 종료시켰을 것이다.
+
+#### 92.2.2 신규 확정 사실(§92에서 처음 발견) - 이번 forensic이 §91 forensic보다 추가로 밝힌 것
+
+1. **`rollouts_client.promote()`의 실측 문서화된 상한과 §91 실제 지연의
+   비교**: `promote(name, namespace, verify_timeout: float = 5.0,
+   poll_interval: float = 0.5)`(기본값, `rollouts_client.py:104`) -
+   CLI 시도(`promote_via_cli`, `CLI_TIMEOUT_SEC=30`) 이후 최대 5초
+   추가 폴링. §91 실제 데이터의 `t_api_request`~`t_switch` = **7.543초**
+   - `promote()`의 verify_timeout(5.0초) 자체보다 이미 길다(CLI 자체
+   dispatch에 최소 2.5초 이상 걸렸다는 뜻). score_server.py 클라이언트의
+   당시 `requests.post(..., timeout=5)`는 이 실측값보다 짧다 - 서버가
+   실제로 처리를 끝내기 전에 클라이언트가 먼저 포기할 조건이 코드
+   수준에서 확인된다.
+2. **Windows `Popen.terminate()`의 정확한 동작**: POSIX `SIGTERM`과
+   달리 대상 프로세스에 어떤 정리 코드도 실행할 기회를 주지 않는
+   즉시 강제종료(`TerminateProcess`)다 - 이 프로젝트의 실행 환경
+   전체(win32)에 적용되는 사실이며, §92 이전에는 이 구분이 문서화된
+   적이 없었다.
+3. **detector subprocess의 stdout/stderr가 어디에도 저장되지 않음**:
+   `arm_controller._subprocess_detector.start()`가 `subprocess.PIPE`로
+   리다이렉트하지만 그 파이프를 읽는 코드가 없다 - 파이프가 다 차면
+   자식 프로세스가 블록될 수도 있고(이번 사고 규모에서는 가능성
+   낮음), 무엇보다 크래시 시 나왔을 traceback이 전부 유실된다.
+
+#### 92.2.3 두 가설(H1/H2) - 근거와 반증
+
+- **H1(우발적 크래시, 반증됨)**: 신호 HTTP 요청이 클라이언트 측
+  5초 타임아웃을 넘겨 `ReadTimeout`이 났고, 이게 안 잡혀서
+  프로세스가 그 자리에서 죽었다. **반증 근거**: `run_once()`가
+  `detector.is_alive()`를 1초 간격으로 확인하는데(92.2), 크래시
+  시점(추정 신호 전송 후 ~5초, §91 timeline상 약 12:48:16) 이후로도
+  `t_recovery`(12:49:57)까지 **약 99초·약 99회의 연속된 확인**에서
+  전부 "살아있음"으로 나왔다 - 진짜 크래시라면 다음 1초 이내에
+  잡혔어야 한다.
+- **H2(응답 대기 중 무한 대기, probable - 가장 유력)**: 클라이언트가
+  응답을 못 받은 채(타임아웃 예외도 안 뜬 채) `post_to_recovery_
+  policy()` 내부에서 계속 블록돼 있었다. **부합하는 증거**: (a)
+  `detector.is_alive()`가 계속 성공 - 프로세스는 진짜로 살아있고
+  단지 I/O에 블록돼 있을 뿐이므로 모순 없음. (b) 26번째 cycle
+  이후로 evidence-log에 **단 한 줄도 더 안 남음** - 같은 loop
+  반복이 끝나 다음 cycle로 못 넘어갔다는 뜻과 정확히 일치(만약
+  살아서 정상적으로 돌고 있었다면 15초 간격으로 계속 기록이
+  남았어야 함). (c) cleanup 시점(`t_recovery` 확정 후)에
+  `detector.stop()`의 `terminate()`(Windows에서 즉시 강제종료)가
+  이 블록 상태를 그대로 끊었다는 설명과 자연스럽게 맞아떨어진다.
+  **미확정으로 남는 부분**: 정확히 "왜" 응답을 못 받았는지(예:
+  로컬 `kubectl port-forward` 터널의 특정 엣지케이스, `requests`/
+  `urllib3`의 드문 타임아웃 미적용 케이스 등)는 이번 조사로 확정할
+  수 없다 - detector subprocess 자신의 stdout/stderr가 캡처되지
+  않아(92.2.2) 결정적 증거가 될 수 있었던 자료 자체가 없다.
+
+**결론**: H1은 반증됐고, H2가 probable(가장 유력하나 100% 확정은
+아님)이다. 이 결론이 **어느 쪽이든** 92.3~92.5의 수정(write-ahead +
+넓은 예외 처리 + graceful shutdown)이 다루는 실패 범주를 그대로
+커버한다 - 원인을 100% 확정하지 못해도 수정의 유효성은 92.7의 로컬
+재현 테스트로 별도 검증했다.
+
+### 92.3 Write-ahead detector evidence (`anomaly-detection/score_server.py`)
+
+판정 로직(`advance_streak`, threshold, cooldown)은 **전혀 변경하지
+않았다** - IO 순서만 재구성했다.
+
+- 매 evaluation cycle마다 monotonic `evaluation_seq`(1부터 시작)와
+  고유 `correlation_id`(`uuid4().hex`)를 부여.
+- `evaluation_decision` record(timestamp/run_id/evaluation_seq/
+  correlation_id/artifact_hashes/raw·ordered·scaled feature/score/
+  threshold/anomaly/consecutive/cooldown/**`would_signal`**/
+  **`target_signal_url`**)를 신호를 보내기 **전에** 먼저
+  flush+fsync(기존 `_write_evidence_line()` 그대로 재사용, 매 호출마다
+  flush+fsync는 원래도 하던 동작).
+- 신호를 실제로 보낸 뒤에는 **별도의** `signal_result` record(
+  correlation_id/evaluation_seq/attempted_at/completed_at/outcome/
+  http_status/error/response_body_summary/idempotency_key_hint)를
+  추가로 남긴다 - `evaluation_decision`을 절대 덮어쓰지 않는다(두
+  record는 서로 다른 append-only 줄).
+- **92.3 fail-closed 게이트(신규)**: evidence-log가 설정돼 있는데
+  이 cycle의 write-ahead 자체가 실패하면(`_write_evidence_line()`이
+  이제 성공 여부를 bool로 반환) **신호를 보내지 않는다** - 근거를
+  영구히 남길 수 없는 채로 실제 조치(promotion)를 유발하지 않기
+  위함. evidence-log 미설정(기존 대부분의 호출부·본 실험 기본
+  동작)이면 이 게이트 자체가 아예 없다(기존과 100% 동일).
+- 예외 처리를 `ConnectionError`에서 `requests.exceptions.
+  RequestException`(그 상위 클래스, `ConnectionError` 포함)으로
+  넓혔다 - `ReadTimeout`을 포함한 어떤 요청 실패도 이제 `main()`의
+  루프를 절대 죽이지 않는다(92.2.3 H1이 반증되긴 했지만, 이 자체는
+  독립적으로 확인된 실제 결함이라 함께 고쳤다).
+- 클라이언트 read timeout을 5초 -> `(connect=5, read=45)`로 늘렸다
+  (92.2.2의 실측 상한 35초(CLI 30 + verify 5)에 여유를 둔 값) -
+  언제 신호를 보낼지의 판정 로직과는 무관, 신호를 보낸 뒤 응답을
+  기다리는 시간만 조정.
+
+### 92.4 Signal payload provenance (`recovery-policy/schemas.py`, `main.py`)
+
+기존 필드 의미·정책 결정 로직(`policy.decide`/`safety.*`)은 **전혀
+변경하지 않았다**. `AnomalySignalRequest`(Pydantic, `extra` 금지
+없음 - 기존에 없던 필드는 조용히 무시되는 기본 동작)에 전부
+`Optional[...] = None`인 7개 필드(`correlation_id`,
+`evaluation_seq`, `model_version`, `model_hash`,
+`feature_schema_hash`, `threshold`, `consecutive_count`)를
+추가했다 - 안 보내는 구버전 호출부(예: 과거 계약대로 도는
+`fixed_threshold.py`)는 영향이 전혀 없다(모두 None으로 채워질 뿐).
+`_audit_evidence()`도 있는 값만 감사기록 evidence에 그대로
+pass-through하도록 순수 추가했다(기존 `experiment_run_id`/
+`detector` 처리는 그대로).
+
+**backward-compat 확인**: 서버 스키마·감사기록 스키마 둘 다
+바꿔야 했지만, 전부 "기본값 None인 선택 필드 추가"라는 안전한
+additive 변경이다(호환성 보장 가능 - 서버를 안 바꾸는 선택지는
+쓰지 않았다). 회귀 테스트(`test_schemas.py::
+test_anomaly_signal_provenance_fields_optional_and_pass_through`,
+`test_main.py::
+test_state_predictive_promotion_carries_provenance_fields_into_audit_evidence`)로
+구버전 호출·신버전 호출 둘 다 확인.
+
+### 92.5 Graceful detector shutdown (`experiments/arm_controller.py`)
+
+92.2.2에서 확인한 Windows `terminate()`(=`TerminateProcess`, 정리
+기회 없는 즉시종료) 문제 때문에, OS 시그널에 의존하지 않는
+파일 기반 graceful shutdown을 추가했다:
+
+- `score_server.py --stop-file PATH`(선택) - 매 cycle 끝(신호·
+  evidence 기록까지 전부 마친 뒤)에 이 파일의 존재를 확인한다.
+  있으면 `detector_shutdown` record(run_id/exited_at/
+  **last_evaluation_seq**/exit_reason)를 남기고 스스로 정상
+  반환한다(`finally`의 evidence 파일 close까지 정상 실행).
+- `arm_controller.py`의 `_stop_file_for(evidence_log_path)`가
+  `--evidence-log`와 짝을 이루는 stop-file 경로를 결정적으로
+  유도(별도 CLI 표면 추가 없음, evidence-log opt-in에 편승).
+- `_subprocess_detector.stop()`: `stop_file_path`가 주어지면
+  먼저 그 파일을 만들고(graceful 요청) 최대
+  `GRACEFUL_STOP_TIMEOUT_SEC=50.0`초(92.3의 read timeout 45초보다
+  여유 있게)까지 프로세스가 스스로 종료하길 기다린다 - **그 안에
+  종료하면 `terminate()`/`kill()`을 전혀 안 쓴다**(진짜 정상
+  종료). grace 기간을 넘기면 기존과 동일한 `terminate()` ->
+  `kill()` 폴백으로 이어진다. `stop_file_path` 미지정(기존 모든
+  호출부의 기본값)이면 동작이 기존과 100% 동일(즉시 terminate부터).
+- `stop()`이 이제 `{"graceful": bool, "exit_code": int,
+  "stopped_at_utc": str}`를 반환한다(기존엔 반환값 없음, `run_once.py`
+  쪽은 이 반환값을 안 쓰므로 무해한 추가) - 종료 코드·종료 시각을
+  오케스트레이터 쪽에서도 관측 가능.
+- **grace period가 trial outcome/정책 판단을 지연·변경하지 않음의
+  근거**: 이 대기는 `run_once()`의 cleanup 단계(§89.2 순서상
+  `detector.stop()`은 phase 11, OBSERVING 루프가 이미 break한
+  "이후")에서만 일어난다 - outcome/t_recovery/판정은 이 시점에
+  이미 전부 확정돼 있다.
+
+### 92.6 Recovery-policy access log의 지위 - authoritative 순서 재확인
+
+§91에서 uvicorn access log(`kubectl logs`)에 `POST /signal` 줄이
+없었던 것을 "신호가 안 갔다"는 근거로 쓰지 않고 K8s Events 등
+독립 소스로 재확인했던 것(§91.5)이 이번 forensic(92.2.3 H2 - 응답
+전송 실패 시 access log 자체가 안 찍힐 수 있음)으로 사후 정당화
+됐다. 이 절에서 authoritative 순서를 명시적으로 고정한다(향후
+분석의 기본 원칙):
+
+1. recovery-policy server-side timing state(`/admin/experiment-run/timing`, 인메모리 authoritative 상태)
+2. 감사기록(`/admin/audit/{run_id}`)과 그 Git 커밋
+3. detector의 write-ahead `evaluation_decision` record(§92.3)
+4. detector의 `signal_result` record(§92.3)
+5. Kubernetes Rollout Event(API 서버, 완전 독립)
+6. **uvicorn access log는 참고 자료일 뿐**(응답 완료·프로세스
+   생명주기에 따라 누락될 수 있음 - 92.2.3에서 명시적으로 확인)
+
+§91의 기존 판정(E2E 배선 PASS, 4개 독립 소스 완전 일치)은 1~5번
+자료로만 이미 뒷받침돼 있었으므로(§91.5) 6번(access log)의 지위를
+낮춰도 **전혀 흔들리지 않는다** - §91 판정 유지.
+
+### 92.7 로컬 synthetic E2E race 재현 (`anomaly-detection/test_score_server_e2e_race.py`)
+
+실클러스터 없이 §91과 동일한 최악의 타이밍을 재현했다:
+
+- **deterministic fake Prometheus**(`http.server` 기반 실제 loopback
+  서버) - `/api/v1/query_range`/`/api/v1/query`에 결정적 canned
+  데이터로 응답. 값 자체는 **§91 실제 파일럿의 실측 anomalous raw
+  feature vector**(임의 조작 없음)를 등차수열로 정확히 재현해
+  구성 - "고정 feature sequence가 실제로 anomalous score를 낸다"는
+  것 자체도 frozen v3.2b 모델로 재확인.
+- **frozen v3.2b `score_server.py` 실제 subprocess**(`PROMETHEUS_URL`/
+  `RECOVERY_POLICY_SIGNAL_URL` 환경변수로 두 fake 서버를 가리킴,
+  `--evidence-log` 지정).
+- **fake recovery-policy**(실제 loopback 서버) - `POST /signal`
+  수신 즉시 `threading.Event`로 테스트에 알리고, §91 실측(7.5초)에
+  준하는 3초 지연 뒤에야 응답.
+- 테스트(오케스트레이터 역할)는 신호 **수신 즉시**(응답 전) 대상
+  프로세스를 `kill()` - §91에서 실제로 벌어졌을 것으로 추정되는
+  최악의 타이밍을 의도적으로 재현.
+
+**결과(수정 후, PASS)**: 신호를 촉발한 cycle의 `evaluation_decision`
+이 evidence-log에 정확히 남아있음(`would_signal=true`,
+`is_anomalous=true`, `consecutive_anomalous>=3`), `evaluation_seq`
+gap 없음, `correlation_id`가 fake recovery-policy가 실제로 받은
+payload와 정확히 일치, 신호는 정확히 1회만 도달, 이 cycle의
+원본 feature로 offline evaluator를 재생한 score가 기록값과
+1e-9 이내(실제로는 완전 동일)로 일치.
+
+**대조군(수정 전 순서의 결함 직접 재현)**: 실제 `score_server.py`를
+되돌리지 않고, §91 이전의 정확한 순서("신호 전송 -> 응답 대기 ->
+그 다음에만 기록")를 별도의 최소 스레드 시뮬레이션으로 재현해,
+같은 강제종료 타이밍에서 evidence write 자체가 구조적으로 실행되지
+않음을 직접 보여줬다(`test_pre_fix_write_after_signal_ordering_
+loses_decision_on_kill_control`) - "가능하면 결함을 재현"(지시)에
+대한 대응. 실제 score_server.py 파일 자체를 되돌려 재실행하지는
+않았다(라이브 소스를 임시로 되돌리는 것 자체가 위험 - 순서만
+독립적으로 재구성해 메커니즘을 증명하는 방식을 택함).
+
+두 테스트 모두 PASS(`test_score_server_e2e_race.py`, 2/2).
+
+### 92.8 회귀 테스트
+
+기존 테스트는 전부 그대로 유지·통과(판정 로직 무변경 확인) +
+아래 신규 테스트 추가:
+
+- `anomaly-detection/test_score_server_v32b.py`(23 -> 30개): write-ahead
+  순서 직접 확인, 신호 중 예상 밖 예외에도 decision 보존, decision과
+  signal_result가 별도 record로 correlation_id 연결, evaluation_seq
+  단조성/correlation_id 고유성, `ReadTimeout` 등 넓은 예외 처리
+  회귀, write-ahead 실패 시 fail-closed(신호 안 감), graceful
+  stop-file 종료+detector_shutdown 기록.
+- `anomaly-detection/test_score_server_e2e_race.py`(신규, 2개):
+  92.7의 synthetic E2E race 재현 + 대조군.
+- `experiments/test_arm_controller.py`(33 -> 38개): stop-file 경로
+  결정적 유도, `--stop-file`이 evidence-log 있을 때만 붙음,
+  stop_file_path 미지정 시 기존과 동일한 즉시 terminate(회귀 방지),
+  graceful exit 확인, grace timeout 후 강제종료 폴백 확인.
+- `recovery-policy/test_schemas.py`(+1), `recovery-policy/
+  test_main.py`(+1): provenance 필드 선택성·pass-through, 정책
+  결정 로직 무변경 확인.
+- artifact provenance / runtime·offline parity / decision semantics
+  불변 / native·fixed_threshold 경로 불변 / `TrialResult` 스키마
+  불변 - 전부 **기존 테스트가 그대로 통과**하는 것으로 확인(새로
+  추가하지 않음 - 이미 있는 회귀 방지망을 재사용).
+- duplicate signal 방지 - 기존 `test_cooldown_suppresses_additional_
+  signal`(변경 없음) + `recovery-policy/test_main.py`의 기존
+  idempotency/cooldown 테스트들(변경 없음)로 이미 커버.
+
+**KUBECONFIG=존재하지 않는 경로**로 `experiments/`(597 passed, 3
+skipped, 사전부터 있던 skip)·`anomaly-detection/`(217 passed,
+synthetic E2E race 2개 포함)·`recovery-policy/`(69 passed) 전체
+오프라인 테스트 통과 확인 - 실클러스터 접근 없이 전부 통과.
+
+### 92.9 판정
+
+수정 완료 + 로컬 재현 성공(92.7):
+
+- §91 E2E 배선 PASS **유지**(§91.1~§91.10 원본 미수정)
+- `evidence_gap_root_cause = "probable: client HTTP call blocked "
+  "past cleanup before receiving recovery-policy's response "
+  "(H2, 92.2.3) - H1(신호 직후 우발적 크래시)은 detector.is_alive()가 "
+  "이후 ~99초간 계속 성공했다는 사실로 반증됨. 100% 확정은 아님 "
+  "(detector subprocess stdout/stderr 미캡처로 결정적 증거 없음)"`
+- `evidence_durability_fix_verified_offline = true`
+- `main_experiment_readiness = blocked`(controlled live confirmation
+  전까지 그대로 유지 - 이번 턴은 offline forensic + 로컬 synthetic
+  검증까지만 범위)
+
+**동일 load_ramp E2E 파일럿 재실행 필요 여부(제안만)**: 필요하다고
+제안한다 - 근거: (1) §92의 write-ahead 수정이 실제 신호를 촉발하는
+그 cycle의 원본 feature/score 기록을 보장하므로, 다시 신호가 나가면
+이번엔 그 cycle까지 포함해 완전한 parity 검증이 가능해진다. (2)
+signal payload provenance 확장으로 recovery-policy 감사기록 자체에도
+score/threshold/streak가 남아 향후 사고 시 서버 쪽 자료만으로도
+재구성 가능해진다. (3) graceful shutdown이 실제 promote() 지연
+상황(§91 실측 7.5초)에서도 detector가 정상 종료되는지 실클러스터
+조건에서 직접 확인된 적은 아직 없다(92.7은 로컬 fake 서버 기준).
+다만 이 제안은 **제안일 뿐**이다 - 사용자 승인 없이는 실행하지
+않는다(§92 범위 제한).
+
+### 92.10 범위 제한 준수 확인
+
+이번 턴 금지 사항 - 실클러스터 trial/smoke, model·threshold·
+feature·streak 변경, 재학습, 기존 Holdout/challenge 재평가,
+recovery-policy 정책 변경(`policy.py`/`safety.py` 무변경 확인),
+다른 arm·시나리오 실행, `run_all_scenarios`, 본 실험, 기존 §91 raw
+evidence 수정 - 전부 준수(0건). 변경 파일: `anomaly-detection/
+score_server.py`(write-ahead+provenance+graceful shutdown),
+`anomaly-detection/features.py`·`anomaly-detection/v3/prom_health.py`
+(PROM_URL 환경변수 override, 테스트 전용 목적), `experiments/
+arm_controller.py`(graceful stop 배선), `recovery-policy/schemas.py`·
+`main.py`(provenance 선택 필드), 그리고 위 회귀 테스트 파일들 -
+전부 harness/observability 계층만 건드렸고 판정 로직(`advance_
+streak`/`policy.decide`/`safety.*`)·`TrialResult` 스키마는 0줄
+변경.

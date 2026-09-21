@@ -21,6 +21,33 @@ def test_anomaly_signal():
     print("OK - anomaly signal:", sig.idempotency_key)
 
 
+def test_anomaly_signal_provenance_fields_optional_and_pass_through():
+    # §92 - 구버전 호출부(필드 없음)와 신버전(전부 포함) 둘 다 검증돼야 함.
+    req_old = AnomalySignalRequest(signal_type="anomaly_risk", score=-0.05, timestamp="2026-09-21T00:00:00+00:00")
+    sig_old = normalize_anomaly_signal(req_old)
+    assert sig_old.raw.get("correlation_id") is None
+    assert sig_old.raw.get("evaluation_seq") is None
+
+    req_new = AnomalySignalRequest(
+        signal_type="anomaly_risk", score=-0.09, timestamp="2026-09-21T00:00:00+00:00",
+        experiment_run_id="run-1", detector="isolation_forest",
+        correlation_id="corr-abc", evaluation_seq=26, model_version="v3.2b",
+        model_hash="deadbeef", feature_schema_hash="cafef00d",
+        threshold=-0.074, consecutive_count=3,
+    )
+    sig_new = normalize_anomaly_signal(req_new)
+    assert sig_new.raw["correlation_id"] == "corr-abc"
+    assert sig_new.raw["evaluation_seq"] == 26
+    assert sig_new.raw["model_version"] == "v3.2b"
+    assert sig_new.raw["model_hash"] == "deadbeef"
+    assert sig_new.raw["feature_schema_hash"] == "cafef00d"
+    assert sig_new.raw["threshold"] == -0.074
+    assert sig_new.raw["consecutive_count"] == 3
+    # 결정적 idempotency_key 구성 로직(변경 금지 대상)이 새 필드와 무관하게 그대로임을 확인
+    assert sig_new.idempotency_key == "run-1:anomaly_risk"
+    print("OK - provenance 필드는 선택이며(구버전 호출 영향 없음) 있으면 raw에 그대로 반영됨, idempotency_key 로직 불변")
+
+
 def test_alertmanager_webhook_filters_resolved():
     # 발견 5의 실제 alert 이름(VLLMTargetDown) + 하나는 firing, 하나는 resolved
     payload = {
