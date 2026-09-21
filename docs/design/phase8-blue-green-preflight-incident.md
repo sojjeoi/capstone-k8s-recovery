@@ -10435,3 +10435,141 @@ artifact 변경(0건), 판정 로직(`slo_judge`/`policy.decide`) 변경(0건),
 Prometheus health 배선), `experiments/run_memory_pressure_negative_
 control_pilot.py`(신규, 3-arm 파일럿 실행기), 그리고 각각의 테스트
 파일 - 전부 harness 계층만 건드렸다.
+
+## §97 - `memory_pressure_negative_control_v1` 3-arm 파일럿 실행 결과 - native PASS, fixed_threshold에서 preview headroom 부족으로 중단(§96.3 게이트 정상 작동)
+
+§96 승인 이후 `native → fixed_threshold → proposed` 순차 실행을
+시작했다. **native는 완전히 clean PASS**, **fixed_threshold는
+§96.3에서 신규 추가한 preview headroom 게이트가 실제로 발동해
+`insufficient_headroom_with_preview`로 invalid_run 처리됐다** - 지시
+(§5) "만족하지 못하면... 멈추세요"에 따라 **proposed는 실행하지
+않고 여기서 중단**한다. 강도·안전 임계치는 변경하지 않았다.
+
+### 97.1 공통 preflight (각 arm 직전, 전부 충족 확인)
+
+`HEAD`/`origin` 동기화, working tree clean. Node 2개 Ready·pressure
+없음. Rollout `Healthy`, `active==preview==7d6f888c94`(단일 revision).
+context null. Chaos CR·실험 pod·detector·observer 0건. recovery-policy
+`/healthz` 정상. Prometheus/recovery-policy port-forward 재기동+health
+확인. active pod `vllm-serving-7d6f888c94-zlkvv`(UID `1b9acd76-...`),
+RESTARTS=0, container memory limit 6Gi. baseline working set
+**3.37GiB**, Node MemAvailable **7.27GiB**. recovery-policy outbox
+105/105 pushed(pending 0).
+
+### 97.2 native - `pilot-memory-negative-native-01-20260921T174515Z`
+
+**clean PASS**: `outcome=prevented`, `state=completed`,
+`injection_valid=True`, `t_slo=None`, `t_recovery=None`,
+`detected=False`(detector 자체가 없음), `action=none`,
+`target_replaced=False`. 안전 로그(21 safety_tick): 최대 working set
+**4.30GiB**(baseline 3.37GiB + 약 957MiB - §95 실측과 정확히 일치),
+Node MemAvailable 최소 **6.32GiB**, restartCount 불변(0), OOMKilled
+없음. 소요 4분51초(17:45:15→17:50:06). 종료 후 독립 확인: Rollout
+`Healthy`·단일 revision 불변, pod UID·restart 불변, Chaos CR 0건,
+context null.
+
+### 97.3 fixed_threshold - `pilot-memory-negative-fixed-01-20260921T175107Z`
+
+**§96.3 게이트 정상 발동, invalid_run**: preview 준비는 성공했다
+(`t_preview_prep_start=17:51:08`, `t_preview_ready=17:55:42`,
+소요 274.5초 - 480초 timeout 이내). 그러나 preview pod이 co-resident로
+뜬 상태에서 injection 직전 재측정한 Node MemAvailable이
+**4.08GiB**로 낮아져 있었고, 예상 stress 증분(0.98GiB)을 뺀
+투영치가 **3.11GiB**로 4GiB PASS 바 미달 - `prepare()`가
+`TrialInvalid("insufficient_headroom_with_preview: ...")`를 던져
+`outcome=invalid_run`/`state=invalid`/`injection_valid=False`로
+종료됐다. **`t_injection=None`(injection 자체가 시작되지 않음)** -
+StressChaos CR도 전혀 생성되지 않았다(안전 로그 파일 자체가
+아예 안 생김 - `prepare()`의 "prepare_ok" 로그 지점 전에 이 게이트가
+있음, 예상된 동작).
+
+**preview cleanup 확인(독립)**: `kubectl get rs`에서 preview
+revision(`vllm-serving-77545d78`)이 DESIRED/CURRENT/READY=0/0/0으로
+정상 scale-down됨, 활성 revision(`7d6f888c94`)만 1/1/1 유지. Rollout
+`phase=Degraded`/`previewSelector` 잔존은 §35.3/§40.2/§93에서 이미
+"정상적인 abort 종결 상태(고장 아님)"로 문서화된 것과 정확히 같은
+패턴 - 기능적으로는 완전히 정리됨. Chaos CR 0건, context null.
+Node MemAvailable이 preview 정리 후 **7.83GiB**로 회복 확인(baseline
+수준으로 복귀).
+
+**무관한 발견(투명 기록, 이 판정에 영향 없음)**: 이 arm의 preview-
+prep 진행 중(17:52:15) `VLLMTargetDown` 반응형 alert 1건이
+"adhoc"(현재 등록된 experiment context에 귀속되지 않음)로 감사기록에
+남았다(git 커밋 `89e2750` 확인). `action=observe_only`/
+`outcome=no_action`, reasoning "VLLMTargetDown이나 preview 없음 -
+관찰만"(그 시점엔 아직 preview가 Ready 전) - 이번 세션에서 이미
+3차례(08:04/09:17/12:35) 동일 패턴으로 반복된, 이 파일럿과 무관한
+기존 재발성 alert다. Promotion·조치 없음, 이 trial의 headroom
+판정과도 무관.
+
+### 97.4 proposed - 미실행 (지시대로 중단)
+
+§96.3/§5의 명시적 지시("만족하지 못하면... 멈추세요")에 따라
+`proposed` arm은 실행하지 않았다. fixed_threshold와 동일한 preview
+co-residency·동일 stress profile·동일 클러스터 용량 조건이므로,
+같은 headroom 부족이 재현될 가능성이 높다고 판단하지만 - 이는
+추정일 뿐 실측하지 않았다(지시대로 강도를 낮추거나 재시도하지
+않았으므로 확인할 방법이 없다).
+
+### 97.5 대조표
+
+| 항목 | native | fixed_threshold | proposed |
+|---|---|---|---|
+| working set 상승 | 957MiB(baseline 3.37→4.30GiB) | — (injection 미시작) | 미실행 |
+| MemAvailable 최솟값 | 6.32GiB | 4.08GiB(preview 준비 후, injection 전 재측정치) | 미실행 |
+| `t_slo` | None | None(injection 자체가 없었음) | 미실행 |
+| detected/source | False/None | False/None(detector 시작 전 단계에서 중단) | 미실행 |
+| action | none | none | 미실행 |
+| promotion | 없음 | 없음 | 미실행 |
+| unnecessary detection/action | 없음 | 없음(해당 없음 - detector가 신호를 낼 기회 자체가 없었음) | 미실행 |
+| restart/OOM | 0/False(불변) | 0/False(불변, 두 pod 모두) | 미실행 |
+| cleanup | 완전(Chaos CR 없음, context null) | 완전(preview scale-down 확인, Chaos CR 없음, context null) | 미실행 |
+| audit commit | 없음(신호 없음) | 없음(§97.3의 adhoc 건은 이 trial과 무관한 반응형 alert) | 미실행 |
+| 최종 상태 | `prevented`/`completed` | `invalid_run`/`invalid`(headroom 게이트) | — |
+
+### 97.6 판정
+
+**3-arm 배선 PASS/FAIL 판정**: 이번 파일럿은 **완주하지 못했다** -
+2/3 arm만 실행됨(native 성공, fixed_threshold는 사전 등록된 안전
+게이트로 정상 중단, proposed 미실행). 그러나 이것은 하니스의 결함이
+아니라 **§96.3에서 신규 추가한 안전장치가 설계대로 정확히 작동한
+것**이다 - preview 준비 성공 이후에도 injection 직전 재측정으로
+headroom을 다시 확인하는 로직이 없었다면(§96 이전 코드), fixed_
+threshold는 실제로 4GiB 미만의 여유에서 1000MB stress를 주입했을
+것이다(Node MemAvailable이 3GiB 즉시중단 임계치는 넘었으므로 기존
+게이트만으로는 안 걸렸을 것). 배선 자체(preview 준비, detector
+preflight, headroom 재측정, invalid_run 처리, preview cleanup)는
+전부 설계대로 정확히 작동했다.
+
+**negative control의 본 실험(3-arm 비교) 사용 가능 여부**: **현재
+클러스터 용량으로는 아직 불가능하다** - `memory_pressure_negative_
+control_v1`(1000MB×120초)은 **단일 pod(native) 조건에서는** §94/§95
+에서 이미 3/3 재현성이 확인된 안전한 negative control이 맞지만,
+**preview가 co-resident인 non-native 조건에서는 이 클러스터의 실제
+여유 메모리(preview 준비 후 실측 4.08GiB)가 4GiB PASS 바에 근접해
+있어 안정적으로 재현 가능한지 아직 확인되지 않았다.** 강도를
+낮추거나 안전 임계치를 조정하는 것은 지시로 금지돼 있으므로, 이
+문제를 풀려면 (a) 클러스터 자체의 가용 메모리를 늘리거나, (b) 이
+profile을 non-native 3-arm 비교에서 native 전용으로 제한하거나
+(fixed_threshold/proposed 배선 검증은 이미 다른 시나리오(§91 load_
+ramp)에서 별도로 확인됐음을 참고), (c) 다른 결정을 내리는 것 중
+하나가 필요하다 - 이 절에서는 그 결정을 내리지 않고 사실만
+보고한다.
+
+### 97.7 보존
+
+두 arm의 결과 JSON(`results/pilot/trial-pilot-memory-negative-
+{native,fixed}-01-*.json`)과 native의 안전 로그(`results/pilot/
+memory-pressure-safety-pilot-memory-negative-native-01-*.jsonl`,
+fixed_threshold는 injection 전 중단이라 안전 로그 자체가 생성되지
+않음 - `invalid_reason` 문자열 자체가 유일하고 충분한 기록)를
+`experiments/results/`(top-level, `.gitignore`로 커밋 제외 - §50~§96과
+동일 관례)에 원본 그대로 보존했다.
+
+### 97.8 범위 제한 준수 확인
+
+이번 절 금지 사항 - profile 강도 변경(0건), model·threshold·feature
+변경(0건), 재학습(0건), 다른 memory 반복(0건), 다른 시나리오
+실행(0건), `run_all_scenarios`(미실행), 60회 본 실험(미실행),
+`TrialResult` 스키마 변경(0건) - 전부 준수. `proposed` arm은 §5의
+명시적 지시에 따라 실행하지 않았다(스킵이지 위반이 아님).
