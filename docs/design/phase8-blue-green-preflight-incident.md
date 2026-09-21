@@ -8072,3 +8072,94 @@ safe/violation 집계, A/B/C/D 각 케이스(B·C 동시 성립 시 D로 떨어�
 score는 이 커밋이 origin에 반영된 뒤 별도 커밋(§85)에서 정확히 1회
 계산한다. threshold·feature·model 변경 없음, 재학습 없음, live
 cluster 작업 없음.
+
+## 85. v3.2b boundary challenge - 단 한 번의 평가 결과 (2026-09-21)
+
+evaluator commit(`66bba30`)이 origin에 반영된 것을 확인한 뒤
+`run_boundary_challenge.py`를 정확히 1회 실행했다. `evaluation_
+commit_at_run_time`이 `66bba30`과 일치 - 커밋되지 않은 코드로
+평가하지 않았음을 확인. 평가 전후 `SHA256SUMS.json` 무결성 0건
+불일치, model.pkl/scaler.pkl/threshold.json/feature-schema.json
+해시 전부 freeze 시점과 동일(무변화).
+
+### 85.1 세션별 결과
+
+| session_id | role | 원래 판정 | n | point anomaly(FPR) | max consecutive | signal episodes | t_slo | 분류 | lead time(s) |
+|---|---|---|---|---|---|---|---|---|---|
+| `q3c-sustained_load-20260920-r1` | sustained_load_pass | PASS | 17 | 1(5.88%) | 1 | 0 | null | - | - |
+| `official-train-sustained_load-20260920` | sustained_load_violation | FAIL(genuine) | 17 | 0(0.00%) | 0 | 0 | 2026-09-20T10:54:20 | **missed** | null |
+| `q3c-burst-20260920-r1` | burst_safe | PASS | 22 | 5(22.73%) | 2 | 0 | null | - | - |
+| `official-train-burst-20260920` | burst_safe | PASS | 22 | 1(4.55%) | 1 | 0 | null | - | - |
+| `official-calib-burst-20260920` | burst_violation | FAIL(genuine) | 22 | 7(31.82%) | **3** | **1** | 2026-09-20T12:07:00 | **early_detection** | **269.08** |
+| `qual-low_load-20260920-r6`(§60) | non_reproduced_anomaly | 미확정(§60) | 9 | 5(55.56%) | 2 | 0 | null | - | - |
+
+score min/median/max(session별) - `q3c-sustained_load-r1`:
+-0.1137/-0.0407/-0.0100, `official-train-sustained_load`:
+-0.0259/0.0479/0.0952(6세션 중 유일하게 median이 양수 - 이 session이
+`missed`인 것과 일관, score가 threshold 아래로 거의 안 내려감),
+`q3c-burst-r1`: -0.1007/-0.0342/0.1073, `official-train-burst`:
+-0.0947/0.0278/0.0917, `official-calib-burst`:
+**-0.1498/-0.0609/0.0423**(6세션 중 가장 낮은 min - 이 session에서
+실제로 신호가 발생한 것과 일관), `qual-low_load-r6`(§60):
+**-0.1777/-0.0882/-0.0233**(6세션 중 가장 낮은 median, 유일하게
+max까지 음수).
+
+### 85.2 집계 - 세 그룹을 절대 합쳐 평균 내지 않음
+
+**Safe transient(3세션, controlled load perturbation이지만 sustained
+SLO 위반 없이 종료)**: unnecessary signal **0/3**(전부
+`signal_count=0` - point anomaly는 있었으나(1/5/1건) 연속 3회에
+못 미침), 전체 signal episode **0**.
+
+**Actual sustained violation(2세션, 표본 2개 - 탐지율의 통계적
+우월성을 주장하지 않는다)**: early detection **1건**
+(`official-calib-burst-20260920`, lead_time=**269.08초**(≈4분29초)
+- SLO 위반보다 4분 이상 먼저 신호), missed **1건**
+(`official-train-sustained_load-20260920` - point anomaly 자체가
+0건이라 score가 이 세션 내내 threshold 아래로 한 번도 안 내려감).
+late detection 0건.
+
+**§60(`qual-low_load-20260920-r6`) - 단독 결과, 다른 두 violation과
+평균·탐지율에 합산하지 않음**: point FPR 55.56%(6세션 중 최고)지만
+signal episode는 0건(max_consecutive=2, 연속 3회 미도달) - 기존
+"재현되지 않은 극단 사례(non-reproduced diagnostic anomaly)" 분류를
+그대로 유지, 이 결과로 §60의 성격을 재해석하지 않는다.
+
+### 85.3 해석 분류 - **A(Promising)**
+
+`classify_overall()`(변경 없음, §84.3에서 사전 고정) 판정:
+
+- safe transient unnecessary signal **0/3** - B 트리거 불성립.
+- actual violation 2건 중 **1건 조기 탐지**(early_detection≥1) -
+  C 트리거(전부 missed/late)도 불성립.
+- Holdout 채택 결과(§83, adopted)와 모순 없음.
+
+**-> A(Promising)**: "safe transient unnecessary signal 0/3, actual
+violation 중 최소 1건 조기 탐지, Holdout 채택 결과와 모순 없음."
+사용자 지시대로 이 분류는 artifact 채택 상태를 소급 변경하지 않는
+외부 검증이다 - runtime 통합·안전 smoke로 "진행 가능하다"는 제안일
+뿐, 이번 턴에 실행하지 않는다.
+
+### 85.4 Artifact/데이터/evaluator 해시
+
+- `model.pkl`/`scaler.pkl`/`threshold.json`/`feature-schema.json`:
+  평가 전후 완전히 동일(§81/§83과 같은 값, 무변화).
+- `boundary-challenge-evaluation.json`(신규):
+  `1cd1005ad05063f62753f2ee85474c594e95e42fde0ce2ee6bfcb680d3c5dbf0`.
+- evaluator/evaluation commit: `66bba30`(evaluation_commit_at_run_time
+  필드로 실측 확인 - 커밋 안 된 코드로 평가하지 않았음).
+- 원본 challenge session 6개 SHA-256: §84.2 표와 완전히 동일(재확인,
+  fail-closed 게이트 통과).
+
+전체 오프라인 스위트 822 passed(변경 없음).
+
+### 85.5 변경 금지 준수 및 다음 단계
+
+이번 결과를 보고 다음을 전혀 하지 않았다 - threshold 조정, feature
+추가·삭제, 재학습, challenge session의 Training/Calibration 편입,
+score 재실행, model artifact 수정, latency/TTFT 추가,
+`score_server.py` 변경·배포, live detector smoke, `memory_pressure`
+3-arm, `run_all_scenarios.py`, 60회 본 실험, `TrialResult` 스키마
+변경. v3.2b 모델은 §83의 채택 상태(`adopted`)를 그대로 유지하며,
+이 절의 A(Promising) 분류는 그 위에 추가된 참고 정보다. 다음
+단계(runtime 통합·안전 smoke 등)는 사용자 지시를 기다린다.
