@@ -8361,3 +8361,153 @@ completeness 실패, cleanup 실패 - 발생 시 threshold·streak를 수정하�
 latency/TTFT 추가, recovery-policy promotion 연결 실험, Chaos
 시나리오, `memory_pressure` 3-arm, `run_all_scenarios.py`, 60회 본
 실험, `TrialResult` 스키마 변경.
+
+## 87. v3.2b no-action smoke 실행 결과 - 즉시 중단(signal episode 발생), 원인 미확정 (2026-09-21)
+
+### 87.1 오케스트레이션 도구 결함 2건 (측정 자체와는 별개, 먼저 정직하게 기록)
+
+실측 중 이 turn에서 새로 작성한 도구 자체의 결함 2건을 발견했다 -
+**모델·threshold·feature 로직과는 무관**하고, 둘 다 §86 코드가 아니라
+스모크 실행 방식의 문제다:
+
+1. **stdout 버퍼링**: `run_v32b_no_action_smoke.py`가 `score_server.py`
+   서브프로세스의 stdout을 실제 파일로 리다이렉트했는데(TTY가 아니라
+   블록 버퍼링 대상), 프로세스를 `terminate()`로 끝내는 순간 버퍼가
+   flush되지 않아 시작 로그 한 줄조차 파일에 안 남았다(§86.6이
+   설계한 사후 replay 검증이 이 로그 파싱에 의존했는데 실행 못 함).
+2. **stray process 포트 충돌**: 이번 스모크 이전에 `capture_sink.py`를
+   수동으로 한 번 띄워 동작을 확인했었는데(§86.2/86.3 개발 중,
+   `/tmp/sink_test.jsonl` 대상), 그 프로세스를 정상적으로 종료하지
+   못한 채(git-bash의 `pkill`이 Windows 프로세스에 안 먹음) 8765
+   포트를 계속 점유하고 있었다. 오케스트레이션 스크립트가 새로 띄운
+   sink는 이 포트 충돌로 조용히 실패했을 가능성이 높고, `_wait_http_
+   ok()`는 그 사실을 모른 채 "이미 떠 있던"(사실은 낡은) 서버의
+   `/healthz` 응답을 정상으로 오인해 계속 진행했다 - 실제 신호는
+   의도한 `smoke_evidence/*.jsonl`이 아니라 그 낡은 프로세스의
+   `/tmp/sink_test.jsonl`에 쌓였다.
+
+**둘 다 모델 자체의 결함이 아니라 이번에 새로 만든 스모크 하니스의
+결함이다** - 사용자 지시("발생 시 threshold나 streak를 수정하지 말고
+원본을 보존")에 따라 model/threshold/streak 로직은 전혀 건드리지
+않았다. 낡은 stray 프로세스는 이 발견 직후 강제 종료했고, 포트
+8765가 다시 비어 있음을 확인했다.
+
+### 87.2 복구된 실측 증거 - 6건의 실제 signal episode
+
+낡은 stray sink의 `/tmp/sink_test.jsonl`을 확인한 결과, `score_server.
+py`는 실제로는 정상 기동해 계속 평가를 돌았고, 이번 smoke의 정확한
+`experiment_run_id`(`smoke-v32b-no-action-20260921T080346Z`)가 찍힌
+**실제 anomaly 신호 6건**이 기록돼 있었다(수동 테스트 때 남긴 무관한
+1줄 제외):
+
+| # | timestamp(UTC) | score |
+|---|---|---|
+| 1 | 08:04:36 | -0.1723 |
+| 2 | 08:05:40 | -0.1595 |
+| 3 | 08:06:49 | -0.1502 |
+| 4 | 08:10:52 | -0.0828 |
+| 5 | 08:19:58 | -0.1053 |
+| 6 | 08:22:52 | -0.1855 |
+
+signal 사이 간격이 대부분 60초(cooldown) 이상 벌어져 있어 **6개의
+서로 다른 episode**로 보인다(같은 episode의 재전송이 아님). 이는
+§86.7의 필수 PASS 조건("false signal episode 0")과 §86.8의 즉시
+중단 조건("signal episode 1건 이상") 모두에 정면으로 해당한다.
+
+### 87.3 독립 재검증 - session 자체의 feature_rows로도 재현됨(우연한 오류 아님)
+
+score_server.py의 실시간 판정이 혹시 코드 버그(§87.1의 도구 결함과는
+별개의 실제 로직 버그)인지 확인하기 위해, **완전히 다른 추출 경로**로
+얻은 데이터로 교차 검증했다 - 이번 smoke session 자체가
+`qualify_normal_profile.collect_qualification_session()`으로 사후에
+독립 계산한 `feature_rows`(37개, stage 구간만)를 동결 model/scaler/
+threshold로 그대로 재채점(`model_v31/evaluate.py`, 변경 없음):
+
+- point anomaly **8/37**(21.6%), max_consecutive_anomalous **3**,
+  **signal episode 1건**(마지막 window, 08:18:52).
+- score 분포: min=-0.1082, median≈0.0, max=0.0873.
+
+**같은 세션의 실제 자원 텔레메트리가, 완전히 독립적인 두 계산
+경로(실시간 15초 평가 vs 세션 종료 후 일괄 재추출) 모두에서 이상을
+가리켰다** - 즉 §87.2의 신호는 score_server.py만의 우연한 계산 오류가
+아니라, **이 session에서 실제로 CPU/메모리/cache 텔레메트리가
+Calibration/Holdout 22개 세션(§81~83) 어디보다도 더 뚜렷하게 변칙적
+방향으로 움직였다**는 두 독립 증거의 일치다.
+
+### 87.4 시간대 관찰(가설 제시만, 결론 아님)
+
+session 자체의 `feature_rows`는 08:09:52~08:18:52 구간(ramp stage)만
+커버하지만, score_server.py는 preview Ready 직후부터 계속 평가했으므로
+더 넓은 구간(baseline·drain 포함)을 봤다. §87.2의 6건 중 3건
+(08:04:36/08:05:40/08:06:49)은 **stage 시작(08:09:52) 이전**, 2건
+(08:19:58/08:22:52)은 **stage 종료(08:18:52) 이후**에 몰려 있다 -
+즉 6건 중 5건이 low_load 정상 부하 구간이 아니라 **preview
+준비 직후(settle/baseline)나 부하 종료 후(drain) 구간**에서 발생했다.
+이는 "preview가 막 떠서 active+preview 동시 구동 초기 또는 부하
+종료 직후의 과도 상태가 원인일 수 있다"는 **가설**을 시사하지만,
+§61-62의 A-B-A 진단(0.10 RPS 기준, topology interference "확인 안
+됨")과는 다른 조건(0.025 RPS, score_server 실시간 평가)이라 이 가설을
+검증하지 않았다 - **원인을 확정하지 않는다**(§61/§78과 동일 원칙).
+
+### 87.5 조치 - 즉시 중단, 원본 보존, artifact 불변
+
+§86.8 규칙대로 정확히 다음만 수행했다:
+
+- threshold·model·streak 로직 **전혀 수정하지 않음**.
+- `SHA256SUMS.json` 무결성 재확인 0건 불일치(model.pkl/scaler.pkl/
+  threshold.json/feature-schema.json 스모크 전후 완전 동일 해시).
+- 세션 결과(`smoke-v32b-runtime-01.json`), 원래 리포트, 복구된 stray
+  sink 로그를 **원본 그대로 보존**(수정 안 함) - `smoke_evidence/`에
+  전부 커밋.
+- 클러스터 재확인: Node Ready·pressure 없음, active pod
+  `vllm-serving-6b9d88c96-64k7r` restartCount=0·UID 불변, Chaos CR
+  없음, `vllm-preview` Endpoint 없음(cleanup 후), 단일 active
+  revision - 인프라 자체는 완전히 정상 종료됨.
+- stray `capture_sink.py` 잔여 프로세스 강제 종료, 포트 8765 재확인
+  비어 있음.
+- capture sink는 실제 recovery-policy로 신호를 전달하지 않았다(sink
+  자체에 그런 코드가 없음) - promotion·context 등록 발생 안 함.
+
+### 87.6 Smoke 판정 - **FAIL**(인프라 기준은 전부 충족, 안전 기준은 불충족)
+
+| 기준 | 결과 |
+|---|---|
+| artifact hash 불변 | PASS |
+| dependency 일치 | PASS(변경 없음) |
+| runtime 시작 로그 정상 | 확인 불가(§87.1 버퍼링 결함) - 별도 증거(§87.2)로 실제 정상 기동은 확인됨 |
+| 유효 평가 point ≥38개 | 확인 불가(로그 손실) - stray sink에 찍힌 6개 신호와 세션 자체 feature_rows(37개)로 최소 실행은 확인 |
+| missing/NaN/stale 0 | 세션 자체 feature_rows는 37/37 valid(0건) - score_server 자체 평가별 카운트는 로그 손실로 확인 불가 |
+| **runtime/offline 사후 score replay 일치** | **검증 못 함**(§87.1 버퍼링 결함으로 score_server 고유 window 재현 불가) |
+| **false signal episode 0** | **불충족 - 6건 발생(§87.2), 독립 경로로도 1건 재현(§87.3)** |
+| capture sink 수신 signal 0 | **불충족 - 6건 수신**(의도한 파일이 아니라 stray sink 파일에서 발견) |
+| restart/OOM 없음 | PASS |
+| Node Ready·pressure 없음 | PASS |
+| Endpoint 격리 유지 | PASS(전후 모두 isolated=true) |
+| active target UID 불변 | PASS(`630f21a9-...` 전후 동일) |
+| 예기치 않은 promotion 없음 | PASS(session 자체 성공률 100%, target 교체 없음) |
+| cleanup 후 단일 revision 복원 | PASS(`cleanup_result=true`) |
+| 잔여 프로세스 완전 정리 | §87.5에서 사후 조치로 완료(스모크 스크립트 자체의 정리는 정상 동작, stray는 별개 사전 잔재) |
+
+**종합 판정: FAIL** - 인프라 안전 기준(재시작·Node·Endpoint·정리)은
+전부 충족했지만, 이 smoke의 핵심 목적이었던 "false signal episode
+0"·"capture sink 수신 0"이 명백히 불충족했다. §86.8에 따라 threshold
+재조정이나 재시도를 이 턴에서 하지 않는다.
+
+### 87.7 다음 단계 제안(실행하지 않음, 사용자 결정 대기)
+
+두 가지 서로 다른 문제가 섞여 있어 분리해 제안한다:
+
+1. **하니스 결함 수정(§87.1)** - `score_server.py` 서브프로세스
+   stdout에 `PYTHONUNBUFFERED=1`(explore_ramp_intensity.py의 기존
+   probe/ramp 서브프로세스 실행 관례와 동일) 적용, sink 기동 전
+   대상 포트가 이미 점유돼 있지 않은지 명시적으로 확인(fail-closed) -
+   이건 순수 도구 개선이라 모델 판정에 영향 없음.
+2. **더 중요한 질문(§87.3/§87.4)** - Calibration/Holdout 22세션
+   전부와 달리 이 smoke session의 실제 자원 텔레메트리가 왜 뚜렷하게
+   변칙적이었는지는 이번 턴에서 확정하지 않는다. §61-62의 A-B-A
+   패턴을 이번 조건(0.025 RPS, 실시간 evaluation)에 맞게 반복할지,
+   §78처럼 별도 재감사를 먼저 할지, 혹은 다른 접근을 취할지는 사용자
+   결정 사항이다.
+
+이번 턴에서는 두 제안 모두 실행하지 않았다 - 문서화·원본 보존·보고만
+했다.

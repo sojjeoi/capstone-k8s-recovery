@@ -1,0 +1,46 @@
+{
+  "run_id": "smoke-v32b-no-action-20260921T080346Z",
+  "session_id": "smoke-v32b-runtime-01",
+  "sink_url": "http://127.0.0.1:8765/signal",
+  "real_recovery_policy_url": "http://localhost:8080/signal",
+  "session_excluded": false,
+  "session_exclusion_reasons": [],
+  "session_t_slo": null,
+  "session_cleanup_result": true,
+  "session_active_pod_before": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "session_active_pod_after": {
+    "name": "vllm-serving-6b9d88c96-64k7r",
+    "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+  },
+  "session_endpoint_isolation_before": {
+    "active_endpoints": [
+      "vllm-serving-6b9d88c96-64k7r"
+    ],
+    "preview_endpoints": [
+      "vllm-serving-94f4754d8-2h86v"
+    ],
+    "isolated": true
+  },
+  "session_endpoint_isolation_after": {
+    "active_endpoints": [
+      "vllm-serving-6b9d88c96-64k7r"
+    ],
+    "preview_endpoints": [],
+    "isolated": true
+  },
+  "session_valid_feature_rows": 37,
+  "session_total_feature_rows": 37,
+  "replay_verification": {
+    "n_cycles_logged": 0,
+    "n_cycles_replayed": 0,
+    "per_cycle": [],
+    "all_match": false,
+    "float_tolerance": 1e-06
+  },
+  "capture_sink_signal_count": 0,
+  "capture_sink_signals": [],
+  "score_server_log_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\anomaly-detection\\v3\\model_v32b\\smoke_evidence\\smoke-v32b-no-action-20260921T080346Z-score-server.log"
+}
