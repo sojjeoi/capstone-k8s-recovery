@@ -7908,3 +7908,86 @@ threshold 적용, streak/episode 계산, session별 score 분포 조회,
 중간 FPR 계산, 결과를 보고 나머지 session 중단, model/scaler/
 threshold 변경. sealed evaluation은 이 데이터 커밋이 origin에 반영된
 뒤 별도 절(§83)에서 정확히 한 번 수행한다.
+
+## 83. v3.2b 단 한 번의 sealed Prospective Holdout 평가 - PASS, 모델 채택 (2026-09-21)
+
+### 83.1 평가 직전 재확인
+
+`v3.2b_holdout_data_commit=3e16e4d`(이후 recovery-policy-bot 감사
+커밋 병합으로 origin HEAD는 `b07f516`, 병합은 `audit-log/adhoc.jsonl`
+만 건드림) push·동기화 확인 후 `SHA256SUMS.json` 무결성 재확인 0건
+불일치(model.pkl/scaler.pkl/threshold.json/feature-schema.json
+전부 §81 동결 시점과 동일 해시) - 평가 직전까지 model/threshold를
+전혀 건드리지 않았음을 재확인.
+
+### 83.2 평가 실행 (`evaluate_holdout_v32b.py`, 정확히 1회, 코드 변경 없음)
+
+동결된 evaluator(`model_v31/evaluate.py`의 `evaluate_session()`)·
+model·scaler·threshold(`-0.0742929709960305`)로 실제 판정 규칙
+그대로(`decision_function` < threshold, 15초 간격, 연속 3회
+anomaly, 정상 1회 시 reset, cooldown 60초) 평가했다.
+
+| session | n | point anomaly | point FPR | max consecutive | false signal episodes | slo_label | score min/median/max |
+|---|---|---|---|---|---|---|---|
+| holdout3-low-01 | 37 | 0 | 0.0000 | 0 | 0 | clean | -0.0361 / 0.0759 / 0.1094 |
+| holdout3-idle-01 | 38 | 1 | 0.0263 | 1 | 0 | clean | -0.0755 / 0.0576 / 0.0977 |
+| holdout3-idle-02 | 38 | 0 | 0.0000 | 0 | 0 | clean | 0.0118 / 0.0929 / 0.1361 |
+| holdout3-low-02 | 37 | 5 | 0.1351 | 1 | 0 | clean | -0.1014 / -0.0082 / 0.1190 |
+| holdout3-low-03 | 37 | 7 | 0.1892 | 2 | 0 | clean | -0.1253 / -0.0291 / 0.1316 |
+| holdout3-idle-03 | 38 | 0 | 0.0000 | 0 | 0 | clean | -0.0678 / 0.0643 / 0.0692 |
+
+**전체(window 225개는 겹치는 표본이라 독립 표본처럼 과장하지 않음 -
+통계적 확신의 단위는 session 6개다)**: point anomaly 13/225,
+overall point FPR=**5.78%**. **regime별**: idle 1/114=**0.88%**,
+low_load 12/111=**10.81%**. **이번 6세션은 전부 `slo_label=clean`**
+(Calibration의 2건과 달리 latency-only SLO 위반이 재현되지 않음 -
+원인론적 결론 없음, §61/§78과 동일 원칙). max_consecutive_anomalous는
+6세션 전부 0~2 - 연속 3회(신호 발생 조건)에 도달한 session이 하나도
+없어 **false signal episode는 독립 session 6개 전부 0건**, 전체
+false signal episode 수도 0.
+
+### 83.3 채택 기준 판정 - **PASS**
+
+- false signal episode: **0/6**(요구: 0/6) - 충족.
+- 불필요한 predictive recovery signal: **0**(`signal_count` 전부 0) -
+  충족.
+- artifact/schema/hash 정합: `SHA256SUMS.json` 무결성 0건 불일치,
+  평가 전후 model/scaler/threshold 해시 무변화 - 충족.
+- missing/NaN: 6세션 전부 valid feature row 100%(225/225) - 충족.
+- evaluator 변경 없음: `57d4440` 이후 evaluator 관련 파일 git 이력
+  없음(§82.1 재확인) - 충족.
+
+Point anomaly가 13건 관측됐지만(0건이 아님) 연속 3회 조건에 못
+미쳐 어떤 session에서도 신호로 이어지지 않았다 - 사전 등록된 PASS
+조건("point anomaly가 있어도 연속 3회 signal 조건에 도달하지 않으면
+그대로 보고하고 PASS 가능")대로 수치를 그대로 보고하고 PASS 처리한다.
+
+`decide_holdout_outcome()`(model_v32, 변경 없이 재사용) 판정:
+**`outcome=adopted`, `adopt_model=true`, `proceed_to_challenge=true`**.
+**v3.1(§71-75, holdout 실패) 이후 이 조사에서 Isolation Forest가
+처음으로 sealed holdout을 통과했다** - v3.2(calibration 단계에서
+중단)는 홀드아웃까지 가지도 못했었다.
+
+### 83.4 Artifact/데이터/evaluator 해시
+
+- `model.pkl`: `2102e4f5f0d06809402f6f11c0396f0249bda3864bf6eeb18c52ac626e1a9243`(평가 전후 무변화)
+- `scaler.pkl`: `8d9faaa113227467a8ba206661d9fc0b89a663d87306a0eb5d49dc38b837eaba`(무변화)
+- `threshold.json`: `55ccc308f0c5f7d7606fa1ade4b806acc122279bde81b752e047fd54b6bf0944`(무변화)
+- `feature-schema.json`: `fc452bc45eb8c85fbe3dfd8890b0ac1b306d86b8f77aec336ec64543b6ce7da2`(무변화)
+- `holdout-evaluation.json`(신규): `1427a253ddc661a8f85eed6a907d8fb3f7ce2a7d516374bd554d19d5d86e0aa0`
+- evaluator commit: `57d4440`(freeze 시점과 동일, 이번 평가까지 무변경)
+- `v3.2b_holdout_data_commit`: `3e16e4d`(push 후 origin `b07f516`으로 감사 커밋 병합, 데이터 자체는 무변경)
+
+전체 오프라인 스위트 808 passed(변경 없음).
+
+### 83.5 범위 준수 및 다음 단계
+
+PASS했지만 이번 턴에는 boundary challenge를 실행하지 않는다.
+금지 항목 전부 미실행 - threshold·feature·model 변경, latency/TTFT
+추가, `score_server.py` 변경·배포, live detector smoke,
+`memory_pressure` 3-arm, `run_all_scenarios.py`, 60회 본 실험,
+`TrialResult` 스키마 변경. 다음 단계는 (사용자 지시 시) boundary
+challenge 평가 - 재분류(safe load transient / load-induced sustained
+SLO violation / extreme non-reproduced latency anomaly) 및
+`§78`의 latency-only 세션을 infrastructure-normal FPR 사례로 취급,
+threshold/feature 변경 없음(§79.7 절차 그대로).

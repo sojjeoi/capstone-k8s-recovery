@@ -1,0 +1,115 @@
+{
+  "threshold": -0.0742929709960305,
+  "holdout_sessions": [
+    "holdout3-low-01",
+    "holdout3-idle-01",
+    "holdout3-idle-02",
+    "holdout3-low-02",
+    "holdout3-low-03",
+    "holdout3-idle-03"
+  ],
+  "holdout_session_slo_labels": {
+    "holdout3-low-01": "clean",
+    "holdout3-idle-01": "clean",
+    "holdout3-idle-02": "clean",
+    "holdout3-low-02": "clean",
+    "holdout3-low-03": "clean",
+    "holdout3-idle-03": "clean"
+  },
+  "per_session": {
+    "holdout3-low-01": {
+      "session_id": "holdout3-low-01",
+      "n_points": 37,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.03607558484533224,
+      "score_median": 0.07592225376816458,
+      "score_max": 0.1094288933449607,
+      "first_signal_window_start_utc": null
+    },
+    "holdout3-idle-01": {
+      "session_id": "holdout3-idle-01",
+      "n_points": 38,
+      "point_anomaly_count": 1,
+      "point_fpr": 0.02631578947368421,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 1,
+      "score_min": -0.07554097487693379,
+      "score_median": 0.05759255585170456,
+      "score_max": 0.09769390814005569,
+      "first_signal_window_start_utc": null
+    },
+    "holdout3-idle-02": {
+      "session_id": "holdout3-idle-02",
+      "n_points": 38,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": 0.011761513004178492,
+      "score_median": 0.09292118865840865,
+      "score_max": 0.13611866299994674,
+      "first_signal_window_start_utc": null
+    },
+    "holdout3-low-02": {
+      "session_id": "holdout3-low-02",
+      "n_points": 37,
+      "point_anomaly_count": 5,
+      "point_fpr": 0.13513513513513514,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 1,
+      "score_min": -0.10135071938010165,
+      "score_median": -0.008213415368873656,
+      "score_max": 0.11896838647317853,
+      "first_signal_window_start_utc": null
+    },
+    "holdout3-low-03": {
+      "session_id": "holdout3-low-03",
+      "n_points": 37,
+      "point_anomaly_count": 7,
+      "point_fpr": 0.1891891891891892,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "score_min": -0.1253256123142309,
+      "score_median": -0.029081976845742208,
+      "score_max": 0.13164771595586927,
+      "first_signal_window_start_utc": null
+    },
+    "holdout3-idle-03": {
+      "session_id": "holdout3-idle-03",
+      "n_points": 38,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.06779147143596753,
+      "score_median": 0.0643044908501991,
+      "score_max": 0.06923421772034938,
+      "first_signal_window_start_utc": null
+    }
+  },
+  "overall_point_count": 225,
+  "overall_point_anomaly_count": 13,
+  "overall_point_fpr": 0.057777777777777775,
+  "overall_false_signal_episodes": 0,
+  "adoption_criteria": {
+    "zero_false_signal_episodes": true,
+    "no_missing_or_nan": true,
+    "schema_and_hash_consistent": true
+  },
+  "note": "false signal episode 판정은 SLO label과 무관 - latency-only SLO 위반 session에서 신호가 나도 그 자체로 episode로 집계됨(§79.6/§79.8)",
+  "stop_loss_decision": {
+    "outcome": "adopted",
+    "reason": "prospective holdout 6세션 전체 false signal episode 0, schema/hash 정합, missing/NaN 없음",
+    "adopt_model": true,
+    "proceed_to_challenge": true
+  }
+}
