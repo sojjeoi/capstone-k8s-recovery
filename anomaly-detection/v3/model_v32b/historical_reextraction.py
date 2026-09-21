@@ -89,7 +89,8 @@ class ReextractionResult:
 
 
 def reextract_session(session_id: str, regime: str, probe_raw_csv: Path, ramp_summary_csv: Path,
-                       query_range_fn: Callable = _query_range, prom_url: str = PROM_URL) -> ReextractionResult:
+                       query_range_fn: Callable = _query_range, prom_url: str = PROM_URL,
+                       completeness_fn: Callable = verify_metric_completeness) -> ReextractionResult:
     """§80.4 - 이미 완료된 측정의 원본 CSV 두 개만으로 `candidate_result`를
     `explore_ramp_intensity.run_candidate()`의 후반부(같은 함수, 그대로
     import)와 동일하게 재구성한 뒤, `build_dataset.build_rows_for_session()`
@@ -122,7 +123,7 @@ def reextract_session(session_id: str, regime: str, probe_raw_csv: Path, ramp_su
     invalid_window_count = sum(1 for r in feature_rows if not r.valid)
 
     completeness_checks = [
-        verify_metric_completeness(name, promql, start_utc, end_utc, prom_url=prom_url)
+        completeness_fn(name, promql, start_utc, end_utc, prom_url=prom_url)
         for name, promql in METRICS.items()
     ]
 

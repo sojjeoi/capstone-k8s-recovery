@@ -154,14 +154,23 @@ def test_reextract_session_reconstructs_bounds_from_ramp_summary(tmp_path):
     def fake_query_range_fn(promql, start, end, step="15s"):
         return [1.0, 1.0, 1.0]
 
+    def fake_completeness_fn(metric_name, promql, start, end, prom_url=None):
+        return {"metric_name": metric_name, "n_samples": 5, "expected_n_samples": 5,
+                "has_nan_or_inf": False, "max_gap_sec": 15.0, "ok": True}
+
     result = hr.reextract_session("synth-session", "low_load", probe_csv, ramp_csv,
-                                   query_range_fn=fake_query_range_fn)
+                                   query_range_fn=fake_query_range_fn,
+                                   completeness_fn=fake_completeness_fn)
 
     assert result.start_utc == stage_start
     assert result.end_utc == stage_end
     assert result.run_id == run_id
     assert result.candidate_result["all_success_100pct"] is True
     assert result.t_slo is None  # latency 0.2s는 SLO 위반 아님
+    # completeness_fn 주입이 실제로 쓰였는지(METRICS 개수만큼, fake 결과 그대로) 확인 -
+    # 이게 없으면 기본값(실 Prometheus 호출)으로 조용히 되돌아가도 테스트가 못 잡는다.
+    assert len(result.completeness_checks) == len(hr.METRICS)
+    assert all(c["ok"] is True and c["n_samples"] == 5 for c in result.completeness_checks)
     assert len(result.feature_rows) > 0
     assert all(r.valid for r in result.feature_rows)
     print("OK - 원본 raw CSV 두 개만으로 session 경계·candidate_result·feature_rows가 정확히 재구성됨")
