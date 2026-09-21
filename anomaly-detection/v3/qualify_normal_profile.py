@@ -49,6 +49,7 @@ from memory_pressure_adapter import get_pod_details  # noqa: E402
 from build_dataset import _git_commit_sha, build_rows_for_session, summarize_inventory  # noqa: E402
 from collect_session import run_candidate_with_retry, verify_and_force_cleanup  # noqa: E402
 from windows import CandidateSession  # noqa: E402
+from prom_health import check_prometheus_reachable, query_range_with_bounded_retry  # noqa: E402
 
 ROLLOUT_NAME = "vllm-serving"
 NAMESPACE = "vllm-serving"
@@ -325,6 +326,15 @@ def collect_qualification_session(profile: str, session_id: str, *,
     if not node_before["node_ok"]:
         raise RuntimeError("세션 시작 전 Node가 정상이 아님 - fail-closed, 세션 시작 안 함")
 
+    # §80.5 - calib3-low-02 port-forward 단절 사고 재발 방지: 측정 시작
+    # 전에 Prometheus 도달성을 확인한다(TCP 여부가 아니라 실제 query
+    # 응답 기준) - 세션 종료 후 feature extraction 단계에서야 끊긴 걸
+    # 알게 되면 이미 cleanup까지 끝난 뒤라 늦다.
+    health_before = check_prometheus_reachable()
+    session["prometheus_health_before_session"] = health_before
+    if not health_before["reachable"]:
+        raise RuntimeError(f"세션 시작 전 Prometheus port-forward 도달 불가 - fail-closed: {health_before['error']}")
+
     print(f"[{session_id}] preview 준비 시작(promotion 없음, Ready까지만)...")
     prep_info = prepare_preview_with_rollback(ROLLOUT_NAME, NAMESPACE)
     session["preview_prep_info"] = prep_info
@@ -397,7 +407,20 @@ def collect_qualification_session(profile: str, session_id: str, *,
             end_utc=candidate_result["stages"][-1]["stage_end_utc"],
             source_run_id=candidate_result["run_id"],
         )
-        rows_feat = build_rows_for_session(cand)
+        # §80.5 - 측정+cleanup은 끝났지만 8-feature 추출(Prometheus 조회)
+        # 직전에 다시 확인한다 - calib3-low-02 사고가 바로 이 사이(측정
+        # 시작 시점엔 살아있던 port-forward가 600초+ 도중 끊긴)에
+        # 발생했다. 불통이면 여기서 즉시 fail-closed(cleanup은 이미 끝난
+        # 뒤라 클러스터엔 영향 없음) - 예외를 그대로 올려 세션 자체가
+        # invalid로 남게 한다(0 대체·부분 window 없음).
+        health_before_extraction = check_prometheus_reachable()
+        session["prometheus_health_before_extraction"] = health_before_extraction
+        if not health_before_extraction["reachable"]:
+            raise RuntimeError(
+                f"[{session_id}] feature extraction 직전 Prometheus port-forward 도달 불가 - "
+                f"fail-closed: {health_before_extraction['error']}")
+        rows_feat = build_rows_for_session(
+            cand, query_range_fn=lambda promql, start, end: query_range_with_bounded_retry(promql, start, end))
         session["feature_rows"] = [
             {"window_start_utc": r.window_start_utc, "window_end_utc": r.window_end_utc,
              "valid": r.valid, "invalid_reason": r.invalid_reason, "features": r.features}

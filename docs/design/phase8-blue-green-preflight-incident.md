@@ -7633,3 +7633,68 @@ session 경계·`candidate_result`·feature_rows가 정확히 재구성되는지
 §80.2의 장애 기록은 이 절 작성 과정에서 전혀 수정하지 않았다 - 크래시
 사실·원인·크래시 시점까지의 실측은 그대로 남아 있고, §80.8은 그
 이후에 별도로 수행한 복구 결과를 추가만 한다.
+
+### 80.10 하니스 안전 보완 구현 - `prom_health.py`(공용, v3/)
+
+§80.5에서 예고한 transport 계층 보완을 실제로 구현해 §80.2 이후
+세션부터 적용했다. `anomaly-detection/v3/prom_health.py`(신규, v3/
+최상위 - `qualify_normal_profile.py`와 `model_v32b/historical_
+reextraction.py`가 공용) - `check_prometheus_reachable()`(TCP가
+아니라 실제 `/api/v1/query` 호출+`status=success` 응답 확인),
+`query_range_with_bounded_retry()`(동일 query·동일 범위만 재시도,
+부분 응답 병합 없음). `historical_reextraction.py`는 자체 구현을
+제거하고 이 모듈에서 재수출(중복 없음). `qualify_normal_profile.py`
+에 두 지점을 추가했다 - (1) 세션 시작 직전(Node 확인 직후) 도달성
+확인, 불통이면 preview조차 준비하지 않고 fail-closed, (2) cleanup
+완료 후 feature extraction(`build_rows_for_session()`) 직전 다시
+확인 + 그 호출 자체를 `query_range_with_bounded_retry()`로 감싸
+일시적 장애는 최대 3회까지 같은 범위로만 재시도(보간 없음). 두 결과
+모두 세션 JSON에 `prometheus_health_before_session`/
+`prometheus_health_before_extraction`으로 기록해(추가 필드, 기존 필드
+변경 없음) 사후 감사가 가능하게 했다. 신규 오프라인 테스트
+`test_prom_health.py` 6개, 전체 오프라인 스위트 808 passed(802에서
++6, 부하·feature·SLO·모델 의미 불변 확인).
+
+### 80.11 v3.2b Calibration 6세션 완료
+
+§79.3 순서대로 재개해 나머지 3세션(`calib3-idle-02`,
+`calib3-idle-03`, `calib3-low-03`)을 실측했다. `calib3-idle-03`부터는
+§80.10의 새 health check가 실제로 기록됨을 확인(`reachable: true`
+양쪽 다).
+
+| session_id | 결과(기존 judge) | infrastructure_normal | slo_label | valid rows | cleanup |
+|---|---|---|---|---|---|
+| `calib3-idle-01` | PASS | true | clean | 38/38 | true |
+| `calib3-low-01` | PASS | true | clean | 37/37 | true |
+| `calib3-low-02` | FAIL(§80.2 크래시 -> §80.8 offline 복구) | true | clean | 37/37 | true |
+| `calib3-idle-02` | FAIL(sustained SLO 위반) | true | **sustained_violation** | 38/38 | true |
+| `calib3-idle-03` | PASS | true | clean | 38/38 | true |
+| `calib3-low-03` | FAIL(sustained SLO 위반) | true | **sustained_violation** | 37/37 | true |
+
+**6개 세션 전부 infrastructure_normal=true**(cleanup 전부 성공, Node
+이상·restart·OOM·target 교체·Endpoint 격리 실패·metric 결측 0건) -
+`calib3-idle-02`/`calib3-low-03`의 sustained SLO 위반은 §79.1/§79.4의
+새 정의에 따라 세션을 제외하지 않고 `slo_label=sustained_violation`
+으로만 기록했다. **idle regime에서도 latency-only SLO 위반이 재현된
+것**(calib3-idle-02, 순수 부하 없이 probe만)은 §78의 "latency-only
+자연 변동" 판정과 일관된다 - 이 역시 어떤 원인론적 결론도 내리지
+않는다(§61/§78과 동일 원칙).
+
+독립 세션 6개, 총 valid row 225개(38+37+37+38+38+37). 클러스터 최종
+정리 확인(§80.11 검증 시점): Node Ready·pressure 없음, active pod
+`vllm-serving-6b9d88c96-64k7r` restartCount=0 무변화, Chaos CR 없음,
+`vllm-preview` Endpoint 없음, Rollout `phase=Degraded`/
+`RolloutAborted`(§35.3과 동일한 정상 종결 잔존, 실제 리소스 없음),
+Prometheus port-forward 정상. 전체 오프라인 스위트 808 passed(변경
+없음).
+
+`train_v32b.py`의 `CALIBRATION_SESSIONS` 목록(§79에서 이미 고정)과
+이번에 수집된 6개 session_id가 정확히 일치 - 코드 변경 불필요.
+
+### 80.12 범위 준수 및 다음 단계
+
+이번 턴에서 하지 않은 것 - feature 재선택, Isolation Forest 학습,
+threshold 결정, artifact freeze, Prospective Holdout 수집, challenge
+평가, `score_server.py` 변경·배포, 본 실험. `train_v32b.py`/
+`calibrate_v32b.py`를 실제 데이터로 실행하는 것은 다음 단계이며 이번
+커밋에는 포함하지 않는다.

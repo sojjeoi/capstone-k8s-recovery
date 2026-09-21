@@ -7,14 +7,15 @@ build_rows_for_session()`(model_v31 프로토콜과 동일, model_v32b가 이미
 재사용 중)을, stage/latency 판정은 `explore_ramp_intensity.
 classify_stages()`/`bucket_stats()`/`slo_judge`를 전부 그대로 import해서
 쓴다 - 이 파일이 새로 하는 일은 (1) 이미 끝난 측정의 원본 CSV로부터
-`candidate_result`를 재구성하는 것, (2) Prometheus 도달성·bounded retry·
-raw completeness 검사(gap/NaN/누락) 세 가지뿐이다."""
+`candidate_result`를 재구성하는 것, (2) raw completeness 검사(gap/NaN/
+누락) 뿐이다. Prometheus 도달성 확인·bounded retry는 `prom_health.py`
+(qualify_normal_profile.py와 공용)로 옮겼다 - 여기서는 그대로 재사용만
+한다(중복 구현 없음)."""
 import math
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 import requests
 
@@ -31,45 +32,10 @@ from explore_ramp_intensity import bucket_stats, classify_stages, parse_ramp_sum
 from build_dataset import build_rows_for_session  # noqa: E402
 from windows import CandidateSession  # noqa: E402
 from features import METRICS, PROM_URL, _query_range  # noqa: E402
+from prom_health import check_prometheus_reachable, query_range_with_bounded_retry  # noqa: E402,F401 - 재수출(하위 호환)
 
 EXPECTED_STEP_SEC = 15.0
 MAX_ALLOWED_GAP_SEC = 2 * EXPECTED_STEP_SEC  # §80.4-7 - step의 2배를 넘는 gap은 비정상
-
-
-def check_prometheus_reachable(prom_url: str = PROM_URL, timeout: float = 5.0) -> dict:
-    """§80.5 - TCP 연결 여부가 아니라 실제 query 호출과 status=success
-    응답까지 확인한다(반쯤 끊긴 터널이 TCP는 받아줘도 응답을 못 주는
-    경우까지 잡기 위함 - 이번 사고에서 실제로 `error: lost connection to
-    pod` 뒤 커넥션 자체가 거부됐지만, 일반화된 health check는 응답
-    바디까지 확인해야 더 넓은 실패 모드를 잡는다)."""
-    try:
-        r = requests.get(f"{prom_url}/api/v1/query", params={"query": "up"}, timeout=timeout)
-        r.raise_for_status()
-        body = r.json()
-        return {"reachable": body.get("status") == "success", "http_status": r.status_code, "error": None}
-    except Exception as e:  # noqa: BLE001 - health check는 원인 불문 reachable=False로 fail-closed
-        return {"reachable": False, "http_status": None, "error": str(e)}
-
-
-def query_range_with_bounded_retry(promql: str, start: datetime, end: datetime, step: str = "15s",
-                                    max_retries: int = 3, retry_delay_sec: float = 5.0,
-                                    query_range_fn: Callable = _query_range,
-                                    sleep_fn: Callable = time.sleep) -> Optional[list]:
-    """§80.5 - 매 retry는 동일 UTC 범위·동일 query를 다시 던질 뿐, 이전
-    시도의 부분 응답과 합치거나 보간하지 않는다(한 시도는 성공 아니면
-    완전 실패 중 하나 - `_query_range()` 자체가 원자적으로 리스트 전체를
-    반환하거나 예외를 던지므로, 여기서 부분 결과를 들고 있다가 합치는
-    코드 경로 자체가 없다). 전부 실패하면 예외(호출부가 completeness
-    실패로 처리 - 0 대체·보간 없음)."""
-    last_error = None
-    for attempt in range(1, max_retries + 1):
-        try:
-            return query_range_fn(promql, start, end, step)
-        except Exception as e:  # noqa: BLE001 - read-only 조회 재시도 대상, 원인 불문
-            last_error = e
-            if attempt < max_retries:
-                sleep_fn(retry_delay_sec)
-    raise RuntimeError(f"bounded retry {max_retries}회 모두 실패: {last_error}") from last_error
 
 
 def verify_metric_completeness(metric_name: str, promql: str, start: datetime, end: datetime,
