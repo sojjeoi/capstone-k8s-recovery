@@ -9757,3 +9757,194 @@ arm_controller.py`(graceful stop 배선), `recovery-policy/schemas.py`·
 전부 harness/observability 계층만 건드렸고 판정 로직(`advance_
 streak`/`policy.decide`/`safety.*`)·`TrialResult` 스키마는 0줄
 변경.
+
+## §93 - recovery-policy provenance pass-through 실배포 + no-action live smoke (서버측 증거 연결 검증)
+
+§92 승인 후속 - 변경된 recovery-policy(§92의 선택적 provenance
+필드)를 실제 배포하고, preview가 없어 promotion이 물리적으로
+불가능한 상태에서 predictive signal 1건으로 detector payload ->
+recovery-policy state/audit -> Git commit까지 provenance가 온전히
+연결되는지만 확인했다. `load_ramp × proposed` E2E 파일럿은
+재실행하지 않았다.
+
+### 93.1 배포 전 확인
+
+- `HEAD == origin/master == 8372fc2`, working tree clean(무관한
+  기존 untracked `model_v32/artifacts/` 제외) - 확인.
+- `KUBECONFIG`=존재하지 않는 경로에서 전체 오프라인 883개 재확인
+  (experiments 597 + anomaly-detection 217 + recovery-policy 69).
+- Node `sj-control`/`sj-worker` Ready, pressure 없음.
+- vllm-serving Rollout `phase=Healthy`, `activeSelector==
+  previewSelector==7d6f888c94`(단일 revision, preview 없음).
+- recovery-policy `/admin/experiment-run`={current:null}(context
+  null).
+- Chaos CR 0건, `ramp-inj-*`/`ramp-probe-*`/로컬 score_server·
+  capture_sink 프로세스 없음.
+- 배포 전 recovery-policy pod `recovery-policy-69c5fb868f-tvf7b`,
+  imageID `sha256:4ddcadbf9948a1b7634fb5f8f283719fcf71097ef2c7758c9e662ee56dccde4a`(§40.2에서
+  배포된 기존 이미지), RESTARTS=0.
+- Git audit outbox(`/data/outbox.json`, hostPath PV) 104/104건
+  전부 `status=pushed` - pending/failed 0건.
+- port-forward: 기존 8080 tunnel 죽어있어 재기동, 기존 무관한
+  18080 tunnel은 손대지 않음(사전 확인해 확인 - 다른 목적의
+  기존 프로세스).
+
+Preview 없음·다른 trial 없음을 확인한 뒤에만 배포를 시작했다.
+
+### 93.2 recovery-policy 이미지 재빌드·배포 (§40.2 LF-safe 절차 그대로 재사용)
+
+`git -c core.autocrlf=false archive 8372fc2 recovery-policy` ->
+로컬 임시 디렉터리 추출 -> `capstone-worker`(=`sj-worker`)로 전송 ->
+`sudo docker build` -> `sudo docker save | sudo ctr -n k8s.io images
+import -` -> `kubectl rollout restart deployment/recovery-policy`.
+
+**4단계 hash 검증(19개 추적 파일 전부, `git show 8372fc2:recovery-policy/<f>`
+커밋 blob 기준 - 자기 추출본 비교 아님)**:
+
+| 단계 | 결과 |
+|---|---|
+| 로컬 추출본 vs 커밋 blob | 0/19 불일치 |
+| 워커 전송본 vs 커밋 blob | 0/19 불일치 |
+| 빌드된 이미지 내부(`docker run … sha256sum`, 롤아웃 **전**) vs 커밋 blob | 0/19 불일치 |
+| 실행 중 파드 내부(`kubectl exec … sha256sum`, 롤아웃 **후**) vs 커밋 blob | 0/19 불일치 |
+
+`git_askpass.sh` 셔뱅·실행비트 확인: `#!/bin/sh\n`(CR 없음),
+`-rwxr-xr-x` 유지. **측정 방법론 보정(이번에 새로 확인)**: 이
+파일에 한글 주석이 많아 `grep -c $'\r'`/`od -c`의 단순 바이트-값
+카운트는 한글 UTF-8 멀티바이트 시퀀스 안에 우연히 0x0D 값을 가진
+바이트가 섞여 거짓양성을 낸다(이번에 11건 관측) - Python
+`str.splitlines(keepends=True)`로 UTF-8 디코딩 후 실제 줄 끝만
+검사하는 방식으로 재확인해 **실제 CRLF/단독 CR 줄 = 0건**임을
+확정했다. §40.2 당시의 단순 바이트 카운트 방법론은 한글 주석이
+없던 그 시점 파일에는 우연히 문제없었을 뿐, 일반적으로는 이
+보정된 방법을 써야 한다(향후 재발 방지로 기록).
+
+**결과**: 새 이미지 `sha256:986ccea0099d6b72c4e64b00a5f2c3ea0eb3a61fe2dac92e95f446f19fc6b64a`
+(containerd 반입 매니페스트 다이제스트 `sha256:aa2af056...`), 새
+pod `recovery-policy-585b559667-md774`, **RESTARTS=0**, 이전
+이미지(`sha256:4ddcadbf...`)와 다른 고유 다이제스트임을 확인.
+`docker build` 캐시가 의존성 설치·`kubectl-argo-rollouts` 다운로드
+레이어는 재사용하고 `COPY . .` 레이어만 재실행 - 소스 변경만
+정확히 반영됐음을 방증.
+
+### 93.3 배포 후 확인
+
+`/healthz`=ok, `/admin/quiescent`={quiescent:true,active_count:0},
+`/admin/experiment-run`={current:null}, `/admin/experiment-run/
+timing`(전 필드 null), `/admin/audit/{존재하지 않는 run_id}`
+={records:[]} - 전부 정상. 기존 PVC 감사기록 보존(`/data/
+outbox.json` 104건 그대로, 새 pod에서도 동일하게 읽힘).
+
+**policy decision 로직 무변경 확인(source/hash)**: `git log -1 --
+recovery-policy/policy.py recovery-policy/safety.py`가
+`e36b837`(2026-09-16, 이번 세션 훨씬 이전)을 가리키고,
+`git show --stat 8372fc2 -- policy.py safety.py`가 빈 결과 -
+§92 커밋이 이 두 파일을 전혀 건드리지 않았음을 직접 확인. 방금
+검증한 4단계 hash 일치(93.2)가 이 두 파일도 포함하므로, 지금
+서비스 중인 정책 로직이 커밋 `8372fc2`의 그것과 바이트 단위로
+동일함이 이중으로 확인됐다.
+
+### 93.4 No-action provenance smoke
+
+**사전 조건 재확인**: `activeSelector==previewSelector==stableRS==
+currentPodHash=="7d6f888c94"`(전부 동일 - preview 없음, 단일
+revision), context null. `policy.decide()`(변경 없음, 93.3)를
+코드로 재확인 - `signal_type=="anomaly_risk"`이고
+`ctx.preview_ready=False`(현재 상태에서 `is_paused_pre_promotion()`
+는 반드시 False)면 무조건 `ACTION_OBSERVE_ONLY`를 반환한다(93.3
+코드 인용) - promotion이 정책 계층에서부터 구조적으로 불가능함을
+사전에 코드로 확정한 뒤에만 신호를 보냈다.
+
+`run_id=smoke-evidence-provenance-01-20260921T142205Z`,
+`scenario=smoke_evidence_provenance_synthetic`(명백한 synthetic
+표식) 등록 -> predictive signal **정확히 1건** 전송(§92
+provenance 전체 포함, `score=-0.999999`도 실제 텔레메트리로
+오인되지 않게 명백한 표식값 사용, `model_hash`/`feature_schema_hash`
+/`threshold`는 실제 동결 v3.2b artifact의 진짜 값을 그대로 사용 -
+provenance 연결 자체를 검증하는 게 목적이므로 이 값들은 조작하지
+않음).
+
+**결과(정확히 일치)**:
+```
+action: observe_only, outcome: no_action
+reasoning: "anomaly_risk 감지했으나 preview가 준비 안 됨"
+evidence: {experiment_run_id, detector=isolation_forest,
+  correlation_id, evaluation_seq=1, model_version=v3.2b,
+  model_hash, feature_schema_hash, threshold, consecutive_count=3}
+  - 보낸 값 7개 전부 그대로
+idempotency_key: "smoke-evidence-provenance-01-20260921T142205Z:anomaly_risk"
+```
+timing: `t_detection=14:22:19.062522`, `t_decision=14:22:19.120498`,
+**`t_api_request=null`**, **`t_switch=null`**(promotion 경로 자체에
+진입 안 함 - `_record_api_request()`/`promote()` 호출 전에
+`ACTION_OBSERVE_ONLY` 분기로 이미 반환됐으므로 구조적으로 null).
+`detected=true`, `detection_source=predictive`,
+`decision_outcome=no_action`, `promotion_verified=null`.
+
+Rollout: 신호 전후 `active==preview==7d6f888c94` 불변(promotion
+없음). vLLM pod UID(`1b9acd76-...`) 불변, RESTARTS=0 불변.
+recovery-policy pod RESTARTS=0 불변(크래시 없음).
+
+**audit record 정확히 1건**, git 커밋 `f5ee5cab305a563296eb474b5ac41afe6ef4f77f`
+로 push(`origin`에 실재 확인, `git fetch`로 직접 확인) -
+`audit-log/smoke-evidence-provenance-01-20260921T142205Z.jsonl`
+파일 하나에 이 record 하나만 들어있음(다른 run_id·이전 신호와
+혼합 없음, 파일명 자체가 run_id 전용이라 구조적으로 격리됨).
+outbox `status=pushed`, `attempts=0`, `last_error=null`.
+
+Uvicorn access log는 이번에도 참고 자료로만 남겨두고(§92.6 원칙
+그대로), server timing state/audit record/Git commit을
+authoritative source로 판정 근거를 삼았다.
+
+### 93.5 Cleanup
+
+`POST /admin/experiment-run/clear` -> `{"status":"cleared"}`,
+`/admin/experiment-run`={current:null}, `/admin/experiment-run/
+timing` 전 필드 null 재확인. outbox 105/105건 `pushed`(smoke 1건
+추가, pending 0). Rollout `phase=Healthy`, 단일 revision 불변.
+Node Ready·pressure 없음. recovery-policy/vLLM 두 pod 모두
+RESTARTS=0 불변(증가 없음). Chaos CR·`ramp-inj-*`/`ramp-probe-*`·
+로컬 detector 프로세스 0건. 새로 기동한 port-forward(내가 만든
+8080 tunnel) 직접 종료, 사전에 있던 무관한 18080/9090 tunnel은
+손대지 않음. 로컬·워커의 임시 빌드 디렉터리(`/tmp/recovery-policy-
+build-8372fc2`) 정리(빌드 산출물은 이미지 자체에 남아있고, 소스는
+git에 이미 있으므로 삭제해도 무손실).
+
+audit bot이 이번 smoke로 만든 커밋(`f5ee5ca`)은 force-push/rebase
+없이 `git fetch`로만 통합 확인(로컬에 별도 병합 커밋 필요 없음 -
+문서 커밋 전에 이미 origin에 존재).
+
+### 93.6 판정
+
+| 조건 | 결과 |
+|---|---|
+| 새 이미지 배포 정상(4단계 hash 전부 일치, RESTARTS=0) | 충족 |
+| 정책 no-action(promotion 없음) | 충족 |
+| provenance가 detector payload -> recovery-policy state/audit -> Git commit까지 보존 | 충족(7개 필드 전부, 3개 계층 모두 확인) |
+| cleanup 완전 | 충족 |
+
+**PASS.**
+
+- `evidence_durability_server_path = verified_live`
+- §91 E2E 배선 PASS **유지**(원본 미수정)
+- 전체 `load_ramp × proposed` E2E 파일럿 재실행 **불필요**(이번
+  server-path 검증으로 §92의 evidence 관련 우려가 실클러스터에서
+  직접 확인됨)
+- evidence 관련 main-experiment blocker **해제**
+- 단, `main_experiment_readiness`는 여전히 **blocked** - 남은
+  시나리오(pod_kill/network_degrade/memory_pressure의 arm_controller
+  배선은 §40.1에서 이미 확인됐으나 이번 턴 범위 밖) 및 오케스트레이터
+  (`run_all_scenarios.py`, 60-trial 본 실험 자체)가 아직 별도로
+  승인·검증되지 않았기 때문 - evidence 완전성 하나만 해제됐을 뿐
+  전체 readiness는 그대로.
+
+### 93.7 범위 제한 준수 확인
+
+이번 턴 금지 사항 - preview 생성, 실제 promotion, score_server
+live detector 실행(신호는 `curl`로 직접 구성해 보냄 - 실제
+detector 프로세스를 띄우지 않음), load_ramp/Chaos 실행,
+model·threshold·feature 변경, 다른 arm·시나리오 실행,
+`memory_pressure` 실행, `run_all_scenarios`, 본 실험, `TrialResult`
+스키마 변경 - 전부 준수(0건). 이번 턴 변경 파일: 없음(코드 변경
+없음 - 배포·smoke·문서화만). 배포한 이미지는 §92에서 이미 커밋된
+`8372fc2`의 내용 그대로.
