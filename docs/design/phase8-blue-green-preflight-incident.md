@@ -10160,3 +10160,148 @@ Isolation Forest 실행·변경, recovery-policy signal, 다른 memory
 측정을 시작한다. 이 사전 등록(계약서 반영 포함)을 측정 전에
 커밋·푸시하고, 3회 결과는 별도 절(§95)로 문서화·커밋·푸시한 뒤
 정지한다.
+
+## §95 - `memory_pressure` negative-control(1000MB×120초) 3회 재현성 결과 - 3/3 PASS, Freeze 확정
+
+§94 사전 등록대로 `verify_memory_pressure_negative_control.py`를
+그대로(CLI 인자 조정 없이) 실행했다. **3회 전부 §94.5 기준을 충족**
+- 안전 조건 위반도 sustained SLO 위반도 단 한 번도 발생하지 않았다.
+
+### 95.1 실행 전 확인 (전부 충족)
+
+`HEAD`/`origin` 동기화 확인 후 §94 사전 등록 커밋(`3317598`) push
+완료. `KUBECONFIG`=존재하지 않는 경로에서 전체 오프라인 896 passed
+(experiments 610 + anomaly-detection 217 + recovery-policy 69) 재확인.
+Node 2개 Ready·pressure 없음. Rollout `phase=Healthy`,
+`active==preview==7d6f888c94`(단일 revision, preview 없음).
+recovery-policy context null. Chaos CR·실험 pod·detector·observer
+0건. active pod `vllm-serving-7d6f888c94-zlkvv`(UID `1b9acd76-
+a8c6-4633-9772-a137a5048ea8`), RESTARTS=0(측정 시작 전 기록, 3회
+전 구간에 걸친 불변 대조 기준). container memory limit **6Gi**(cgroup
+상한). baseline working set 실측 **3655802880B≈3.40GiB**. Node
+MemAvailable(sj-worker) 실측 **7748550656B≈7.22GiB**(4GiB PASS
+바·3GiB 즉시중단 임계치 모두에 큰 여유). Prometheus 최신 지표 확인.
+port-forward(recovery-policy 8080, Prometheus 9090) 재기동+health
+확인.
+
+**참고(§94 범위 밖, 투명하게 기록)**: 이 확인 과정에서
+`anomaly-detection/`의 기존 테스트 1건
+(`v3/model_v32b/test_historical_reextraction.py::test_reextract_
+session_reconstructs_bounds_from_ramp_summary`)이 Prometheus
+port-forward가 없는 상태에서 처음으로 실패하는 것을 발견했다 -
+`historical_reextraction.reextract_session()`이 `query_range_fn`은
+테스트가 주입한 가짜 함수를 쓰지만, 같은 함수 안의
+`verify_metric_completeness(..., prom_url=prom_url)` 호출은 별도로
+실제 네트워크를 탄다(기본 `prom_url` 파라미터, 가짜 함수 주입 경로
+밖). 이 세션 초반부터 떠 있던 Prometheus port-forward가 우연히
+이 gap을 가려왔을 뿐, §92/§93 시점에도 이미 존재했던 하니스 결함
+이다(이번 세션 코드 변경과 무관 - `features.py`의 `PROM_URL` 환경변수
+추가는 미설정 시 기존 기본값과 완전히 동일해 이 동작에 영향 없음).
+이번 지시로 Isolation Forest 관련 경로가 동결됐으므로
+`historical_reextraction.py`나 그 테스트는 **수정하지 않았다** -
+대신 Prometheus port-forward를 재기동해(순수 로컬 read-only 재확인,
+클러스터 변경 없음) 오프라인 스위트를 다시 통과시켰다(896 passed).
+이 gap 자체는 향후 별도 turn에서 다룰 후보로만 남긴다.
+
+### 95.2 반복별 결과 (순서대로, run_id는 §94.7 고정값이 아니라
+`run_round()`가 실행 시점에 자동 생성한 값 - §94.7의 형식(
+`memory-negative-control-verify-0N-20260922`)은 예시였고, 실제
+도구(`verify_memory_pressure_direct_candidate.py`와 완전히 같은
+패턴 재사용, §94.3)는 `run_round()` 고유의 명명 규칙을 그대로
+써서 `explore-memory_pressure-native-1000mb-120s-{timestamp}` 형태로
+자동 생성했다 - 3개 run_id 모두 서로 다르고 유일하므로 격리
+요구사항 자체는 그대로 충족됨을 각 반복 종료 후 개별 확인했다)
+
+| 항목 | rep 1 | rep 2 | rep 3 |
+|---|---|---|---|
+| `run_id` | `explore-memory_pressure-native-1000mb-120s-20260921T164037Z` | `...-20260921T165201Z` | `...-20260921T170302Z` |
+| baseline working set | 3.40GiB | 3.41GiB(rep1 종료 후 값 그대로 이어짐) | 3.37GiB(rep2 종료 후 값) |
+| working set 상승 | **958.14MiB** | **957.96MiB** | **957.83MiB** |
+| 최대 working set | 4.34GiB | 4.34GiB | 4.30GiB |
+| Node MemAvailable 최소값 | 6.294GiB | 6.292GiB | 6.336GiB |
+| `p95_peak`(stage 경계 내) | 0.368s | 0.327s | 0.347s |
+| `t_slo`(scoped) | **None** | **None** | **None** |
+| completion 성공률 | 1.0 | 1.0 | 1.0 |
+| `AllInjected` | True | True | True |
+| restartCount | 0(불변) | 0(불변) | 0(불변) |
+| OOMKilled | False | False | False |
+| target UID 변경 | 없음 | 없음 | 없음 |
+| cleanup 후 baseline 복귀 | True(허용오차 150MiB 이내) | True | True |
+| `negative_control.pass` | **True** | **True** | **True** |
+
+**working set 상승 범위**: 957.83~958.14MiB(스프레드 0.31MiB) -
+요청량(1000MB≈953.67MiB)의 **약 100.4~100.5%**, 800MiB PASS
+기준을 여유 있게 초과. **P95 범위**: 0.327~0.368s(SLO threshold
+0.648s 대비 최대 56.8%만 사용, 위반 근처에도 못 감). 세 반복 모두
+`evaluable` 표본 139/153/148개로 `MIN_SAMPLES_FOR_RELIABLE_P95`
+(20개) 요건을 크게 상회.
+
+각 반복 종료 후 독립 확인(스크립트 자체 판정과 별개로 직접
+`kubectl`/Prometheus 조회): 단일 active revision 유지, active UID
+불변, Node Ready 유지, Chaos CR 0건 - 전부 반복 3회에 걸쳐 문제
+없음.
+
+### 95.3 3회 종료 후 최종 독립 확인 (스크립트 판정과 별개)
+
+`kubectl get nodes`: 2개 Ready. `kubectl get rollout`: `Healthy`,
+`active==preview==7d6f888c94`(불변). `vllm-serving-7d6f888c94-zlkvv`
+UID `1b9acd76-...`(측정 시작 전과 완전히 동일), RESTARTS=0(불변).
+`recovery-policy` pod RESTARTS=0(불변, age 변화 없음 - 이번 측정과
+전혀 접촉 없었음을 재확인 - native arm이라 애초에 신호 경로 자체를
+안 씀). Chaos CR 0건, 잔여 `ramp-`/`probe-`/stress 관련 pod 0건.
+context `{"current":null}`. 현재 vLLM working set(Prometheus 재조회)
+**3613757440B≈3.37GiB** - 최초 baseline(3.40GiB)과 거의 동일한
+수준으로 완전히 복귀. 사용한 두 port-forward(recovery-policy 8080,
+Prometheus 9090 - 둘 다 이번 절에서 재기동한 것) 직접 종료.
+
+### 95.4 최종 판정
+
+§94.8 PASS/Freeze 기준(3/3 `t_slo=null` AND 3/3 안전·cleanup 조건
+AND 3/3 실제 working set 상승 확인) **전부 충족**:
+
+- **`1000MB×120초`를 `memory_pressure_negative_control_v1`로 동결**한다.
+  이후 이 시나리오의 강도(1000MB)·지속시간(120초)·주입 방식(direct,
+  단일 점프)·worker 수(1개)는 변경하지 않는다.
+- 계약서(§94.1에서 이미 반영한 역할 정의)와 이 절이 이 동결의
+  근거 문서다 - 별도 scenario YAML 파일 신설은 이번 절 범위 밖으로
+  남긴다(§56.5의 "`sudden_memory_pressure`" 명명 제안과 마찬가지로
+  실제 YAML 작성은 3-arm 파일럿 착수 시점에 함께 처리해도 무방).
+- 이후 native/fixed_threshold/proposed 파일럿(각 arm의 detector가
+  이 negative-control 조건에서 불필요한 신호·promotion을 만드는지
+  확인하는 것이 §94.1의 궁극 목적) 진행이 **가능하다고 제안**한다 -
+  단, 실행은 이 보고와 별도로 사용자 승인이 필요하다(이번 절은
+  1000MB×120초 재현성 검증까지만, 3-arm 파일럿은 시작하지 않았다).
+- **집계 분리 명시**: `memory_pressure_negative_control_v1`의 결과는
+  향후 `collect_metrics.py` 등 분석에서 SLO 예방률·MTTR 같은
+  recovery-scenario 집계에 포함하지 않고, false detection·불필요
+  조치(promotion)·자원 오버헤드 분석에만 포함한다(§94.1 목적 정의
+  그대로).
+
+### 95.5 §58.1 잠정 채택과의 정합성 최종 정리
+
+§58.1의 `1500MB×120초 direct` 잠정 채택은 이 절의 결과로 **공식
+폐기**된다 - 최종 negative-control 후보는 `1000MB×120초`다. 1500MB의
+§56/§57 원본 결과(안전 PASS, SLO 재현성 0/3)는 이력으로 그대로
+보존하며 삭제·수정하지 않는다 - 다만 향후 문서·분석에서 "negative
+control 후보"를 지칭할 때는 1000MB×120초를 가리킨다.
+
+### 95.6 보존
+
+3회 요약 JSON(`explore-memory_pressure-native-1000mb-120s-*-negative-
+control-verify-summary.json`)과 최종 판정 JSON
+(`verify-memory_pressure-negative-control-verdict-20260921T170904Z.json`),
+실행 로그(`negative-control-run-20260921T164034Z.log`) 전부
+`experiments/results/`(top-level, `.gitignore`의 `*.json`/`*.log`
+패턴에 걸려 커밋되지 않음 - §50~§57과 동일 관례)에 원본 그대로
+보존했다. 이번 절 구현의 code hash는 커밋 `3317598`(§94 사전
+등록·도구 구현)과 동일 - 측정 도중 코드 변경 없음.
+
+### 95.7 범위 제한 준수 확인
+
+이번 절 금지 사항 - non-native arm, preview 생성·promotion,
+Isolation Forest 실행·변경(코드 0줄 변경 확인), recovery-policy
+signal(native arm이라 애초에 detector가 없어 구조적으로 불가능),
+다른 memory 강도(500/1500/1600/1650/2000/2500/5000MB 전부 미실행),
+다른 시나리오, `run_all_scenarios`, 본 실험, `TrialResult` 스키마
+변경 - 전부 준수(0건). 3-arm 파일럿도 이번 절에서 시작하지 않았다
+(제안만).
