@@ -1,0 +1,80 @@
+{
+  "session_id": "calib3-low-02",
+  "recovery_reason": "prometheus_port_forward_transport_failure",
+  "source_files": {
+    "probe_raw_csv": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-v31low-20260921T030743Z-raw.csv",
+    "probe_raw_csv_sha256": "d2886d525cf1443a8ca7fb8e5a857322522bfee5d9ed44dcdf9e2ecddbb745a3",
+    "ramp_summary_csv": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\ramp-v31low-20260921T030743Z-summary.csv",
+    "ramp_summary_csv_sha256": "30bf5b7052ad071b5f7e2d5a3364acbb8cfd078acee603b6a673a4e4f80e8e43"
+  },
+  "port_forward_error_log_sha256": "5e8d5362c705bd2dee7ea1f883ba384f2a5cc23a04784f06f57a09dc25bd045e",
+  "historical_query_executed_at_utc": "2026-09-21T03:50:40.480563+00:00",
+  "queried_range_utc": {
+    "start": "2026-09-21T03:10:05.559325+00:00",
+    "end": "2026-09-21T03:20:05.561066+00:00"
+  },
+  "prometheus_reachability": {
+    "before": {
+      "reachable": true,
+      "http_status": 200,
+      "error": null
+    },
+    "after": {
+      "reachable": true,
+      "http_status": 200,
+      "error": null
+    }
+  },
+  "prometheus_target_pod_info": {
+    "active": {
+      "name": "vllm-serving-6b9d88c96-64k7r",
+      "uid": "630f21a9-409b-4bea-a378-95a17df78735"
+    },
+    "preview": {
+      "name": "vllm-serving-589cd4796c-gpzl2",
+      "uid": "ae9aaadf-f7bb-4575-976f-783556c96a8d"
+    }
+  },
+  "metric_completeness": [
+    {
+      "metric_name": "cpu",
+      "n_samples": 41,
+      "expected_n_samples": 41,
+      "has_nan_or_inf": false,
+      "max_gap_sec": 15.0,
+      "ok": true
+    },
+    {
+      "metric_name": "memory",
+      "n_samples": 41,
+      "expected_n_samples": 41,
+      "has_nan_or_inf": false,
+      "max_gap_sec": 15.0,
+      "ok": true
+    },
+    {
+      "metric_name": "queue",
+      "n_samples": 41,
+      "expected_n_samples": 41,
+      "has_nan_or_inf": false,
+      "max_gap_sec": 15.0,
+      "ok": true
+    },
+    {
+      "metric_name": "cache",
+      "n_samples": 41,
+      "expected_n_samples": 41,
+      "has_nan_or_inf": false,
+      "max_gap_sec": 15.0,
+      "ok": true
+    }
+  ],
+  "extractor_commit_sha": "679bce41c6f23781adf4d3c612892d026fe19566",
+  "recovery_result_json_sha256": "19e96e21ec5baaa3731edbb76444cd840065b0c0d16bace42563e29681690673",
+  "remeasured": false,
+  "historical_reextraction": true,
+  "recovery_complete_verdict": {
+    "complete": true,
+    "failures": []
+  }
+}

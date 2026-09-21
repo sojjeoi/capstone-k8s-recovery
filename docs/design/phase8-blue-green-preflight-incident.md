@@ -7420,3 +7420,216 @@ latency/TTFT runtime feature 추가 금지, 실험 장애 주입 금지, promoti
 금지, 새 알고리즘 추가 금지.
 
 이 절(§79) 커밋·푸시 이후에만 새 Calibration 6세션 실측을 시작한다.
+
+## 80. v3.2b Calibration 실측 - `calib3-low-02` port-forward 장애·offline 복구 (2026-09-21)
+
+### 80.1 실측 경과
+
+사전 preflight 확인(HEAD==origin/master==`679bce4`, working tree clean,
+Node Ready·pressure 없음, Rollout 단일 active revision·실제 preview
+리소스 없음(`phase=Degraded`/`RolloutAborted` 잔존 자체는 §35.3에 문서화된
+정상 종결 상태 - 새 세션 준비를 막지 않음을 그때 실측 확인), Chaos CR·
+experiment context·detector/observer 프로세스 없음, recovery-policy
+`/healthz` 정상, Prometheus port-forward 정상 응답, session ID·순서·
+설정이 §79 사전등록과 일치, 로컬 디스크 124GB/메모리 2.94GB 여유)를
+전부 마친 뒤 §79.3 순서대로 실행:
+
+1. `calib3-idle-01` - PASS, infrastructure-normal, slo_label=clean, 38/38 valid rows, cleanup 정상.
+2. `calib3-low-01` - PASS, infrastructure-normal, slo_label=clean, 37/37 valid rows, cleanup 정상.
+3. `calib3-low-02` - §80.2 참고, 장애 발생.
+
+### 80.2 `calib3-low-02` 장애 - Prometheus port-forward transport 단절
+
+600초 측정(baseline 60초 + ramp 600초 + drain 60초)과 `finally` 블록의
+preview 정리(abort + 단일 revision 복원)는 로그상 전부 정상 완료됐다
+(`[calib3-low-02] preview 정리(abort + 단일 revision 복원 확인)...`
+출력 이후 크래시). 크래시는 그 다음 단계인 Prometheus 8-feature 추출
+(`build_rows_for_session()` -> `features._query_range()`)에서
+`ConnectionRefusedError`/`NewConnectionError`(`localhost:9090`)로
+발생했다 - 세션 시작 시점에 띄운 로컬 `kubectl port-forward` 터널이
+측정 도중(로그: `error: lost connection to pod`) 끊겼기 때문이다.
+`main()`이 예외를 잡지 않아 `collect_qualification_session()`이 값을
+반환하지 못했고, 따라서 **`calib3-low-02.json`은 애초에 한 번도 쓰인
+적이 없다**(파일 자체가 존재하지 않음).
+
+사용자의 사전 등록된 즉시 중단 조건("port-forward 중단으로 자료
+완결성 상실")에 해당해 그 즉시 다음 session(`calib3-idle-02`)으로
+진행하지 않고 정지, 클러스터 상태를 확인해 사용자에게 보고했다.
+
+**크래시 직후 실측 확인 - 클러스터 영향 없음**:
+- Prometheus pod(`prometheus-kube-prom-kube-prometheus-prometheus-0`):
+  재시작 0회, 2026-09-16부터 연속 가동 - 장애 원인이 아님(로컬 터널만
+  끊김).
+- active pod(`vllm-serving-6b9d88c96-64k7r`): 변화 없음, restartCount=0,
+  Running 유지.
+- preview RS(`vllm-serving-589cd4796c`, revision 63): `DESIRED=0/
+  CURRENT=0`로 정상 scale-down, pod `Killing`→`SuccessfulDelete`
+  이벤트로 정상 정리 확인.
+- Rollout: `phase=Degraded`/`RolloutAborted`(§35.3과 동일한 정상 종결
+  잔존 상태).
+- Node Ready·pressure 없음, Chaos CR 없음, `vllm-preview` Endpoint 없음.
+- 즉, **실제 부하 측정과 cleanup은 완전히 정상 완료**됐고 문제는
+  순수하게 측정 후 오프라인 feature 추출 단계의 로컬 도구 장애다.
+
+**보존된 원자료(변경 없음, 이번에도 앞으로도 수정하지 않음)**:
+`experiments/results/probe-v31low-20260921T030743Z-raw.csv`
+(SHA-256 `d2886d525cf1443a8ca7fb8e5a857322522bfee5d9ed44dcdf9e2ecddbb745a3`),
+`experiments/results/ramp-v31low-20260921T030743Z-summary.csv`
+(SHA-256 `30bf5b7052ad071b5f7e2d5a3364acbb8cfd078acee603b6a673a4e4f80e8e43`).
+
+### 80.3 Measurement rule addendum (복구 결정 - 계산 전 사전 기록)
+
+사용자 승인에 따라 다음을 확정하고, 실제 offline 복구 계산을 시작하기
+**전에** 이 문단을 먼저 기록한다:
+
+- 실제 600초 측정과 cleanup(abort + 단일 revision 복원)은 §80.2에서
+  확인한 대로 정상 완료됐다 - 재측정 대상이 아니다.
+- 실패 지점은 측정 종료 후의 Prometheus feature extraction 단계뿐이다.
+- Prometheus 서버 자체는 재시작·장애가 없었다(§80.2) - 원인은 로컬
+  `kubectl port-forward` transport 단절이다.
+- 기존 raw CSV(probe/ramp summary)와 stage summary는 **변경하지
+  않는다** - 복구는 이 파일들을 읽기만 한다.
+- 이번 복구는 같은 측정을 다시 실행하는 것이 아니라, 이미 완료된
+  측정으로부터 원래 session을 **보존**하기 위한 것이다(재측정 시
+  cluster에 불필요한 추가 부하·시간이 든다 - §80.2에서 실측 확인된
+  대로 harness 장애일 뿐 측정 자체엔 문제가 없었으므로 재측정할
+  이유가 없다).
+- 이 복구는 **사용자 승인으로만** 허용된다 - §80.2의 정지·보고 없이
+  임의로 복구를 시도하지 않는다.
+- **기존 stop-condition 기록은 삭제하거나 실패가 없었던 것처럼
+  수정하지 않는다** - §80.2는 그대로 남기고, 복구 결과는 별도
+  절(§80.6 이하)에 추가만 한다.
+
+### 80.4 복구 조건 (사전 등록 - 전부 충족해야 같은 session_id로 복구)
+
+다음을 모두 만족해야 `calib3-low-02`를 복구한다. 하나라도 불만족이면
+임의 보간·0 대체·부분 window 사용 없이 복구 실패로 판정하고 §80.2의
+기록은 그대로 둔 채 `invalid_session`으로 보존한다(§80.9):
+
+1. 원본 probe CSV·ramp summary CSV의 SHA-256이 §80.2에 적힌 값과
+   정확히 일치(읽기 전 재확인).
+2. 원본 session 시작·종료 시각을 파일 내용(ramp summary의
+   `stage_start_utc`/`stage_end_utc`)에서만 확정 - 임의 추정 없음.
+3. 그 범위가 Prometheus retention 안에 존재(historical query가 빈
+   응답이 아님).
+4. 8개 원천 metric(cpu/memory/queue/cache, 각 mean/slope) 전부 세션
+   구간을 완전히 커버 - 응답 없는 지표가 하나라도 있으면 실패.
+5. window 시작·종료 경계의 허용 오차가 기존 정상 session(예:
+   `calib3-low-01`)과 동일한 방식(`iter_window_starts`의 세션 내부
+   완전 포함 조건, 변경 없음).
+6. missing/NaN/stale sample 0건.
+7. 예상 scrape 간격(15초 step) 대비 비정상 gap 없음.
+8. active/preview pod UID·label이 당시 session과 일치 - Prometheus의
+   `kube_pod_info`/`up` 히스토리로 독립 재확인(§80.7).
+9. 현재 시각의 metric을 과거 값과 섞지 않음 - 전부 원래 `[start_utc,
+   end_utc)` 범위로만 질의.
+10. 기존 feature extractor(`build_dataset.build_rows_for_session()`,
+    `features._query_range()`)와 완전히 동일한 query·window(60초)·
+    step(15초)·feature 순서 사용 - 새 계산식 없음.
+11. raw latency·SLO 판정(`t_slo`, stage별 `p95`/`max`/`violates`,
+    `all_success_100pct`)은 원본 CSV에서만 `slo_judge`/
+    `explore_ramp_intensity.classify_stages()`/`bucket_stats()`(전부
+    기존 코드, 변경 없음)로 재계산 - 새 판정 로직 없음.
+
+### 80.5 하니스 안전 보완 (transport 계층만, 측정 의미 불변)
+
+재발 방지로 다음만 추가한다 - 부하·feature·SLO·모델 의미는 전혀
+바꾸지 않는다(오프라인 테스트로 고정, §80.8):
+
+- 각 session 시작 **전** port-forward health 확인(HTTP 응답 기준).
+- feature extraction 직전 **다시** health 확인 - 세션 시작 시점엔
+  살아있었지만 600초+ 측정 도중 죽는 이번 사고 패턴을 잡기 위함.
+- "죽은 process를 정상으로 오인" 방지 - TCP 연결 여부가 아니라 실제
+  `/api/v1/query` 호출과 `status=success` 응답까지 확인(반쯤 끊긴
+  터널이 TCP는 받아주고 응답은 못 주는 경우까지 커버).
+- read-only historical query에 한해 bounded retry 허용(기본 3회,
+  고정 backoff) - 매 retry는 **동일한 UTC 범위·동일한 query**를 다시
+  던질 뿐, 이전 시도의 부분 응답과 합치거나 보간하지 않는다(한 번의
+  시도는 성공 아니면 완전 실패 중 하나).
+- 최종 completeness 검사(§80.4의 4~7번)를 통과 못 하면 그 session은
+  무조건 invalid - retry를 다 써도 안 되면 그대로 실패 처리.
+
+### 80.6 범위 제한
+
+이 절의 복구는 §80.4/§80.5 범위를 넘지 않는다 - 실제 cluster
+measurement 추가 발생 없음(live pod 생성·promotion·chaos 주입 없음),
+모델 재학습·feature 재선택·threshold 결정 없음, artifact freeze 없음,
+Holdout 수집 없음, `TrialResult`/기존 session JSON 스키마 변경 없음.
+
+### 80.7 구현 - `historical_reextraction.py`(재사용 가능, model_v32b)
+
+`anomaly-detection/v3/model_v32b/historical_reextraction.py` 신규:
+`check_prometheus_reachable()`(TCP 여부가 아니라 실제
+`/api/v1/query` 호출+`status=success` 응답까지 확인),
+`query_range_with_bounded_retry()`(동일 query·동일 범위만 재시도,
+부분 응답 병합 없음 - 실패하면 예외), `verify_metric_completeness()`
+(raw timestamp 기준 gap/NaN/개수 검사, feature 계산 자체와 분리된
+순수 진단), `reextract_session()`(이미 완료된 측정의 두 원본 CSV만으로
+`explore_ramp_intensity.classify_stages()`/`bucket_stats()`/
+`slo_judge`(전부 기존 코드, 변경 없음)를 그대로 재사용해
+`candidate_result`를 재구성한 뒤 `build_dataset.build_rows_for_session()`
+로 Prometheus에서 8-feature를 다시 조회), `verify_recovery_complete()`
+(§80.4 조건 전부 확인, 하나라도 실패면 불완전 판정). 오프라인 테스트
+`test_historical_reextraction.py` 10개 - bounded retry가 실제로
+동일 인자로만 재시도되고 부분 실패와 성공 결과를 섞지 않는지, gap/NaN/
+누락 각각이 completeness 실패로 잡히는지, 합성 raw CSV 두 개만으로
+session 경계·`candidate_result`·feature_rows가 정확히 재구성되는지
+확인(클러스터 의존 없음). 전체 오프라인 스위트 802 passed(792에서 +10).
+
+### 80.8 `calib3-low-02` 복구 결과 - 완전, infrastructure-normal
+
+`recover_calib3_low_02.py`(1회성 실행 스크립트, model_v32b) 실행 결과:
+
+- §80.4-1 원본 CSV 해시 재확인 통과(probe/ramp summary 둘 다 §80.2
+  기록과 일치).
+- Prometheus 도달성: 추출 직전/직후 둘 다 `reachable=true`.
+- **completeness 전부 통과**: cpu/memory/queue/cache 4개 원천 지표
+  모두 `n_samples=41/41`(600초 구간, 15초 step - 정확히 예상값과
+  일치), `max_gap_sec=15.0`(허용 상한 이내), NaN/Inf 없음. feature
+  window 37개 전부 valid(0개 invalid) - `calib3-low-01`(37/37)과
+  동일한 완전성.
+- `t_slo=None`(이번 세션은 latency-only SLO 위반 자체가 없음 -
+  §76-77의 원래 `calib2-low-02`와는 다른 실행이라는 점에 유의, 서로
+  다른 run_id의 독립 측정), `extreme_latency_detected=False`
+  (probe 기준 stage bucket p95/max 재계산, `bucket_stats()` 변경
+  없이 그대로 사용), `all_success_100pct=True`.
+- active pod(`vllm-serving-6b9d88c96-64k7r`, uid
+  `630f21a9-409b-4bea-a378-95a17df78735`)·preview pod
+  (`vllm-serving-589cd4796c-gpzl2`, uid
+  `ae9aaadf-f7bb-4575-976f-783556c96a8d`) 신원을 Prometheus
+  `kube_pod_info` 히스토리 쿼리로 세션 당시 시각 기준 독립 재확인 -
+  §80.2에서 라이브 로그로 관측한 이름과 정확히 일치.
+- **알려진 한계(정직하게 명시)**: `check_endpoint_isolation()`은
+  `kubectl get endpoints`(살아있는 K8s API 상태)를 직접 읽는
+  방식이라 히스토리가 없다 - Endpoints 객체 자체는 Prometheus에
+  과거 스냅샷으로 남지 않는다. 대신 Prometheus의 `job=vllm-active`/
+  `job=vllm-preview`가 세션 내내 각각 정확히 한 개의 서로 다른 pod만
+  가리켰다는 간접 증거(서비스 디스커버리가 같은 Endpoints 객체를
+  기반으로 하므로 격리가 깨졌다면 중복/교차 관측이 나타났을
+  것)로 대체했다 - 원래 방법과 완전히 동일하지는 않다는 점을 그대로
+  기록한다(과장하지 않음).
+- 최종 판정: **`judge_qualification()`(변경 없음) - PASS, 사유
+  없음** -> `classify_exclusion_reasons()`(model_v32b/domain.py,
+  변경 없음) -> **infrastructure_normal=True, slo_label=clean**.
+- 저장: `anomaly-detection/v3/v31_data/sessions/calib3-low-02.json`
+  (기존과 동일 스키마 + `recovered_from_raw: true` 필드 추가 - 스키마
+  자체 변경이 아니라 확장), provenance sidecar
+  `anomaly-detection/v3/model_v32b/recovery_evidence/
+  calib3-low-02.recovery.json`(요청된 모든 항목 포함:
+  `recovery_reason=prometheus_port_forward_transport_failure`,
+  원본 파일 경로·SHA-256, port-forward 오류 로그 SHA-256, historical
+  query 실행 시각, 조회한 정확한 UTC 범위, Prometheus target/pod
+  정보, metric별 sample 수·최대 gap, extractor commit SHA(`679bce4`),
+  복구 결과 JSON SHA-256, `remeasured: false`,
+  `historical_reextraction: true`).
+- 전체 오프라인 스위트 재확인 802 passed(변경 없음).
+- 복구 직후 클러스터 재확인: Node Ready·pressure 없음, active pod
+  restartCount=0 무변화, Chaos CR 없음, `vllm-preview` Endpoint 없음,
+  Prometheus port-forward 정상 - 이번 복구 과정에서 클러스터에 어떤
+  추가 조작도 하지 않았음(순수 읽기 전용)을 재확인.
+
+### 80.9 §80.2 기록 보존
+
+§80.2의 장애 기록은 이 절 작성 과정에서 전혀 수정하지 않았다 - 크래시
+사실·원인·크래시 시점까지의 실측은 그대로 남아 있고, §80.8은 그
+이후에 별도로 수행한 복구 결과를 추가만 한다.
