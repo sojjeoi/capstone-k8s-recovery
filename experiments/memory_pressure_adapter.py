@@ -56,6 +56,12 @@ CHAOS_PLURAL = "stresschaos"
 RESULTS_DIR = Path(__file__).parent / "results"  # run_once.py의 RESULTS_DIR와 동일 디렉터리 관례
 LOCAL_PROMETHEUS_URL = "http://localhost:9090"  # arm_controller.py의 LOCAL_PROMETHEUS_URL과 동일 전제(로컬 port-forward)
 PROM_QUERY_TIMEOUT_SEC = 10.0
+# §96 - anomaly-detection/v3/prom_health.py의 DEFAULT_FRESHNESS_MAX_AGE_SEC/
+# arm_controller.py의 PROMETHEUS_FRESHNESS_MAX_AGE_SEC과 동일한 값(120초) -
+# 이 파일은 그 두 모듈을 import하지 않고(기존 관례 - arm_controller.py도
+# prom_health.py를 안 쓰고 독립 구현을 둠, 무거운 의존성을 지역화하기 위함)
+# 같은 상수만 재사용한다.
+FRESHNESS_MAX_AGE_SEC = 120.0
 
 GIB = 1024 ** 3
 MIB = 1024 ** 2
@@ -63,6 +69,11 @@ MIB = 1024 ** 2
 # 즉시 중단 조건(지시 원문) - 이 두 상수가 안전 감시의 핵심 임계치다.
 MIN_NODE_AVAILABLE_BYTES = 3 * GIB
 MAX_TARGET_WORKING_SET_BYTES = 5 * GIB
+# §96 - non-native arm(preview 공존) 전용 사전 headroom 게이트의 PASS 바.
+# explore_memory_pressure_intensity.py의 MIN_NODE_AVAILABLE_PASS_BYTES와
+# 같은 값(4GiB) - 그 모듈을 import하지 않고(이 파일이 더 하위 계층이라
+# 역방향 의존을 피함) 값만 재사용한다.
+MIN_NODE_AVAILABLE_WITH_PROJECTED_STRESS_BYTES = 4 * GIB
 
 SAFETY_POLL_INTERVAL_SEC = 5.0  # 주입 중 안전 지표 확인 주기
 STAGE_DURATION_SAFETY_MARGIN_SEC = 60.0  # 각 CR의 duration 안전망 = stage 지속시간 + 이 값
@@ -155,8 +166,18 @@ def get_node_conditions(node_name: str) -> dict:
 
 def _prom_instant_query(promql: str, prom_url: str) -> Optional[float]:
     """단일 스칼라 값을 기대하는 Prometheus 인스턴트 쿼리 - 실패(접근 불가,
-    표본 없음, 파싱 실패)는 전부 None. 호출자가 None을 '조회 실패'로 취급해
-    fail-closed해야 한다(안전 지표를 못 읽었다고 계속 진행하면 안 됨)."""
+    표본 없음, 파싱 실패, §96부터는 **오래된 표본**도 포함)는 전부 None.
+    호출자가 None을 '조회 실패'로 취급해 fail-closed해야 한다(안전 지표를
+    못 읽었다고 계속 진행하면 안 됨).
+
+    §96 - 이전에는 응답이 성공(200, status=success, 표본 있음)이기만 하면
+    표본 시각(freshness)을 전혀 확인하지 않았다 - Prometheus가 살아있어도
+    특정 스크레이프 타겟이 멈춰서 오래된 값만 계속 나오는 경우(prom_health.
+    check_metric_freshness()가 score_server.py 쪽에서 이미 방어하는 것과
+    같은 실패 모드)를 이 안전 감시 경로는 못 잡았다. 표본이 FRESHNESS_MAX_
+    AGE_SEC보다 오래됐으면 그 값을 신뢰하지 않고 None으로 취급한다(판정
+    로직 자체는 변경 없음 - 기존 호출부는 이미 None을 fail-closed로
+    처리하고 있었으므로 이 tightening은 그 경로를 그대로 탄다)."""
     try:
         r = requests.get(f"{prom_url}/api/v1/query", params={"query": promql}, timeout=PROM_QUERY_TIMEOUT_SEC)
         if r.status_code != 200:
@@ -167,7 +188,10 @@ def _prom_instant_query(promql: str, prom_url: str) -> Optional[float]:
         result = body.get("data", {}).get("result", [])
         if not result:
             return None
-        return float(result[0]["value"][1])
+        sample_ts, sample_value = result[0]["value"]
+        if (time.time() - float(sample_ts)) > FRESHNESS_MAX_AGE_SEC:
+            return None
+        return float(sample_value)
     except (requests.exceptions.RequestException, KeyError, IndexError, ValueError, TypeError):
         return None
 
@@ -183,6 +207,27 @@ def get_pod_working_set_bytes(pod_name: str, prom_url: str = LOCAL_PROMETHEUS_UR
     return _prom_instant_query(
         f'container_memory_working_set_bytes{{namespace="{NAMESPACE}",pod="{pod_name}",container="vllm"}}',
         prom_url)
+
+
+def check_prometheus_health_for_injection(node_ip: str, pod_name: str,
+                                           prom_url: str = LOCAL_PROMETHEUS_URL) -> dict:
+    """§96 - injection 시작 "직전"에 부르는 명시적 preflight(지시: "실행 전
+    port-forward health fail-closed", "session 시작 전 최신 metric 조회").
+    안전 감시가 실제로 읽을 두 지표(Node MemAvailable·target pod working
+    set)를 지금 이 순간 조회해 둘 다 fresh하게 나오는지 확인한다 - 새
+    Prometheus 호출 경로를 만들지 않고 get_node_available_bytes()/
+    get_pod_working_set_bytes()(이미 §96에서 staleness 검사가 들어감)를
+    그대로 재사용한다. 실패하면 호출자가 injection을 아예 시작하지 않고
+    fail-closed(TrialInvalid/invalid_run)로 처리해야 한다."""
+    node_available = get_node_available_bytes(node_ip, prom_url)
+    working_set = get_pod_working_set_bytes(pod_name, prom_url)
+    reasons = []
+    if node_available is None:
+        reasons.append("Node MemAvailable 조회 실패 또는 표본 오래됨(port-forward 또는 스크레이프 문제)")
+    if working_set is None:
+        reasons.append("target pod working set 조회 실패 또는 표본 오래됨(port-forward 또는 스크레이프 문제)")
+    return {"healthy": len(reasons) == 0, "reasons": reasons,
+            "node_available_bytes": node_available, "working_set_bytes": working_set}
 
 
 def create_memory_stress_chaos(cr_name: str, run_id: str, arm: str, target_pod_name: str, stage: dict,
@@ -438,6 +483,26 @@ def make_memory_pressure_injector(
                 f"주입 전 Node MemAvailable 부족: {available / GIB:.2f}GiB < "
                 f"{min_node_available_bytes / GIB:.2f}GiB - headroom 부족(fail-closed)")
 
+        # §96 - non-native arm preview headroom 게이트(지시): preview가 이미
+        #떠 있는 상태(arm_controller.wrap_injector_with_preview_prep()이 이
+        # prepare() 호출 "전"에 미리 준비해둠)에서 Node MemAvailable을 다시
+        # 재는 것이므로, 이 `available` 값 자체가 이미 preview pod의 현재
+        # 메모리 사용량을 반영한 노드 레벨 지표다(별도로 preview working
+        # set을 따로 조회할 필요 없음 - MemAvailable은 노드 전체 값이라
+        # 자동으로 포함됨). 예상 stress 증분을 뺀 뒤에도 4GiB 이상이어야
+        # 한다: `pre_injection_memavailable - expected_stress_delta >= 4GiB`.
+        # native는 이 게이트를 걸어도 무해하다(§95 실측 - MemAvailable
+        # 6.29~7.22GiB에서 953MiB를 빼도 4GiB를 한참 넘음) - arm 조건 분기
+        # 없이 항상 확인한다.
+        expected_stress_delta = max(s["size_mb"] for s in stages) * MIB
+        projected_available = available - expected_stress_delta
+        if projected_available < MIN_NODE_AVAILABLE_WITH_PROJECTED_STRESS_BYTES:
+            raise TrialInvalid(
+                f"insufficient_headroom_with_preview: Node MemAvailable {available / GIB:.2f}GiB - "
+                f"예상 stress 증분 {expected_stress_delta / GIB:.2f}GiB = {projected_available / GIB:.2f}GiB, "
+                f"{MIN_NODE_AVAILABLE_WITH_PROJECTED_STRESS_BYTES / GIB:.2f}GiB 미만(fail-closed, "
+                f"preview 공존 상태의 headroom 부족)")
+
         baseline_ws = get_working_set_fn(target["name"])
         if baseline_ws is None:
             raise TrialInvalid("주입 전 target working set 조회 실패 - 안전 지표 확인 불가로 fail-closed")
@@ -536,6 +601,26 @@ def make_memory_pressure_injector(
                 return False
             if stop_event.wait(min(safety_poll_interval_sec, remaining)):
                 return True  # cleanup()이 요청한 정상 중단
+            # §96 - stage 진행 중(단일 장시간 stage일수록 중요, 예: negative-
+            # control의 120초 stage)에도 target replacement를 매 tick 확인한다.
+            # 기존에는 _run_stages()가 stage 시작 "직전"에만 _check_target()을
+            # 불렀고, 이 대기 루프 안에서는 안 불렀다 - fixed_threshold/proposed
+            # 에서 detector가 stage 도중에 실제로 promotion을 일으키면(negative
+            # control에서 관찰 대상인 unnecessary_action 그 자체), 원래
+            # target(교체 전 active pod)이 정상적으로 scale-down되어 사라지고,
+            # 그 다음 tick의 _check_safety_once()가 `get_pod_details_fn(target
+            # ["name"])`의 404를 "target_unreadable"(안전 위반)로 오판해
+            # 정상적인 promotion 결과를 harness 실패로 잘못 분류했을 것이다
+            # (§96 forensic, 라이브 실행 전 정적 감사로 발견 - 아직 실제로
+            # 겪은 사고는 아님). _check_target()은 이미 "효과가 난 뒤의 교체는
+            # 기록만 하고 정상 종료로 본다"는 규칙을 갖고 있으므로(그대로
+            # 재사용, 새 로직 없음) 여기서 먼저 확인해 안전 위반으로 새기 전에
+            # 걸러낸다 - is_done()도 이미 target_replacement를 정상 완료
+            # 신호로 취급하므로(기존 설계와 일치) 이 결과를 "cleanup()이
+            # 요청한 정상 중단"과 동일하게 처리한다(stop_reason 안 건드림).
+            _check_target()
+            if target_replacement["v"] is not None:
+                return True
             if window is not None and not window.get("all_injected") and stage_idx is not None:
                 if is_stage_injected_fn(cr_names[stage_idx]):
                     window["all_injected"] = True

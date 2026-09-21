@@ -45,6 +45,7 @@ from memory_pressure_adapter import (
     MAX_TARGET_WORKING_SET_BYTES,
     MIB,
     MIN_NODE_AVAILABLE_BYTES,
+    check_prometheus_health_for_injection,
     get_node_available_bytes,
     get_node_conditions,
     get_node_ip,
@@ -268,6 +269,15 @@ def run_round(size_mb: float, workers: int = 1, probe_config: str = str(DEFAULT_
     node_ip = get_node_ip(node_name)
     if node_ip is None:
         raise ExplorationAbort(f"Node({node_name}) InternalIP 조회 실패(fail-closed)")
+
+    # §96 - injection 시작 전 Prometheus port-forward health + 최신 metric
+    # fail-closed 확인(지시). 이후 own_tick()이 매 poll마다 쓰는 것과 동일한
+    # 두 지표(Node MemAvailable·target working set)를 지금 조회해 신선하게
+    # 나오는지 먼저 확인 - 여기서 막히면 pod/probe를 아무것도 안 만들고
+    # TrialInvalid로 끝난다(§48~§57의 기존 invalid_run 관례와 동일 심각도).
+    prom_health = check_prometheus_health_for_injection(node_ip, target_name)
+    if not prom_health["healthy"]:
+        raise TrialInvalid(f"Prometheus health 확인 실패(injection 시작 전, fail-closed): {prom_health['reasons']}")
 
     run_id = (f"explore-memory_pressure-native-{size_mb:.0f}mb-{stage_duration_sec:.0f}s-"
               f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}")

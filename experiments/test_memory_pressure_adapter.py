@@ -14,14 +14,20 @@ cluster_guard가 빠뜨린 실제 K8s/Prometheus 호출을 즉시 실패로 만�
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
 
 sys.stdout.reconfigure(encoding="utf-8")
 
 from memory_pressure_adapter import (
     EFFECTIVE_WORKING_SET_RISE_BYTES,
+    FRESHNESS_MAX_AGE_SEC,
     GIB,
     STAGE_DURATION_SAFETY_MARGIN_SEC,
     _classify_timestamp_against_windows,
+    _prom_instant_query,
+    check_prometheus_health_for_injection,
+    get_node_available_bytes,
+    get_pod_working_set_bytes,
     make_memory_pressure_injector,
 )
 from run_once import HarnessCorrupted, TrialInvalid
@@ -257,6 +263,31 @@ def test_prepare_headroom_insufficient_against_safety_ceiling_even_without_known
     print("OK - 컨테이너 limit을 몰라도 5GiB 안전 상한(MAX_TARGET_WORKING_SET_BYTES)은 항상 적용")
 
 
+def test_prepare_headroom_with_projected_stress_gate_blocks_when_preview_coresident():
+    """§96 section 5 - Node MemAvailable이 기존 3GiB 즉시중단 임계치는
+    넘지만, 예상 stress 증분을 뺀 뒤 4GiB PASS 바에는 못 미치면(예: preview
+    pod이 이미 떠서 MemAvailable을 깎아먹은 상태) fail-closed로 거부해야
+    한다 - `insufficient_headroom_with_preview`라는 문자열이 이유에
+    포함돼야 한다(지시된 invalid_run 사유)."""
+    # available=4.2GiB(기존 3GiB 임계치는 통과), stage=500MB(기본 FAST_STAGE)
+    # -> 4.2 - 0.488(500MiB) ≈ 3.71GiB < 4GiB PASS 바.
+    injector = _make_healthy_injector(get_node_available_fn=lambda ip: 4.2 * GIB)
+    try:
+        injector.prepare()
+        assert False, "3GiB는 넘지만 예상 stress 차감 후 4GiB 미만이면 거부돼야 함"
+    except TrialInvalid as e:
+        assert "insufficient_headroom_with_preview" in str(e)
+    print("OK - MemAvailable이 3GiB 즉시중단 임계치는 넘어도, stress 예상 증분을 뺀 값이 "
+          "4GiB PASS 바 미만이면 insufficient_headroom_with_preview로 fail-closed")
+
+
+def test_prepare_headroom_with_projected_stress_gate_passes_with_ample_headroom():
+    # §95 실측 수준(6.29~7.22GiB)과 유사한 여유 - 통과해야 함(회귀 방지).
+    injector = _make_healthy_injector(get_node_available_fn=lambda ip: 6.3 * GIB)
+    injector.prepare()  # 예외 없이 통과해야 함
+    print("OK - 충분한 headroom(§95 실측 수준)이면 새 게이트도 정상 통과(기존 동작 불변)")
+
+
 def test_prepare_headroom_uses_largest_stage_in_list():
     # 여러 stage 중 가장 큰 것 기준으로 투영해야 한다(순서와 무관).
     injector = _make_healthy_injector(
@@ -488,6 +519,48 @@ def test_target_replacement_before_effect_is_invalid():
     print("OK - 효과를 내기 전 대상 교체: TrialInvalid(외부 오염 가능성), stage CR 생성 안 함")
 
 
+def test_mid_stage_target_replacement_after_effect_does_not_raise_safety_violation():
+    """§96 - 단일 stage 대기 루프 "안"에서(단계 시작 시점이 아니라) promotion
+    등으로 target이 바뀌면, 원래 target 이름 조회가 404(None)를 내더라도
+    이를 안전 위반(target_unreadable)으로 오판하지 않고 정상적인 post-effect
+    교체로만 기록해야 한다 - 라이브 실행 전 정적 감사로 발견한 버그(§96
+    forensic)의 직접 회귀 테스트. 이 버그가 있었다면 fixed_threshold/
+    proposed에서 실제 promotion이 stage 도중 일어날 때 그 결과가
+    HarnessCorrupted/TrialInvalid로 잘못 분류됐을 것이다."""
+    call_count = {"n": 0}
+
+    def get_active_pods_fn():
+        call_count["n"] += 1
+        # 처음 몇 번(prepare + is_started 확정)은 원래 target, 그 뒤로는
+        # promotion 후 scale-down된 상황을 흉내(새 pod만 active로 보임).
+        return [TARGET_POD] if call_count["n"] <= 3 else [REPLACEMENT_POD]
+
+    def get_pod_details_fn(name):
+        # 원래 target 이름으로 조회하면 교체 후 없음(404) - promotion으로
+        # 옛 stable이 scale-down된 상황. 새 pod 이름으로는 정상 조회된다.
+        if name == TARGET_POD["name"]:
+            return _pod_details(uid=TARGET_POD["uid"], name=TARGET_POD["name"])
+        return _pod_details(uid=REPLACEMENT_POD["uid"], name=REPLACEMENT_POD["name"])
+
+    injector = _make_healthy_injector(
+        stages=SLOW_STAGE,  # duration_sec=5.0 - safety tick(0.02초 간격)이 여러 번 돌 만큼 충분히 김
+        get_active_pods_fn=get_active_pods_fn,
+        get_pod_details_fn=get_pod_details_fn,
+        get_working_set_fn=_rising_working_set_fn(),
+    )
+    injector.prepare()
+    injector.inject()
+    assert _wait_for(injector.is_started), "stage는 정상 진행돼야 함(효과 확정)"
+    assert _wait_for(injector.is_done, timeout=5.0), \
+        "mid-stage 교체가 감지되면 is_done은 True여야 함(target_unreadable로 예외가 나면 안 됨)"
+    injector.cleanup()  # §96 fix 전이었다면 여기 도달 전에 이미 TrialInvalid가 났을 것
+    replacement = injector.get_target_replacement()
+    assert replacement is not None
+    assert replacement["replacement_pod"] == REPLACEMENT_POD
+    print("OK - stage 대기 도중(mid-stage) 교체도 매 tick마다 _check_target()이 먼저 걸러내 "
+          "target_unreadable 오판(§96 발견)을 방지하고 정상 교체로만 기록됨")
+
+
 def test_target_replacement_after_effect_is_recorded_not_invalid():
     call_count = {"n": 0}
 
@@ -671,6 +744,93 @@ def test_get_stage_windows_all_injected_false_when_never_confirmed():
     windows = injector.get_stage_windows()
     assert windows[0]["all_injected"] is False
     print("OK - AllInjected가 끝내 확인 안 돼도(관측 전용) stage는 정상 진행되고 all_injected=False로만 기록됨")
+
+
+# --- §96 - Prometheus staleness fail-closed --------------------------------
+
+def _mock_prom_response(value: str, sample_ts: float, status_code: int = 200):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = {"status": "success", "data": {"result": [{"value": [sample_ts, value]}]}}
+    return resp
+
+
+def test_prom_instant_query_returns_value_for_fresh_sample():
+    with patch("memory_pressure_adapter.requests.get",
+               return_value=_mock_prom_response("123.0", time.time())):
+        assert _prom_instant_query("dummy", "http://x") == 123.0
+    print("OK - 표본이 신선하면 정상적으로 값을 반환")
+
+
+def test_prom_instant_query_returns_none_for_stale_sample():
+    stale_ts = time.time() - FRESHNESS_MAX_AGE_SEC - 1
+    with patch("memory_pressure_adapter.requests.get",
+               return_value=_mock_prom_response("123.0", stale_ts)):
+        assert _prom_instant_query("dummy", "http://x") is None
+    print("OK - 표본이 FRESHNESS_MAX_AGE_SEC보다 오래됐으면 None(fail-closed) - §96 신규 방어")
+
+
+def test_prom_instant_query_just_inside_max_age_is_still_fresh():
+    # 정확히 경계값(time.time() 호출 사이의 실행 시간차로 레이스가 남)
+    # 대신 여유를 살짝 두어 ">" 비교(경계값 자체는 신선함 포함)를 확인한다.
+    just_inside_ts = time.time() - FRESHNESS_MAX_AGE_SEC + 1.0
+    with patch("memory_pressure_adapter.requests.get",
+               return_value=_mock_prom_response("123.0", just_inside_ts)):
+        assert _prom_instant_query("dummy", "http://x") == 123.0
+    print("OK - 경계값 바로 안쪽(1초 여유)이면 신선한 것으로 취급(> 비교, 레이스 없는 검증)")
+
+
+def test_prom_instant_query_returns_none_on_connection_error():
+    import requests
+    with patch("memory_pressure_adapter.requests.get", side_effect=requests.exceptions.ConnectionError("x")):
+        assert _prom_instant_query("dummy", "http://x") is None
+    print("OK - 연결 실패는 기존과 동일하게 None(회귀 없음)")
+
+
+def test_get_node_available_bytes_and_working_set_inherit_staleness_check():
+    # _prom_instant_query()를 감싸는 두 공개 함수(안전 감시가 실제로 쓰는
+    # 경로)가 별도 코드 없이 staleness 방어를 그대로 물려받는지 확인.
+    stale_ts = time.time() - FRESHNESS_MAX_AGE_SEC - 1
+    with patch("memory_pressure_adapter.requests.get",
+               return_value=_mock_prom_response("999.0", stale_ts)):
+        assert get_node_available_bytes("10.0.0.1") is None
+        assert get_pod_working_set_bytes("some-pod") is None
+    print("OK - get_node_available_bytes()/get_pod_working_set_bytes() 둘 다 오래된 표본에 None을 반환")
+
+
+# --- §96 - check_prometheus_health_for_injection() 프리플라이트 ------------
+
+def test_check_prometheus_health_for_injection_healthy_when_both_fresh():
+    now = time.time()
+    with patch("memory_pressure_adapter.requests.get",
+               return_value=_mock_prom_response("1.0", now)):
+        result = check_prometheus_health_for_injection("10.0.0.1", "some-pod")
+    assert result == {"healthy": True, "reasons": [], "node_available_bytes": 1.0, "working_set_bytes": 1.0}
+    print("OK - Node MemAvailable·target working set 둘 다 신선하면 healthy=True")
+
+
+def test_check_prometheus_health_for_injection_unhealthy_when_node_available_missing():
+    def fake_get(url, params=None, timeout=None):
+        if "node_memory_MemAvailable_bytes" in params["query"]:
+            return _mock_prom_response("1.0", 0.0)  # epoch 0 - 명백히 오래됨
+        return _mock_prom_response("1.0", time.time())
+
+    with patch("memory_pressure_adapter.requests.get", side_effect=fake_get):
+        result = check_prometheus_health_for_injection("10.0.0.1", "some-pod")
+    assert result["healthy"] is False
+    assert result["node_available_bytes"] is None
+    assert result["working_set_bytes"] == 1.0
+    assert any("Node MemAvailable" in r for r in result["reasons"])
+    print("OK - Node MemAvailable만 오래돼도(port-forward는 살아있어도) healthy=False, 이유에 명시")
+
+
+def test_check_prometheus_health_for_injection_unhealthy_when_unreachable():
+    import requests
+    with patch("memory_pressure_adapter.requests.get", side_effect=requests.exceptions.ConnectionError("x")):
+        result = check_prometheus_health_for_injection("10.0.0.1", "some-pod")
+    assert result["healthy"] is False
+    assert len(result["reasons"]) == 2, "두 지표 모두 조회 실패했으므로 이유 2개"
+    print("OK - Prometheus 자체가 접근 불가면(port-forward 끊김 등) 두 지표 모두 실패로 기록")
 
 
 if __name__ == "__main__":

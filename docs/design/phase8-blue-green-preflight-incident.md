@@ -10305,3 +10305,133 @@ signal(native arm이라 애초에 detector가 없어 구조적으로 불가능),
 다른 시나리오, `run_all_scenarios`, 본 실험, `TrialResult` 스키마
 변경 - 전부 준수(0건). 3-arm 파일럿도 이번 절에서 시작하지 않았다
 (제안만).
+
+## §96 - `memory_pressure_negative_control_v1` 3-arm 파일럿 준비 - 정적 감사 + 하니스 수정 (측정 전)
+
+§94/§95 동결 승인 이후 지시 - `native → fixed_threshold → proposed`
+각 1회 순차 파일럿 실행 전, 지시된 두 정적 감사를 먼저 수행하고
+발견된 결함을 허용 범위 안에서 수정했다. Isolation Forest
+model·threshold·feature·artifact는 전혀 건드리지 않았다.
+
+### 96.1 기존 Prometheus port-forward 결함의 영향 범위 (정적 분석)
+
+§95에서 발견한 결함은 `anomaly-detection/v3/model_v32b/
+historical_reextraction.py`의 `verify_metric_completeness(...,
+prom_url=prom_url)` 호출이 테스트가 주입한 가짜 `query_range_fn`
+경로 밖에서 실제 네트워크를 타는 것이었다 - **오프라인 모델 학습
+데이터 재추출 파이프라인 전용**이고, `memory_pressure_adapter.py`/
+`explore_memory_pressure_intensity.py`(이번 3-arm 파일럿이 실제로
+쓰는 경로)는 이 함수를 전혀 import하지 않는다(코드 확인, 무관).
+
+**그러나 별도의, 실제로 관련된 결함을 발견**: `memory_pressure_
+adapter.py`의 `_prom_instant_query()`(안전 감시가 실제로 쓰는
+`get_node_available_bytes()`/`get_pod_working_set_bytes()`의 유일한
+구현)는 접근 불가·표본 없음·파싱 실패는 fail-closed(None)로 처리
+했지만, **표본의 신선도(timestamp)는 전혀 확인하지 않았다** -
+Prometheus 자체는 살아있는데 특정 스크레이프 타겟만 멈춰서 오래된
+값이 계속 나오는 경우(`prom_health.check_metric_freshness()`가
+score_server.py 쪽에서 이미 방어하는 것과 같은 실패 모드)를 이
+안전 감시 경로는 못 잡았다.
+
+**수정(허용 범위 내)**: `_prom_instant_query()`가 표본 timestamp를
+`FRESHNESS_MAX_AGE_SEC`(120초, `prom_health.py`/`arm_controller.py`와
+동일 값 재사용, 무거운 cross-import 없이 상수만 재사용 - 이 파일이
+더 하위 계층이라 역방향 의존을 피함)보다 오래됐으면 None으로
+취급하도록 강화했다(기존 호출부는 이미 None을 fail-closed로 처리
+중이므로 이 tightening은 그 경로를 그대로 탄다 - 신선한 경우의
+동작은 전혀 안 바뀜). `check_prometheus_health_for_injection(node_ip,
+pod_name)`(신규, 순수 재사용 - 새 Prometheus 호출 경로 없이 위 두
+함수를 그대로 부름)을 추가해 injection 직전 명시적 preflight로 쓸 수
+있게 했고, `explore_memory_pressure_intensity.run_round()`가 pod/
+Node 정보를 다 모은 직후·baseline 시작 전에 이를 호출해 fail-closed
+(`TrialInvalid`)하도록 배선했다(§94/§95가 이미 쓰던 `run_round()`
+공유 경로에 적용 - 다른 강도 재현이 필요해지면 그때도 자동으로
+보호받음).
+
+### 96.2 target replacement가 promotion 때문인지 비정상인지 구분 (정적 감사 + 수정)
+
+**발견(라이브 실행 전, 정적 감사)**: `memory_pressure_adapter.py`의
+안전 감시 루프(`_check_safety_once()`)는 `get_pod_details_fn(target
+["name"])`이 404(None)를 내면 무조건 `target_unreadable`(안전
+위반, `TrialInvalid`)로 처리한다. 기존 `_check_target()`(효과 이후
+교체는 기록만 하고 정상으로 봄)은 **stage 시작 "직전"에만** 호출됐고,
+이 파일럿처럼 단일 120초 stage의 "대기 루프 안"에서는 전혀
+재호출되지 않았다 - `is_done()`은 이미 `target_replacement`를 정상
+완료 신호로 취급하도록 설계돼 있었지만(기존 코드), 그 신호가 세팅될
+기회를 얻기 전에 안전 tick이 먼저 404를 보고 `TrialInvalid`를 냈을
+것이다. fixed_threshold/proposed에서 stage 도중 실제 promotion이
+일어나면(이 negative control 파일럿이 관찰하려는 `unnecessary_
+action` 그 자체) 옛 stable pod이 정상적으로 scale-down되어 사라지는
+것이 바로 이 조건과 정확히 일치한다 - **아직 실제로 겪은 사고는
+아니고, 라이브 실행 전 감사로 미리 발견**했다.
+
+**수정(허용 범위 내, TrialResult 무변경)**: `_stage_wait_with_safety()`
+의 매 poll tick마다(기존엔 stage 시작 시에만) `_check_target()`을
+먼저 부르도록 추가했다 - 새 판정 로직이 아니라 **기존** `_check_target()`
+을 더 자주 부르는 것뿐이다. 교체가 감지되면(post-effect, 기존 규칙
+그대로) `_check_safety_once()`에 도달하기 전에 정상 종료 경로로
+빠진다(`stop_reason` 안 건드림 - `cleanup()`이 요청한 정상 중단과
+동일하게 처리, CR은 그대로 삭제됨). 회귀 테스트
+(`test_mid_stage_target_replacement_after_effect_does_not_raise_
+safety_violation`)로 고정 - 이 수정 전이었다면 이 테스트는 실패
+(TrialInvalid 발생)했을 것이다.
+
+**promotion 원인 분류(신규 TrialResult 필드 없음, 지시대로 파생값
+으로만 처리)**: `run_memory_pressure_negative_control_pilot.py`의
+`classify_target_replacement()`(순수 함수, 완료된 TrialResult만
+읽음)가 기존 필드(`arm`/`action`/`promotion_verified`/`t_switch`/
+`t_target_replaced`)만으로 사후 분류한다 - native는 무조건
+`abnormal_replacement`(promotion 경로 자체가 없음), non-native는
+`action==promote_preview` AND `promotion_verified==True` AND
+`t_switch`~`t_target_replaced` 시각 차이가 300초 이내(이 파일럿의
+120초 stage+drain보다 넉넉한 여유)일 때만 `promotion_caused`로
+인정한다 - 단순히 필드 존재만으로 넘겨짚지 않고 timing 근접까지
+확인한다(지시: "Kubernetes event와 timing으로 입증"). 근거가
+불충분하면(timing 필드 없음 등) fail-closed로 `abnormal_replacement`
+쪽으로 분류한다.
+
+### 96.3 Non-native preview headroom 게이트 (신규)
+
+**발견**: 기존 `prepare()`의 headroom 확인은 Node MemAvailable이
+즉시중단 임계치(3GiB) 이상인지만 봤고, "예상 stress 증분을 뺀 뒤"의
+여유는 확인하지 않았다 - preview pod이 이미 떠 있는 non-native
+arm에서는 그 preview 자체가 MemAvailable을 이미 깎아먹은 상태일 수
+있다.
+
+**수정**: `prepare()`에 `available - expected_stress_delta >= 4GiB`
+(신규 상수 `MIN_NODE_AVAILABLE_WITH_PROJECTED_STRESS_BYTES=4GiB`,
+`explore_memory_pressure_intensity.MIN_NODE_AVAILABLE_PASS_BYTES`와
+동일 값 재사용) 게이트를 추가했다. `available`(Node MemAvailable)은
+노드 전체 지표라 preview pod의 현재 사용량을 이미 자동으로 반영하므로
+(별도로 preview working set을 따로 조회할 필요 없음), arm 조건
+분기 없이 항상 확인한다 - native도 §95 실측 수준(6.29~7.22GiB)에서는
+전혀 안 걸린다(회귀 테스트로 확인). 미충족 시
+`insufficient_headroom_with_preview`를 포함한 메시지로 `TrialInvalid`
+를 던진다(요청된 정확한 문자열) - `run_once()`/`arm_controller.py`의
+기존 `finally: injector.cleanup()` 경로가 그대로 preview cleanup까지
+수행하므로 별도 코드 없이 "stress 안 넣고 preview cleanup 후 멈춤"이
+보장된다.
+
+### 96.4 검증
+
+신규/확장 테스트 9개(`test_memory_pressure_adapter.py` +3: mid-stage
+교체 회귀, headroom 게이트 거부/통과, `test_run_memory_pressure_
+negative_control_pilot.py` 신규 6: `classify_target_replacement()`
+전체 분기). `KUBECONFIG`=존재하지 않는 경로에서 `experiments/`
+전체 627 passed(618+9, 기존 skip 3건 제외) 확인 -
+`anomaly-detection/`(217, Prometheus port-forward 재기동 상태에서
+재확인)·`recovery-policy/`(69)는 이번 턴에 무관해 재확인만 하고
+변경 없음.
+
+### 96.5 범위 제한 확인
+
+이번 절 금지 사항 - Isolation Forest model·threshold·feature·
+artifact 변경(0건), 판정 로직(`slo_judge`/`policy.decide`) 변경(0건),
+`TrialResult` 스키마 변경(0건, 새 필드 없음 - 파생값 함수로만 처리),
+3-arm 라이브 파일럿(이 절에서는 아직 실행 안 함, 다음 절에서 실행) -
+전부 준수. 변경 파일: `experiments/memory_pressure_adapter.py`
+(staleness 방어, mid-stage target check, preview headroom 게이트),
+`experiments/explore_memory_pressure_intensity.py`(injection 전
+Prometheus health 배선), `experiments/run_memory_pressure_negative_
+control_pilot.py`(신규, 3-arm 파일럿 실행기), 그리고 각각의 테스트
+파일 - 전부 harness 계층만 건드렸다.
