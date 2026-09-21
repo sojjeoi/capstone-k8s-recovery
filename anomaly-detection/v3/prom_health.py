@@ -12,6 +12,7 @@ from typing import Callable, Optional
 import requests
 
 PROM_URL = "http://localhost:9090"
+DEFAULT_FRESHNESS_MAX_AGE_SEC = 120.0  # score_server.py WINDOW_SEC(60s)보다 넉넉히 큰 상한 - experiments/arm_controller.py의 동일 상수와 같은 값
 
 
 def check_prometheus_reachable(prom_url: str = PROM_URL, timeout: float = 5.0) -> dict:
@@ -46,3 +47,29 @@ def query_range_with_bounded_retry(promql: str, start: datetime, end: datetime, 
             if attempt < max_retries:
                 sleep_fn(retry_delay_sec)
     raise RuntimeError(f"bounded retry {max_retries}회 모두 실패: {last_error}") from last_error
+
+
+def check_metric_freshness(promql: str, max_age_sec: float = DEFAULT_FRESHNESS_MAX_AGE_SEC,
+                            prom_url: str = PROM_URL, timeout: float = 5.0) -> dict:
+    """§86 - score_server.py v3.2b 통합 전용 stale-metric 방어(experiments/
+    arm_controller.py의 `_prometheus_reachable_and_fresh()`와 같은 원리를
+    별도로 구현한다 - arm_controller.py를 그대로 import하면 kubernetes
+    클라이언트 등 무거운 실험 오케스트레이션 의존성이 runtime detector에
+    딸려 들어가므로 의도적으로 분리했다). 인스턴트 쿼리로 표본 유무와
+    timestamp 신선도를 직접 확인 - `query_range`의 5분 lookback이 오래된
+    표본을 그대로 채워 반환하는 경우까지 잡는다(단순 응답 성공만으로는
+    못 잡는 실패 모드)."""
+    try:
+        r = requests.get(f"{prom_url}/api/v1/query", params={"query": promql}, timeout=timeout)
+        r.raise_for_status()
+        body = r.json()
+        if body.get("status") != "success":
+            return {"fresh": False, "reason": "query status != success"}
+        result = body.get("data", {}).get("result", [])
+        if not result:
+            return {"fresh": False, "reason": "표본 없음"}
+        sample_ts = float(result[0]["value"][0])
+        age_sec = time.time() - sample_ts
+        return {"fresh": age_sec <= max_age_sec, "age_sec": age_sec, "reason": None if age_sec <= max_age_sec else f"age {age_sec:.1f}s > {max_age_sec}s"}
+    except Exception as e:  # noqa: BLE001 - fail-closed, 원인 불문 fresh=False
+        return {"fresh": False, "reason": str(e)}

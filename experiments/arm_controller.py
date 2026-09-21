@@ -53,6 +53,13 @@ _DETECTOR_SCRIPTS = {
 # 유일한 안전장치는 이 상수를 실제 rollout.yaml과 맞춰 유지하는 것뿐이다).
 FIXED_THRESHOLD_CPU_LIMIT_CORES = 3.0
 
+# §86(2026-09-21) - `proposed` arm만 v3.2b 동결 artifact를 명시적으로 가리킨다
+# (score_server.py는 --artifacts-dir/--model-version 없이는 fail-closed로
+# 시작을 거부함, 위 fixed_threshold의 --cpu-limit-cores와 동일 원칙).
+# native/fixed_threshold 배선은 이 상수와 무관 - 손대지 않는다.
+PROPOSED_ARTIFACTS_DIR = ANOMALY_DETECTION_DIR / "v3" / "model_v32b" / "artifacts"
+PROPOSED_MODEL_VERSION = "v3.2b"
+
 STOP_TIMEOUT_SEC = 10.0  # terminate() 이후 정상 종료 대기 - 넘기면 kill()
 # score_server.py(그리고 이를 import하는 fixed_threshold.py)는 원래
 # in-cluster DNS를 기본값으로 쓴다 - 로컬 서브프로세스로 돌릴 땐 이
@@ -132,6 +139,8 @@ def _build_detector_command(arm: str, run_id: str) -> Optional[list]:
     cmd = [sys.executable, str(ANOMALY_DETECTION_DIR / spec["script"]), "--run-id", run_id]
     if arm == "fixed_threshold":
         cmd += ["--cpu-limit-cores", str(FIXED_THRESHOLD_CPU_LIMIT_CORES)]
+    elif arm == "proposed":
+        cmd += ["--artifacts-dir", str(PROPOSED_ARTIFACTS_DIR), "--model-version", PROPOSED_MODEL_VERSION]
     return cmd
 
 

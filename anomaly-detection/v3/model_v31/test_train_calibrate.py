@@ -42,14 +42,20 @@ def test_split_sessions_are_disjoint():
 def test_replay_constants_match_score_server_py():
     """replay.py의 기본값이 anomaly-detection/score_server.py의 실제
     상수와 어긋나면(누군가 score_server.py만 고치고 replay.py를 안
-    고치면) 이 테스트가 즉시 잡아낸다."""
+    고치면) 이 테스트가 즉시 잡아낸다.
+
+    §86(2026-09-21) v3.2b 통합 이후 SCORE_THRESHOLD는 더 이상 하드코딩된
+    상수가 아니다 - `load_and_verify_artifacts()`가 동결 threshold.json
+    에서 읽고, 그 값이 `evaluate_v32b()`의 `score < threshold`(엄격한
+    미만, 문자 그대로 이 비교 자체는 그대로)로 쓰인다. 이 테스트는 그
+    상수 자체(CONSECUTIVE_THRESHOLD/COOLDOWN_SEC/EVAL_INTERVAL_SEC)와
+    엄격한 미만 비교 관례만 계속 확인한다."""
     score_server_path = Path(__file__).parent.parent.parent / "score_server.py"
     src = score_server_path.read_text(encoding="utf-8")
     assert "CONSECUTIVE_THRESHOLD = 3" in src
     assert "COOLDOWN_SEC = 60" in src
     assert "EVAL_INTERVAL_SEC = 15" in src
-    assert "SCORE_THRESHOLD = 0.0" in src
-    assert "score < SCORE_THRESHOLD" in src  # 엄격한 미만 - replay.py도 `score < threshold`
+    assert "score < threshold" in src  # 엄격한 미만 - replay.py도 `score < threshold`
     import inspect
 
     from replay import replay_detector

@@ -14,6 +14,8 @@ sys.stdout.reconfigure(encoding="utf-8")
 from arm_controller import (
     _DETECTOR_SCRIPTS,
     FIXED_THRESHOLD_CPU_LIMIT_CORES,
+    PROPOSED_ARTIFACTS_DIR,
+    PROPOSED_MODEL_VERSION,
     _build_detector_command,
     _prometheus_reachable_and_fresh,
     _resolved_signal_url,
@@ -68,6 +70,29 @@ def test_proposed_command_has_no_cpu_limit_arg():
     cmd = _build_detector_command("proposed", "run-1")
     assert "--cpu-limit-cores" not in cmd, cmd
     print("OK - proposed(score_server.py) 커맨드에는 --cpu-limit-cores가 없음")
+
+
+def test_proposed_command_carries_v32b_artifacts_dir_and_model_version():
+    # §86 - proposed arm만 v3.2b 동결 artifact 경로·버전을 명시적으로
+    # 전달해야 한다(score_server.py의 --artifacts-dir/--model-version은
+    # 기본값 없음, fail-closed).
+    cmd = _build_detector_command("proposed", "run-1")
+    assert "--artifacts-dir" in cmd, cmd
+    idx = cmd.index("--artifacts-dir")
+    assert cmd[idx + 1] == str(PROPOSED_ARTIFACTS_DIR), cmd
+    assert "--model-version" in cmd, cmd
+    idx2 = cmd.index("--model-version")
+    assert cmd[idx2 + 1] == PROPOSED_MODEL_VERSION == "v3.2b", cmd
+    print("OK - proposed detector 커맨드에 v3.2b artifact 경로·model_version이 명시 전달됨")
+
+
+def test_fixed_threshold_command_has_no_v32b_artifact_args():
+    # native/fixed_threshold 배선은 §86 변경과 무관해야 한다(불변 확인).
+    cmd = _build_detector_command("fixed_threshold", "run-1")
+    assert "--artifacts-dir" not in cmd, cmd
+    assert "--model-version" not in cmd, cmd
+    assert make_detector_for_arm("native", "run-1") is None
+    print("OK - fixed_threshold 커맨드에 v3.2b 관련 인자 없음, native는 여전히 detector 없음(불변)")
 
 
 def test_detector_script_dispatch_table_has_exactly_two_non_native_arms():

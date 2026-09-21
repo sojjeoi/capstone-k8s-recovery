@@ -8163,3 +8163,201 @@ score 재실행, model artifact 수정, latency/TTFT 추가,
 변경. v3.2b 모델은 §83의 채택 상태(`adopted`)를 그대로 유지하며,
 이 절의 A(Promising) 분류는 그 위에 추가된 참고 정보다. 다음
 단계(runtime 통합·안전 smoke 등)는 사용자 지시를 기다린다.
+
+## 86. v3.2b runtime 통합(score_server.py) + no-action safety smoke 사전등록 (2026-09-21)
+
+### 86.1 시작 상태 확인
+
+`HEAD==origin/master==1bce696`, working tree clean. `SHA256SUMS.json`
+무결성 0건 불일치 - model/scaler/threshold/feature-schema가 freeze
+(`57d4440`)·holdout(`3e16e4d`/`c7675b1`)·challenge(`66bba30`/`1bce696`)
+전 구간과 완전히 동일한 해시임을 재확인. v3.1 rejected artifact는
+§75 문서 커밋(`a6d316c`) 이후 git 이력 없음(불변). Node Ready·pressure
+없음, active pod `vllm-serving-6b9d88c96-64k7r` restartCount=0,
+Chaos CR 없음, Rollout 단일 active revision(preview RS 전부 0/0,
+`phase=Degraded`/`RolloutAborted` 잔존은 §35.3에 문서화된 정상
+종결 상태 - 새 세션 진행을 막지 않음), `vllm-preview` Endpoint 없음,
+recovery-policy `/healthz` 정상·활성 experiment context 없음,
+Prometheus port-forward 정상. 이번 절에서 발견한 무관한 로컬 프로세스
+(port 8743의 개인 정적 파일 서버)는 이 실험과 무관해 손대지 않았다.
+
+### 86.2 `score_server.py` v3.2b 통합 - 구현
+
+`anomaly-detection/score_server.py`를 수정했다(기존 v1 artifact
+`anomaly-detection/artifacts/`와 rejected v3.1 artifact는 파일 자체를
+전혀 건드리지 않음 - 오직 score_server.py의 CLI 계약만 바뀜):
+
+- **`--artifacts-dir`/`--model-version` 둘 다 필수, 기본값 없음**
+  (`fixed_threshold.py`의 `--cpu-limit-cores` fail-closed 선례와
+  동일 원칙 - 인자 없이 실행하면 argparse 단계에서 즉시 실패, 암묵적
+  latest/default 없음).
+- `load_and_verify_artifacts()`: (1) `SHA256SUMS.json` 전수 검증
+  (`model_v31/integrity.py`, 변경 없음) - 불일치 시 fail-closed,
+  (2) `requirements-lock.txt`(동결 artifact 자체가 유일한 소스,
+  하드코딩 안 함)의 `scikit-learn`/`numpy` 고정 버전과 실제 설치된
+  버전 대조 - 불일치 시 fail-closed, (3) `training-metadata.json`의
+  `model_version`과 `--model-version` 교차 확인 - 다르면 fail-closed
+  (rejected v3.1 디렉터리를 `v3.2b`란 이름으로 잘못 로드하는 것도 이
+  단계에서 막힘), (4) `threshold.json`의 `consecutive_threshold`/
+  `cooldown_sec`/`eval_interval_sec`이 score_server.py 자체 상수와
+  다르면 fail-closed(동결 calibration이 쓴 규칙과 runtime이 어긋날
+  수 없게).
+- Feature 추출은 offline evaluator와 동일 함수 재사용 -
+  `build_dataset.extract_window_strict()`(8개 원천 지표, 하나라도
+  응답 없으면 0 대체 없이 즉시 실패)로 raw 8-feature를 뽑고
+  `feature_selection.apply_feature_schema()`(model_v31, 변경 없음)로
+  선택된 6개만 정확한 순서로 뽑는다 - queue를 0으로 채워 8차원을
+  만드는 코드 경로 자체가 없다.
+- **missing/NaN/Inf/stale 전부 fail-closed**: `extract_window_strict`
+  가 결측을 이미 막고, `evaluate_v32b()`가 반환된 8-feature에 NaN/Inf가
+  있으면 별도로 다시 확인해 예외를 던진다. Staleness는 새 함수
+  `prom_health.check_metric_freshness()`로 확인 - **구현 중 실측
+  버그를 하나 발견·수정**했다: 처음에는 8-feature 중 `cpu` 지표의
+  PromQL(`rate(...[30s])`)을 그대로 재사용해 신선도를 확인했는데,
+  이 rate()는 30초 구간 안에 표본이 2개 이상 있어야 계산되는 함수라
+  스크레이프 타이밍에 따라 인스턴트 쿼리가 간헐적으로 빈 응답을
+  반환함을 라이브 재현으로 확인했다(8회 중 1회, §86.5). `up{namespace=
+  "vllm-serving",job="vllm-active"}`(스크레이프마다 항상 값이 찍히는
+  순수 gauge, 윈도우 계산 없음)로 바꿔 15회 연속 재현 시도에서 전부
+  통과함을 확인했다 - feature 추출 자체(`METRICS`)는 그대로 두고
+  신선도 확인용 쿼리만 분리했다.
+- Threshold는 더 이상 하드코딩(`SCORE_THRESHOLD = 0.0`)이 아니라
+  동결 `threshold.json`에서 읽는다(`-0.0742929709960305`) - 비교는
+  여전히 엄격한 `score < threshold`.
+- 연속 3회/정상 1회 reset/cooldown 60초 상태기계를 `advance_streak()`
+  순수 함수로 분리했다(기존 `main()` 루프 안에 있던 로직을 그대로
+  추출 - 새 로직 없음) - offline `replay_detector()`와 동일 규칙임을
+  직접 대조 테스트할 수 있게 하기 위함.
+- 시작 로그에 `model_version`·6개 feature 이름·threshold·
+  recovery-policy URL·4개 artifact SHA-256을 전부 출력한다.
+
+### 86.3 Offline/runtime parity 검증 (score 계산 전 커밋)
+
+신규 `anomaly-detection/test_score_server_v32b.py`(20개) - **부동소수점
+허용오차 `1e-9`**(offline/runtime이 같은 model.pkl/scaler.pkl 객체를
+쓰므로 이론상 완전히 동일해야 함):
+
+- v3.2b artifact 정상 로드 + 알려진 동결 hash 일치.
+- `--artifacts-dir`/`--model-version` 없이는 argparse 자체가 실패
+  (암묵적 fallback 불가능함을 직접 검증).
+- `--model-version` 불일치 fail-closed, rejected v3.1 디렉터리가
+  `v3.2b` 이름으로 선택되지 않음.
+- artifact 파일 하나를 실제로 변조해 SHA256SUMS 불일치 fail-closed
+  재현.
+- `requirements-lock.txt`를 `0.0.0`으로 바꿔 의존성 불일치 fail-closed
+  재현.
+- `threshold.json`의 `cooldown_sec`를 바꿔 runtime replay 규칙 불일치
+  fail-closed 재현.
+- missing/NaN/stale 각각 fail-closed(score 자체가 안 나옴) 확인 +
+  정상 feature는 정상적으로 score 산출.
+- **offline/runtime parity**: 같은 8-feature raw row를
+  `apply_feature_schema -> scaler.transform -> decision_function`
+  (offline 경로 직접 재현)과 `evaluate_v32b()`(runtime) 양쪽에 넣어
+  score가 `1e-9` 이내로 일치.
+- **잘못된 feature 순서**: schema 기반 선택 대신 앞 6개를 그냥 자르면
+  (queue가 섞여 들어가고 cache가 빠짐) 다른 score가 나옴을 실증 -
+  schema 기반 선택이 필수임을 회귀로 고정.
+- **`advance_streak()`가 offline `replay_detector()`와 정확히 같은
+  신호 타이밍을 냄**을 11-포인트 시퀀스(정상->이상2회->정상(reset)->
+  이상3회(신호)->이상(cooldown 중 억제)->...->cooldown 종료 후 새
+  신호)로 직접 대조.
+- 개별 규칙 fixture: score==threshold(이상 아님, 엄격한 미만),
+  threshold 바로 아래(이상), anomaly 2회 후 정상 reset, 연속 3회
+  신호, cooldown 중 추가 anomaly 억제, cooldown 종료 후 새 episode.
+
+### 86.4 `arm_controller.py` 배선 - `proposed`만 변경
+
+`experiments/arm_controller.py`에 `PROPOSED_ARTIFACTS_DIR`
+(`anomaly-detection/v3/model_v32b/artifacts`)·`PROPOSED_MODEL_VERSION`
+(`"v3.2b"`) 상수를 추가하고, `_build_detector_command()`가 `arm==
+"proposed"`일 때만 `--artifacts-dir`/`--model-version`을 덧붙이도록
+했다 - `native`/`fixed_threshold` 배선은 완전히 그대로다. `run_id`
+전달·`RECOVERY_POLICY_SIGNAL_URL` 전달은 기존 메커니즘 그대로 재사용
+(변경 없음). `TrialResult` 스키마는 바꾸지 않았다 - model provenance는
+score_server.py 자체 시작 로그와 이 문서(§86.2)로만 남긴다(감사
+API·스키마 확장은 이번 범위 밖).
+
+오프라인 테스트 `experiments/test_arm_controller.py`에 2개 추가 -
+`proposed` 커맨드에 v3.2b 경로·버전이 정확히 실림, `native`/
+`fixed_threshold` 커맨드에는 v3.2b 관련 인자가 전혀 없음(불변
+재확인). 기존 23개 전부 통과 유지(25개로 증가).
+
+기존 `anomaly-detection/v3/model_v31/test_train_calibrate.py`의
+`test_replay_constants_match_score_server_py`가 이번 변경으로
+깨졌다(구 하드코딩 `SCORE_THRESHOLD = 0.0` 문자열을 찾고 있었음) -
+`score < threshold`로 검사 대상을 갱신했다(§86.2가 의도한 변경이므로
+테스트를 그 의도에 맞게 고친 것이지 새 예외가 아님).
+
+### 86.5 오프라인 검증 결과
+
+전체 오프라인 스위트(`pytest experiments recovery-policy
+anomaly-detection -q -m "not live_cluster"`, 존재하지 않는
+KUBECONFIG) **844 passed**(직전 822에서 +22 - score_server 20개 +
+arm_controller 2개, 기존 테스트 갱신 1건 포함). 라이브 `--once`
+1회 실행으로 실제 Prometheus 대상 end-to-end 동작도 사전 확인했다
+(fail-closed 경로·정상 경로 둘 다 실측, §86.2의 stale-metric 버그를
+바로 이 과정에서 발견·수정).
+
+### 86.6 No-action live smoke 사전등록 (측정 전 기록)
+
+목적: `score_server.py`가 offline evaluator와 완전히 동일한 규칙을
+쓰는지 실제 클러스터에서 확인 - recovery-policy promotion 경로에는
+연결하지 않는다.
+
+- **Capture sink**: 신규 `capture_sink.py`(표준 라이브러리
+  `http.server`만 사용, promotion·전달 로직 자체가 없음) -
+  `127.0.0.1:8765`, 수신 signal을 JSON lines로만 저장. 실제
+  recovery-policy(`http://localhost:8080/signal`)와 URL·포트 둘 다
+  다름을 오케스트레이션 스크립트가 실행 전에 명시적으로 assert한다.
+- **오케스트레이션**: 신규 `run_v32b_no_action_smoke.py` - capture
+  sink 기동 확인 -> `RECOVERY_POLICY_SIGNAL_URL`을 sink URL로 덮어쓴
+  환경에서 `score_server.py --artifacts-dir ... --model-version
+  v3.2b`를 실제로 기동(15초 평가 주기 그대로) -> `qualify_normal_
+  profile.collect_qualification_session("low_load", ...)`(변경 없음,
+  calib3-*/holdout3-* 16세션에 이미 쓰인 경로)로 low_load 0.025 RPS·
+  active_plus_preview·Ready 후 60초 settle·600초 관찰 세션을 실행 ->
+  score_server·sink 순서로 정리. recovery-policy에 experiment context를
+  등록하지 않고 Chaos도 주입하지 않는다(qualify_normal_profile.py
+  경로 자체가 이 둘을 하지 않음, arm_controller/run_once.py 경로가
+  아님).
+- 이 smoke의 session 기록은 `v31_data/sessions/`가 아니라
+  `model_v32b/smoke_evidence/`에 별도 저장 - Training/Calibration/
+  Holdout registry(train_v32b.py의 세 세션 목록)에는 어떤 방식으로도
+  추가하지 않는다.
+- **사후 replay 검증**: score_server.py가 실제로 로그에 남긴 각
+  evaluation cycle의 timestamp를 파싱해 정확히 같은
+  `[timestamp-60초, timestamp)` 구간을 offline 경로
+  (`extract_window_strict` + `apply_feature_schema` + 동결
+  model/scaler)로 다시 조회해 score가 `1e-6` 이내로 일치하는지
+  확인한다 - qualify_normal_profile 세션 자체의 window(별도 시각
+  기준)와는 독립적으로, **score_server.py가 실제로 쓴 window**를
+  그대로 재현하는 것이 이 검증의 정의다.
+
+### 86.7 PASS 조건 (사전 고정, 결과를 보고 바꾸지 않음)
+
+frozen artifact hash 일치, dependency 일치, runtime 시작 로그 정상,
+최소 38개 이상의 유효 평가 point, missing/NaN/stale 0, runtime/offline
+사후 score replay 일치, false signal episode 0, capture sink 수신
+signal 0, restart/OOM 없음, Node Ready·pressure 없음, Endpoint 격리
+유지, active target UID 불변, 예기치 않은 promotion 없음, cleanup 후
+Rollout Healthy(§35.3 관례상 단일 revision 실측 확인으로 판단)·단일
+revision, preview·부하 pod·detector·sink·port-forward·observer·
+context 완전 정리. **point anomaly 자체는 존재해도 FAIL이 아니다** -
+개수와 최대 연속 길이만 기록한다.
+
+### 86.8 즉시 중단 조건
+
+signal episode 1건 이상, capture sink가 signal 수신, 실제
+recovery-policy로 신호 전송, score parity 불일치, artifact/dependency/
+schema 불일치, restart/OOM/Node 이상, promotion 발생, metric
+completeness 실패, cleanup 실패 - 발생 시 threshold·streak를 수정하지
+않고 원본을 보존하고 멈춘다.
+
+### 86.9 범위 제한
+
+이번 커밋(§86.1~86.9, 코드+테스트+계획)까지는 실제 smoke 측정을
+포함하지 않는다 - 측정은 이 커밋이 origin에 반영된 뒤 별도 커밋(§87)
+에서 수행한다. 금지: model·threshold·feature 변경, artifact 재학습,
+latency/TTFT 추가, recovery-policy promotion 연결 실험, Chaos
+시나리오, `memory_pressure` 3-arm, `run_all_scenarios.py`, 60회 본
+실험, `TrialResult` 스키마 변경.
