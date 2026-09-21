@@ -9158,3 +9158,258 @@ lifecycle-timing 불일치로 인한 artifact라는 분류 C)과 일치하는
 추가만 포함). recovery-policy 연결·실제 promotion·Chaos 주입·모델
 재학습·기존 Holdout/challenge 재평가·`memory_pressure` 3-arm·본
 실험 관련 파일은 전혀 건드리지 않았다.
+
+## §91 - load_ramp × proposed 통제된 E2E 파일럿 (실제 recovery-policy 연결, `is_pilot=true`)
+
+§90 PASS 승인 후속 - 동결 v3.2b를 실제 `run_once()` 경로로 실제
+recovery-policy에 연결해 정확히 1회 실행했다. `is_pilot=true`로
+`results/pilot/`에 구조적으로 분리 - 본 실험(60-trial) 데이터에
+포함되지 않는다. 다른 arm·시나리오로 이어서 진행하지 않았다.
+
+### 91.1 사전 코드 변경 (evidence-log opt-in 배선, 판정 로직 무변경)
+
+parity 검증에 필요한 §88.6 structured JSONL evidence(runtime feature
+vector 포함)를 이 파일럿에서도 남기려면 `arm_controller.py`가
+`score_server.py --evidence-log`를 전달해야 하는데, 지금까지 이
+경로가 없었다(model_v32b 스모크 스크립트들만 score_server.py를
+직접 호출해 썼음). `_build_detector_command()`/`make_detector_for_
+arm()`에 `evidence_log_path`(기본값 None - 미지정 시 기존과 완전히
+동일한 커맨드, 본 실험 기본 동작 불변)를 opt-in으로 추가하고,
+`run_load_ramp_trial.py`에만 `--evidence-log` CLI로 노출했다.
+fixed_threshold.py는 이 옵션 자체가 없어 arm에 상관없이 절대 안
+붙는다(회귀 테스트 3개로 고정). 판정 로직·`TrialResult` 스키마는
+전혀 안 건드림. 커밋 `3ff10c5`(코드+테스트, 파일럿 실행 전 별도
+푸시) - `experiments/` 48개 테스트 전체 통과 확인 후 실행.
+
+### 91.2 실행 전 확인 (§91 사용자 체크리스트 1번 순서대로)
+
+- `HEAD == origin/master == 6d26981`, working tree clean(무관한
+  기존 untracked `model_v32/artifacts/` 제외) - 확인.
+- v3.2b freeze 커밋 `57d4440` 존재 확인.
+- `load_and_verify_artifacts()` 실제 재실행 - SHA256SUMS 8개 파일
+  전부 일치, dependency 버전 일치, `training-metadata.json.model_
+  version`/`threshold.json` cross-check 전부 통과("artifact load+
+  verify: OK").
+- threshold = `-0.0742929709960305`, feature 6개 순서 = `['cpu_
+  mean','cpu_slope','memory_mean','memory_slope','cache_mean',
+  'cache_slope']` - 둘 다 정확히 일치 확인.
+- `pytest test_score_server_v32b.py` 23개 전체 통과(runtime/offline
+  parity 포함).
+- Node `sj-control`/`sj-worker` 둘 다 Ready, pressure 없음.
+- Chaos CR 전 네임스페이스 0건. 실험 pod·detector·observer 프로세스
+  없음(ramp-inj-*/ramp-probe-* 없음, 로컬 score_server/capture_sink
+  프로세스 없음 - 발견된 두 `python.exe`는 무관한 `http.server 8743`
+  프로세스로 재확인).
+- recovery-policy `/healthz`=ok, `/admin/quiescent`={quiescent:true,
+  active_count:0}, `/admin/experiment-run`={current:null}(context
+  null), `/admin/experiment-run/timing`·`/admin/audit/{run_id}`
+  둘 다 정상 응답(빈/null 상태) - 확인.
+- Prometheus 포트포워드(9090) 기존에 살아있었음. recovery-policy
+  포트포워드(8080)는 죽어 있어 새로 기동(`kubectl port-forward -n
+  vllm-serving svc/recovery-policy 8080:8080`) 후 재확인 - `/healthz`
+  정상, vLLM 지표(`container_cpu_usage_seconds_total`) 15초 이내
+  fresh 샘플 확인.
+- frozen load_ramp config(`chaos/scenario-load-ramp.yaml`, 5-stage
+  0.025/0.05/0.20/0.30/0.40RPS×90초, Phase 8 v2 확정본) 내용 확인,
+  마지막 수정 커밋(`7efd730`, 2026-09-18)이 이후 변경 없음 확인.
+  base probe profile(`chaos/probe-config.yaml`, 1RPS/prompt="Hi"/
+  max_tokens=1) 확인. 이미지 태그(`loadgen-runner:phase8-v3-
+  boundaries`)가 `sj-worker` 노드에 실제로 존재함을 `kubectl get
+  node -o json`의 `status.images`로 SSH 없이 확인(163923224 bytes).
+
+**발견된 편차 1건(막지 않고 근거와 함께 진행)**: 실행 전 Rollout
+상태가 `phase=Degraded`/`Paused=True`/`previewSelector=6888c4694f`
+(§90 자신의 abort 잔재, `abortedAt` 타임스탬프가 §90의 detector 정지
+시각과 정확히 일치)로 문자 그대로 "Healthy"는 아니었다. 그러나
+`blue_green_prep.get_blue_green_status()`는 `activeSelector`/
+`currentPodHash`만 읽고(`previewSelector`/`phase`는 전혀 참조 안 함,
+코드 확인) `activeSelector=6b9d88c96`는 실제 단일 정상 pod와
+일치했고, `vllm-preview` Endpoint도 비어 있었다. 이 정확한 패턴
+(abort 직후 `phase=Degraded`/`Healthy=False`/`Paused=True` 잔존)은
+§35.3에 이미 "`kubectl argo rollouts abort`의 정상적인 종결
+상태... 방치나 고장의 신호가 아니다"로 문서화·§35.6에서 재검증된
+사례였다 - 이 근거로 차단하지 않고 진행했다(실행 후 91.6에서 실제로
+문제없이 새 preview가 정상 준비됐음을 재확인).
+
+### 91.3 실행
+
+`experiments/`에서 `python run_load_ramp_trial.py --arm proposed
+--pilot --evidence-log <경로>` 1회 실행(2026-09-21T12:34:26Z 시작,
+exit=0). 실행과 별도로 순수 관찰용 로컬 poller(세션 스크래치패드,
+저장소 미포함)를 15초 간격으로 병행 기동해 Rollout selector/
+Endpoint/`admin/experiment-run/timing`을 실시간 스냅샷했다 - 판정
+로직에 전혀 관여하지 않음.
+
+### 91.4 결과 타임라인 (`TrialResult` + 독립 소스 교차검증)
+
+| 항목 | 시각(UTC) |
+|---|---|
+| `t_run_start` | 12:34:28.222323 |
+| `t_preview_prep_start` | 12:34:29.580201 |
+| `t_preview_ready`(212.4초 소요, 480초 timeout 이내) | 12:38:01.986313 |
+| `t_baseline_ready`(59 샘플, p95=0.352, availability=1.0) | 12:41:24.550099 |
+| `t_injection_request` / `t_injection`(관측 오차 1.10초) | 12:41:29.448651 / 12:41:30.547552 |
+| `t_slo`(stage-4-0.30rps 중) | 12:46:02.973049 |
+| `t_detection`(stage-5-0.40rps 중) | 12:48:10.900109 |
+| `t_decision` | 12:48:11.007882 |
+| `t_api_request` | 12:48:11.008071 |
+| `t_switch`(stage-5-0.40rps 중) | 12:48:18.551320 |
+| `t_injection_end` | 12:49:12.814657 |
+| `t_recovery` | 12:49:57.561835 |
+| `t_audit_write` / `t_audit_push` | 12:48:18.642312 / 12:48:22.361841 |
+| `t_run_end` | 12:51:40.646154 |
+
+순서 확인: `t_detection(12:48:10.900) ≤ t_decision(12:48:11.008) ≤
+t_api_request(12:48:11.008) ≤ t_switch(12:48:18.551)` - 전부 만족.
+Detector 시작 전이나 `t_injection` 이전 predictive signal/promotion
+없음(evidence-log 25건 전부 `signal_attempted=false`, K8s Events에도
+그 이전 SwitchService/RolloutCompleted 없음) - `invalid_run` 조건
+미해당.
+
+**detection/decision/action stage 독립 재분류**(`_classify_
+timestamp_against_stages()`를 실제 `ramp-summary-*.csv`에 그대로
+재실행, 오프라인·순수 함수): `t_slo`→`stage-4-0.30rps`,
+`t_detection`/`t_switch`→`stage-5-0.40rps` - `TrialResult`의
+`slo_stage`/`detection_stage`/`action_stage`와 정확히 일치.
+
+**early/late 판정**: `t_detection(12:48:10.90) > t_slo(12:46:02.97)`
+- **late detection**(지연 127.93초). 성능 우월성은 주장하지 않는다
+(n=1, 사전 지시).
+
+**정책 action/promotion**: `action=promote_preview`,
+`decision_outcome=executed_verified`, `promotion_verified=true`,
+`idempotency_key=pilot-load_ramp-proposed-01-20260921T123428Z:
+anomaly_risk`. duplicate 신호 없음(recovery-policy audit에 이
+run_id 레코드 정확히 1건).
+
+### 91.5 독립 소스 4종 교차검증 - 전부 완전 일치
+
+| 소스 | `t_switch`/promotion 관련 확인 |
+|---|---|
+| `TrialResult`(자체 보고) | `t_switch=12:48:18.551320` |
+| recovery-policy 감사기록(`GET /admin/audit/{run_id}`, git 커밋 `3f71f52c`) | `record_id`=`df4c378a-...`(TrialResult의 `audit_record_id`와 일치), `result.verified_at=12:48:18.551320`(정확히 일치), `result.stdout="rollout 'vllm-serving' promoted"`, `outbox.commit_sha=3f71f52c...`(TrialResult와 일치) |
+| Kubernetes Events(API 서버, 완전 독립) | `12:48:18Z SwitchService: vllm-active를 6b9d88c96→7d6f888c94로 전환`, `12:48:18Z RolloutCompleted: revision 75 blue-green update 완료` - 초 단위로 정확히 일치 |
+| 로컬 실시간 poller(15초 간격, 91.3) | `12:48:18.773`에 `activeSelector`가 `7d6f888c94`로, `rollout_phase`가 `Healthy`로 전환된 첫 스냅샷 - 0.2초 이내 일치 |
+
+4개 독립 소스(자체 보고·recovery-policy 감사·K8s API 서버 이벤트·
+실시간 외부 관찰)가 승격 시각·주체·결과에 대해 완전히 일치한다 -
+promotion이 실제로, 의도한 그대로 일어났음을 어느 한 소스의 자기
+보고에도 의존하지 않고 확인했다.
+
+### 91.6 발견된 관찰 공백 1건 (판정 자체는 오염되지 않음)
+
+**증상**: score_server.py의 structured evidence-log(§88.6)는 마지막
+레코드가 `12:47:53.596532`(`consecutive_anomalous=2`)에서 끊기고,
+실제 3번째 연속 이상 판정·신호 전송이 일어났을 26번째 evaluation
+cycle(`t_detection=12:48:10.900109` 부근) 레코드가 파일에 없다.
+같은 시각대의 recovery-policy pod 자체 접근 로그(`kubectl logs`,
+회전 없음, 41000줄 전체 검색)에도 `POST /signal` 줄이 이 run_id
+구간(12:40:24 context 등록 ~ 12:51:40 context 해제)에 단 한 줄도
+없다(참고로 이 pod 로그에 있는 유이한 `POST /signal` 2줄은 전부
+2026-09-19 다른 run_id의 것으로 확인됨 - 이번 파일럿과 무관).
+
+**판정에 영향 없음의 근거**: `run_once()`의 OBSERVING 루프가 매
+poll마다 `detector.is_alive()`를 확인해 죽어 있으면 즉시
+`TrialInvalid`를 던지는데(코드 확인, 751-763행), 이번 trial의
+`outcome=recovered`/`state=completed`(`TrialInvalid` 아님)이므로
+detector 프로세스는 관찰 내내 살아있었다 - 이 신호 자체가 가짜이거나
+프로세스가 죽어서 생긴 공백이 아니다. 그리고 실제 승격 사실 자체는
+91.5의 4개 독립 소스(자체보고·감사기록·K8s Events·실시간 관찰)가
+전부 완전히 일치해 의심의 여지가 없다 - 빠진 건 "그 결정을 내린
+1회 evaluation의 원본 feature vector/score 기록" 뿐이고, "그 결정이
+실제로 내려지고 실행됐는지"는 아니다.
+
+**parity 검증 결과(가용한 25개 레코드 전부)**: 25개 전부 offline
+evaluator 재계산과 `score` 차이 `0`(1e-9 이내 아니라 완전 동일),
+`is_anomalous`/`consecutive_anomalous` 전부 일치, 동일 25개 레코드에
+`replay_detector()`를 재실행해도 `point_anomaly=6`/`max_consecutive=
+2`/`signal_count=0`으로 runtime 기록과 정확히 일치. **26번째(실제
+신호) cycle만은 원본 feature vector가 없어 그 한 건에 한해서는
+parity를 수행할 수 없다** - 이 한계를 숨기지 않고 명시한다.
+threshold`(-0.0742929709960305)`·model·feature·streak 로직은 이번
+턴에서 전혀 변경하지 않았으므로, 이 공백은 관찰 하니스의 결함이지
+판정 로직의 결함이 아니다.
+
+이 공백의 근본 원인(evidence-log 쓰기와 recovery-policy 접속 로그
+둘 다 같은 한 요청 주변에서만 비는 이유)은 이번 턴 범위 밖이다 -
+라이브 재실행·score_server.py/main.py 수정 전부 금지(§91 범위
+제한)이므로 원인 규명은 별도 오프라인 turn으로 미룬다.
+
+### 91.7 원본 데이터 대조 (섹션 5 요구 항목별)
+
+- **raw probe CSV**(607 포인트, `probe-...-raw.csv`): `slo_judge.
+  load_raw()`+`evaluate()`+`find_t_slo()`/`find_t_recovery()`를
+  독립 재실행 - `t_slo=12:46:02.973049`, `t_recovery=12:49:57.
+  561835` **`TrialResult`와 완전히 동일**(초·마이크로초까지).
+- **ramp stage summary CSV**: 5개 stage 전부 실측 경계 확보,
+  stage-5에서 success_rate=0.9444(34/36), p95=7.668초/p99=9.269초
+  (SLO 0.648초 대비 명백한 위반 수준) - 실제 열화가 있었음을 확인.
+- **structured detector JSONL**: 91.6 참고(25/26 커버, parity 완전
+  일치).
+- **recovery-policy timing API**: trial 진행 중 poller가 15초
+  간격으로 스냅샷(91.5), trial 종료 후 `/admin/experiment-run/
+  clear` 호출로 정상 초기화 확인.
+- **audit API/outbox/Git 커밋**: 91.5에서 4중 교차검증 완료.
+- **Kubernetes Events**: 91.5, 91.4에서 확인.
+- **Rollout selectors/Endpoint**: 91.5, 91.8에서 확인.
+- **pod UID/restart**: 옛 active pod `vllm-serving-6b9d88c96-64k7r`
+  K8s Event로 정상 삭제 확인(`SuccessfulDelete`, 12:48:48), 신규
+  active pod `vllm-serving-7d6f888c94-zlkvv` RESTARTS=0. recovery-
+  policy pod 자체는 전 구간 RESTARTS=0/무변경(건드리지 않음 확인).
+- **Prometheus feature 원본**: score_server.py의 `raw_feature_
+  vector`가 25개 레코드 전부에서 parity 재계산과 정확히 일치했으므로
+  (91.6) 별도 재추출 없이 이미 간접 확인됨(§89.7과 동일 원칙 -
+  authoritative input은 runtime이 실제 쓴 structured feature
+  vector).
+
+### 91.8 종료 후 정리 확인
+
+- Rollout: `phase=Healthy`, `activeSelector=previewSelector=
+  currentPodHash=7d6f888c94`(단일 revision으로 완전히 정착 -
+  91.2에서 지적한 Degraded/previewSelector 잔재가 실제 promotion
+  이후 스스로 깨끗이 해소됨, §35.3 판단이 재확인됨).
+- ReplicaSet: `vllm-serving-7d6f888c94` desired/current/ready=1/1/1
+  만 살아있음, 옛 `vllm-serving-6b9d88c96`은 목록에서 완전히
+  사라짐(정상 GC).
+- Endpoint: `vllm-active`/`vllm-preview` 둘 다 새 pod IP(10.244.36.13)
+  - argo-rollouts blue-green의 promotion 직후 정상 동작(다음 preview
+  준비 전까지 두 서비스가 같은 stable을 가리킴, 문서화된 정상 동작).
+- Chaos CR 0건, `ramp-inj-*`/`ramp-probe-*` pod 완전 삭제 확인,
+  context `/admin/experiment-run`={current:null} 재확인, 로컬
+  score_server/capture_sink 프로세스 0개.
+- 이번 턴에 기동한 로컬 관찰 도구(포트포워드 PID 36800, 순수 관찰용
+  poller)는 확인 완료 후 직접 정리(사전에 떠 있던 무관한 포트포워드
+  ×2, `http.server 8743` ×2는 건드리지 않음 - 각각 다른 목적의
+  기존 프로세스로 이미 확인됨).
+
+### 91.9 판정 (§91.8 기준 적용)
+
+| 조건 | 결과 |
+|---|---|
+| frozen v3.2b가 실제 runtime에서 사용됨 | 충족(artifact_hashes 25개 레코드 전부 단일 세트, load_and_verify_artifacts 사전 통과) |
+| detector lifecycle 정상 | 충족(§89.2 실제 `run_once()` 순서 그대로 - 이번엔 monkey-patch 없이 진짜 `run_once()` 자체 사용) |
+| runtime/offline parity | 충족(가용 25/26 레코드 완전 일치, 91.6 명시한 1건 한계 제외) |
+| recovery-policy context 격리 | 충족(등록→해제 정상, 사전/사후 모두 null) |
+| 발생한 신호·정책·action이 정확히 기록됨 | 충족 - 4개 독립 소스 완전 일치(91.5). 단, evidence-log 자체의 원본 feature 기록은 그 1건에 한해 공백(91.6, 별도 명시) |
+| promotion 발생에 맞는 Rollout 최종 상태 | 충족(단일 healthy revision, 91.8) |
+| audit provenance 완전 | 충족(record_id/commit_sha/idempotency_key 전부 교차 일치) |
+| cleanup 완전 | 충족(91.8) |
+| 결과 필드 모순 | 없음(4개 독립 소스가 전부 일치 - "빠진 기록"과 "서로 다른 값"은 다르다) |
+
+**E2E 배선 판정: PASS.** 탐지 성능(late detection, 127.93초 지연)은
+관찰값으로만 기록하며 우월성을 주장하지 않는다(n=1). 91.6의 evidence-
+log 공백은 PASS 판정을 뒤집지 않지만, 별도로 명확히 플래그한다 -
+harness 관찰 완전성의 개선 여지이지 이번 판정의 근거를 약화시키는
+모순이 아니다.
+
+### 91.10 현재 Phase 8 위치 및 범위 제한 준수 확인
+
+v3.2b는 이제 offline validation(adopted, §88) + runtime safety
+diagnostic(passed_on_lifecycle_aligned_diagnostic, §90) + 통제된
+E2E 파일럿(load_ramp×proposed 1회, PASS, 본 절)까지 확인됐다. 이번
+턴 금지 사항 - native/fixed_threshold 재실행, 다른 load_ramp 반복,
+pod_kill/network_degrade/memory_pressure 실행, model·threshold·
+feature 변경, 재학습, runtime 판정 규칙 변경, `run_all_scenarios`,
+60회 본 실험, `TrialResult` 스키마 변경 - 전부 준수(0건). 다음
+단계(다른 시나리오·arm 파일럿 확대, 본 실험 착수 여부 등)는 사용자
+승인 이후에만 진행한다.
