@@ -46,11 +46,14 @@ def main():
                               "is_pilot=True로 기록해 results/pilot/ 아래 구조적으로 분리")
     parser.add_argument("--rollout", default="vllm-serving", help="non-native arm의 preview 준비 대상 Rollout 이름")
     parser.add_argument("--namespace", default="vllm-serving", help="non-native arm의 preview 준비 대상 namespace")
+    parser.add_argument("--run-id", default=None,
+                         help="§98 run_all_scenarios.py 지원 - 미리 생성된 run_id를 그대로 쓴다(선택). "
+                              "기본값 None이면 기존과 동일하게 이 스크립트가 실행 시각으로 자동 생성한다.")
     args = parser.parse_args()
 
     scenario = "pod_kill"
     prefix = "pilot-" if args.pilot else ""
-    run_id = f"{prefix}{scenario}-{args.arm}-{args.rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    run_id = args.run_id or f"{prefix}{scenario}-{args.arm}-{args.rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
     injector = make_pod_kill_injector(run_id, args.arm, args.rep)
     # non-native arm은 이 배선을 절대 우회할 수 없다(fail-closed, 2026-09-19 추가) - 예전엔 --arm

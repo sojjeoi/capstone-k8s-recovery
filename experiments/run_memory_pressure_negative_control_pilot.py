@@ -76,7 +76,7 @@ def classify_target_replacement(result) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="memory_pressure_negative_control_v1(1000MB x 120초) 3-arm 파일럿 단일 arm 실행(§96)")
+        description="memory_pressure_negative_control_v1(1000MB x 120초) 단일 arm 실행(§96/§98)")
     parser.add_argument("--arm", required=True, choices=["native", "fixed_threshold", "proposed"])
     parser.add_argument("--rep", type=int, default=1)
     parser.add_argument("--probe-config", default=str(DEFAULT_PROBE_CONFIG))
@@ -85,10 +85,20 @@ def main():
     parser.add_argument("--order-seed", type=int, default=1)
     parser.add_argument("--rollout", default="vllm-serving")
     parser.add_argument("--namespace", default="vllm-serving")
+    parser.add_argument("--run-id", default=None,
+                         help="§98 run_all_scenarios.py 지원 - 미리 생성된 run_id를 그대로 쓴다(선택). "
+                              "기본값 None이면 기존과 동일하게(§96/§97 파일럿 관례) 이 스크립트가 "
+                              "pilot- 접두어 + 실행 시각으로 자동 생성한다.")
+    parser.add_argument("--main-experiment", action="store_true",
+                         help="§98 - 지정하면 is_pilot=False로 기록해 results/(pilot 아님)에 저장한다 "
+                              "(본 실험 auxiliary negative-control 집계용). 기본값(미지정)은 §96/§97과 "
+                              "동일하게 is_pilot=True, results/pilot/ - 기존 동작 완전히 불변.")
     args = parser.parse_args()
 
     scenario = "memory_pressure_negative_control_v1"
-    run_id = f"pilot-memory-negative-{args.arm.replace('fixed_threshold', 'fixed')}-{args.rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    is_pilot = not args.main_experiment
+    default_run_id = f"pilot-memory-negative-{args.arm.replace('fixed_threshold', 'fixed')}-{args.rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    run_id = args.run_id or default_run_id
 
     stages = [{"name": f"stage-1-{SIZE_MB:.0f}mb", "size_mb": SIZE_MB, "workers": WORKERS,
                "duration_sec": STAGE_DURATION_SEC}]
@@ -106,7 +116,7 @@ def main():
             sequence_index=args.sequence_index, order_seed=args.order_seed,
             injector=injector, prober=prober, timeout_sec=args.timeout_sec,
             detector=detector,
-            run_id=run_id, is_pilot=True,
+            run_id=run_id, is_pilot=is_pilot,
             latency_slo_sec=slo_judge.LATENCY_THRESHOLD, slo_version=slo_judge.SLO_VERSION,
             min_observation_sec=slo_judge.WINDOW_SEC,
             injection_started_timeout_sec=60.0,
@@ -125,7 +135,7 @@ def main():
         print(f"target_replaced=True at {result.t_target_replaced} "
               f"(replacement={result.target_replacement_pod_name}/{result.target_replacement_pod_uid}) "
               f"-> classification={classification['category']} ({classification['reasons']})")
-    result_dir = "results/pilot"
+    result_dir = "results/pilot" if is_pilot else "results"
     print(f"결과 파일: {result_dir}/trial-{run_id}.json")
     print(f"안전 로그(evidence): {result_dir}/memory-pressure-safety-{run_id}.jsonl")
 

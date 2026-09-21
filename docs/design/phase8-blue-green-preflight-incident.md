@@ -10573,3 +10573,106 @@ fixed_threshold는 injection 전 중단이라 안전 로그 자체가 생성되�
 실행(0건), `run_all_scenarios`(미실행), 60회 본 실험(미실행),
 `TrialResult` 스키마 변경(0건) - 전부 준수. `proposed` arm은 §5의
 명시적 지시에 따라 실행하지 않았다(스킵이지 위반이 아님).
+
+## §98 - 본 실험(45+5=50 trial) 최종 확정 + `run_all_scenarios.py` 오케스트레이터 - 오프라인 구현·테스트·문서화만 (실클러스터 미접촉)
+
+§96/§97 결과 승인 이후 지시된 최종 스코프 확정. 요약: core factorial을
+`load_ramp`/`pod_kill`/`network_degrade` × 3-arm × 5회 = 45 trial로,
+`memory_pressure_negative_control_v1`을 native만 5회 = 5 trial의 별도
+auxiliary negative control로 확정(합계 50, 임의로 60에 맞추지 않음).
+`memory_pressure`는 core 3-arm 성능 비교에서 구조적으로 제외 - §96/§97에서
+non-native arm이 preview headroom 부족(`pre_injection_memavailable=4.08GiB`
+→ stress 후 projected `3.11GiB`, 4GiB 기준 미충족)으로 안전 실행 불가함을
+이미 확인했고, 이는 detector 성능이 아니라 단일 워커 노드 메모리 용량의
+한계다. 해석 고정 문구·집계 그룹 분리 규칙은 `docs/design/
+experiment-contract.md` §8에 사전 등록했다(측정 전 - 이번 턴은 실제
+trial을 하나도 실행하지 않으므로 "측정 전"이라는 표현이 문자 그대로
+성립한다).
+
+### 98.1 이번 턴 범위 - 명시적으로 금지된 것
+
+실제 trial 실행, 어떤 profile의 실클러스터 적용, preview 생성, Chaos
+주입, detector 실행, model/threshold/feature 변경, recovery-policy
+재배포, 결과 스키마 변경, `claude` worktree 정리, 60회(또는 그 외 어떤
+숫자로든) 본 실험 시작 - 전부 0건. 이번 턴 산출물은 코드·테스트·문서뿐이다.
+
+### 98.2 `run_all_scenarios.py` - 신규 구현, 기존 러너 재사용
+
+`experiments/run_all_scenarios.py`는 이전에 존재하지 않았음을 `Glob`으로
+확인 후 처음부터 만들었다 - 다만 injector/detector/preview 배선 로직은
+`run_load_ramp_trial.py`/`run_pod_kill_trial.py`/`run_network_degrade_
+trial.py`/`run_memory_pressure_negative_control_pilot.py`(4개 모두 이번
+턴 `--run-id` 옵션 추가, 후자는 `--main-experiment` 옵션도 추가해
+`is_pilot=False`로 전환 가능해짐)를 subprocess로 그대로 호출해 재사용한다
+- 별도 중복 실행기를 만들지 않았다.
+
+구조는 두 층: (1) 순수 함수 - `build_matrix()`(50-trial 결정론적 생성),
+`build_initial_state()`/`new_state_entry()`/`save_state_atomic()`/
+`load_state()`(state 파일), `run_sequence()`(모든 실제 동작을 `Hooks`
+데이터클래스로 주입받는 순차 실행 루프 - fail-closed 중단·재개·profile
+전환·dry-run을 전부 이 안에서 처리). (2) `Hooks`의 실제 구현(`real_run_
+trial`/`real_preflight`/`real_postflight_cleanup_check`/`real_apply_
+profile`/`real_restore_profile`/`real_check_git_drift`/`real_verify_
+result_hash`) - subprocess/kubectl/git 등 실환경에 닿는 부분. 지시대로
+이번 턴 (2)는 라이브로 실행·검증되지 않았다.
+
+**`network_degrade`의 profile 전환**: `run_network_degrade_trial.py`의
+`_verify_probe_profile()`은 읽기 전용 검증만 하고 실제 전환은 하지
+않는다는 것, 그리고 `experiments/` 전체에 재사용 가능한 전환/복원
+함수가 이전에 전혀 없었다는 것을 grep으로 확인했다(전환은 지금까지
+`gitops/apps/vllm-serving/overlays/network-tolerant/` 수동 적용 + Rollout
+promotion으로 외부에서 해왔음, `ProbeProfileMismatch` 예외 메시지에
+그대로 적혀 있음). `gitops/apps/vllm-serving/`의 실제 디렉터리 구조를
+확인해 `real_apply_profile()`/`real_restore_profile()`을 작성했다 -
+tolerant는 `kubectl apply -k overlays/network-tolerant/`, 기본은
+`kubectl apply -f rollout.yaml`, 이후 `kubectl argo rollouts promote`.
+**이 두 함수와 그 뒤의 재검증은 이번 턴 라이브로 실행되지 않았다** - 최초
+실사용 전 반드시 수동으로 먼저 확인할 것(§8.7 동일 고지를 계약서에도
+남김).
+
+### 98.3 오프라인 테스트 결과
+
+`experiments/test_run_all_scenarios.py`(신규, 30 tests, 전부 PASS) -
+정확히 50-trial 생성(core 45+auxiliary 5), core cell(시나리오×arm)당
+정확히 5회, auxiliary는 native 5회·fixed_threshold/proposed 0회, 고정
+실행 순서(시나리오 블록 순서 + 5-묶음 arm 순서) 검증, 이 고정 순서가
+`experiment-contract.md` §7의 균형 조건(각 arm의 위치별 등장 횟수
+최댓값-최솟값 ≤ 1)을 실제로 만족함을 직접 확인, run_id 중복 없음,
+순차 실행(preflight→run_trial→cleanup 순서 보장), 재개 시 completed
+trial 건너뜀, running 상태에서 중단된 trial은 자동 재실행 대신
+needs_attention 전환, invalid/failed/needs_attention 상태는 재개 시
+자동으로 건너뛰지 않고 즉시 전체 중단, cleanup 검증 실패 시 즉시 중단,
+preflight 실패 시 즉시 중단 + invalid 기록, git drift가 `audit-log/`
+밖일 때만 차단(recovery-policy-bot의 감사 커밋은 허용), network_degrade
+블록 시작 전/종료 후 정확히 한 번씩 profile 적용/복원(트리거 순서까지
+검증) + 그 블록 도중 예외(Ctrl+C 시뮬레이션)가 나도 `finally`로 복원이
+보장됨, dry-run은 run_trial/apply_profile/restore_profile을 전혀
+호출하지 않음(클러스터 호출 0건), atomic state 저장→재로드 왕복 일치,
+`--from-run-id`가 이전 trial의 저장된 result hash를 실제 파일과 대조해
+불일치 시 중단, `--plan` CLI가 정확히 50 trial의 JSON을 출력.
+
+전체 오프라인 스위트(`KUBECONFIG=/nonexistent/kubeconfig`로
+`experiments/`+`anomaly-detection/`+`recovery-policy/` 실행): **941
+passed, 3 skipped, 1 failed**. 실패한 1건(`anomaly-detection/v3/
+model_v32b/test_historical_reextraction.py::test_reextract_session_
+reconstructs_bounds_from_ramp_summary`)은 §96에서 이미 조사해 memory_
+pressure 러너 경로와 무관함을 확인한 사전 존재 결함(가짜 `query_range_
+fn` 주입을 우회해 실제 `localhost:9090`에 연결을 시도하는 테스트
+격리 공백) - 이번 턴 변경과 무관하며 새로 발생한 회귀가 아니다.
+
+### 98.4 dry-run 결과
+
+`python run_all_scenarios.py --plan`으로 매트릭스 50건 생성을 확인했다
+(클러스터 무접촉). `--dry-run`(실 state 파일 생성 포함한 전체 흐름)은
+실클러스터 접근 권한이 없는 이 환경에서 실행하지 않았다 - `--plan`과
+오프라인 테스트의 `test_dry_run_makes_zero_cluster_calls`가 그 로직
+(클러스터 호출 0건, 모든 trial이 `planned`로 남음)을 이미 fake로
+증명했으므로 별도 실행이 정보를 추가하지 않는다고 판단했다.
+
+### 98.5 범위 제한 준수 확인
+
+이번 절 금지 사항 - 실제 trial 실행(0건), profile 실클러스터 적용(0건),
+preview 생성(0건), Chaos 주입(0건), detector 실행(0건), model/threshold/
+feature 변경(0건), recovery-policy 재배포(0건), `TrialResult` 스키마
+변경(0건), `claude` worktree 정리(0건), 60회(또는 그 외) 본 실험
+시작(0건) - 전부 준수.

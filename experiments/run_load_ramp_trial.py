@@ -47,11 +47,15 @@ def main():
                               "structured JSONL evidence 경로(§88.6과 동일 포맷). 기본값 None이면 "
                               "기존과 동일하게 아무 인자도 안 붙음(본 실험 기본 동작 불변, 순수 opt-in). "
                               "native/fixed_threshold에는 아무 영향 없음(해당 스크립트에 이 옵션 자체가 없음).")
+    parser.add_argument("--run-id", default=None,
+                         help="§98 run_all_scenarios.py 지원 - 미리 생성된 run_id를 그대로 쓴다(선택). "
+                              "기본값 None이면 기존과 동일하게 이 스크립트가 실행 시각으로 자동 생성한다 "
+                              "(수동/기존 호출부 동작 불변).")
     args = parser.parse_args()
 
     scenario = "load_ramp"
     prefix = "pilot-" if args.pilot else ""
-    run_id = f"{prefix}{scenario}-{args.arm}-{args.rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    run_id = args.run_id or f"{prefix}{scenario}-{args.arm}-{args.rep:02d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
     injector = make_load_ramp_injector(args.config, run_id, args.arm, args.rep)
     # non-native arm은 이 배선을 절대 우회할 수 없다(fail-closed, 지시) -

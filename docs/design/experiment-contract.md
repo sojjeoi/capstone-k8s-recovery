@@ -508,8 +508,53 @@ stage 2~4를 만들지 않았고, `fixed_threshold`는 stage 4 중 promotion(+32
 60회를 arm별로 몰아서 돌리지 않고 **섞어서(interleaved)** 수행한다 — 특정 arm이 특정 시간대(클러스터 상태 drift, 캐시 워밍 등)에 몰리는 걸 방지. 시나리오별로 5회×3arm=15회 블록 안에서 arm 순서를 `order_seed`로 셔플하고, 그 시드와 결과 순서(`sequence_index`)를 결과 스키마에 남겨 재현 가능하게 한다.
 
 **균형화 (2026-09-20 동결, §5.10 9번)**: 완전 무작위 셔플은 시드에 따라 한 arm이 계속 앞이나 뒤에 몰릴 수 있다(예: `native`가 5번 모두 묶음의 첫 실행). 그래서 시나리오별 15회를 rep마다 arm 3종이 정확히 1번씩 든
-5개 묶음으로 나누고, 묶음 안 순서는 `order_seed`로 재현 가능하게 정하되 5개 묶음에 걸쳐 **각 arm이 각 위치(1·2·3번째)에 오는 횟수의 최댓값-최솟값이 1 이하**(= 1~2회)가 되게 한다. 이 순서를 만드는
-`run_all_scenarios.py`는 **아직 구현되지 않았고** 이 균형 조건을 여러 시드에서 검증하는 오프라인 테스트가 그 구현의 일부다(순서를 손으로 넘기는 러너 CLI의 `--sequence-index`/`--order-seed`는 균형을 보장하지 않는다).
+5개 묶음으로 나누고, 묶음 안 순서는 `order_seed`로 재현 가능하게 정하되 5개 묶음에 걸쳐 **각 arm이 각 위치(1·2·3번째)에 오는 횟수의 최댓값-최솟값이 1 이하**(= 1~2회)가 되게 한다.
+
+**구현 확정(§98, 2026-09-22)**: `run_all_scenarios.py`가 구현됐다 — 다만 매 실행마다 시드로 새로 셔플하는 대신, 사용자가 직접 지정한 **고정** 5-묶음 순서(rep1 native→fixed_threshold→proposed, rep2 fixed_threshold→proposed→native, rep3 proposed→native→fixed_threshold, rep4 native→proposed→fixed_threshold, rep5 fixed_threshold→native→proposed)를 상수로 굳혔다. 이 고정 순서가 위 균형 조건(최댓값-최솟값 ≤ 1)을 실제로 만족하는지는 `test_run_all_scenarios.py::test_arm_order_satisfies_contract_section7_balance_property`가 매번 재확인한다. 시나리오 블록 순서는 `load_ramp` → `pod_kill` → `network_degrade` → `memory_pressure_negative_control_v1`(auxiliary, native만 5회)로 고정 — 상세 매트릭스·집계·오케스트레이션 규칙은 §8 참고.
+
+## 8. 본 실험 최종 확정 — 매트릭스·집계·오케스트레이션 (§98, 2026-09-22 사전 등록)
+
+### 8.1 최종 trial 수 — 45(core) + 5(auxiliary) = 50, 60이 아니다
+
+- **core factorial**: `load_ramp`/`pod_kill`/`network_degrade` × `native`/`fixed_threshold`/`proposed` × 5회 = 45 trial. `analysis_group = core_fault_comparison`.
+- **auxiliary negative control**: `memory_pressure_negative_control_v1`(§94/§95 동결, 1000MB×120초) × `native`만 × 5회 = 5 trial. `analysis_group = auxiliary_negative_control`. **core 3-arm 성능 비교(recovery rate/MTTR)에서 구조적으로 제외**한다 — §96/§97에서 non-native arm이 preview headroom 부족(`pre_injection_memavailable=4.08GiB`, stress 후 projected `3.11GiB`, 4GiB 기준 미충족)으로 안전하게 실행될 수 없음을 확인했기 때문이며, 이는 detector 성능이 아니라 단일 워커 노드의 메모리 용량 한계다.
+- 합계 50 — **반복 수를 60에 맞추기 위해 임의로 늘리지 않는다**(명시적 지시).
+
+### 8.2 memory_pressure 해석 고정 문구
+
+이후 모든 보고서·문서는 다음 표현을 그대로 쓴다: "세 가지 재현 가능한 장애 시나리오에서 세 대응 방식을 비교하고, 메모리 압박은 제한된 단일 노드 환경의 안전 한계와 불필요한 조치 여부를 평가하는 별도 negative control로 분석했다."
+
+금지 표현(사용 금지): "memory_pressure에서 3-arm 성능 비교", "proposed가 memory_pressure를 탐지하지 못함", "fixed_threshold가 실패함", "memory recovery 성능 우열", "4개 시나리오 모두에서 동일 factorial 비교 완료".
+
+### 8.3 집계 그룹 분리 — `TrialResult` 스키마 변경 없음
+
+`core_fault_comparison`(지표: 탐지 여부·탐지 출처·탐지 lead time·`t_slo`·`t_recovery`·recovery 소요시간·action·promotion·promotion_verified·availability·SLO 위반 지속시간·cleanup·감사 완전성)과 `auxiliary_negative_control`(지표: 지속적 SLO 위반 여부·working-set 상승·MemAvailable·restart/OOM/Node 상태·불필요 탐지·불필요 조치·cleanup·자원 오버헤드)은 `run_all_scenarios.py`의 state 파일(`analysis_group` 필드)과 분석 스크립트 레벨에서만 구분한다 — `TrialResult` 자체에는 새 필드를 추가하지 않는다.
+
+### 8.4 결정론적 실행 순서 — 사전 고정, 측정 후 변경 금지
+
+시나리오 블록 순서: `load_ramp` → `pod_kill` → `network_degrade` → `memory_pressure_negative_control_v1`(auxiliary). 각 core 시나리오 내부는 5개 반복 블록(각 3-arm), 블록 안 arm 순서는 §7에서 확정한 고정 5-순열(`run_all_scenarios.ARM_ORDER_BY_REP`, §7 균형 조건 만족 확인됨). run_id는 매트릭스를 얼릴 때 결정되는 `plan_id`로부터 `{scenario}-{arm}-{rep:02d}-{plan_id}` 형태로 생성되며 실행 시각과 무관하다 — 즉 매트릭스와 모든 run_id가 실행 전에 완전히 고정된다.
+
+### 8.5 진행 state 파일 — 별도 아티팩트, atomic write
+
+`experiments/results/run_all_scenarios_state.json`에 trial별로 `run_id/scenario/arm/repetition/analysis_group/sequence_index/status/config_hash/code_freeze_commit/model_artifact_hash/start_timestamp/end_timestamp/result_path/audit_status/cleanup_status/failure_reason/result_hash`를 기록한다. `status ∈ {planned, running, completed, invalid, failed, needs_attention}`. 쓰기는 임시 파일 작성 후 rename(원자적)으로 수행한다. **`running` 상태에서 프로세스가 중단된 trial은 자동 재실행하지 않고 `needs_attention`으로 전환**하며, `invalid`/`failed`/`needs_attention` 상태의 trial은 재개 시 자동으로 건너뛰지 않고 전체 시퀀스를 중단한다(사용자 판단 대기).
+
+### 8.6 fail-closed 중단 조건
+
+HarnessCorrupted, Node NotReady/pressure, restart/OOM, cleanup 실패, recovery-policy context 정리 실패, Rollout 단일 리비전 복원 실패, port-forward 영구 유실, detector crash, artifact/hash/schema 불일치, 결과 필드 모순, 귀속 불가 감사기록, audit-log/ 바깥의 예상 밖 Git/코드/설정 drift, 시나리오 profile 복원 실패 — 모두 즉시 전체 시퀀스 중단(`SequenceAborted`). **중단 트리거가 아닌 것**: 유효한 탐지 실패, 자연 recovery, 불필요한 promotion(이들은 실험 결과이며 그 자체로는 중단 사유가 아니다 — 다만 `outcome=invalid_run`으로 판정된 trial은 위 규칙대로 시퀀스를 멈춘다). `recovery-policy-bot`의 `audit-log/*.jsonl` 커밋은 예상된 외부 변경으로 허용하고 일반 pull/merge로 흡수한다(force-push/rebase 금지) — 그 외 경로의 drift만 차단 대상이다.
+
+### 8.7 시나리오 profile lifecycle
+
+`load_ramp`/`pod_kill`은 기본 probe profile을 그대로 쓰고 시작/종료 시 drift 없음을 확인한다. `network_degrade`는 블록 시작 전 `gitops/apps/vllm-serving/overlays/network-tolerant/` 적용 + Rollout promotion으로 tolerant profile로 전환하고, 블록 종료 후 기본 `rollout.yaml` 재적용 + promotion으로 복원한다 — 이 전환 구간은 실험 데이터에서 제외된다. `memory_pressure_negative_control_v1`은 기본 profile, preview/detector/조치 없음, native만.
+
+**미검증 고지**: `run_all_scenarios.py`의 `real_apply_profile`/`real_restore_profile`(gitops overlay apply + `kubectl argo rollouts promote`)은 이번 턴 오프라인 구현만 됐고 **라이브로 실행·검증되지 않았다** — 오프라인 테스트는 이 profile 전환 hook이 `network_degrade` 블록 시작 전/종료 후에 정확히 한 번씩, 그리고 그 블록의 모든 trial 전/후로 호출되는지(순서 포함)만 fake로 검증했다. 첫 실사용 전 반드시 수동으로 먼저 확인할 것.
+
+### 8.8 CLI/재개 정책
+
+`run_all_scenarios.py --plan`(매트릭스만 생성/출력, 클러스터 무접촉) / `--dry-run`(preflight·drift 체크까지만, kubectl/subprocess 트리거 없음) / `--resume`(기존 state 파일에서 이어서) / `--state-file` / `--from-run-id`(그 이전 trial이 모두 `completed`이고 저장된 `result_hash`가 실제 결과 파일과 일치할 때만 건너뜀, 불일치 시 중단).
+
+### 8.9 오프라인 검증 결과 (2026-09-22)
+
+`experiments/test_run_all_scenarios.py`(30 tests) — 정확히 50-trial 생성, core cell당 정확히 5회, auxiliary는 native 5회·fixed_threshold/proposed 0회, 고정 실행 순서 및 §7 균형 조건 만족, run_id 중복 없음, 순차 실행(preflight→run_trial→cleanup 순서), 재개 시 completed 건너뜀, running 중단 시 needs_attention 전환(자동 재실행 없음), invalid/failed/needs_attention 시 즉시 전체 중단, cleanup 실패 시 즉시 중단, git drift가 `audit-log/` 밖일 때만 차단, network_degrade 블록 전후 profile 적용/복원(예외 발생 시에도 restore 보장), dry-run 시 클러스터 호출 0건, atomic state 저장/복원 왕복, `--from-run-id` hash 검증 — 모두 통과. `KUBECONFIG=/nonexistent/kubeconfig`로 `experiments/`+`anomaly-detection/`+`recovery-policy/` 전체 실행: 941 passed, 3 skipped, 1 failed(`test_historical_reextraction.py` — §96에서 이미 memory_pressure 경로와 무관하다고 확인된 사전 존재 결함, 이번 턴 변경과 무관).
 
 ## 변경 이력
 
