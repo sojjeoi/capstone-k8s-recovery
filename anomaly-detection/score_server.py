@@ -151,16 +151,21 @@ def load_and_verify_artifacts(artifacts_dir: Path, expected_model_version: str) 
     }
 
 
-def evaluate_v32b(model, scaler, schema, *,
-                   query_range_fn: Callable = _query_range,
-                   freshness_check_fn: Callable = check_metric_freshness,
-                   now_fn: Callable = lambda: datetime.now(timezone.utc)) -> float:
-    """§86.2 - offline evaluator(`model_v31/evaluate.py`)와 정확히 같은
-    2단계(8-feature 추출 -> `apply_feature_schema()`로 6개만 순서대로
-    선택 -> scaler.transform -> decision_function)를 실시간 window에
-    적용한다. missing/NaN/Inf/stale 중 하나라도 있으면 score를 만들지
-    않고 예외를 던진다(fail-closed) - 호출부가 이 예외를 삼키지 않고
-    그대로 올려 signal도 안 보내지게 한다."""
+def _evaluate_v32b_verbose(model, scaler, schema, *,
+                            query_range_fn: Callable = _query_range,
+                            freshness_check_fn: Callable = check_metric_freshness,
+                            now_fn: Callable = lambda: datetime.now(timezone.utc)) -> dict:
+    """§86.2/§88.6 - offline evaluator(`model_v31/evaluate.py`)와 정확히
+    같은 2단계(8-feature 추출 -> `apply_feature_schema()`로 6개만
+    순서대로 선택 -> scaler.transform -> decision_function)를 실시간
+    window에 적용한다. missing/NaN/Inf/stale 중 하나라도 있으면 score를
+    만들지 않고 예외를 던진다(fail-closed) - 호출부가 이 예외를 삼키지
+    않고 그대로 올려 signal도 안 보내지게 한다.
+
+    §88(2026-09-21) - evidence 로깅에 raw/ordered/scaled feature vector가
+    필요해져 중간값을 전부 담은 dict를 반환하도록 분리했다(판정 로직
+    자체는 전혀 바꾸지 않음 - `evaluate_v32b()`가 이 함수를 감싸 기존과
+    동일하게 `score` float만 반환)."""
     end = now_fn()
     start = end - timedelta(seconds=WINDOW_SEC)
 
@@ -179,7 +184,24 @@ def evaluate_v32b(model, scaler, schema, *,
 
     x6 = apply_feature_schema(feats, schema)
     x_scaled = scaler.transform([x6])
-    return float(model.decision_function(x_scaled)[0])
+    score = float(model.decision_function(x_scaled)[0])
+    return {
+        "window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(),
+        "raw_feature_vector": feats, "ordered_feature_vector": x6,
+        "scaled_feature_vector": [float(v) for v in x_scaled[0]],
+        "score": score, "freshness": freshness,
+    }
+
+
+def evaluate_v32b(model, scaler, schema, *,
+                   query_range_fn: Callable = _query_range,
+                   freshness_check_fn: Callable = check_metric_freshness,
+                   now_fn: Callable = lambda: datetime.now(timezone.utc)) -> float:
+    """기존 호출부(§86.2/§86.3 테스트 포함) 하위호환 - score만 반환.
+    판정 로직은 `_evaluate_v32b_verbose()`와 완전히 동일(그 함수를
+    그대로 호출할 뿐)."""
+    return _evaluate_v32b_verbose(model, scaler, schema, query_range_fn=query_range_fn,
+                                   freshness_check_fn=freshness_check_fn, now_fn=now_fn)["score"]
 
 
 def advance_streak(score: float, threshold: float, consecutive_anomalous: int, last_signal_at,
@@ -207,7 +229,11 @@ def advance_streak(score: float, threshold: float, consecutive_anomalous: int, l
     }
 
 
-def post_to_recovery_policy(score: float, experiment_run_id: str = None, detector: str = "isolation_forest") -> None:
+def post_to_recovery_policy(score: float, experiment_run_id: str = None, detector: str = "isolation_forest") -> dict:
+    """§88.6 - 반환값(성공/연결실패/기타 예외 + payload)을 추가했다(기존
+    호출부인 `fixed_threshold.py`는 반환값을 쓰지 않으므로 영향 없음) -
+    evidence 로그에 signal_response를 남기기 위함, 실제 전송 로직·payload
+    구성은 전혀 바뀌지 않았다."""
     payload = {
         "signal_type": "anomaly_risk", "score": score,
         "timestamp": datetime.now(timezone.utc).isoformat(), "detector": detector,
@@ -215,13 +241,32 @@ def post_to_recovery_policy(score: float, experiment_run_id: str = None, detecto
     if experiment_run_id:
         payload["experiment_run_id"] = experiment_run_id
     try:
-        requests.post(RECOVERY_POLICY_URL, json=payload, timeout=5)
+        r = requests.post(RECOVERY_POLICY_URL, json=payload, timeout=5)
         print(f"  -> 신호 발행: {payload}")
-    except requests.exceptions.ConnectionError:
+        return {"outcome": "sent", "http_status": r.status_code, "payload": payload}
+    except requests.exceptions.ConnectionError as e:
         print(f"  -> recovery-policy 서비스 없음(Phase 7 미구현) - 신호 발행 스킵: {payload}")
+        return {"outcome": "connection_error", "error": str(e), "payload": payload}
 
 
-def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_run_id: str = None):
+def _write_evidence_line(evidence_file, record: dict) -> None:
+    """§88.6 - append-only JSONL, 매 evaluation 직후 flush+fsync(가능하면).
+    관찰 전용 - 이 함수의 존재·실패 여부가 판정 로직에 전혀 영향을
+    주지 않는다(evidence 기록 실패는 evaluation을 막지 않음, 로그만
+    남기고 계속 진행)."""
+    try:
+        evidence_file.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        evidence_file.flush()
+        try:
+            os.fsync(evidence_file.fileno())
+        except OSError:
+            pass  # 일부 파일시스템/스트림은 fsync 미지원 - 관찰 전용이므로 무시
+    except Exception as e:  # noqa: BLE001 - evidence 기록 실패가 evaluation을 막으면 안 됨
+        print(f"  -> [evidence] 기록 실패(무시하고 계속): {e}")
+
+
+def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_run_id: str = None,
+         evidence_log_path: str = None):
     artifacts = load_and_verify_artifacts(Path(artifacts_dir), model_version)
     model, scaler, schema, threshold = artifacts["model"], artifacts["scaler"], artifacts["schema"], artifacts["threshold"]
     print(f"[score_server v3.2b] model_version={model_version} artifacts_dir={artifacts['artifacts_dir']} "
@@ -230,25 +275,50 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
 
     consecutive_anomalous = 0
     last_signal_at = None
+    evidence_file = open(evidence_log_path, "a", encoding="utf-8") if evidence_log_path else None
 
-    while True:
-        score = evaluate_v32b(model, scaler, schema)
-        now = time.monotonic()
-        step = advance_streak(score, threshold, consecutive_anomalous, last_signal_at, now)
-        consecutive_anomalous, last_signal_at = step["consecutive_anomalous"], step["last_signal_at"]
+    try:
+        while True:
+            wall_clock_before = datetime.now(timezone.utc).isoformat()
+            verbose = _evaluate_v32b_verbose(model, scaler, schema)
+            score = verbose["score"]
+            now = time.monotonic()
+            step = advance_streak(score, threshold, consecutive_anomalous, last_signal_at, now)
+            consecutive_anomalous, last_signal_at = step["consecutive_anomalous"], step["last_signal_at"]
 
-        status = "이상" if step["is_anomalous"] else "정상"
-        print(f"[{datetime.now(timezone.utc).isoformat()}] score={score:.4f} ({status}), 연속={consecutive_anomalous}")
+            status = "이상" if step["is_anomalous"] else "정상"
+            print(f"[{datetime.now(timezone.utc).isoformat()}] score={score:.4f} ({status}), 연속={consecutive_anomalous}")
 
-        if consecutive_anomalous >= CONSECUTIVE_THRESHOLD and not step["should_signal"]:
-            remaining = COOLDOWN_SEC - (now - last_signal_at)
-            print(f"  -> cooldown 중 (남은 {remaining:.0f}초) - 신호 스킵")
-        elif step["should_signal"]:
-            post_to_recovery_policy(score, experiment_run_id)
+            signal_response = None
+            if consecutive_anomalous >= CONSECUTIVE_THRESHOLD and not step["should_signal"]:
+                remaining = COOLDOWN_SEC - (now - last_signal_at)
+                print(f"  -> cooldown 중 (남은 {remaining:.0f}초) - 신호 스킵")
+            elif step["should_signal"]:
+                signal_response = post_to_recovery_policy(score, experiment_run_id)
 
-        if once:
-            return
-        time.sleep(EVAL_INTERVAL_SEC)
+            if evidence_file is not None:
+                _write_evidence_line(evidence_file, {
+                    "wall_clock_before_utc": wall_clock_before,
+                    "wall_clock_after_utc": datetime.now(timezone.utc).isoformat(),
+                    "run_id": experiment_run_id, "model_version": model_version,
+                    "artifact_hashes": artifacts["artifact_hashes"],
+                    "window_start_utc": verbose["window_start_utc"], "window_end_utc": verbose["window_end_utc"],
+                    "raw_feature_vector": verbose["raw_feature_vector"],
+                    "ordered_feature_vector": verbose["ordered_feature_vector"],
+                    "scaled_feature_vector": verbose["scaled_feature_vector"],
+                    "score": score, "threshold": threshold, "is_anomalous": step["is_anomalous"],
+                    "consecutive_anomalous": consecutive_anomalous,
+                    "cooldown_active": bool(consecutive_anomalous >= CONSECUTIVE_THRESHOLD and not step["should_signal"]),
+                    "signal_attempted": step["should_signal"], "signal_response": signal_response,
+                    "lifecycle_phase": None,  # 오케스트레이터가 세션 자체 타임스탬프로 사후 결합(§88.6 - 외부 timeline 방식)
+                })
+
+            if once:
+                return
+            time.sleep(EVAL_INTERVAL_SEC)
+    finally:
+        if evidence_file is not None:
+            evidence_file.close()
 
 
 if __name__ == "__main__":
@@ -262,9 +332,13 @@ if __name__ == "__main__":
     parser.add_argument("--model-version", required=True,
                          help="training-metadata.json의 model_version과 정확히 일치해야 함(예: v3.2b) - "
                               "기본값 없음(fail-closed)")
+    parser.add_argument("--evidence-log", default=None,
+                         help="§88.6 - append-only structured JSONL evidence 파일 경로(선택). stdout 로그가 "
+                              "리다이렉트·버퍼링으로 유실돼도(§87.1) 매 evaluation 직후 flush+fsync되는 이 파일로 "
+                              "판정 세부값을 남긴다 - 판정 로직에는 영향 없음(관찰 전용)")
     args = parser.parse_args()
     try:
         main(artifacts_dir=args.artifacts_dir, model_version=args.model_version,
-             once=args.once, experiment_run_id=args.run_id)
+             once=args.once, experiment_run_id=args.run_id, evidence_log_path=args.evidence_log)
     except RuntimeError as e:
         parser.error(str(e))

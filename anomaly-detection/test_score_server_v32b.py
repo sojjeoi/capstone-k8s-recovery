@@ -4,9 +4,11 @@
 feature-schema.json)는 읽기만 하고 전혀 다시 쓰지 않는다. offline
 evaluator(model_v31/evaluate.py)와 runtime(score_server.py)이 완전히
 같은 값을 내는지가 핵심 검증 대상이다."""
+import json
 import math
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 V3_DIR = Path(__file__).parent / "v3"
@@ -339,6 +341,94 @@ def test_new_episode_after_cooldown_ends():
     step = ss.advance_streak(-0.1, 0.0, 3, 30.0, 95.0, cooldown_sec=60.0)  # 65초 후, cooldown 종료
     assert step["should_signal"] is True
     print("OK - cooldown 종료 후 연속 조건을 다시 만족하면 새 episode 신호 발생")
+
+
+# ---------------------------------------------------------------------------
+# §88.6 - 관찰 하니스 회귀 테스트(§87 사고 재발 방지, 판정 로직은 불변)
+# ---------------------------------------------------------------------------
+
+def test_evidence_log_survives_redirected_stdout_buffering():
+    """§87.1 - stdout이 리다이렉트·버퍼링으로 유실돼도(실제 §87 사고)
+    --evidence-log 파일에는 evaluation 세부값이 남아야 한다. main()을
+    실제로 호출하되(once=True, sleep 없음) `_evaluate_v32b_verbose`만
+    가짜로 주입해 판정 로직 자체는 그대로 통과시킨다."""
+    def fake_verbose(model, scaler, schema, **kwargs):
+        return {"window_start_utc": "2026-01-01T00:00:00+00:00", "window_end_utc": "2026-01-01T00:01:00+00:00",
+                "raw_feature_vector": [1.0] * 8, "ordered_feature_vector": [1.0] * 6,
+                "scaled_feature_vector": [0.5] * 6, "score": 0.1234, "freshness": {"fresh": True}}
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        with patch.object(ss, "_evaluate_v32b_verbose", side_effect=fake_verbose):
+            ss.main(str(V32B_ARTIFACTS_DIR), "v3.2b", once=True, experiment_run_id="test-run",
+                    evidence_log_path=str(evidence_path))
+        lines = evidence_path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1
+        rec = json.loads(lines[0])
+        assert rec["score"] == 0.1234
+        assert rec["run_id"] == "test-run"
+        assert rec["raw_feature_vector"] == [1.0] * 8
+        assert rec["ordered_feature_vector"] == [1.0] * 6
+        assert "lifecycle_phase" in rec  # None(오케스트레이터가 사후 결합) - 필드 자체는 항상 존재
+    print("OK - stdout 리다이렉트/버퍼링과 무관하게 --evidence-log에 evaluation 세부값이 flush됨")
+
+
+def test_evidence_log_preserves_last_evaluation_before_crash():
+    """§87.1 - 다음 cycle에서 크래시해도 이전 cycle까지의 evidence는
+    보존돼야 한다(매 cycle 직후 flush+fsync, 크래시 이후 버퍼에 남아
+    유실되는 경로 자체가 없음을 확인)."""
+    calls = {"n": 0}
+
+    def fake_verbose(model, scaler, schema, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"window_start_utc": "t0s", "window_end_utc": "t0e", "raw_feature_vector": [1.0] * 8,
+                    "ordered_feature_vector": [1.0] * 6, "scaled_feature_vector": [1.0] * 6,
+                    "score": 0.05, "freshness": {"fresh": True}}
+        raise RuntimeError("fail-closed: simulated crash on 2nd cycle")
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        with patch.object(ss, "_evaluate_v32b_verbose", side_effect=fake_verbose), \
+             patch.object(ss.time, "sleep", lambda s: None):
+            try:
+                ss.main(str(V32B_ARTIFACTS_DIR), "v3.2b", once=False, experiment_run_id="test-run",
+                        evidence_log_path=str(evidence_path))
+                assert False, "2번째 cycle에서 예외가 발생해야 함"
+            except RuntimeError:
+                pass
+        lines = evidence_path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 1
+        assert json.loads(lines[0])["score"] == 0.05
+    print("OK - 다음 cycle 크래시 전에 기록된 evaluation은 evidence 파일에 그대로 보존됨")
+
+
+def test_long_continuous_anomalous_streak_produces_multiple_signals_not_collapsed_to_one_episode():
+    """§88 Task 3 - runtime(advance_streak)이 하나의 긴 연속 이상 상태를
+    여러 HTTP signal로 나눠 보내는지, 그리고 offline replay_detector()도
+    같은 시퀀스에서 정확히 같은 횟수를 내는지(= episode 정의가 두 경로
+    사이에 어긋나지 않음, classification B 반증)."""
+    threshold = 0.0
+    consecutive, last_signal_at = 0, None
+    now = 0.0
+    signal_times = []
+    for _ in range(30):  # 30 * 15s = 450초 연속 이상 - 여러 cooldown(60초) 주기를 넘김
+        step = ss.advance_streak(-0.1, threshold, consecutive, last_signal_at, now)
+        consecutive, last_signal_at = step["consecutive_anomalous"], step["last_signal_at"]
+        if step["should_signal"]:
+            signal_times.append(now)
+        now += 15.0
+
+    assert len(signal_times) > 1, "장기 연속 이상 상태가 하나의 episode로 뭉쳐지면 안 됨(cooldown마다 재발행)"
+
+    from replay import replay_detector
+    scores = [-0.1] * 30
+    result = replay_detector(scores, threshold, consecutive_threshold=3, cooldown_sec=60.0, eval_interval_sec=15.0)
+    assert result["signal_count"] == len(signal_times), (result["signal_count"], len(signal_times))
+    print(f"OK - runtime·offline 둘 다 긴 연속 스트릭에서 동일하게 {len(signal_times)}건으로 반복 신호 - "
+          f"episode 정의(cooldown 기반 재무장)가 두 경로에서 어긋나지 않음(classification B 반증)")
 
 
 if __name__ == "__main__":

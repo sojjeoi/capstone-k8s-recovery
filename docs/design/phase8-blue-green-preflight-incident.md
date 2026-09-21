@@ -8511,3 +8511,330 @@ session 자체의 `feature_rows`는 08:09:52~08:18:52 구간(ramp stage)만
 
 이번 턴에서는 두 제안 모두 실행하지 않았다 - 문서화·원본 보존·보고만
 했다.
+
+## 88. §87 FAIL의 offline forensic 감사 + 관찰 하니스 수정 (2026-09-21)
+
+사용자 승인에 따라 상태를 다음처럼 명확히 구분한다 - **이 phase는 §83/
+§85의 채택 판정을 소급 수정하지 않는다**:
+
+- `offline_validation_status = adopted`(§83 sealed Holdout PASS, §85
+  boundary challenge A(Promising) - 변경 없음)
+- `runtime_safety_status = failed`(§87 - 6건 signal episode 발생)
+- `deployment_status = blocked`
+
+**"완전히 채택되어 운영 가능"이라는 표현은 쓰지 않는다** - offline
+validation과 runtime safety는 서로 다른 축이고, 이번 절이 그 이유를
+정밀하게 밝힌다. 이번 절은 추가 live 실행 없이 기존 evidence(§87)와
+코드만으로 수행한 offline forensic 감사 + 관찰 하니스 수정이다.
+
+### 88.1 Capture signal 6건 귀속 감사 - 전부 이번 smoke에 확실히 귀속
+
+recovered stray sink 파일(`smoke_evidence/*-recovered-stray-sink.jsonl`)
+7줄 전부를 개별 확인:
+
+| # | received_at_utc | payload.experiment_run_id | 분류 |
+|---|---|---|---|
+| 0 | 07:56:55 | (없음, `test:true`) | **이전 manual test에 귀속**(§86.2/86.3 개발 중 curl 테스트, capture_sink 자체 sanity check) |
+| 1 | 08:04:36 | `smoke-v32b-no-action-20260921T080346Z` | **이번 smoke에 확실히 귀속** |
+| 2 | 08:05:40 | 〃 | 〃 |
+| 3 | 08:06:49 | 〃 | 〃 |
+| 4 | 08:10:52 | 〃 | 〃 |
+| 5 | 08:19:58 | 〃 | 〃 |
+| 6 | 08:22:52 | 〃 | 〃 |
+
+`experiment_run_id`는 스크립트 시작 시각을 초 단위까지 포함한 문자열
+(`RUN_ID = "smoke-v32b-no-action-" + strftime(...)`)이라 다른 실행이
+우연히 같은 값을 낼 수 없다 - 이 문자열 정확 일치가 귀속의 근거다.
+detector 필드는 6건 전부 `isolation_forest`(proposed arm 매핑과 일치).
+`--once` 방식의 사전 dry-run(`smoke-dryrun-check`/`smoke-dryrun-check2`)
+은 코드 구조상(한 번 평가 후 즉시 종료, `consecutive_anomalous`가
+최대 1까지밖에 못 감) 애초에 신호를 보낼 수 없어 배제된다. **source
+address는 이번 capture_sink.py 구버전에 기록 로직이 없어 확인 불가
+(§88.6에서 추가) - 이 한계를 숨기지 않고 그대로 기록한다.** 중복
+전송(같은 payload 재전송)은 없음 - 6건 전부 score·timestamp가 서로
+다르다. idempotency key는 score_server.py의 payload 자체에 없는
+필드다(실제 recovery-policy가 수신 시 `{run_id}:signal_type`으로
+구성하는 것과 달리, score_server.py는 이 키를 만들어 보내지 않음 -
+기존 코드 그대로, 이번에 손대지 않음).
+
+### 88.2 프로세스 lifecycle 감사
+
+**score_server/capture_sink 프로세스 수**: 의도한 것은 각 1개씩이었지만,
+capture_sink는 §87.1에서 밝힌 대로 **낡은 stray 프로세스가 이미 8765
+포트를 점유 중**이었다 - `HTTPServer.allow_reuse_address=1`(표준
+라이브러리 기본값)이 포트 충돌을 조용히 허용했을 가능성이 높다(§88.6
+에서 `allow_reuse_address=False`로 고정해 재발 차단). 그 stray
+프로세스는 §86.2/86.3 개발 중 수동으로 띄운 것으로, `/tmp/
+sink_test.jsonl`을 대상으로 실행 중이었다(git-bash의 `pkill`이
+Windows 프로세스에 안 먹어 종료 실패). score_server.py는 정확히
+1개만 실행됐다(고아 프로세스 없음, 재확인 완료).
+
+**score_server가 실제로 보낸 URL**: `RECOVERY_POLICY_SIGNAL_URL`
+환경변수로 전달한 `http://127.0.0.1:8765/signal` - 이 값 자체는
+정확했다(오케스트레이터가 sink URL을 올바르게 설정함). 문제는
+"그 포트에 누가 응답하고 있었는가"였다 - 신호는 올바른 URL로 갔지만,
+그 URL의 실제 서버가 우리가 새로 띄운 것이 아니라 낡은 stray였다.
+
+**bind 실패가 왜 감지 안 됐는가**: 오케스트레이터의 `_wait_http_ok()`
+는 "그 포트에서 200이 오는가"만 확인했다 - 그 200이 **어느 프로세스**
+에서 온 것인지는 확인하지 않았다. 새로 띄운 sink가 조용히
+bind-실패했더라도(또는 `allow_reuse_address`로 공존했더라도) 낡은
+프로세스가 `/healthz`에 정상 응답했으므로 확인 로직을 통과했다.
+§88.6에서 `_windows_listener_pid()`(참고용, best-effort)와
+`_assert_port_free()`(주 안전장치, 직접 bind 시도)를 추가해 이
+공백을 메웠다.
+
+**preview/settle/stage/drain/session 종료 정확한 시각**(session 자체
+기록):
+
+| 이벤트 | 시각(UTC) |
+|---|---|
+| t_session_start (score_server 기동 직후) | 08:03:48.31 |
+| t_prep_start | 08:03:49.23 |
+| t_preview_ready | 08:06:33.97 (prep 164.7초 소요) |
+| stage_start(ramp) | 08:09:52.39 |
+| stage_end(ramp) | 08:19:52.40 |
+| t_session_end(cleanup 완료) | 08:22:35.19 |
+
+**detector가 실제로 평가한 구간**: score_server.py는 오케스트레이터가
+기동시킨 순간(≈08:03:4x, `t_session_start` 직전)부터 `collect_
+qualification_session()`이 반환한 뒤 `_stop()`이 호출될 때까지(≈
+08:22:35 이후 몇 초) **계속** 평가했다 - preview 생성·settle·baseline·
+stage·drain·cleanup 전 구간을 하나도 빠짐없이 커버했다.
+
+**실제 trial(`run_once.py`)의 detector lifecycle과 대조(코드 근거)**:
+`experiments/run_once.py`는 `injector.prepare()`(preview 생성, 663행)
+-> prober 시작 -> **baseline 확보**(`_wait_for_baseline()`, 687행)
+-> `_register_experiment_context()` -> **오직 그 다음에만**
+`detector.start()`(701-702행, 주석: "baseline 관찰 도중에는 detector
+프로세스 자체가 존재하지 않아야 그 구간의 신호·조치가 원천 차단된다")
+를 호출한다 - chaos 주입 직전 단 한 번. `detector.stop()`은 trial
+cleanup 단계(930-939행)에서 호출된다. **즉 실제 배포·trial
+프레임워크는 이미 preview 생성·settle·baseline 구간에 detector를
+아예 띄우지 않도록 설계돼 있다** - 이번 smoke 오케스트레이터
+(`run_v32b_no_action_smoke.py`)는 이 규율을 따르지 않고 `collect_
+qualification_session()` 호출 **전에** score_server.py를 미리
+띄웠다 - 이것 자체가 smoke 하니스와 실제 배포 lifecycle 사이의
+불일치다(§88.4에서 계속).
+
+### 88.3 6건 대 1건 차이 원인 분석 - episode 정의 자체는 일치(classification B 반증)
+
+`advance_streak()`(runtime)와 `model_v31/replay.py`의
+`replay_detector()`(offline)를 나란히 놓고 확인:
+
+```
+is_anomalous = score < threshold
+new_consecutive = consecutive + 1 if is_anomalous else 0
+if new_consecutive >= consecutive_threshold:
+    in_cooldown = last_signal_at is not None and (now - last_signal_at) < cooldown_sec
+    if not in_cooldown:
+        signal!  # 두 함수 모두 여기서 즉시 재무장 - "하나의 streak = 1 episode"로 뭉치는 로직이 없음
+```
+
+**두 함수는 코드 구조가 완전히 동일하다** - 길게 이어지는 연속 이상
+상태 하나가 cooldown(60초)을 여러 번 넘기면, **두 구현 모두** 매번
+재무장해 여러 번 신호를 보낸다(하나의 streak를 1 episode로 묶는
+로직 자체가 어느 쪽에도 없음). 신규 오프라인 테스트
+(`test_long_continuous_anomalous_streak_produces_multiple_signals_
+not_collapsed_to_one_episode`, 450초 연속 이상 시퀀스)로 직접 확인 -
+runtime 루프와 offline `replay_detector()`가 **정확히 같은 횟수**의
+신호를 낸다. **-> classification B(episode 정의 불일치)는 반증됨.**
+
+그렇다면 6건은 왜 나왔나 - §88.1/88.2의 정밀 시각 대조로 재구성:
+
+- signal 1(08:04:36), 2(08:05:40), 3(08:06:49): 전부 `t_preview_
+  ready`(08:06:33.97) **이전 또는 직후**(preview 생성/settle 구간) -
+  §88.2에서 확인한 대로 **실제 trial 프레임워크라면 detector 자체가
+  존재하지 않았을 구간**이다.
+- signal 4(08:10:52): window `[08:09:52, 08:10:52)` - stage 시작
+  직후, **stage 구간 안**(feature_rows 커버 범위와 겹침). 이 window의
+  post-hoc 재계산 점수(-0.0805, ANOM)와 runtime 신호 점수(-0.0828)가
+  근접해 **같은 실제 사건을 가리킨다**.
+- signal 5(08:19:58): window `[08:18:58, 08:19:58)` - stage
+  종료(08:19:52) 직후, post-hoc 마지막 window(08:18:52 시작, 3연속
+  이상의 마지막 지점)와 겹치는 시점 - stage/drain 경계.
+- signal 6(08:22:52): `t_session_end`(08:22:35.19) **이후** - cleanup이
+  이미 끝난 뒤의 dead time. 실제 trial이라면 이 시점 이전에 이미
+  `detector.stop()`이 호출됐을 구간이다.
+
+**즉 6건 중 4건(1,2,3,6)은 실제 trial 프레임워크의 detector lifecycle
+규율(§88.2)이라면 애초에 detector가 존재하지 않았을 구간에서
+나왔다** - smoke 오케스트레이터가 그 규율을 안 지킨 결과다. 나머지
+2건(4,5)은 stage 구간·경계 안에서 나왔고, 완전히 독립적인 post-hoc
+재계산(§87.3)에서도 같은 지점 부근에 실제 이상 신호가 확인된다.
+
+### 88.4 Online/post-hoc feature 동등성 감사
+
+코드 대조 결과 - **feature 계산 자체는 완전히 동일**(PromQL·label
+selector·active/preview 합산·slope 계산·순서·scaler 입력 전부
+`build_dataset.extract_window_strict()`+`feature_selection.
+apply_feature_schema()`를 두 경로가 그대로 공유, §86.2에서 이미
+이렇게 설계함). missing/stale 처리도 동일 fail-closed 규칙.
+**차이는 오직 "어느 시간대를 평가하는가"뿐이다**:
+
+- **runtime**: 시작된 순간부터 종료될 때까지 15초마다 계속 평가 -
+  preview 생성 전(활성 pod만 존재)부터 drain·cleanup 이후까지 전부
+  포함.
+- **post-hoc(§79 이후 모든 v3.1/v3.2/v3.2b 세션의 `feature_rows`)**:
+  `CandidateSession(start_utc=stages[0].stage_start_utc,
+  end_utc=stages[-1].stage_end_utc, ...)`(`qualify_normal_profile.py`)
+  로 **stage 구간만** 사용 - preview 생성·settle·baseline·drain은
+  구조적으로 제외.
+
+질문에 대한 답:
+- **runtime이 실제로 평가한 예상 point 수**: 관찰 구간 ≈08:03:4x~
+  08:22:4x(≈1130초) ÷ 15초 ≈ 75회 내외(§87.1의 로그 유실로 정확한
+  실측 카운트는 확인 불가 - §88.6에서 evidence-log로 향후 확보).
+- **post-hoc 37개 point가 runtime 전체 범위를 덮는가**: 아니다 -
+  stage 구간(600초, 37개 window)만 덮고, preview 생성·settle(≈360초)·
+  drain·cleanup(≈163초) 구간은 전혀 덮지 않는다.
+- **누락 구간**: preview 생성·settle·drain·cleanup 전부.
+- **6개 signal이 37개 window 밖인가**: 4건(1,2,3,6)은 명백히 밖,
+  2건(4,5)은 stage 구간·경계 안(§88.3).
+- **Training/Calibration/Holdout이 steady window만 포함했는데
+  runtime은 lifecycle transition까지 평가하는가**: **그렇다 -
+  확인됨.** 단, §88.2에서 밝힌 대로 **실제 trial 프레임워크
+  (`run_once.py`)는 이미 이 transition 구간에 detector를 노출시키지
+  않도록 설계돼 있다** - 이 mismatch는 "모델이 훈련 안 된 분포를
+  실제 운영에서 만난다"는 의미의 train/serve mismatch라기보다,
+  **"이번 smoke 오케스트레이터 자체가 실제 배포 lifecycle 규율을
+  따르지 않았다"**는 하니스 설계 결함에 더 가깝다 - 그럼에도 이
+  차이가 실제로 존재하고 §87의 6건 중 4건을 설명하므로
+  classification C로 분류한다(§88 Task 4 지시대로).
+
+### 88.5 기존 Holdout 판정 영향 감사 (재채점 없음, 해석만)
+
+- **Holdout evaluator의 episode 정의가 실제 runtime과 동일했는가**:
+  그렇다(§88.3, code-level 확인 + 신규 테스트).
+- **Holdout feature window 범위가 실제 detector lifecycle과
+  동일했는가**: **실제 `run_once.py` trial의 detector 노출 구간
+  (baseline 확보 후 ~ trial 종료) 기준으로는 근사적으로 그렇다** -
+  둘 다 "preview 생성·초기 settle·baseline"은 제외한다. 다만
+  Holdout의 stage-only window는 drain·post-injection 관찰까지는
+  포함하지 않는 반면, 실제 trial은 시나리오 해소 후 관찰까지
+  detector가 켜져 있을 수 있어 완전히 동일하지는 않다 - **부분
+  일치, 완전 일치 아님**.
+- **0/6 false signal episode가 운영 안전성을 입증하는가**: **부분적
+  으로만 - "실제 trial이 detector를 켜두는 구간과 유사한 steady-state
+  구간"에서는 준수한 증거이지만, drain 이후~trial 완전 종료 사이의
+  관찰 구간까지 포함한 안전성은 이번 22세션의 Holdout으로 직접
+  입증되지 않는다.**
+- **추가로 보류해야 할 qualification**: "Isolation Forest는 preview
+  생성·초기 settle 구간에서는 절대 평가되지 않는다(실제 trial
+  설계상)"는 전제, 그리고 "stage 종료 후 drain·관찰 구간에서의
+  안전성은 아직 별도로 검증되지 않았다"는 점 - 이 두 가지를 향후
+  claims-scope에 명시적으로 추가해야 한다(이번 턴에는 문서화만,
+  `experiment-contract.md` 수정은 하지 않음 - 범위 제한).
+
+기존 Holdout 결과·판정(§83)은 재채점하지 않았고 수정하지 않았다 -
+위는 전부 **해석 범위**에 대한 감사 결과다.
+
+### 88.6 관찰 하니스 수정 (판정 로직 불변)
+
+- **`score_server.py`**: `_evaluate_v32b_verbose()`(신규, 기존
+  `evaluate_v32b()`는 이 함수를 감싸 `score`만 반환하도록 리팩터 -
+  반환값·예외 조건 완전히 동일, 기존 20개 테스트 그대로 통과)가
+  raw/ordered/scaled feature vector를 전부 노출한다. `--evidence-log`
+  (신규, 선택) - append-only JSONL, 매 evaluation 직후 flush+
+  `os.fsync()`, timestamp·run_id·model_version·artifact_hashes·
+  raw/ordered/scaled vector·score·threshold·anomalous 여부·연속
+  카운트·cooldown 상태·signal 시도 여부·signal 응답·lifecycle_phase
+  (오케스트레이터가 사후 결합, 기본 null)를 기록. `post_to_recovery_
+  policy()`가 이제 결과 dict(성공/연결실패+payload)를 반환한다(기존
+  호출부 `fixed_threshold.py`는 반환값을 안 쓰므로 영향 없음). **의사
+  결정 로직(`advance_streak`, threshold 비교, cooldown)은 단 한 줄도
+  바뀌지 않았다.**
+- **Subprocess(오케스트레이터)**: 두 서브프로세스 모두 `-u`(unbuffered)
+  + `PYTHONUNBUFFERED=1`로 실행, stdout/stderr를 각각 별도 파일로
+  분리(§87.1의 병합·버퍼링 문제 재발 차단), PID·전체 커맨드라인·
+  시작/종료 시각·종료 코드를 evidence에 기록, 시작 1초 후 생존
+  확인.
+- **`capture_sink.py`**: 매 실행 임의 loopback 포트(오케스트레이터가
+  OS로부터 배정받음, 고정 8765 재사용 안 함) + 기동 직전 직접 bind
+  시도로 포트 선점 여부 재확인(`_assert_port_free()`, fail-closed) +
+  `_StrictHTTPServer(allow_reuse_address=False)`로 고정(§87 근본
+  원인 직접 수정) + `--run-id` 필수(다른 run_id 요청은 `.rejected.
+  jsonl`에 격리, 메인 파일 오염 차단) + 자기 PID를 pidfile에 기록 +
+  수신 즉시 flush+fsync(기존에도 `with` 블록 종료 시 flush됐지만
+  명시적으로 고정) + `source_address` 필드 추가(§87에서 못 밝혔던
+  귀속 근거 보강).
+- **오케스트레이터**: sink 기동 후 `_windows_listener_pid()`(참고용
+  best-effort)로 실제 리스너 PID가 우리가 띄운 PID와 다르면 즉시
+  중단, session 자체의 lifecycle 타임스탬프로 evidence를 사후
+  분류(`_classify_lifecycle_phase()` - pre_prep/preview_prep/settle/
+  stage/drain/post_session 6구간), `cleanup_ok`를 report에 명시(두
+  서브프로세스 모두 정상 종료해야 True).
+
+### 88.7 회귀 테스트
+
+신규 22개(기존 859-15=844에서 증가 - 실제로는 §86 이후 844에서
++15=859):
+- `test_score_server_v32b.py` +3 - redirected stdout에서도 evidence
+  보존, crash 직전 마지막 evaluation 보존, 장기 연속 스트릭에서
+  runtime·offline이 정확히 같은 횟수로 반복 신호(classification B
+  반증 - Task 3의 핵심 검증).
+- `test_capture_sink.py`(신규) 5개 - 포트 충돌 즉시 fail-closed,
+  일치하는 run_id는 메인 파일에(source_address 포함), 불일치 run_id는
+  격리 파일에, run_id 필드 자체가 없는 요청도 격리, `/healthz` 정상.
+- `test_run_v32b_no_action_smoke.py`(신규) 7개 - lifecycle 6구간
+  분류 정확성, stage 경계가 feature_rows 생성 경계와 정확히 일치,
+  포트 사전 확인 fail-closed/통과, sink URL 구분, cleanup이 자기
+  PID만 건드림(다른 handle 완전 무관), 정상 종료 상태 기록.
+
+전체 오프라인 스위트(`pytest experiments recovery-policy
+anomaly-detection -q -m "not live_cluster"`, 존재하지 않는
+KUBECONFIG) **859 passed**(§86의 844에서 +15).
+
+### 88.8 최종 분류
+
+- **A (stale-process/sink attribution contamination)**: **부분적으로
+  확인됨** - §87의 원래 보고("capture_sink_signal_count=0")가 잘못된
+  이유는 맞지만, 올바르게 귀속한 뒤에도 6건은 실재하고 그중 1건은
+  완전히 독립적인 post-hoc 재계산으로도 재현됐다 - **A만으로 §87을
+  PASS로 뒤집지 않는다**(사용자 지시대로).
+- **B (runtime/offline episode-semantics mismatch)**: **반증됨** -
+  §88.3, 신규 회귀 테스트로 코드 수준 확인.
+- **C (online/post-hoc feature 또는 lifecycle-window mismatch)**:
+  **확인됨(주 분류)** - §88.2/88.4, code-level 확인. 단, 실제 배포
+  trial 프레임워크(`run_once.py`)는 이미 이 mismatch의 영향을 받는
+  구간(preview 생성·초기 settle)에 detector를 노출시키지 않도록
+  설계돼 있어, 6건 중 4건(1,2,3,6)은 **"모델의 train/serve 분포
+  불일치"라기보다 "이번 smoke 하니스 자체가 실제 배포 lifecycle
+  규율을 안 따른 결과"**에 더 가깝다는 것까지 함께 기록한다(§88.3).
+- **D (genuine in-domain false signal)**: **확정하지 않음** - 6건 중
+  2건(4,5)은 stage 구간·경계 안에서 나왔고 독립 재계산으로도
+  재현됐지만, 그 자체가 stage의 맨 끝(drain 전환 직전)이라 "완전히
+  정상적인 steady-state 중간"이라고 단정할 근거가 부족하다.
+- **E (evidence insufficient)**: **부분 해당** - §87.1의 stdout
+  버퍼링으로 runtime 고유의 15초-그리드 원본 점수 시퀀스(특히 신호
+  4/5 주변의 연속 3회 판정이 정확히 어느 15초 지점들이었는지)가
+  유실돼, 신호 4/5가 "완전한 steady-state 이상"인지 "stage 경계
+  전환의 꼬리"인지까지는 이번 forensic으로 확정할 수 없었다.
+
+**종합: A(부분) + C(주 분류, 확인) + E(잔여, 신호 4/5 한정)** -
+D는 배제하지 않지만 이번 증거로 확정하지 않는다.
+
+### 88.9 다음 단계 - 사용자 지시 §9의 "B 또는 C" 분기 적용
+
+C가 확인됐으므로:
+- **runtime safety뿐 아니라 offline Holdout의 운영 해석도 보류**
+  한다(§88.5) - Holdout 결과 자체(§83)는 수정하지 않지만, "0/6
+  episode가 preview 생성·drain 이후 관찰 구간까지 포함한 전체
+  운영 안전성을 입증한다"는 해석은 보류한다.
+- **pipeline/evaluator 정합 수정 계획(제안만, 미실행)**: (1) 향후
+  smoke/실제 배포 모두 `run_once.py`와 동일하게 "baseline 확보 후에만
+  detector 시작, trial 종료 시 detector 정지" 규율을 지키도록
+  오케스트레이션을 맞추고, (2) drain·post-injection 관찰 구간에서의
+  안전성을 별도로 검증하는 절을 신설하며, (3) claims-scope에 "detector
+  평가 구간의 정확한 정의"를 명시한다.
+- **live 재실행 금지** - 이번 턴에서 실행하지 않았고, 위 계획도
+  실행하지 않았다(제안만).
+
+### 88.10 범위 준수
+
+이번 절에서 하지 않은 것 - live smoke 재실행, threshold·model·
+feature·streak/cooldown 변경, 기존 Holdout/challenge 재평가,
+recovery-policy 연결, Chaos·promotion, `memory_pressure` 3-arm,
+`run_all_scenarios.py`, 본 실험, `TrialResult` 스키마 변경, 기존 raw
+evidence(§87의 원본 파일) 수정. 변경한 것은 관찰 하니스 코드·테스트·
+문서뿐이다.
