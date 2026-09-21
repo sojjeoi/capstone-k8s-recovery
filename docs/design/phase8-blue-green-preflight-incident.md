@@ -8838,3 +8838,166 @@ recovery-policy 연결, Chaos·promotion, `memory_pressure` 3-arm,
 `run_all_scenarios.py`, 본 실험, `TrialResult` 스키마 변경, 기존 raw
 evidence(§87의 원본 파일) 수정. 변경한 것은 관찰 하니스 코드·테스트·
 문서뿐이다.
+
+## 89. Lifecycle-aligned diagnostic smoke - 사전등록 (2026-09-21)
+
+사용자 승인에 따라 status를 이렇게 명확히 구분하고 시작한다 -
+`offline_validation_status=adopted`(§83/§85 불변),
+`runtime_safety_status=failed`(§87), `deployment_status=blocked`.
+**"완전히 채택되어 운영 가능"이라는 표현은 여전히 쓰지 않는다.**
+이번 실행은 §87(원본, misaligned)을 삭제·수정하거나 PASS로 뒤집기
+위한 재시도가 아니라, 실제 `run_once()` detector lifecycle과 정확히
+일치하는 조건에서 §87의 residual 2건(signal 4/5, stage 구간·경계)이
+재현되는지 확인하는 **최종 진단**이다.
+
+### 89.1 §87 원본 보존 확인
+
+기존 §87 결과를 이 절에서 전혀 수정·삭제하지 않는다 - 그대로 유지:
+original smoke = misaligned lifecycle에서 FAIL, signal 6건 전부 해당
+run_id 귀속, 4건은 실제 trial detector 노출 구간 밖, 2건은 intended
+window 내부·경계(원인 미확정), stdout evidence 손실, deployment
+blocked. 새 smoke는 **완전히 다른 run_id**(`smoke-v32b-lifecycle-
+aligned-<timestamp>`)와 **별도 evidence 디렉터리 하위 파일**
+(`smoke_evidence/smoke-v32b-lifecycle-aligned-*`)을 쓴다 - §87의
+파일(`smoke-v32b-no-action-20260921T080346Z-*`)과 절대 겹치지 않는다.
+
+### 89.2 `run_once()` 실제 lifecycle 고정 (code-cited)
+
+`experiments/run_once.py`를 직접 읽어 정확한 순서를 고정한다(추정
+없음):
+
+| 순번 | Phase | Detector 상태 | 코드 근거 |
+|---|---|---|---|
+| 1 | quiescence 확인·활성 context 확인·cooldown 초기화 | **비활성** | 649-661행 |
+| 2 | `injector.prepare()`(preview 생성) | **비활성** | 663행 |
+| 3 | `prober.start()` | **비활성** | 667행 |
+| 4 | `_register_experiment_context()` | **비활성** | 674행 |
+| 5 | baseline 관찰(`_wait_for_baseline`, valid 확인까지) | **비활성** | 685-695행 |
+| 6 | **`detector.start()`** | **전이(비활성→활성)** | 701-702행, 주석: "baseline 관찰 도중에는 detector 프로세스 자체가 존재하지 않아야" |
+| 7 | `injector.inject()`(주입/injection 시작) | **활성** | 704-707행 |
+| 8 | OBSERVING 루프(주입 종료 확인 + t_slo/t_recovery 판정 + **주입 종료 후 관찰**, `prevented_confirmed`/`t_recovery`까지 대기) | **활성**(drain/post-injection 관찰 전 구간 포함) | 756-798행 |
+| 9 | `_get_experiment_state()`(recovery-policy 상태 조회) | **활성**(아직 안 멈춤) | ~880행대 |
+| 10 | stage 분류 | **활성** | 912-921행 |
+| 11 | **`detector.stop()`** | **전이(활성→비활성)** | 931-933행, 주석: "prober/injector보다 먼저 멈춘다... 정리 과정 자체를 관찰 대상으로 오염시킬 위험이 가장 크다" |
+| 12 | `prober.stop()` | **비활성** | 942행 |
+| 13 | `injector.cleanup()`(preview 정리 포함) | **비활성** | 953행 |
+| 14 | `_clear_experiment_context()` | **비활성** | 962행 |
+
+**핵심 규율**: detector는 baseline이 valid로 확인된 **이후에만**
+시작하고(phase 5→6 전이), 관찰(주입+주입 후 drain/recovery 관찰)이
+전부 끝난 뒤 cleanup 시작 **직전에** 정지한다(phase 10→11 전이) -
+drain/post-injection 관찰 구간은 detector가 살아있는 동안이므로
+**절대 임의로 제외하지 않는다**(사용자 지시 - 안전해 보이려고
+빼지 않음).
+
+### 89.3 별도 구현 사유 및 미재사용 부분
+
+`run_once()` 자체를 호출하지 않는다 - phase 1(`_wait_for_
+quiescence`)·4(`_register_experiment_context`)·9(`_get_experiment_
+state`)·14(`_clear_experiment_context`)가 전부 실제 recovery-policy
+admin API(`RECOVERY_POLICY_URL`)에 무조건 연결한다(코드 확인, arm이
+native가 아니면 예외 없음) - 이번 턴의 "recovery-policy 연결 금지"
+범위 제한과 정면으로 충돌해 물리적으로 재사용 불가능하다. 대신:
+
+- **재사용(변경 없음)**: `qualify_normal_profile.collect_
+  qualification_session()` 전체(preview 생성·settle·Node/Endpoint
+  체크·cleanup·feature 추출), 그 내부의 `run_candidate_with_retry`/
+  `cleanup_unpromoted_preview`(`blue_green_prep.py`).
+- **새 구현**: `DetectorLifecycleController`(`run_v32b_lifecycle_
+  aligned_smoke.py`) - 위 두 함수를 실행 도중에만 감싸(monkey-patch)
+  phase 6/11의 정확한 전이 지점에 detector 시작/정지를 꽂는다.
+  실행이 끝나면(정상/예외 무관) 원래 함수로 즉시 복원한다.
+- **각 전이를 §89.7의 신규 오프라인 테스트로 run_once()와 동일함을
+  고정**: "baseline 확보 전 detector 없음"(phase 5→6), "detector
+  정지가 cleanup 로직보다 먼저"(phase 10→11), 예외 발생 시에도 원본
+  함수 복원, 지연시간 전 실패 시 detector 자체가 시작 안 됨.
+
+**detector 시작 시점 근사**: `run_candidate()`(`explore_ramp_
+intensity.py`) 자체가 `SETTLE_SEC=60`(내부 settle) + `BASELINE_SEC=60`
+(baseline 수집) = **120초** 뒤에 baseline 게이트를 통과하고 ramp를
+시작한다(코드 확인, 상수 재정의 없음) - `run_candidate_with_retry()`
+진입과 동시에 120초 타이머를 걸어 그 시점에 detector를 시작한다(같은
+프로세스·같은 시각 기준이라 드리프트 무시 가능). **detector 정지
+시점**: `run_candidate_with_retry()`가 반환하는 즉시(=ramp+drain
+완료 직후, `cleanup_unpromoted_preview()`가 호출되기 직전) 정지한다 -
+phase 11의 정확한 위치.
+
+### 89.4 Smoke 조건
+
+고유 run_id(`smoke-v32b-lifecycle-aligned-<timestamp>`),
+`active_plus_preview`, low_load 0.025 RPS(benign, 기존 calib3-*/
+holdout3-*와 동일 프로파일), steady observation 600초(stage 그대로),
+drain 60초(`POST_RAMP_DRAIN_SEC`, 실제 trial 규칙과 동일 상수),
+동결 v3.2b artifact·threshold(`57d4440` 이후 변경 없음, 재확인),
+실제 `score_server.py`, `capture_sink.py`(run 전용 capture sink,
+실제 recovery-policy와 URL·포트 둘 다 다름을 시작 직전
+`_assert_sink_distinct_from_real_url()`으로 확인), Chaos 없음,
+promotion 불가능(qualify_normal_profile.py 경로 자체가 promotion을
+하지 않음), model·threshold·feature·streak 변경 없음.
+
+### 89.5 프로세스·포트 사전 확인
+
+`_assert_no_stray_processes()`(기존 score_server/capture_sink
+프로세스 0개, best-effort wmic 기반), `_pick_free_loopback_port()` +
+`_assert_port_free()`(예정 포트가 free임을 직접 bind로 재확인,
+fail-closed), sink가 그 포트에 bind(§88.6의 `allow_reuse_address=
+False` 그대로 재사용), sink PID·port·run_id token을 evidence에 기록,
+detector PID·전체 커맨드라인 기록, 시작 1초 후 생존 확인, structured
+JSONL evidence 파일 생성 확인. 문제 발생 시(bind 실패·stale
+process·log 파일 미생성) live 관찰을 시작하지 않고 즉시 중단한다.
+
+### 89.6 매 evaluation 증거 + 실시간 중단 조건
+
+`score_server.py --evidence-log`(§88.6, 변경 없음)가 매 cycle
+timestamp·raw/ordered/scaled feature vector·score·threshold·
+anomalous 여부·연속 카운트·cooldown 상태·signal 시도 여부·signal
+응답·artifact_hashes를 flush+fsync한다. lifecycle_phase는 이번 절의
+`DetectorLifecycleController`가 실측한 정확한 detector on/off
+시각으로 사후 결합한다(§88의 근사적 session-timestamp 방식보다
+정밀함). 최소 38개 steady(stage) point 필요, drain 구간 point는
+별도 집계(`score_server_evidence_phase_breakdown`).
+
+즉시 중단 조건(§86.8과 동일, 발생 시 threshold 불변 원칙 유지):
+실제 recovery-policy로 신호 전송, capture sink signal 1건 이상,
+restart/OOM, Node 이상, Endpoint 격리 실패, promotion, artifact/
+schema/dependency mismatch, metric missing/NaN/stale, structured
+log 중단, detector/sink process 중복, cleanup 실패. **signal
+발생 시 threshold를 바꾸거나 표본을 늘리기 위해 실행을 이어가지
+않는다.**
+
+### 89.7 종료 후 parity 검증 계획
+
+Signal이 없고 측정이 완주돼도 PASS 선언 전에 structured evidence의
+정확한 runtime feature vector(raw/ordered/scaled)를 그대로 동결
+offline evaluator(`model_v31/evaluate.py`, 변경 없음)에 입력해
+확인한다 - evaluation point 수 일치, score 허용오차 `1e-9` 이내,
+anomaly boolean·consecutive count·cooldown·signal decision 일치,
+lifecycle phase별 point 범위 일치. **parity의 authoritative
+input은 runtime이 실제 쓴 structured feature vector**이며, post-hoc
+Prometheus 재추출은 참고 비교로만 쓴다(§88.5에서 이미 두 경로의
+차이를 확인했으므로 이번엔 재추출을 authoritative로 삼지 않는다).
+
+### 89.8 판정 기준 (사전 고정)
+
+- **PASS**: lifecycle 일치 + capture signal 0 + runtime would-signal
+  0(steady+drain 전부) + runtime/offline parity 완전 일치 + 최소
+  point 충족 + 인프라·cleanup 정상 -> `runtime_safety_status=
+  passed_on_lifecycle_aligned_diagnostic`, `deployment_status=
+  eligible_for_controlled_e2e_pilot`(단, 1회 smoke라는 한계 명시).
+- **FAIL**: detector 노출 구간(steady 또는 drain)에서 signal 1건
+  이상 -> `classification=D: genuine in-domain false signal`,
+  `runtime_safety_status=failed`, `deployment_status=blocked`,
+  추가 smoke·threshold/model/streak 변경·E2E pilot 전부 금지, 연구용
+  후보 유지 여부만 제안.
+- **INVALID**: 로그·port·metric·lifecycle·cleanup 문제로 판정
+  불가능 -> `invalid_run` 보존, `deployment_status=blocked` 유지,
+  자동 재실행 금지, 필요한 수정만 보고.
+
+### 89.9 범위 제한
+
+이번 턴 금지 - recovery-policy 연결, 실제 promotion, Chaos fault,
+model·threshold·feature 변경, 재학습, 기존 Holdout/challenge
+재평가, `memory_pressure` 3-arm, `run_all_scenarios.py`, 본 실험,
+`TrialResult` 스키마 변경. 이 절(§89.1~89.9)까지는 계획·코드·테스트만
+포함한다 - 실제 measurement는 이 커밋이 origin에 반영된 뒤 별도
+커밋(§90)에서 정확히 1회 수행한다.
