@@ -78,6 +78,8 @@ probe가 주입 이후 실제로 유효한 표본을 충분히 확보했는지(`
 | `network_degrade`(순수 열화) | 6분(360초, 4단계) | +5분 | **11분** |
 
 > **`memory_pressure` 행은 2026-09-20부로 잠정 무효(provisionally invalid)** - 5단계(500MB→1GB→1.5GB→2.5GB→**5000MB**) 설계는 Phase 5 조사(`docs/design/phase5-memory-pressure-investigation.md` §2)에서 5000MB 단계가 vLLM이 아니라 stress worker 자신의 self-OOM(재시작 순환)만 유도한다고 확인돼 본 실험 후보에서 제외했다(§48.3). 새 강도 후보(500/1000/1500/2000MB, `chaos/scenario-memory-pressure-explore.yaml`)의 단계 수·지속시간이 확정되기 전까지 이 행의 14분/19분 값은 참고용 이력이며, 재계산 전에는 이 값으로 본 실험을 진행하지 않는다.
+>
+> **`memory_pressure`의 시나리오 역할 = `memory_pressure_negative_control`(2026-09-22부, `docs/design/phase8-blue-green-preflight-incident.md` §94 사전 등록)** - §56/§57(1500MB direct, SLO 재현성 0/3)에 이은 재검증으로, 최종 후보는 **1000MB×120초 direct(단일 점프, non-progressive)**다. 목적: working set은 실제로 상승시키되 **sustained SLO 위반은 발생하지 않아야 하는** 조건에서 detector·recovery-policy가 불필요한 신호·promotion을 만드는지 3-arm 비교에서 평가하는 것 - **복구 성능 시나리오가 아니다.** SLO 예방률·MTTR 집계(fault scenario 취급)에는 포함하지 않고, false detection·불필요 조치·자원 오버헤드 분석에만 포함한다. "실제 OOM 장애 재현", "memory fault recovery", "마지막 단계 SLO 위반 보장", "memory_pressure에서 복구 성공률 비교" 표현은 이 시나리오에 쓰지 않는다.
 
 - `load_ramp`는 설계상 마지막 단계에서 SLO 위반이 보장되도록 이미 튜닝돼 있음(9-3절 반사실 요구사항). **`memory_pressure`는 이 보장 문구를 제거한다(2026-09-20)** - 위 5000MB 단계가 빠지면서 새 강도 후보(500~2000MB)가 마지막 단계에서 SLO 위반을 보장하는지는 아직 실측 근거가 없다(§48.3의 Phase 5 §3 재해석은 "포함 가능성이 있다"는 정황 증거일 뿐 사전 등록된 반사실 검증이 아니다) - live smoke 이후 별도 calibration으로 근거를 확보한 뒤에만 이 문구를 되살린다.
 - **이 예산은 "조기 종료 가능한 최악의 경우"가 아니라 거의 기본 실행시간이다** — chaos 자체 종료를 기다려야 하므로 복구가 일찍 됐다고 trial이 일찍 끝나지 않는다. (5+19+15+11)분 × 3 arm × 5회 = **약 750분(12시간 30분)이 기본값**이고, preview 준비·quiescence 대기·`invalid_run` 재실행까지 포함하면 실제 일정은 **약 14~16시간**으로 잡는다.

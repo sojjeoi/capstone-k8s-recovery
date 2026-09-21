@@ -9948,3 +9948,215 @@ model·threshold·feature 변경, 다른 arm·시나리오 실행,
 스키마 변경 - 전부 준수(0건). 이번 턴 변경 파일: 없음(코드 변경
 없음 - 배포·smoke·문서화만). 배포한 이미지는 §92에서 이미 커밋된
 `8372fc2`의 내용 그대로.
+
+## §94 - `memory_pressure` negative-control 최종 후보(1000MB×120초) 재현성 검증 - 사전 등록 (측정 전)
+
+§93 승인 이후 지시. Isolation Forest model·threshold·feature·runtime
+evidence 경로(§81~§93)는 이 시점부로 **동결** - 이번 절과 이후
+절에서 더 이상 수정하지 않는다. `1000MB×120초`의 **독립 재현성
+3회만** 확인하고, 3-arm 파일럿·본 실험으로 넘어가지 않는다. 이
+절은 §50/§52/§54/§56과 동일하게 **측정 전에** 규칙을 고정한다 -
+측정 뒤 값·기준을 사후 조정하지 않는다.
+
+**§58.1과의 관계(명시적 정정)**: §58.1은 §56/§57 결과(1500MB direct,
+SLO 재현성 0/3)에 근거해 memory_pressure를 `1500MB×120초 direct
+sub-critical negative control`로 **잠정 채택**했었다. 이번 지시는
+그 잠정 채택을 **1000MB×120초로 교체**한다 - 1500MB의 §56/§57
+결과는 이력으로 그대로 보존하고 수정하지 않지만, 최종 negative-
+control 후보로는 더 이상 쓰지 않는다.
+
+### 94.1 시나리오 역할 사전 등록 (계약서 동시 반영, §94 커밋에 포함)
+
+**역할**: `memory_pressure_negative_control`
+
+**목적**:
+- 안전한 메모리 working set 상승은 발생시킨다.
+- **sustained SLO 위반은 발생하지 않아야 한다**(이 조건 자체가
+  이번 검증의 대상).
+- detector와 recovery-policy가 이 조건에서 불필요한 신호·
+  promotion을 만드는지는 **이후 3-arm 비교**에서 평가한다(이번
+  절의 범위 밖 - native만 실행).
+- **recovery 성능 시나리오가 아니다.**
+- SLO 예방률·MTTR 집계에 fault scenario로 **포함하지 않는다.**
+- false detection·unnecessary action·resource overhead 분석에는
+  **포함한다.**
+
+**금지 표현**(이 시나리오를 설명할 때 절대 쓰지 않음): "실제 OOM
+장애 재현", "memory fault recovery", "마지막 단계 SLO 위반 보장",
+"memory_pressure에서 복구 성공률 비교".
+
+계약서(`docs/design/experiment-contract.md` §4 아래 blockquote)에
+이 역할 정의를 요약해 반영했다(이 커밋에 포함, 전체 근거는 이
+절로 링크).
+
+### 94.2 최종 후보 profile
+
+| 항목 | 값 |
+|---|---|
+| 주입 방식 | StressChaos memory stress, 정상 baseline에서 **곧장 1000MB로 점프**(direct, non-progressive) |
+| worker | 1개 |
+| size | 1000MB |
+| duration | **120초** |
+| target | active Service가 가리키는 **단일 pod, 이름·UID 고정**(주입 중 대상 변경 시 §94.6 즉시 중단) |
+| readiness/liveness | 기본 profile(변경 없음) |
+| preview | 없음 |
+| detector | 없음(`arm=native`) |
+| `is_pilot` | 개념상 true와 동등(§50.1/§56.1과 동일 논리 - 결과를 본 실험 분석에서 구조적으로 제외하는 저장 경로를 씀) |
+| baseline 관찰 | 최소 60초(`BASELINE_MIN_SEC`, 불변) |
+| recovery 관찰 | 최소 60초(`RECOVERY_OBSERVE_SEC`, 불변) |
+| CR duration 안전망 | stage 지속시간(120초) + `STAGE_DURATION_SAFETY_MARGIN_SEC`(60초, 불변) |
+| 반복 횟수 | **3회 독립 반복** |
+| 반복 간 간격 | 최소 **300초** cooldown + baseline 복귀 확인 후에만 다음 반복 시작 |
+
+**역사적 자료로만 유지, 이번 3회의 대체 반복으로 계산하지 않음**:
+500MB smoke(§49), 기존 1000MB 자료(§51 단독 1라운드, §54/§55
+progressive 시퀀스 안의 1000MB stage). 이번 절은 1000MB를 **direct,
+단독, 3회 독립 반복**으로 처음 검증하는 것이다(§56/§57이 1500MB에
+대해 했던 것과 동일한 종류의 검증, 강도만 다름).
+
+**실행 금지(영구, 이번 절 범위에서)**: 1500/1600/1650/2000/2500/5000MB.
+
+### 94.3 검증 도구 - `experiments/verify_memory_pressure_negative_control.py`(신규, 이 절 커밋 직후 구현)
+
+새 어댑터·새 주입 경로를 만들지 않는다 - `verify_memory_pressure_
+direct_candidate.py`(§56.2)와 완전히 같은 패턴으로
+`explore_memory_pressure_intensity.run_round(1000.0, workers=1,
+stage_duration_sec=120.0)`를 그대로 재사용한다(`1000.0`은 이미
+`ALLOWED_SIZES_MB`에 포함돼 있어 `run_round()`의 fail-closed 게이트를
+그대로 통과함, 코드 변경 없음). `judge_direct_safety()`(§56.2)와
+`check_cluster_quiescent`/`wait_for_quiescence`(§54.2)를 그대로
+재사용하고, negative-control 전용으로 다음 두 판정만 새로 추가한다
+(둘 다 순수 함수, 기존 §56 스크립트의 판정 로직·`run_round()` 내부는
+전혀 안 바꿈):
+
+- `working_set_rise_bytes >= 800MiB`(요청량의 80% - §50.4/§54.4와
+  동일 기준 재사용, 새 임계치 발명 아님).
+- **`t_slo`가 null이거나, 있어도 이 stage 경계(§54.3/§56.4와 동일한
+  `t_slo_within_window`) 밖이면 PASS** - §56.4는 정반대 방향
+  (2/3 이상 위반돼야 PASS)이었으므로 그 판정 함수를 그대로 못 쓰고
+  새 함수(`judge_negative_control_reproducibility()`)를 추가한다.
+  `slo_judge.find_t_slo()`가 이미 latency-sustained(30초 연속)와
+  availability-즉시 위반을 **하나의 `t_slo`로 통합**해서 판정하므로
+  (기존 정의 재사용, 새 판정 로직 없음), `t_slo is None`을 확인하는
+  것만으로 "sustained SLO 위반 없음"과 "availability 위반 없음"
+  **둘 다** 확인된다(§92.6 같은 authoritative-source 원칙 - 중복
+  검사를 새로 만들지 않는다). `p95_peak`는 보고만 하고(기록),
+  순간적으로 threshold를 넘어도 `t_slo`가 안 걸리면 PASS를 막지
+  않는다(지시 그대로).
+- 안전 기준 위반이든 **`t_slo` 발생(sustained 위반)**이든, 그 즉시
+  루프를 멈추고 이후 반복을 실행하지 않는다(§56 스크립트는 안전
+  기준에서만 멈췄다 - 이번엔 §94.1의 목적 자체가 "위반이 없어야
+  한다"이므로 위반 발생 자체가 이 profile의 부적격 신호이자 중단
+  신호).
+
+산출물은 `results/`(top-level, `results/pilot/` 아님) 아래
+`explore-memory_pressure-native-1000mb-120s-{timestamp}-summary.json`
+(run_round()가 이미 쓰는 명명 규칙 그대로) + 반복별 `-negative-
+control-verify-summary.json` + 최종 판정
+`verify-memory_pressure-negative-control-verdict-{timestamp}.json` -
+`trial-*.json` 패턴이 아니라 본 실험 집계에 절대 안 섞인다.
+
+### 94.4 실행 전 확인
+
+측정 시작 전 아래를 전부 확인하고, 하나라도 미충족이면 주입 전에
+`invalid_run`으로 중단한다:
+
+- `HEAD`/`origin` 동기화, working tree clean.
+- `KUBECONFIG`=존재하지 않는 경로에서 전체 오프라인 테스트 통과
+  (신규 테스트 포함).
+- Node Ready·pressure 없음.
+- Rollout `Healthy`·단일 revision·preview 없음.
+- recovery-policy context null.
+- Chaos CR·실험 pod·detector·observer 없음.
+- active pod UID·restartCount 기록(반복 종료 후 대조 기준).
+- container memory limit 확인(cgroup 상한, headroom 계산 근거).
+- baseline working set 실측.
+- Node MemAvailable 실측.
+- Prometheus 최신 지표 확인.
+- port-forward health 확인.
+- recovery-policy 정상(`/healthz` 등, native arm이라 신호 경로는
+  안 쓰지만 클러스터 전반 건강성 지표로 확인).
+
+### 94.5 반복별 PASS 조건 (전부 충족해야 그 반복이 PASS)
+
+1. `AllInjected=True`
+2. working set이 baseline보다 최소 **800MiB** 상승
+3. sustained SLO 위반 없음(`t_slo=null`, §94.3 근거로 availability
+   위반 없음도 함께 확인됨)
+4. completion 성공률 100%
+5. restartCount 불변
+6. OOMKilled 없음
+7. target UID 불변
+8. Node Ready·pressure 없음
+9. Node MemAvailable **4GiB 이상**
+10. target working set **5GiB 미만**
+11. CR 삭제·소멸 확인
+12. cleanup 후 working set이 기존 검증 규칙의 baseline 허용 범위로
+    복귀(§54/§56과 동일 recovery-check 로직 재사용, 새 허용범위
+    없음)
+13. context·CR·observer·실험 pod 완전 정리
+
+Point P95가 순간적으로 threshold를 넘어도 30초 연속(sustained) 판정이
+없으면(=`t_slo` 미발생) 기록만 하고 이 반복은 PASS할 수 있다.
+
+### 94.6 즉시 중단 조건 (하나라도 발생 시 CR 즉시 삭제, 이후 반복 미실행)
+
+`t_slo` 발생(sustained 위반), Node MemAvailable **3GiB 미만**
+(`MIN_NODE_AVAILABLE_BYTES`, 기존 라이브 감시 상수 그대로 - baseline/
+recovery 구간은 `own_tick()`이 매 폴링마다 이미 즉시 확인함),
+working set **5GiB 초과**, restart 증가, OOMKilled, Node NotReady·
+pressure, target replacement, metric completeness 실패, CR 삭제·
+소멸 실패, cleanup 실패, port-forward 장애로 자료 완결성 복구 실패.
+
+SLO 위반이 한 번이라도 발생하면 이 profile은 negative control로
+**부적격**이다 - 결과를 지우거나 통과 실행으로 대체하지 않는다.
+
+### 94.7 반복 순서와 run_id (측정 전 고정)
+
+1. `memory-negative-control-verify-01-20260922`
+2. `memory-negative-control-verify-02-20260922`
+3. `memory-negative-control-verify-03-20260922`
+
+순차 실행하며 각 반복 종료 후 독립 확인: 단일 active revision,
+active UID·restart 상태, Node 상태, working set baseline 복귀,
+Chaos CR 없음, context null, 잔여 process 없음.
+
+### 94.8 3회 최종 판정 규칙 (사전 확정, 결과를 본 뒤 바꾸지 않는다)
+
+**PASS / Freeze 가능** - 3/3 `t_slo=null` **AND** 3/3 안전·cleanup
+조건(§94.5) 충족 **AND** 3/3 실제 working set 상승(≥800MiB) 확인:
+1. `1000MB×120초`를 `memory_pressure_negative_control_v1`로 동결
+   (scenario YAML·hash·계약서 역할 고정 - 이후 강도·지속시간
+   변경 금지).
+2. 이후 native/fixed_threshold/proposed 파일럿 진행 가능하다고
+   **제안**(실행은 별도 승인 필요).
+3. recovery scenario 집계와 negative-control 집계를 분리하도록
+   `collect_metrics.py` 등 분석 문서에 명시.
+
+**FAIL** - 한 번이라도 sustained SLO 위반 또는 안전 실패 발생:
+1. negative control 동결 금지.
+2. 강도를 즉석에서 500MB로 낮춰 재시도하지 않는다.
+3. `memory_pressure`를 60회 본 실험에서 제외할지는 **별도 결정안만
+   제시**한다(이 절에서 판단하지 않음).
+4. 3-arm 파일럿 금지.
+5. 이후 반복 중단(이미 실행한 반복까지만 보고).
+
+### 94.9 보존·분석 항목 (반복별)
+
+raw latency CSV, safety tick(전체 `ticks` 배열), working set
+시계열, MemAvailable 시계열, StressChaos spec/status, `AllInjected`
+시각, CR 삭제·소멸 시각, SLO 판정(`analyze_slo()` 전체 dict),
+pod/Node 전후 상태, cleanup 결과, 이번 절 구현의 config·code hash
+(커밋 SHA). 3회 평균만 제시하지 않고 반복별 값과 범위를 함께
+보고한다.
+
+### 94.10 범위 제한
+
+이번 절(측정 포함) 금지: non-native arm, preview 생성·promotion,
+Isolation Forest 실행·변경, recovery-policy signal, 다른 memory
+강도(500/1500/1600/1650/2000/2500/5000MB), 다른 시나리오,
+`run_all_scenarios`, 본 실험, `TrialResult` 스키마 변경. `KUBECONFIG`=
+존재하지 않는 경로에서 전체 오프라인 테스트를 먼저 통과시킨 뒤에만
+측정을 시작한다. 이 사전 등록(계약서 반영 포함)을 측정 전에
+커밋·푸시하고, 3회 결과는 별도 절(§95)로 문서화·커밋·푸시한 뒤
+정지한다.
