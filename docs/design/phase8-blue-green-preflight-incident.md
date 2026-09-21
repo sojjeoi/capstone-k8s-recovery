@@ -7991,3 +7991,84 @@ challenge 평가 - 재분류(safe load transient / load-induced sustained
 SLO violation / extreme non-reproduced latency anomaly) 및
 `§78`의 latency-only 세션을 infrastructure-normal FPR 사례로 취급,
 threshold/feature 변경 없음(§79.7 절차 그대로).
+
+## 84. v3.2b boundary challenge - 단 한 번의 탐색적 평가 사전등록 (2026-09-21)
+
+### 84.1 시작 전 무결성 확인
+
+`HEAD==origin/master==c7675b1`, working tree clean, `SHA256SUMS.json`
+무결성 0건 불일치(model/scaler/threshold/schema 전부 freeze 시점과
+동일 해시), threshold `-0.0742929709960305`. evaluator 관련 파일
+(`evaluate.py`/`replay.py`/`stop_loss.py`/`domain.py`)이
+freeze commit 이후 git 이력 없음.
+
+`boundary_challenge_manifest.json`(§69에서 이미 확정, `not_scored_
+yet: true`)의 6개 session이 이번에 score된 적이 한 번도 없음을
+확인 - safe transient 3건(`q3c-sustained_load-20260920-r1`,
+`q3c-burst-20260920-r1`, `official-train-burst-20260920`), actual
+violation 2건(`official-train-sustained_load-20260920`,
+`official-calib-burst-20260920`), §60 non-reproduced anomaly 1건
+(`qual-low_load-20260920-r6`) - 사용자 지시대로 이 6개를 추가·삭제
+하지 않고 그대로 사용한다.
+
+### 84.2 Feature 자료 준비 - 재추출 불필요
+
+6개 session 전부 이미 완전한 `feature_rows`를 갖고 있다(§69 당시
+`build_dataset.build_rows_for_session()`으로 이미 추출됨) - 8개
+원천 feature, 60초 window/15초 step, 전부 valid, missing/NaN 0건을
+직접 확인했다(원본 raw CSV·Prometheus 재조회 불필요, §3 지시의
+"기존 feature row가 schema·window·step·hash까지 완전하면 그대로
+사용" 조건 충족). 원본 session 파일 SHA-256(채점 전 기록, 변경 시
+`run_boundary_challenge.py`가 fail-closed):
+
+| session_id | role | SHA-256 |
+|---|---|---|
+| `q3c-sustained_load-20260920-r1` | sustained_load_pass | `50a7af97...99c31` |
+| `official-train-sustained_load-20260920` | sustained_load_violation | `773f61b1...37895` |
+| `q3c-burst-20260920-r1` | burst_safe | `f0dccbaa...6997c3a` |
+| `official-train-burst-20260920` | burst_safe | `cf871e66...32eae6` |
+| `official-calib-burst-20260920` | burst_violation | `77280a88...482c806` |
+| `qual-low_load-20260920-r6` | non_reproduced_anomaly | `c4e7ff64...37bb18f` |
+
+### 84.3 평가 규칙 사전 고정 (score 계산 전 커밋)
+
+`anomaly-detection/v3/model_v32b/boundary_challenge_evaluate.py`
+(신규) - score 계산 자체는 `model_v31/evaluate.py`의
+`evaluate_session()`/`score_session_rows()`(변경 없음, sealed
+holdout과 완전히 동일 함수)를 그대로 재사용하고, 이 파일은 해석만
+추가한다:
+- `classify_detection(t_slo, first_signal_window_start_utc)`:
+  `t_detection <= t_slo` -> `early_detection`, `t_detection > t_slo`
+  -> `late_detection`, signal 없음 -> `missed`(safe_transient에는
+  적용 안 함, `t_slo=None`이면 `None` 반환).
+- `compute_lead_time_sec(t_slo, t_detection) = t_slo - t_detection`
+  (양수=선제, 0=동시, 음수=사후, signal 없으면 `None`).
+- `anomaly_streak_timeline()`: window별 score·이상 여부·그 시점까지
+  연속 카운트(연속 3회 조건이 어디서 끊기는지 감사 가능).
+- `aggregate_safe_transient()`/`aggregate_actual_violation()`: 세
+  그룹(safe_transient/actual_violation/§60)을 **절대 합쳐 평균 내지
+  않음** - actual_violation은 표본 2개뿐이라 통계적 우월성을 주장하지
+  않는다는 문구를 결과에 고정.
+- `classify_overall()`: A(Promising)/B(Over-sensitive)/
+  C(Insensitive)/D(Mixed) - B(safe transient에 signal 1건 이상)와
+  C(violation 전부 missed/late)는 서로 독립 트리거라 동시에 성립할 수
+  있고, 그 경우 확대 해석하지 않고 D로 보고하도록 우선순위를 고정했다.
+
+`run_boundary_challenge.py`(신규) - 원본 session 파일 SHA-256을
+채점 직전 재확인(fail-closed)한 뒤 동결된 artifact로 6개 session을
+채점하고 `artifacts/boundary-challenge-evaluation.json`에 저장한다.
+model.pkl/scaler.pkl/threshold.json/feature-schema.json은 전혀
+다시 쓰지 않는다.
+
+오프라인 테스트 `test_boundary_challenge_evaluate.py` 14개 -
+early/late/missed 분류, lead time 부호, streak timeline reset,
+safe/violation 집계, A/B/C/D 각 케이스(B·C 동시 성립 시 D로 떨어지는
+경우 포함) 전부 fake 함수 주입으로 검증(실제 model artifact·클러스터
+의존 없음). 전체 오프라인 스위트(존재하지 않는 KUBECONFIG) 재확인.
+
+### 84.4 범위 준수
+
+이 절(§84)까지는 evaluator·해석 규칙·테스트·문서만 커밋한다 - 실제
+score는 이 커밋이 origin에 반영된 뒤 별도 커밋(§85)에서 정확히 1회
+계산한다. threshold·feature·model 변경 없음, 재학습 없음, live
+cluster 작업 없음.
