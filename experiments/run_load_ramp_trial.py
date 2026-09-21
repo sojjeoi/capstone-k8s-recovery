@@ -42,6 +42,11 @@ def main():
                               "집계에서 구조적으로 제외할 수 있게)")
     parser.add_argument("--rollout", default="vllm-serving", help="non-native arm의 preview 준비 대상 Rollout 이름")
     parser.add_argument("--namespace", default="vllm-serving", help="non-native arm의 preview 준비 대상 namespace")
+    parser.add_argument("--evidence-log", default=None,
+                         help="§90 E2E pilot - proposed arm(score_server.py)에만 전달되는 선택적 "
+                              "structured JSONL evidence 경로(§88.6과 동일 포맷). 기본값 None이면 "
+                              "기존과 동일하게 아무 인자도 안 붙음(본 실험 기본 동작 불변, 순수 opt-in). "
+                              "native/fixed_threshold에는 아무 영향 없음(해당 스크립트에 이 옵션 자체가 없음).")
     args = parser.parse_args()
 
     scenario = "load_ramp"
@@ -52,7 +57,7 @@ def main():
     # non-native arm은 이 배선을 절대 우회할 수 없다(fail-closed, 지시) -
     # arm=native면 원본 injector를 그대로 반환(2026-09-18 추가).
     injector = arm_controller.wrap_injector_with_preview_prep(injector, args.arm, args.rollout, args.namespace)
-    detector = arm_controller.make_detector_for_arm(args.arm, run_id)
+    detector = arm_controller.make_detector_for_arm(args.arm, run_id, evidence_log_path=args.evidence_log)
     prober = make_load_ramp_prober(args.probe_config, run_id, scenario, args.arm, args.rep, args.timeout_sec)
 
     print(f"run_id: {run_id}" + (f" / detector: {detector.name}" if detector is not None else ""))

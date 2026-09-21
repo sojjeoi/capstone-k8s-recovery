@@ -126,13 +126,20 @@ def _prometheus_reachable_and_fresh(prom_url: str = LOCAL_PROMETHEUS_URL,
         return False
 
 
-def _build_detector_command(arm: str, run_id: str) -> Optional[list]:
+def _build_detector_command(arm: str, run_id: str, evidence_log_path: Optional[str] = None) -> Optional[list]:
     """순수 함수 - 실제 프로세스를 안 띄우고 커맨드만 조립한다(오프라인
     테스트용, run_id 전파를 코드 실행 없이 검증 가능). arm이 native거나
     매핑에 없으면 None(detector 없음). fixed_threshold는 2026-09-20부터
     --cpu-limit-cores(FIXED_THRESHOLD_CPU_LIMIT_CORES, 위 §6 동결값)를 반드시
     같이 받는다 - fixed_threshold.py가 이 인자 없이는 즉시 fail-closed로
-    종료하므로, 여기서 안 붙이면 detector가 아예 시작을 못 한다."""
+    종료하므로, 여기서 안 붙이면 detector가 아예 시작을 못 한다.
+
+    evidence_log_path(§90 E2E pilot, 2026-09-21 추가) - 지정되면 proposed
+    arm(score_server.py)에만 --evidence-log로 전달한다(기본값 None이면
+    아무 인자도 안 붙어 기존 호출부·본 실험 동작이 전혀 안 바뀜, 순수
+    opt-in). score_server.py의 --evidence-log는 판정 로직에 영향 없는
+    관찰 전용 append 파일이다(§88.6). fixed_threshold.py는 이 옵션 자체가
+    없으므로 arm에 상관없이 절대 붙이지 않는다."""
     spec = _DETECTOR_SCRIPTS.get(arm)
     if spec is None:
         return None
@@ -141,6 +148,8 @@ def _build_detector_command(arm: str, run_id: str) -> Optional[list]:
         cmd += ["--cpu-limit-cores", str(FIXED_THRESHOLD_CPU_LIMIT_CORES)]
     elif arm == "proposed":
         cmd += ["--artifacts-dir", str(PROPOSED_ARTIFACTS_DIR), "--model-version", PROPOSED_MODEL_VERSION]
+        if evidence_log_path is not None:
+            cmd += ["--evidence-log", evidence_log_path]
     return cmd
 
 
@@ -183,6 +192,7 @@ def make_detector_for_arm(
     arm: str, run_id: str,
     reachability_check_fn: Optional[Callable[[str], bool]] = None,
     prometheus_check_fn: Optional[Callable[[], bool]] = None,
+    evidence_log_path: Optional[str] = None,
 ) -> Optional[Detector]:
     """native면 None - run_once()가 detector 관련 로직을 아예 안 탄다.
     fixed_threshold/proposed면 anomaly-detection/{script} --run-id
@@ -206,7 +216,7 @@ def make_detector_for_arm(
         return None
     check_fn = reachability_check_fn or _recovery_policy_reachable
     prom_fn = prometheus_check_fn or _prometheus_reachable_and_fresh
-    cmd = _build_detector_command(arm, run_id)
+    cmd = _build_detector_command(arm, run_id, evidence_log_path=evidence_log_path)
     base = _subprocess_detector(cmd, spec["name"], cwd=str(ANOMALY_DETECTION_DIR))
 
     def start_with_reachability_preflight():

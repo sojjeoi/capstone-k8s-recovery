@@ -76,7 +76,11 @@ def test_non_native_arm_always_goes_through_orchestration(module_name, injector_
     detector = kwargs.get("detector")  # 배선이 없는 러너는 detector 인자 자체를 안 넘긴다
     assert detector is not None, "non-native arm은 detector가 반드시 붙어야 함(없으면 잘못 라벨링된 trial)"
     assert detector.name == EXPECTED_DETECTOR[arm], "arm별 정확한 단일 detector"
-    spy_detector.assert_called_once_with(arm, kwargs["run_id"])  # detector 서브프로세스에 이 trial의 run_id가 전달됨
+    # detector 서브프로세스에 이 trial의 run_id가 전달됨. run_load_ramp_trial.py는
+    # §90 E2E pilot(2026-09-21)부터 evidence_log_path를 kwarg로 명시 전달하지만
+    # --evidence-log 미지정 시 기본값 None이라 다른 러너와 동작이 동일해야 한다.
+    assert spy_detector.call_args.args == (arm, kwargs["run_id"])
+    assert spy_detector.call_args.kwargs.get("evidence_log_path") is None
 
     injector = kwargs["injector"]
     assert injector is original, "wrap은 같은 injector 객체를 감싸 돌려줌"

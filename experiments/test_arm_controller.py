@@ -95,6 +95,32 @@ def test_fixed_threshold_command_has_no_v32b_artifact_args():
     print("OK - fixed_threshold 커맨드에 v3.2b 관련 인자 없음, native는 여전히 detector 없음(불변)")
 
 
+def test_evidence_log_path_default_none_leaves_command_unchanged():
+    # §90 E2E pilot - evidence_log_path 미지정(기존 모든 호출부의 기본값)이면
+    # 커맨드가 이전과 정확히 동일해야 한다(본 실험 기존 동작 불변 확인).
+    cmd_without_param = _build_detector_command("proposed", "run-1")
+    cmd_with_default = _build_detector_command("proposed", "run-1", evidence_log_path=None)
+    assert cmd_without_param == cmd_with_default
+    assert "--evidence-log" not in cmd_without_param, cmd_without_param
+    print("OK - evidence_log_path 기본값(None)은 커맨드를 전혀 바꾸지 않음(opt-in)")
+
+
+def test_evidence_log_path_appended_only_for_proposed():
+    cmd = _build_detector_command("proposed", "run-1", evidence_log_path="/tmp/evidence.jsonl")
+    assert "--evidence-log" in cmd, cmd
+    idx = cmd.index("--evidence-log")
+    assert cmd[idx + 1] == "/tmp/evidence.jsonl", cmd
+    print("OK - evidence_log_path 지정 시 proposed 커맨드에 --evidence-log로 정확히 전달됨")
+
+
+def test_evidence_log_path_ignored_for_fixed_threshold():
+    # fixed_threshold.py는 --evidence-log 옵션 자체가 없다 - 실수로 붙으면
+    # 즉시 argparse 오류로 detector가 시작조차 못 한다(fail-closed 회귀 방지).
+    cmd = _build_detector_command("fixed_threshold", "run-1", evidence_log_path="/tmp/evidence.jsonl")
+    assert "--evidence-log" not in cmd, cmd
+    print("OK - evidence_log_path가 지정돼도 fixed_threshold 커맨드에는 절대 안 붙음")
+
+
 def test_detector_script_dispatch_table_has_exactly_two_non_native_arms():
     # native를 제외한 두 arm만 detector를 가지며, 서로 다른 스크립트를
     # 가리켜야 한다(구조적으로 arm과 detector가 어긋날 수 없음을 보장).
