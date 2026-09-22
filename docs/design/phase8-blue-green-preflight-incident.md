@@ -11023,3 +11023,194 @@ namespace/리소스 조작 0건. 금지 사항 - Chaos 주입(0건), 실제 tria
 변경(0건), `TrialResult` 스키마 변경(0건), 기존 결과 수정(0건) - 전부
 준수. 이 검증(§100 전체)은 분석 제외 인프라 검증이며
 `included_in_main_analysis=false`로 기록한다.
+
+## §101 - 본 실험 첫 공식 블록: `load_ramp` × 3-arm × 5회 = 15 trial 결과 (2026-09-22, `is_pilot=false`)
+
+§100 승인 이후 지시된 본 실험 첫 공식 블록. `run_all_scenarios.py`의
+공식 state/resume 구조로 15 trial 전부 순차 실행했다 - 개별 수동 실행
+없음, 사전 등록된 5-묶음 arm 순서 그대로. `pod_kill`/`network_degrade`/
+`memory_pressure_negative_control_v1` 블록은 시작하지 않았다.
+
+### 101.1 실행 기준 동결 - 사용자 지정 커밋과의 편차 및 사유
+
+사용자 지정 기준 commit은 `9c7b77d`였으나, `run_all_scenarios.py`의
+공식 state/resume 구조로 "load_ramp만, 다른 블록은 미착수"를 만족하려면
+`--scenario` 필터가 필요해 **`4d6800f`**(CLI 옵션 1개 추가 + 오프라인
+테스트 2건, 기존 로직/스키마 무변경, 오프라인 스위트 945 passed/0
+failed/3 skipped 확인 후 커밋)로 새로 동결하고 블록 매니페스트
+(`experiments/results/block-manifest-load_ramp-mainexp-v1.json`)에
+사유를 그대로 기록했다. 이후 결과 커밋은 없음 - 코드는 실행 내내
+불변이었다(§101.6 Git drift 확인 참고).
+
+동결 확인: `HEAD==origin/master==4d6800f`(실행 시작 시점), working tree
+clean(이 세션 시작 전부터 있던 untracked 산출물 2건 제외). model
+v3.2b(`anomaly-detection/v3/model_v32b/artifacts`) SHA256SUMS 불일치
+0건. SLO v3(`slo_judge.SLO_VERSION`). fixed_threshold
+`cpu_limit_cores=3.0` → `threshold_cores=2.7`(정확히 일치,
+`compute_threshold_cores()` 실측). load_ramp 설정은 `chaos/
+scenario-load-ramp.yaml`의 "Phase 8 확정 설정 v2"(lab-cpu3-warm-v1/
+SLO v3, 2026-09-18 동결) 그대로. 시작 시점 active pod 이미지
+`sha256:203c637f747a53bbc9914b084d38f37cb06cf4b372152af9e616adbf9d177e35`.
+`main_experiment_readiness=ready_for_first_scenario_block`(§100.7)
+확인 후 시작. 전부 `is_pilot=false`, 기존 pilot/calibration/diagnostic
+결과와 파일 경로부터 분리(`results/` top-level, `results/pilot/`과
+다름) - 혼합 없음.
+
+### 101.2 실행 범위·순서 사전 확인
+
+`python run_all_scenarios.py --plan --scenario load_ramp --plan-id
+mainexp-v1` 출력으로 실행 전 **정확히 15 trial**(core=15,
+auxiliary=0), run_id 15개 전부 확인 - 순서는 지시된 5-묶음 그대로
+(rep1 native→fixed_threshold→proposed, rep2 fixed_threshold→
+proposed→native, rep3 proposed→native→fixed_threshold, rep4
+native→proposed→fixed_threshold, rep5 fixed_threshold→native→
+proposed). state 파일(`experiments/results/official-experiment-
+state.json`)은 실행 전 존재하지 않았음을 확인한 뒤 새로 생성 -
+기존 결과 덮어쓰기 없음.
+
+### 101.3 완료된 trial 수와 run_id 목록
+
+**15/15 전부 `status=completed`, `cleanup_status=ok`** - 중단·invalid·
+needs_attention·failed **0건**.
+
+| # | run_id | arm | rep | outcome |
+|---|---|---|---|---|
+| 1 | load_ramp-native-01-mainexp-v1 | native | 1 | recovered |
+| 2 | load_ramp-fixed_threshold-01-mainexp-v1 | fixed_threshold | 1 | prevented |
+| 3 | load_ramp-proposed-01-mainexp-v1 | proposed | 1 | recovered |
+| 4 | load_ramp-fixed_threshold-02-mainexp-v1 | fixed_threshold | 2 | recovered |
+| 5 | load_ramp-proposed-02-mainexp-v1 | proposed | 2 | recovered |
+| 6 | load_ramp-native-02-mainexp-v1 | native | 2 | recovered |
+| 7 | load_ramp-proposed-03-mainexp-v1 | proposed | 3 | recovered |
+| 8 | load_ramp-native-03-mainexp-v1 | native | 3 | recovered |
+| 9 | load_ramp-fixed_threshold-03-mainexp-v1 | fixed_threshold | 3 | recovered |
+| 10 | load_ramp-native-04-mainexp-v1 | native | 4 | recovered |
+| 11 | load_ramp-proposed-04-mainexp-v1 | proposed | 4 | recovered |
+| 12 | load_ramp-fixed_threshold-04-mainexp-v1 | fixed_threshold | 4 | recovered |
+| 13 | load_ramp-fixed_threshold-05-mainexp-v1 | fixed_threshold | 5 | recovered |
+| 14 | load_ramp-native-05-mainexp-v1 | native | 5 | recovered |
+| 15 | load_ramp-proposed-05-mainexp-v1 | proposed | 5 | recovered |
+
+중단·invalid·excluded 사유: **없음** - 즉시중단 조건(HarnessCorrupted,
+Node 이상, restart 증가, detector/port-forward 중단, cleanup/복원
+실패, 스키마/hash 불일치, timing 모순, audit-log 밖 drift, state/결과
+파일 손상) 중 어느 것도 발생하지 않았다.
+
+### 101.4 arm별 결과표·탐지/조치/promotion
+
+| arm | n | outcome 분포 | detected | promoted(action=promote_preview) | promotion_verified |
+|---|---|---|---|---|---|
+| native | 5 | recovered×5 | 0/5 | 0/5 | - |
+| fixed_threshold | 5 | prevented×1, recovered×4 | 3/5 | 3/5 | 3/3 True |
+| proposed | 5 | recovered×5 | 5/5 | 5/5 | 5/5 True |
+
+native는 detector 자체가 없어(계약서 §1) 0/5가 정상이고 전부 자연
+회복. fixed_threshold rep1은 SLO 위반이 아예 없었던 trial(`t_slo=
+None`, "prevented"는 `outcome` 정의상 위반 자체가 없었음을 뜻함),
+rep3은 detector가 탐지하지 못한 채 자연 회복 - 둘 다 §4 지시대로
+"유효한 실험 결과"로 그대로 보존했고 제외하지 않았다. proposed는
+5/5 전부 predictive 탐지+promote_preview+검증 성공.
+
+### 101.5 핵심 timing·SLO 지표 (개별 값 + median + range, n=5 한계 명시)
+
+**n=5(arm당)이며, fixed_threshold의 timing 계열 일부는 detected된
+3건만 대상(n=3) - 통계적 유의성이나 성능 우월성을 주장하지 않는다.**
+
+| 지표(초) | native (n) | fixed_threshold (n) | proposed (n) |
+|---|---|---|---|
+| t_injection→t_slo | [33.3, 251.0, 242.8, 251.4, 122.3](5) median 242.8, range 33.3–251.4 | [123.8, 240.3, 277.9, 211.0](4, rep1 위반 없어 제외) median 225.7, range 123.8–277.9 | [241.4, 273.8, 384.8, 236.6, 236.7](5) median 241.4, range 236.6–384.8 |
+| MTTD(injection→detection) | 해당 없음(detector 없음) | [375.6, 356.1, 391.8](3) median 375.6, range 356.1–391.8 | [284.5, 242.3, 321.9, 337.2, 206.4](5) median 284.5, range 206.4–337.2 |
+| detection_lead_sec(양수=SLO 위반 전 탐지) | 해당 없음 | [-251.8, -78.2, -180.7](3) median -180.7 - **3/3 모두 위반 후 탐지(음수)** | [-43.1, 31.5, 62.9, -100.6, 30.3](5) median 30.3 - **3/5 위반 전, 2/5 위반 후 탐지(혼재)** |
+| t_api_request→t_switch(action_delay) | 해당 없음 | [5.68, 2.58, 1.21](3) | [7.57, 2.18, 3.41, 9.19, 2.67](5) |
+| recovery_sec(switch/자연회복 시작→recovery) | [29.9, 131.8, 254.6, 248.7, 30.3](5) median 131.8, range 29.9–254.6 | [26.4, 263.6, 227.9, 285.6](4) median 245.7, range 26.4–285.6 | [267.8, 233.8, 127.1, 266.6, 262.8](5) median 262.8, range 127.1–267.8 |
+| total_recovery_sec(injection→recovery, MTTR proxy) | [63.3, 382.9, 497.4, 500.1, 152.6](5) median 382.9, range 63.3–500.1 | [150.2, 503.9, 505.7, 496.6](4) median 500.3, range 150.2–505.7 | [509.1, 507.7, 511.9, 503.3, 499.4](5) median 507.7, range 499.4–511.9 |
+
+**SLO 위반 지속시간·recovery 여부**: 15/15 전부 `t_recovery`가 관측됨
+(prevented인 fixed_threshold rep1 제외, 그 trial은 애초에 위반이
+없었으므로 "위반 지속시간" 자체가 정의되지 않음) - probe 60초 rolling
+window가 threshold 아래로 회복할 때까지 전부 관측 완료, timeout으로
+censoring된 trial 없음.
+
+**unnecessary detection/action·false signal episode**: 0건 - load_ramp는
+실제 점진적 부하 열화를 주입하는 시나리오라(§7 확정 설정) 탐지·조치가
+전부 실제 이벤트에 대응했고, 8건의 promote_preview 전부
+`promotion_verified=True`로 검증됨(스푸리어스 promote 없음). 이 개념은
+memory_pressure negative-control(§94~§97)에 더 적합한 지표이며, 이
+블록에서는 자연스럽게 0으로 나왔다.
+
+### 101.6 탐지·조치·promotion·감사 정합성 검증
+
+**`collect_metrics.py`의 실제 검증 함수(`build_comparison()`, pilot
+데이터와 섞지 않기 위해 이 15개 row만 직접 로드해 호출 - 기본 `main()`
+은 `results/pilot/`까지 합쳐 섞으므로 그대로 쓰지 않음)를 그대로
+재사용**: schema 검증, causal timing chain(t_injection ≤ t_slo ≤
+t_detection ≤ t_decision ≤ t_api_request ≤ t_switch ≤ t_recovery,
+null 허용 규칙 포함), detector 일관성, judgment 일관성, audit 상태
+분리, prevented 유효성, injection timestamp 일관성, target-change
+분류를 전부 통과 - **`included_in_main_analysis=15/15`, 검증 이슈
+0건**(`timing_anomaly=False` 15/15, `target_replaced=False` 15/15,
+`audit_pending=False` 15/15).
+
+`audit_status` 분포 - `complete` 8건(promote_preview 8건과 정확히
+일치), `not_applicable` 2건(fixed_threshold의 non-detecting 2 rep),
+공란 5건(native - detector 자체가 없어 audit 대상 아님) - 세 값 모두
+그 arm의 detector 유무·조치 여부와 정확히 부합.
+
+**원본 데이터 직접 대조(표본 검증)** - `load_ramp-proposed-01-mainexp-v1`
+의 전체 evidence chain을 TrialResult 자기보고가 아니라 실제 git
+commit(`969a859...`)이 만든 `audit-log/load_ramp-proposed-01-mainexp-
+v1.jsonl` 원본으로 직접 확인:
+- `record_id=0dd7f78d-...`, `idempotency_key=load_ramp-proposed-01-
+  mainexp-v1:anomaly_risk` - TrialResult의 `audit_record_id`/
+  `idempotency_key`와 정확히 일치.
+- `evidence.model_hash=2102e4f5f0d0...a9243`,
+  `evidence.feature_schema_hash=fc452bc45eb8...ce7da2` - **model_v32b/
+  artifacts/SHA256SUMS.json의 model.pkl/feature-schema.json 해시와
+  글자 하나까지 정확히 일치**(정적 파일 검증이 아니라 실행 중이던
+  detector가 실제로 이 동결 artifact를 썼다는 런타임 증거).
+- `result={"method":"cli","requested":true,"verified":true,
+  "verified_at":"2026-09-22T15:28:11.372460+00:00"}` - recovery-policy
+  가 자신의 `rollouts_client.promote_via_cli()`(공식 `kubectl-argo-
+  rollouts` CLI, §99에서 로컬 머신엔 없다고 확인한 바로 그 바이너리가
+  recovery-policy pod 이미지 안에는 있음을 이번에 실측으로 확인)로
+  promote했고 `verified=true` - TrialResult의 `decision_outcome=
+  executed_verified`/`promotion_verified=True`와 정확히 일치.
+
+### 101.7 클러스터 최종 상태
+
+15 trial 종료 후: Node 2개 Ready. Rollout `phase=Healthy`, `active==
+current==788f5664b9`(단일 revision, 다른 모든 RS desired=0). pod
+`vllm-serving-788f5664b9-*` `restartCount=0`, recovery-policy
+`restartCount=0`(24시간+ 무중단). Chaos CR 0건. experiment-run
+context=null. `kubectl diff -f gitops/apps/vllm-serving/rollout.yaml`
+= 0(diff 없음, base profile 그대로).
+
+### 101.8 audit-bot 커밋 병합
+
+실행 중 `recovery-policy-bot`이 33개 커밋(8건의 promote_preview에
+대응하는 `audit-log/load_ramp-*.jsonl` 8개 신규 파일 + `adhoc.jsonl`
+누적 - 전부 `audit-log/` 경로만) 생성 - 통계(`git diff --stat`)로
+audit-log/ 밖 변경이 0건임을 확인한 뒤 `git pull`(rebase/force-push
+아님)로 병합, fast-forward로 충돌 없이 완료. `HEAD==origin/master==
+57664c4`.
+
+### 101.9 `load_ramp` 블록 분석 가능 여부
+
+**분석 가능** - 15/15 유효(제외 0건), timing/schema/audit 정합성
+검증 통과, 원본 evidence chain 표본 대조 일치, 클러스터 최종 상태
+clean. 다만 n=5(arm당)이므로 이 블록 데이터만으로는 arm 간 성능 우열이나
+통계적 유의성을 주장할 수 없다 - `pod_kill`/`network_degrade`
+블록까지 합쳐 core factorial(45 trial) 전체가 모여야 본 실험의
+1차 비교 대상이 완성된다.
+
+### 101.10 범위 제한 준수 확인
+
+`pod_kill`/`network_degrade`/`memory_pressure_negative_control_v1`
+블록 시작 0건. model/threshold/feature/SLO 규칙 변경 0건(측정 도중은
+물론 그 전후로도). `TrialResult` 스키마 변경 0건. 기존 pilot/
+calibration/diagnostic 결과 수정 0건(경로 자체가 분리돼 물리적으로
+섞이지 않음). 원본 CSV/JSON/ramp summary/safety-evidence/audit 연결
+정보는 `experiments/results/`(로컬, 기존 §50~§100과 동일하게 `.gitignore`
+로 커밋 제외 - 이 문서가 핵심 수치·검증 결과를 git에 보존하는 기록)에
+원본 그대로 보존했다. 이 절 이후 `pod_kill` 블록을 시작하지 않고
+멈춘다.
