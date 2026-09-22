@@ -465,6 +465,11 @@ def main():
     parser.add_argument("--resume", action="store_true", help="기존 state 파일에서 이어서 실행")
     parser.add_argument("--from-run-id", default=None,
                          help="이 run_id부터 실행(그 이전은 모두 completed+hash일치여야 함, 아니면 중단)")
+    parser.add_argument("--scenario", default=None, choices=list(CORE_SCENARIOS) + [AUX_SCENARIO],
+                         help="지정한 시나리오의 trial만 이번 실행에서 진행한다 - 공식 50-trial 매트릭스/state는 "
+                              "그대로 공유되고 다른 시나리오 블록은 손대지 않은 채 planned로 남아, 같은 "
+                              "--state-file로 나중에 --scenario만 바꿔 이어서 실행할 수 있다. 생략하면 "
+                              "매트릭스 전체(50 trial)를 순서대로 실행한다.")
     args = parser.parse_args()
 
     state_path = Path(args.state_file)
@@ -485,16 +490,17 @@ def main():
         state = build_initial_state(trials, plan_id, args.order_seed, code_freeze_commit)
 
     trials = build_matrix(plan_id)
+    trials_to_run = [t for t in trials if t.scenario == args.scenario] if args.scenario else trials
 
     if args.plan:
-        print(json.dumps([t.__dict__ for t in trials], indent=2, ensure_ascii=False))
-        print(f"\n총 {len(trials)} trial (core={sum(1 for t in trials if t.analysis_group == CORE_GROUP)}, "
-              f"auxiliary={sum(1 for t in trials if t.analysis_group == AUX_GROUP)})")
+        print(json.dumps([t.__dict__ for t in trials_to_run], indent=2, ensure_ascii=False))
+        print(f"\n총 {len(trials_to_run)} trial (core={sum(1 for t in trials_to_run if t.analysis_group == CORE_GROUP)}, "
+              f"auxiliary={sum(1 for t in trials_to_run if t.analysis_group == AUX_GROUP)})")
         return
 
     save_state_atomic(state_path, state)
     try:
-        run_sequence(trials, state, real_hooks(), state_path,
+        run_sequence(trials_to_run, state, real_hooks(), state_path,
                      dry_run=args.dry_run, from_run_id=args.from_run_id)
     except SequenceAborted as e:
         print(f"SEQUENCE ABORTED: {e}", file=sys.stderr)

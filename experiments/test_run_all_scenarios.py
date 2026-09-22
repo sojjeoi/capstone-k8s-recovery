@@ -298,6 +298,29 @@ def test_plan_cli_prints_exactly_50_trials():
     assert len(payload) == 50
 
 
+def test_plan_cli_with_scenario_filter_prints_exactly_15_load_ramp_trials():
+    proc = subprocess.run([sys.executable, str(Path(__file__).parent / "run_all_scenarios.py"),
+                            "--plan", "--scenario", "load_ramp"],
+                           capture_output=True, text=True, cwd=Path(__file__).parent)
+    assert proc.returncode == 0
+    payload = json.loads(proc.stdout.rsplit("\n\n", 1)[0])
+    assert len(payload) == 15
+    assert all(t["scenario"] == "load_ramp" for t in payload)
+    assert all(t["analysis_group"] == "core_fault_comparison" for t in payload)
+
+
+def test_scenario_filter_shares_state_leaving_other_scenarios_planned(tmp_path):
+    trials = ras.build_matrix("P")
+    state = _fresh_state(trials)
+    load_ramp_trials = [t for t in trials if t.scenario == "load_ramp"]
+    call_log = []
+    ras.run_sequence(load_ramp_trials, state, _make_hooks(call_log), tmp_path / "state.json")
+
+    assert all(state["trials"][t.run_id]["status"] == "completed" for t in load_ramp_trials)
+    other_trials = [t for t in trials if t.scenario != "load_ramp"]
+    assert all(state["trials"][t.run_id]["status"] == "planned" for t in other_trials)
+
+
 # ---- --from-run-id / result-hash verification ----
 
 def test_from_run_id_skips_prior_completed_with_matching_hash(tmp_path):
