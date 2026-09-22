@@ -294,14 +294,24 @@ def real_postflight_cleanup_check(trial: dict) -> dict:
 
 
 def real_check_git_drift(cwd: Path = REPO_ROOT, allowed_prefix: str = AUDIT_LOG_PREFIX) -> dict:
-    """§98 - audit-log/ 바깥의 uncommitted 변경만 drift로 본다(recovery-
-    policy-bot의 audit 커밋은 pull/merge로 흡수되는 정상 외부 변경)."""
+    """§98 - audit-log/ 바깥의 "코드/config drift"만 차단한다 - 여기서
+    drift는 이미 git이 추적 중인 파일이 커밋 없이 바뀐 것을 뜻한다.
+    `git status --porcelain`의 untracked(`??`) 항목은 제외한다 - 커밋된
+    baseline과 무관한 새 로컬 산출물일 뿐이라서다(실측 확인, 2026-09-22
+    launch-readiness gate: `experiments/results/`·`anomaly-detection/v3/
+    model_v32/artifacts/`는 이 세션 시작 전부터 있던 untracked 디렉터리인데
+    `.gitignore`가 그 안의 특정 파일 패턴만 덮고 디렉터리 자체는 안 덮어서
+    `??`로 계속 나타난다 - 이걸 drift로 취급하면 이 오케스트레이터가
+    영원히 첫 trial도 시작 못 하는 결함이었다). recovery-policy-bot의
+    audit-log/ 커밋을 허용하는 것과 같은 이유로 "이미 추적 중이던 것이
+    예고 없이 바뀌었는가"만 본다."""
     out = subprocess.run(["git", "status", "--porcelain"], cwd=cwd, capture_output=True,
                           text=True, check=True).stdout
-    dirty = [line[3:].strip() for line in out.splitlines() if line.strip()]
-    outside = [p for p in dirty if not p.startswith(allowed_prefix)]
+    tracked_changes = [line[3:].strip() for line in out.splitlines()
+                        if line.strip() and not line.startswith("??")]
+    outside = [p for p in tracked_changes if not p.startswith(allowed_prefix)]
     if outside:
-        return {"ok": False, "reason": f"audit-log/ 밖 uncommitted 변경: {outside}"}
+        return {"ok": False, "reason": f"audit-log/ 밖 추적 파일 변경: {outside}"}
     return {"ok": True, "reason": None}
 
 
