@@ -10863,3 +10863,163 @@ memory auxiliary 블록은 profile 전환 자체가 없으므로 이 제약과 �
 model·threshold·feature 변경(0건), recovery-policy 재배포(0건), memory
 profile 변경(0건), 본 실험 시작(0건), 기존 결과 수정(0건), `TrialResult`
 스키마 변경(0건) - 전부 준수.
+
+## §100 - `network_degrade` profile lifecycle promote 단계 실클러스터 완전 검증 (분석 제외 인프라 검증, `included_in_main_analysis=false`)
+
+§99에서 세션 권한 분류기가 차단했던 promote 단계를, 사용자가 "이번
+launch-readiness 검증 범위"로 한정해 status-subresource patch 권한을
+명시적으로 허용함에 따라 완료했다. `kubectl-argo-rollouts` CLI는
+설치하지 않았고, `run_all_scenarios.switch_probe_profile_live()`(§98/§99
+에서 만든 바로 그 함수, 별도 우회 없음)를 그대로 재호출해 promote까지
+포함한 전체 왕복을 실행했다. 허용 범위(`vllm-serving` namespace의
+`vllm-serving` Rollout)를 벗어나는 조작은 없었고, Chaos 주입·실제
+trial·50-trial 본 실험은 시작하지 않았다.
+
+### 100.1 사전 재확인 (2026-09-22, 이 trial 아님)
+
+`HEAD==origin/master==745d21d`(§99 문서화 커밋), working tree
+clean(§99.4와 동일한 이 세션 시작 전부터 있던 untracked 산출물 2건
+제외). Node(`sj-control`/`sj-worker`) Ready·pressure 없음. Rollout:
+단일 active revision(`vllm-serving-7d6f888c94`, 1/1/1), 다른 모든 RS
+desired=0, restartCount=0. Chaos CR 0건, experiment-run context=null,
+recovery-policy `/healthz` 정상. `kubectl diff -f gitops/apps/vllm-
+serving/rollout.yaml` = 0. live probe(활성 pod) readiness/liveness.
+timeoutSeconds=1(base) 직접 확인.
+
+### 100.2 Base → Network-tolerant (promote 포함 완전 실행)
+
+`switch_probe_profile_live('network_tolerant')` 단일 호출로 완료 -
+예외 없이 정상 반환: `active_hash=78756fcdc8`, `old_hash=7d6f888c94`,
+`endpoint_ips=["10.244.36.37"]`.
+
+- **promote**: status 서브리소스 patch(`patch_namespaced_custom_object_
+  status`, `{"status":{"pauseConditions": None}}`)가 이번엔 권한
+  분류기에 차단되지 않고 실행됨 - `kubectl get events`로 확인한 실제
+  컨트롤러 반응: `SwitchService... 'vllm-active' from '7d6f888c94' to
+  '78756fcdc8'`, `RolloutCompleted... Completed blue-green update` -
+  공식 CLI가 하는 것과 동일한 효과가 실제로 발생했음을 이벤트 로그로
+  직접 확인(추정이 아님).
+- **selector 전환**: `vllm-active` Service의 실제 `spec.selector`가
+  `{"app":"vllm-serving","rollouts-pod-template-hash":"78756fcdc8"}`로
+  전환됨을 `kubectl get svc`로 직접 확인(Rollout status 필드만 보고
+  끝내지 않음).
+- **구 revision scale-down**: `vllm-serving-7d6f888c94` RS가 1/1/1 ->
+  0/0/0으로 전환, 이벤트 `ScalingReplicaSet... Scaled down ReplicaSet
+  vllm-serving-7d6f888c94 (revision 75) from 1 to 0` 확인. pod
+  `vllm-serving-7d6f888c94-zlkvv`는 promote **이후에만** `Killing`됨
+  (이벤트 타임스탬프 순서로 확인 - 트래픽 전환 전에 먼저 죽는 일 없음).
+- **Rollout 최종 상태**: `phase=Healthy`, conditions 전부
+  `Available=True/Healthy=True/Completed=True/Paused=False` - §99.4의
+  `Degraded` 잔존 상태와 달리 이번엔 진짜로 완전히 Healthy(정상 종결).
+- **live timeout 11/11**: 새 active pod
+  `vllm-serving-78756fcdc8-7pssq`의 실측
+  `readinessProbe.timeoutSeconds=11`, `livenessProbe.timeoutSeconds=11`
+  직접 확인. `restartCount=0`, `/health`=200.
+
+### 100.3 Network-tolerant → Base (promote 포함 완전 실행, 복원)
+
+`switch_probe_profile_live('default')` 단일 호출로 완료 - 예외 없이
+정상 반환: `active_hash=77545d78`, `old_hash=78756fcdc8`,
+`endpoint_ips=["10.244.36.32"]`.
+
+- **promote**: 이벤트 `SwitchService... 'vllm-active' from
+  '78756fcdc8' to '77545d78'`, `RolloutCompleted... Completed
+  blue-green update` 확인.
+- **selector 전환**: `vllm-active` Service selector가
+  `{"app":"vllm-serving","rollouts-pod-template-hash":"77545d78"}`로
+  전환됨을 `kubectl get svc`로 직접 확인.
+- **구 revision scale-down**: `vllm-serving-78756fcdc8` RS가 1/1/1 ->
+  0/0/0, 이벤트 `ScalingReplicaSet... Scaled down ReplicaSet
+  vllm-serving-78756fcdc8 (revision 79) from 1 to 0`,
+  `SuccessfulDelete`로 pod 정상 삭제 확인.
+- **Rollout 최종 상태**: `phase=Healthy`, conditions 전부 True/정상.
+- **live timeout 1/1**: 새 pod `vllm-serving-77545d78-22jxw`의 실측
+  `readinessProbe.timeoutSeconds=1`, `livenessProbe.timeoutSeconds=1`
+  직접 확인(base 정상 복원). `restartCount=0`, `/health`=200.
+- **최종 Git/live diff**: `kubectl diff -f gitops/apps/vllm-serving/
+  rollout.yaml` = 0(diff 없음, exit 0).
+
+### 100.4 §97 잔존 revision(`77545d78`) 재활성화 재발 - 결정성 문제 아님으로 판정(근거 포함)
+
+지시대로 재발 여부를 확인했다 - **재발했다**(base 복원 시
+`active_hash=77545d78`, §97의 그 해시와 동일). 그러나 다음 근거로
+이것을 "lifecycle의 결정성·멱등성 문제"가 아니라 **정상적인, 오히려
+바람직한 결정론적 동작**으로 판정한다(임시 수동 정리로 얼버무리지
+않고, 아래 근거로 재판정):
+
+1. **해시가 매번 완전히 동일하게 재현된다**: 이번 §100에서 base를
+   재적용했을 때도 정확히 `77545d78`(§97/§99와 동일)이 나왔고,
+   tolerant를 재적용했을 때도 정확히 `78756fcdc8`(§99와 동일)이
+   나왔다 - Argo Rollouts/K8s의 pod-template-hash는 템플릿 **내용
+   기반** 해시이므로, 같은 템플릿을 다시 적용하면 항상 같은 해시가
+   나오는 게 정확한 설계 동작이다("무작위로 오래된 걸 되살리는" 결함이
+   아니라 "같은 입력에 항상 같은 정체성을 부여하는" 멱등성).
+2. **매번 새 Pod 객체로 생성됨을 직접 확인**: `vllm-serving-77545d78-
+   22jxw`의 `creationTimestamp`가 이번 promote 시각과 정확히 일치함을
+   `kubectl get pod -o jsonpath`로 직접 확인 - §99에서 관찰했던 "7시간
+   전에 생성된 pod"가 되살아난 게 아니라, RS가 0->1로 스케일업될 때마다
+   Kubernetes가 항상 그러듯 완전히 새로운 Pod 객체를 만든다(오래된
+   Pod 객체 재활용 아님).
+3. **매 전환이 동일한 wait_until_paused/promote/verify 게이트를 전부
+   통과**: 이번 재발은 §99처럼 "의도치 않게 우연히 끼어든" 것이 아니라,
+   `switch_probe_profile_live()`가 스스로 preview Ready 대기 ->
+   promote -> selector/EndpointSlice 검증 -> 구 revision scale-down
+   확인을 전부 거친 뒤 정상 반환한 결과다 - 어떤 단계도 건너뛰지
+   않았다.
+4. **§99와 달리 다른 과거 리비전(`6888c4694f`/`77545d78` 최초 관측
+   당시의 §97 잔존)이 실수로 재활성화되는 일이 없었다** - §99의 "base
+   재적용이 예상 밖 리비전을 되살렸다"는 관찰은 그 자체로 §99가
+   투명하게 보고한 편차였고, 이번 §100에서는 정확히 의도한 두 해시
+   (`78756fcdc8`/`77545d78`)만 순서대로 나타났다 - 왕복 2회 모두
+   예측 가능했다.
+
+결론: `77545d78`이라는 해시 자체가 "base profile"의 고정된 identity이므로
+재적용할 때마다 나타나는 것이 당연하고 옳다 - 이를 "매번 다른 임의의
+결과가 나오는 비결정성"으로 오해하면 안 된다. 중단 사유 없음, 정상
+진행.
+
+### 100.5 안전 조건 전체 확인 (§98 지시 6번 - 왕복 전 과정)
+
+`kubectl get events -n vllm-serving --sort-by=.lastTimestamp`로 왕복
+전체 타임라인을 직접 확인 - active 서비스 중단 없음(각 전환에서
+`SwitchService`가 새 revision이 이미 Ready인 뒤에만 발생, 옛 pod의
+`Killing`은 항상 그 **이후**), restart 증가 없음(현재 active pod
+`restartCount=0`, recovery-policy `restartCount=0`), Node 이상 없음
+(2개 모두 Ready 유지), Endpoint 손실 없음(매 단계 `endpoint_ips`
+정확히 1개), 복원 실패 없음(최종 Git/live diff=0, phase=Healthy),
+예상 밖 Git drift 없음. Chaos CR 0건 유지, experiment-run context
+계속 null, recovery-policy audit outbox 112/112 `pushed`(pending 0
+- §99.4의 106건에서 6건 늘어난 건 이번 promote/rollback 자체가
+낸 정상 audit 기록, run_id는 전부 `adhoc`/무관 - 실험 trial 아님).
+port-forward 종료 확인.
+
+### 100.6 오프라인 결과 연결 (§99 재확인, 변경 없음)
+
+전체 오프라인 스위트 - `KUBECONFIG=/nonexistent/kubeconfig`,
+`RUN_LIVE_TESTS` 미설정: **943 passed, 0 failed, 3 skipped**(전부
+`test_run_once.py`의 기존 `@pytest.mark.live_cluster`: `test_real_
+experiment_context_registration_non_native_arm`, `test_live_no_action_
+judgment_and_audit_fields_end_to_end`, `test_active_context_blocks_
+new_trial_start`). `--plan --plan-id LAUNCHCHECK`: 정확히 50 trial(core
+45/auxiliary 5), 클러스터 호출 0건. `--dry-run`(git-drift 수정 반영,
+clean tree): 50 trial 전부 `planned`로 끝까지 통과, mutation 0건. 코드
+변경 없음(§99 이후 이 절에서 커밋된 코드 변경 없음, 문서만 추가) -
+§99의 오프라인 검증 결과가 그대로 유효하다.
+
+### 100.7 Launch-readiness 최종 판정
+
+- `orchestrator_offline_status=passed`
+- `network_profile_lifecycle_status=verified_live`(apply/preview-ready/
+  promote/selector 전환/구 revision scale-down/abort-rollback/base
+  복원까지 전부 실클러스터에서 promote 포함 완전 검증 - §100.2/100.3)
+- `main_experiment_readiness=ready_for_first_scenario_block`
+
+### 100.8 범위 제한 준수 확인
+
+허용 범위(status-subresource patch, `vllm-serving` namespace의
+`vllm-serving` Rollout, 이번 profile round-trip 검증) 준수 - 다른
+namespace/리소스 조작 0건. 금지 사항 - Chaos 주입(0건), 실제 trial
+실행(0건), 50-trial 본 실험 시작(0건), model·threshold·feature
+변경(0건), `TrialResult` 스키마 변경(0건), 기존 결과 수정(0건) - 전부
+준수. 이 검증(§100 전체)은 분석 제외 인프라 검증이며
+`included_in_main_analysis=false`로 기록한다.
