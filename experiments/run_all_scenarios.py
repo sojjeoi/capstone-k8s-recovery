@@ -13,16 +13,28 @@ injector/detector/preview 배선 로직은 각 러너·`arm_controller.py`에 �
      사항). `run_sequence()`는 모든 실제 동작(trial 실행/preflight/cleanup
      검증/profile 전환/drift 확인)을 `Hooks`로 주입받는다.
   2) `Hooks`의 실제(real_*) 구현 - subprocess 호출·kubectl·git 등 실
-     클러스터/실환경에 닿는다. 이번 턴은 "오프라인 구현·테스트·문서화만"
-     (지시)이므로 이 real_* 함수들은 라이브로 실행/검증되지 않았다 - 특히
-     `real_apply_profile`/`real_restore_profile`(gitops overlay 적용 +
-     Rollout promote)은 최초 실사용 전 반드시 수동으로 먼저 확인할 것.
-"""
+     클러스터/실환경에 닿는다.
+
+`switch_probe_profile_live()`(§98 launch-readiness gate, 2026-09-22)의
+실 클러스터 검증 결과 - **부분 검증**: apply(kustomize render+apply -f -,
+base는 apply -f) -> `blue_green_prep.wait_until_paused()`로 preview
+Ready 확인 -> abort_preview()+wait_until_rolled_back()로 안전 복원까지는
+실클러스터에서 반복 검증됐다(전 과정에서 기존 active pod
+`vllm-serving-7d6f888c94-zlkvv`는 단 한 번도 재시작·중단되지 않음 -
+실제 서빙 트래픽은 계속 안전했음). **promote 단계(활성 트래픽 전환)는
+검증되지 않았다** - 로컬에 `kubectl-argo-rollouts` CLI가 없고, status
+서브리소스 직접 patch(`patch_namespaced_custom_object_status`, `blue_
+green_prep.abort_preview()`와 동일한 API 종류)는 이 세션의 자동 권한
+분류기가 "공유 자원 수정"으로 판단해 두 차례 차단했다 - 사용자의 명시적
+허가(대화형 확인 또는 권한 설정 변경) 없이는 이 함수가 promote까지 끝까지
+실행되지 못한다. `real_apply_profile`이 호출하는 promote 지점은 여전히
+**최초 실사용 전 사용자 승인 하에 별도로 확인 필요**."""
 import argparse
 import hashlib
 import json
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -293,21 +305,123 @@ def real_check_git_drift(cwd: Path = REPO_ROOT, allowed_prefix: str = AUDIT_LOG_
     return {"ok": True, "reason": None}
 
 
-def real_apply_profile(profile: str) -> None:
-    """network_degrade block 시작 전 tolerant profile 적용(gitops overlay
-    apply). NOTE: promote(`kubectl argo rollouts promote vllm-serving -n
-    vllm-serving`)와 `run_network_degrade_trial._verify_probe_profile()`
-    재검증까지 포함해 이번 턴 라이브로 실행/검증되지 않았다 - 최초 실사용
-    전 반드시 수동으로 먼저 확인할 것."""
+PREVIEW_READY_TIMEOUT_SEC = 480.0  # blue_green_prep.PREVIEW_PREP_TIMEOUT_SEC와 동일 근거(모델 로딩 실측 최대 350.3초)
+PROMOTE_VERIFY_TIMEOUT_SEC = 60.0
+OLD_REVISION_SCALE_DOWN_TIMEOUT_SEC = 90.0  # scaleDownDelaySeconds=30 + 여유
+
+
+def _endpointslice_addresses(namespace: str, service_name: str) -> list:
+    from kubernetes import client
+    import active_pod_resolver
+    active_pod_resolver.load_kube_config()
+    slices = client.DiscoveryV1Api().list_namespaced_endpoint_slice(
+        namespace, label_selector=f"kubernetes.io/service-name={service_name}")
+    addrs = []
+    for s in slices.items:
+        for ep in (s.endpoints or []):
+            addrs.extend(ep.addresses or [])
+    return addrs
+
+
+def _verify_active_selector_and_endpoints(namespace: str, expected_hash: str) -> dict:
+    """Rollout status(activeSelector)만 보고 끝내지 않고 실제 vllm-active
+    Service selector로 매칭되는 pod과 그 EndpointSlice까지 확인한다."""
+    import active_pod_resolver
+    pods = active_pod_resolver.get_active_pods()
+    ok_selector = len(pods) == 1
+    ok_hash = ok_selector and expected_hash in pods[0]["name"]
+    endpoint_ips = _endpointslice_addresses(namespace, "vllm-active")
+    return {"ok": bool(ok_hash and len(endpoint_ips) == 1),
+            "pods": pods, "endpoint_ips": endpoint_ips, "expected_hash": expected_hash}
+
+
+def switch_probe_profile_live(profile: str, name: str = "vllm-serving", namespace: str = "vllm-serving",
+                               preview_timeout_sec: float = PREVIEW_READY_TIMEOUT_SEC) -> dict:
+    """실제 kubectl apply + promote로 probe profile을 전환한다(base <->
+    network_tolerant) - `real_apply_profile`/`real_restore_profile`이 이
+    함수 하나를 공유한다(§98 launch-readiness 지시 - "동일 lifecycle 함수
+    사용"). `blue_green_prep.py`의 기존 테스트된 함수(wait_until_paused/
+    get_blue_green_status/abort_preview/wait_until_rolled_back)를 그대로
+    재사용 - 새 preview 대기/롤백 로직을 여기서 다시 만들지 않는다.
+    network-tolerant overlay 자신의 kustomization.yaml 주석에 적힌 절차를
+    그대로 코드화했다: apply -k(+LoadRestrictionsNone) 또는 apply -f(base)
+    -> wait_until_paused -> promote -> selector/EndpointSlice/구 revision
+    scale-down 확인. 실패 시 fail-closed: preview timeout이면 abort_preview()로
+    되돌리고 예외를 던진다(호출부 run_sequence가 SequenceAborted로 승격)."""
+    import blue_green_prep as bgp
+
+    before = bgp.get_blue_green_status(name, namespace)
+
     if profile == "network_tolerant":
-        subprocess.run(["kubectl", "apply", "-k", str(GITOPS_TOLERANT_OVERLAY)], check=True)
-    else:
+        # kubectl apply -k(v1.34)는 --load-restrictor를 받지 않는다(실측 확인 -
+        # "unknown flag" 즉시 거부, 클러스터 변경 없이 안전하게 실패) - kustomize
+        # 렌더링과 apply를 분리해 kubectl kustomize에만 이 플래그를 준다. 렌더
+        # 결과는 server dry-run으로 Rollout 외 리소스는 전부 unchanged임을 확인함.
+        rendered = subprocess.run(
+            ["kubectl", "kustomize", str(GITOPS_TOLERANT_OVERLAY), "--load-restrictor=LoadRestrictionsNone"],
+            capture_output=True, check=True)
+        subprocess.run(["kubectl", "apply", "-f", "-"], input=rendered.stdout, check=True)
+    elif profile == "default":
         subprocess.run(["kubectl", "apply", "-f", str(GITOPS_DEFAULT_ROLLOUT)], check=True)
-    subprocess.run(["kubectl", "argo", "rollouts", "promote", "vllm-serving", "-n", "vllm-serving"], check=True)
+    else:
+        raise ValueError(f"알 수 없는 profile: {profile}")
+
+    ready = bgp.wait_until_paused(name, namespace, timeout=preview_timeout_sec)
+    if not ready:
+        our_hash = bgp.get_blue_green_status(name, namespace)["current_pod_hash"]
+        bgp.abort_preview(name, namespace)
+        rolled_back = bgp.wait_until_rolled_back(name, namespace, before["active_selector"], our_hash)
+        raise RuntimeError(f"{profile} profile preview가 {preview_timeout_sec}초 내 Ready 안 됨 - "
+                            f"abort 시도(rollback_ok={rolled_back})")
+
+    new_hash = bgp.get_blue_green_status(name, namespace)["current_pod_hash"]
+    # kubectl-argo-rollouts CLI 플러그인이 로컬에 없다(실측 확인 - arm_controller.py의
+    # abort_preview()와 동일 사정). recovery-policy/rollouts_client.py의 direct-patch
+    # 폴백은 일반 object patch(patch_namespaced_custom_object)를 써서 자신의 docstring이
+    # 이미 "selector를 안 바꾼다"고 경고한 것 - status 서브리소스 patch가 아니라서
+    # 컨트롤러가 무시/재계산하는 것으로 보인다. abort_preview()가 이미 증명한 대로
+    # status 서브리소스(patch_namespaced_custom_object_status)로 pauseConditions를
+    # 지운다 - blue_green_prep의 CustomObjectsApi 설정을 그대로 재사용.
+    bgp._custom_api().patch_namespaced_custom_object_status(
+        bgp.ROLLOUTS_GROUP, bgp.ROLLOUTS_VERSION, namespace, bgp.ROLLOUTS_PLURAL, name,
+        {"status": {"pauseConditions": None}},
+    )
+
+    deadline = time.monotonic() + PROMOTE_VERIFY_TIMEOUT_SEC
+    promoted = False
+    while time.monotonic() < deadline:
+        if bgp.get_blue_green_status(name, namespace)["active_selector"] == new_hash:
+            promoted = True
+            break
+        time.sleep(3.0)
+    if not promoted:
+        raise RuntimeError(f"{profile} profile promote 후 activeSelector가 {new_hash}로 전환 안 됨")
+
+    endpoint_check = _verify_active_selector_and_endpoints(namespace, new_hash)
+    if not endpoint_check["ok"]:
+        raise RuntimeError(f"{profile} profile promote 후 selector/EndpointSlice 검증 실패: {endpoint_check}")
+
+    old_hash = before["active_selector"]
+    if old_hash and old_hash != new_hash:
+        scale_deadline = time.monotonic() + OLD_REVISION_SCALE_DOWN_TIMEOUT_SEC
+        scaled_down = False
+        while time.monotonic() < scale_deadline:
+            if (bgp._replicaset_desired(namespace, old_hash) or 0) == 0:
+                scaled_down = True
+                break
+            time.sleep(3.0)
+        if not scaled_down:
+            raise RuntimeError(f"{profile} profile promote 후 구 revision({old_hash}) scale-down 확인 안 됨")
+
+    return {"active_hash": new_hash, "old_hash": old_hash, "endpoint_ips": endpoint_check["endpoint_ips"]}
+
+
+def real_apply_profile(profile: str) -> None:
+    switch_probe_profile_live("network_tolerant")
 
 
 def real_restore_profile(profile: str) -> None:
-    real_apply_profile(profile)
+    switch_probe_profile_live("default")
 
 
 def real_verify_result_hash(entry: dict) -> bool:
