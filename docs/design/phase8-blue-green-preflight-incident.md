@@ -11214,3 +11214,52 @@ calibration/diagnostic 결과 수정 0건(경로 자체가 분리돼 물리적�
 로 커밋 제외 - 이 문서가 핵심 수치·검증 결과를 git에 보존하는 기록)에
 원본 그대로 보존했다. 이 절 이후 `pod_kill` 블록을 시작하지 않고
 멈춘다.
+
+### 101.11 load_ramp 설정 동결값 최종 대조 (2026-09-23, 사용자 지적으로 보완)
+
+§101.1의 "Phase 8 확정 설정 v2" 서술은 §7/§26.3이 실제로 동결한 3코어·
+SLO v3용 5단계 값을 구체적으로 대조하지 않은 채 파일 헤더 주석만
+인용했다 - `collect_metrics.py`의 이슈 0건은 timing/schema/audit
+정합성만 확인할 뿐 설정 **버전**까지 확인하지 않는다는 지적을 반영해,
+다음을 직접 대조했다.
+
+- **동결 원본**: `docs/design/phase8-blue-green-preflight-incident.md`
+  §26.3(커밋 `ed83c40`, "chaos/scenario-load-ramp.yaml: 5단계를
+  0.025/0.05/0.20/0.30/0.40 RPS(각 90초)로 확정") - 3코어(`lab-cpu3-
+  warm-v1`)·SLO v3(threshold 0.648초) 환경에서 확정된 바로 그 값.
+- **설정 파일 실측**: `chaos/scenario-load-ramp.yaml`을 직접 읽어 5단계
+  전부(`stage-1-0.025rps`~`stage-5-0.40rps`, 각 `duration_sec: 90`)가
+  §26.3과 정확히 일치함을 확인. SHA256 =
+  `fd5954ca9a8dac5e8cbe96232cb2cfca5bb49cb12839fb55eedeee56094a7186`.
+  `git log --oneline -- chaos/scenario-load-ramp.yaml`로 이 파일이
+  `ed83c40`(동결 커밋) 이후 **한 번도 바뀌지 않았음**을 확인 - 블록
+  실행 시작 커밋(`4d6800f`)과 완료 시점 모두 이 정확한 버전.
+- **로드제너레이터 이미지**: §26.3이 함께 동결한
+  `experiments/load_ramp_adapter.py`의 `IMAGE = "loadgen-runner:
+  phase8-v3-boundaries"`(digest
+  `sha256:e58a37b2d1c5903d1ce50474fd00c7d3a39cb300549408c0e0c2305482db897a`)
+  상수가 현재도 그대로임을 grep으로 직접 확인 - 이후 커밋(`d5a6ea9`/
+  `7efd730`, baseline 게이트·stage 관측성 개선)은 이 상수를 건드리지
+  않았다.
+- **런타임 교차검증(정적 파일 대조보다 강한 증거)**: 15개 공식
+  TrialResult 전부의 `slo_stage`/`detection_stage`/`action_stage`
+  필드값을 모아 집합으로 만든 결과 정확히 `{stage-1-0.025rps,
+  stage-2-0.05rps, stage-3-0.20rps, stage-4-0.30rps, stage-5-
+  0.40rps}` 5개뿐이었다 - 파일 내용이 아니라 **실제 15회 라이브
+  실행 중 주입된 stage 자체**가 동결값과 일치함을 각 trial의 원본
+  기록으로 직접 증명한다.
+
+대조 결과는 `experiments/results/block-manifest-load_ramp-mainexp-v1.
+json`의 `load_ramp_config_verification` 필드에 기계가독 형태로도
+보존했다. **결론: §101의 15개 trial은 3코어·SLO v3용으로 동결된
+바로 그 load_ramp 설정(§26.3)으로 실행된 것이 확정됐다 - 이제
+확정적인 공식 분석 자료로 취급할 수 있다.**
+
+**사용자의 정정 반영**: 15건만으로도 arm별 결과는 기술통계(median/
+range)로 비교 가능하다(§101.4/101.5에 이미 제시됨) - 45건이 필요한
+것은 arm 비교 자체가 아니라 `load_ramp`/`pod_kill`/`network_degrade`
+세 장애 시나리오를 아우르는 종합 비교뿐이다. §101.9의 서술을 이
+표현으로 정정한다.
+
+**현재 Phase 8 위치**: load_ramp 15회 완료 → 설정 동결값 최종 대조
+완료(이 절) → `pod_kill` 15회 대기.
