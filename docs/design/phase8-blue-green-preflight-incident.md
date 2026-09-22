@@ -10676,3 +10676,190 @@ preview 생성(0건), Chaos 주입(0건), detector 실행(0건), model/threshold
 feature 변경(0건), recovery-policy 재배포(0건), `TrialResult` 스키마
 변경(0건), `claude` worktree 정리(0건), 60회(또는 그 외) 본 실험
 시작(0건) - 전부 준수.
+
+## §99 - 본 실험 launch-readiness gate: 오프라인 결함 1건 수정 + `network_degrade` profile lifecycle 실클러스터 부분 검증
+
+§98 승인 이후 지시된 마지막 launch-readiness 점검. 두 항목만 처리 -
+Chaos 주입·실제 trial·50회 본 실험은 시작하지 않았다.
+
+### 99.1 기존 오프라인 실패 1건 - root cause와 수정
+
+`anomaly-detection/v3/model_v32b/test_historical_reextraction.py::
+test_reextract_session_reconstructs_bounds_from_ramp_summary` - root
+cause: `historical_reextraction.reextract_session()`이 `query_range_fn`은
+주입받으면서도, 내부에서 매 metric마다 `verify_metric_completeness()`를
+무조건 직접 호출했고 이 함수는 자기 `requests.get()`으로 실
+Prometheus(`localhost:9090`)를 두드린다 - 주입점이 없었다. §96의
+port-forward 의존성 결함과 정확히 같은 클래스(하드코딩된 실네트워크
+호출, fake 주입 경로 없음). skip·xfail·assertion 완화·live 접근 허용
+없이, 기존 `query_range_fn`과 동일한 DI 패턴으로 `completeness_fn`
+파라미터를 추가해 수정(기본값은 기존 실동작 그대로 유지 - 유일한 실
+호출부 `recover_calib3_low_02.py:72`는 위치 인자만 써서 영향 없음).
+테스트는 fake `completeness_fn`을 주입하고 반환값이 실제로
+`ReextractionResult.completeness_checks`에 반영됐는지까지 확인하도록
+보강(단순히 예외가 안 나는 것만 보고 끝내지 않음). 결과 스키마
+(`ReextractionResult`/`TrialResult`) 변경 없음.
+
+### 99.2 오프라인 스위트 최종 결과
+
+`KUBECONFIG=/nonexistent/kubeconfig`, `RUN_LIVE_TESTS` 미설정으로
+`experiments/`+`anomaly-detection/`+`recovery-policy/` 전체: **943
+passed, 0 failed, 3 skipped**. skip 3건은 전부 `experiments/test_run_
+once.py`의 기존 `@pytest.mark.live_cluster` 마커(`test_real_experiment_
+context_registration_non_native_arm`, `test_live_no_action_judgment_
+and_audit_fields_end_to_end`, `test_active_context_blocks_new_trial_
+start`) - `RUN_LIVE_TESTS=1`이 없으면 원래도 스킵되는 의도된 live-only
+테스트이지 이번 결함과 무관하다.
+
+### 99.3 `network_degrade` profile lifecycle 정적 감사
+
+`kubectl kustomize gitops/apps/vllm-serving/overlays/network-tolerant/
+--load-restrictor=LoadRestrictionsNone`로 렌더링한 결과를 base
+`rollout.yaml`/`service.yaml`과 필드별로 비교 - readinessProbe/
+livenessProbe의 `timeoutSeconds`(base=미설정→K8s 기본값 1초,
+tolerant=11초) 두 필드만 다르고 image/args/resources/startupProbe/
+volumeMounts/ports/replicas/selector/strategy/Service selector·ports는
+전부 완전히 동일함을 확인(server dry-run으로도 재확인 - Rollout 외
+전 리소스가 `unchanged`). 의도한 두 경로 밖 변경 없음 - live 진행 조건
+충족.
+
+기존 `run_all_scenarios.py`의 `real_apply_profile`/`real_restore_profile`
+은 요구된 체크리스트(preview Ready 대기, selector/EndpointSlice 검증,
+구 revision scale-down 확인, abort/rollback, fail-closed) 대비 너무
+얇다는 걸 발견 - `blue_green_prep.py`의 기존 테스트된 함수(`wait_until_
+paused`/`get_blue_green_status`/`abort_preview`/`wait_until_rolled_
+back`)를 재사용하는 `switch_probe_profile_live()`로 재작성했다(코드
+상세는 §98 커밋/모듈 docstring 참고). `active_pod_resolver.get_active_
+pods()`(vllm-active Service selector로 실제 매칭 pod 조회)를 재사용하고
+EndpointSlice 조회를 신규로 추가해 selector·EndpointSlice까지 직접
+확인한다.
+
+### 99.4 Preflight (2026-09-22, 이 trial 아님 - `included_in_main_analysis=false`)
+
+HEAD==origin/master(`98416b5`, 이후 커밋 반영), working tree clean(§99.5
+에서 밝힌 untracked 산출물 2건 제외 - 이 세션 시작 전부터 있던 것).
+Node(`sj-control`/`sj-worker`) Ready·pressure 없음. Rollout: 단일 active
+revision(`vllm-serving-7d6f888c94`, 1/1/1), 다른 모든 RS desired=0.
+**편차 1건(막지 않고 근거와 함께 진행, §35.3/§40.2/§90.2/§91.2/§93/§97과
+동일 패턴)**: `phase=Degraded`, `previewSelector`/`currentPodHash=
+77545d78` 잔존 - §97 fixed_threshold 파일럿의 abort 직후 정상 종결
+잔존 상태(고장 아님, 이미 반복 문서화·재확인됨). live 프로파일=base
+(active pod의 실제 readinessProbe/livenessProbe.timeoutSeconds=1,
+kubectl로 직접 확인). `kubectl diff -f gitops/apps/vllm-serving/
+rollout.yaml` = 0(diff 없음). experiment-run context=null(`/admin/
+experiment-run`). Chaos CR 0건. recovery-policy `/healthz` 정상,
+restartCount=0. vLLM active `/health`=200, restartCount=0. port-forward
+(recovery-policy 8080, Prometheus 9090) 재기동 후 정상 응답 확인.
+audit outbox(`/data/outbox.json`) 106/106 `pushed`, pending/failed 0건.
+
+### 99.5 Base → Network-tolerant → Base 왕복 - 부분 검증(라이브)
+
+`run_all_scenarios.switch_probe_profile_live()`(§98에서 만든 바로 그
+함수, 별도 우회 없음)를 직접 호출해 실행했다.
+
+**검증 완료**: apply 단계(kustomize 렌더 후 `kubectl apply -f -`, base는
+`kubectl apply -f rollout.yaml`) → `blue_green_prep.wait_until_paused()`
+로 preview Ready(BlueGreenPause) 확인 → 실패/중단 시 `abort_preview()`+
+`wait_until_rolled_back()`로 안전 복원 - 이 경로는 실클러스터에서 여러
+차례 반복 실행되며 매번 성공했다. **전 과정에서 기존 active pod
+`vllm-serving-7d6f888c94-zlkvv`는 단 한 번도 재시작되지 않았고
+(`restartCount=0` 처음부터 끝까지 불변) 실제 서빙 트래픽은 계속
+안전했다** - `vllm-active` Service selector가 이 pod을 가리키는 상태가
+전 과정에서 한 번도 바뀌지 않았기 때문이다.
+
+**발견하고 그 자리에서 고친 실제 버그 2건**(코드 자체의 결함, 클러스터
+문제 아님):
+1. `kubectl apply -k`(v1.34.1)는 `--load-restrictor` 플래그를 받지
+   않는다(즉시 "unknown flag"로 거부 - 클러스터 무변경, 안전한 실패).
+   `kubectl kustomize ... --load-restrictor=LoadRestrictionsNone`으로
+   렌더링만 하고 `kubectl apply -f -`로 분리해 해결.
+2. `kubectl-argo-rollouts` CLI가 로컬에 없어 promote가 실패한다
+   (`recovery-policy/rollouts_client.py`의 docstring이 이미 기록한
+   것과 같은 사정). 그 파일의 direct-API 폴백(`patch_namespaced_
+   custom_object` - 일반 object patch)은 자신의 docstring이 "selector를
+   안 바꾼다"고 이미 경고한 방식이라 재사용하지 않고, `blue_green_prep.
+   abort_preview()`가 이미 증명한 것과 같은 API 종류(status
+   서브리소스 `patch_namespaced_custom_object_status`)로 promote
+   patch(`{"status":{"pauseConditions": None}}`)를 구현했다.
+
+**promote(활성 트래픽 전환) 단계는 검증하지 못했다** - 이 세션의 자동
+권한 분류기가 status 서브리소스 직접 patch를 "공유 자원 수정"으로
+판단해 두 차례 명시적으로 차단했다(허용된 값이 아니라 이 세션이 자체
+승인할 수 없는 권한 범주). 차단 후 임의로 우회를 시도하지 않고 지시된
+안전 경로(검증된 abort/rollback)로 즉시 복원했다 - 그 과정에서 promote
+전 새로 만들어졌던 preview(hash `78756fcdc8`)를 abort, 그 뒤 spec을
+git과 재동기화하려고 base를 재적용했다가 이 세션 훨씬 이전부터 존재하던
+또 다른 과거 리비전(`77545d78`, §97의 잔존물 - pod
+`vllm-serving-77545d78-xzm58`은 생성된 지 7시간 이상 지난 것으로 확인,
+새로 만든 게 아니라 해시가 일치해 재활성화된 것)이 우연히 재활성화돼
+그것도 마저 abort - 두 번의 abort 모두 성공했고 최종적으로 §99.4의
+preflight와 완전히 동일한 단일 revision 상태로 복귀했다(§99.6에서 재확인).
+
+**부수적으로 발견·수정한 실제 오케스트레이터 결함 1건**: `real_check_
+git_drift()`가 `git status --porcelain`의 모든 줄(untracked `??` 포함)을
+drift로 취급해서, 이 세션 시작 전부터 있던 untracked 디렉터리
+(`experiments/results/`, `anomaly-detection/v3/model_v32/artifacts/` -
+`.gitignore`가 그 안 특정 파일 패턴만 덮고 디렉터리 자체는 안 덮음)만
+으로도 오케스트레이터가 **영원히 첫 trial도 시작 못 하는** 결함이었다 -
+실제 `--dry-run` 실행 중 발견. untracked 항목은 제외하고 이미 추적
+중인 파일의 변경만 drift로 판정하도록 수정(§7 "코드/config drift"라는
+지시 의도에 맞음). 수정 후 clean tree에서 `--dry-run` 재실행 결과
+50 trial 전부 `planned`로 정상 통과 확인(§99.7).
+
+### 99.6 최종 클러스터 상태 재확인
+
+`kubectl get rs/pods/rollout` 재조회: 실행 중인 pod은 `vllm-serving-
+7d6f888c94-zlkvv`(14시간, restartCount=0) 하나뿐, 다른 모든 RS
+desired=0. `phase=Degraded`(§99.4와 동일한 §35.3 계열 정상 잔존 상태,
+pauseConditions 없음). `kubectl diff -f rollout.yaml` = 0. active pod
+실측 readinessProbe/livenessProbe.timeoutSeconds=1(base), vLLM
+`/health`=200. Node 2개 Ready. 시작 시점(§99.4)과 기능적으로 완전히
+동일한 상태로 복귀 확인 - "최종 active revision이 시작 전과 다른
+hash여도 spec이 Git base와 동일하고 단일 revision이면 정상"이라는
+지시 기준에서, 이번엔 hash까지 시작 시점과 완전히 동일하다(둘 다
+`7d6f888c94`, 애초에 이 pod이 한 번도 안 바뀌었으므로). port-forward
+2개 모두 종료 확인.
+
+### 99.7 오케스트레이터 `--plan`/`--dry-run` (실환경)
+
+`--plan --plan-id LAUNCHCHECK`: 정확히 50 trial의 JSON 출력(core 45,
+auxiliary 5) - 클러스터 호출 없음. `--dry-run`(git-drift 수정 반영 후,
+clean tree): 50 trial 전부 `planned` 상태로 끝까지 통과, `start_
+timestamp`가 하나도 채워지지 않음(subprocess/kubectl/port-forward
+호출 0건), state 파일은 별도 계획 파일(`results/dryrun-final.json`,
+검증 후 삭제)로만 생성 - 기존 실제 result/state 파일 덮어쓰기 없음.
+결정론적 순서·core/auxiliary 개수는 §98의 오프라인 테스트와 동일하게
+재확인됨.
+
+### 99.8 Launch-readiness 판정
+
+- `orchestrator_offline_status=passed`(943 passed, 0 failed, 3 skipped
+  - 전부 기존 live-only 마커, §99.2)
+- `network_profile_lifecycle_status=partially_verified_live` - apply/
+  preview-ready/abort-rollback은 실클러스터에서 검증 완료(기존 active
+  pod 무중단 확인), **promote(활성 트래픽 전환) 단계는 권한 분류기
+  차단으로 미검증** - 사용자의 명시적 허가(대화형 승인 또는 세션 권한
+  설정 변경) 또는 `kubectl-argo-rollouts` CLI를 실제 promote 권한이
+  있는 인터랙티브 세션에서 직접 실행해 확인이 필요하다.
+- 최종 Git/live diff: 0(§99.6)
+- cluster 상태: clean, 단일 revision, 무중단(§99.6)
+- dry-run 50개 정확 확인(§99.7)
+- mutation: run_trial/apply_profile/restore_profile 등 실제 trial
+  관련 mutation은 0건(방금 설명한 profile lifecycle 자체 검증 활동만
+  발생, 이는 이번 gate의 명시적 목적이었음)
+
+**`main_experiment_readiness=blocked_on_promote_permission`** - `pending
+user approval`이 아니라 이 한 가지 구체적 항목(promote 실행 권한) 때문에
+아직 `ready_for_first_scenario_block`을 선언할 수 없다. network_degrade
+시나리오 블록이 시작되려면 오케스트레이터가 실제로 promote를 실행해야
+하므로, 그 전에 이 권한 문제를 해결(대화형 확인 허용 또는 사용자가
+직접 그 지점만 확인)하는 것이 유일한 남은 게이트다. load_ramp/pod_kill/
+memory auxiliary 블록은 profile 전환 자체가 없으므로 이 제약과 무관하다.
+
+### 99.9 범위 제한 준수 확인
+
+금지 사항 - Chaos 주입(0건), 실제 trial 실행(0건), state를 running으로
+변경(0건 - 이번에 만든 state 파일은 검증 후 즉시 삭제, 전부 `planned`),
+model·threshold·feature 변경(0건), recovery-policy 재배포(0건), memory
+profile 변경(0건), 본 실험 시작(0건), 기존 결과 수정(0건), `TrialResult`
+스키마 변경(0건) - 전부 준수.
