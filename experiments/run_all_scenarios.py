@@ -141,6 +141,104 @@ def build_initial_state(trials: list, plan_id: str, order_seed: str,
     }
 
 
+# §103(2026-09-24) - pod_kill-proposed-01-mainexp-v1이 HarnessCorrupted(subprocess
+# 비정상 종료)로 "failed"가 된 것과, TrialResult.outcome="invalid_run"(예: SLO
+# 평가 불가·탐지 실패)이 정상적으로 기록된 "invalid"는 서로 다르다 - 후자는
+# 계약서·지시 전체에서 반복적으로 "유효한 실험 결과이니 보존·포함"하라고 못박은
+# 것이고, 전자만 "기술적 invalid"(하니스/인프라 결함으로 결과 자체가 안 나온 것)
+# 다. 대체 연결은 오직 "failed"에만 허용한다 - "invalid"를 대체하면 정당한
+# 데이터 포인트를 몰래 지우는 것이 된다.
+TECHNICAL_INVALID_STATUSES = ("failed",)
+
+
+def link_technical_invalid_replacement(state: dict, original_run_id: str,
+                                        replacement_run_id: str, reason: str) -> dict:
+    """§103 - 기술적 invalid(TECHNICAL_INVALID_STATUSES) 슬롯에만, 사용자가
+    명시적으로 지정한 새 고유 run_id를 연결한다. 자동 생성·자동 재시도가
+    아니다 - 호출자(CLI)가 매번 사람이 직접 고른 값을 넘겨야 한다.
+
+    원본 슬롯(state["trials"][original_run_id])은 이 함수가 절대 건드리지
+    않는다 - 원본 덮어쓰기 방지. 관계·사유·각 결과 hash는 별도의
+    state["replacements"][original_run_id]에만 기록한다(TrialResult
+    스키마 무관 - 오케스트레이터 자체의 state 구조 확장일 뿐).
+
+    이미 연결된 원본을 다시 연결하려 하면 거부한다(임의 반복 재시도
+    방지 - 링크는 평생 한 번만). 대체 run_id가 이미 매트릭스/state에
+    있으면(고유해야 함) 거부한다. 대체 trial은 원본과 완전히 같은
+    scenario/arm/repetition/analysis_group/sequence_index로 state에
+    새로 추가되므로, 나중에 build_matrix()+apply_replacements()가
+    원본의 정확히 그 위치에서 실행 순서를 그대로 유지한다."""
+    if original_run_id not in state["trials"]:
+        raise ValueError(f"{original_run_id}이 state에 없음 - 매트릭스에 없는 run_id는 연결 불가")
+    original_entry = state["trials"][original_run_id]
+    if original_entry["status"] not in TECHNICAL_INVALID_STATUSES:
+        raise ValueError(
+            f"{original_run_id}은 status={original_entry['status']!r} - "
+            f"기술적 invalid({TECHNICAL_INVALID_STATUSES})만 대체 연결 가능. "
+            f"'invalid'(outcome=invalid_run)는 유효한 실험 결과이므로 절대 대체하지 않음.")
+    if replacement_run_id == original_run_id:
+        raise ValueError("대체 run_id는 원본과 달라야 함(고유해야 함)")
+    if replacement_run_id in state["trials"]:
+        raise ValueError(f"대체 run_id({replacement_run_id})가 이미 매트릭스/state에 존재함 - 고유한 새 값이어야 함")
+
+    replacements = state.setdefault("replacements", {})
+    if original_run_id in replacements:
+        existing = replacements[original_run_id]["replacement_run_id"]
+        raise ValueError(
+            f"{original_run_id}은 이미 {existing}로 대체 연결됨 - 임의 반복 재시도 금지. "
+            f"기존 연결을 그대로 쓰거나(이미 실행됐다면 그 결과를 확인), 그 대체 자체가 또 "
+            f"기술적 invalid가 된 경우에만 그 대체 run_id를 원본으로 삼아 새로 연결할 것.")
+
+    replacements[original_run_id] = {
+        "replacement_run_id": replacement_run_id,
+        "reason": reason,
+        "linked_at_utc": _now_iso(),
+        "original_result_hash": original_entry.get("result_hash"),
+        "replacement_result_hash": None,  # 대체 trial 실행 후 run_sequence()가 채움
+        "replacement_status": "planned",
+    }
+    replacement_entry = dict(original_entry)
+    replacement_entry.update({
+        "run_id": replacement_run_id, "status": "planned",
+        "start_timestamp": None, "end_timestamp": None, "result_path": None,
+        "audit_status": None, "cleanup_status": None, "failure_reason": None,
+        "result_hash": None,
+    })
+    state["trials"][replacement_run_id] = replacement_entry
+    return state
+
+
+def sync_replacement_results(state: dict) -> None:
+    """§103 - 대체 trial이 실행된 뒤(성공/중단 무관), state["replacements"]의
+    각 연결 기록에 대체 trial의 최신 status/result_hash를 반영한다. 원본
+    기록(state["trials"][original_run_id])은 절대 건드리지 않는다 -
+    이 함수는 replacements 딕셔너리만 갱신한다."""
+    for link in state.get("replacements", {}).values():
+        replacement_entry = state["trials"].get(link["replacement_run_id"])
+        if replacement_entry is not None:
+            link["replacement_result_hash"] = replacement_entry.get("result_hash")
+            link["replacement_status"] = replacement_entry.get("status")
+
+
+def apply_replacements(trials: list, replacements: dict) -> list:
+    """§103 - 실행 목록(순서 그대로)에서, 연결된 대체가 있는 원본 자리를
+    정확히 같은 위치의 대체 Trial로 바꿔치기한다. 연결 안 된 trial은
+    그대로 둔다. 원본 리스트를 변형하지 않고 새 리스트를 반환한다 -
+    호출자가 이 결과를 run_sequence()에 넘기면 원본 run_id는 다시 실행
+    시도되지 않고(있는 그대로 state에 남음), 대체 run_id만 그 슬롯에서
+    정상적으로 preflight/실행/cleanup을 거친다."""
+    replaced = []
+    for t in trials:
+        link = replacements.get(t.run_id)
+        if link is not None:
+            replaced.append(Trial(run_id=link["replacement_run_id"], scenario=t.scenario, arm=t.arm,
+                                   repetition=t.repetition, analysis_group=t.analysis_group,
+                                   sequence_index=t.sequence_index))
+        else:
+            replaced.append(t)
+    return replaced
+
+
 def load_state(state_path: Path) -> Optional[dict]:
     if not state_path.exists():
         return None
@@ -470,10 +568,36 @@ def main():
                               "그대로 공유되고 다른 시나리오 블록은 손대지 않은 채 planned로 남아, 같은 "
                               "--state-file로 나중에 --scenario만 바꿔 이어서 실행할 수 있다. 생략하면 "
                               "매트릭스 전체(50 trial)를 순서대로 실행한다.")
+    parser.add_argument("--link-replacement", nargs=2, default=None, metavar=("ORIGINAL_RUN_ID", "NEW_RUN_ID"),
+                         help="§103 - 기술적 invalid(status=failed) 슬롯 ORIGINAL_RUN_ID에, 사용자가 직접 고른 "
+                              "고유한 NEW_RUN_ID를 대체로 연결만 하고 종료한다(trial 실행은 이 호출에서 하지 "
+                              "않음 - 이후 --resume으로 별도 실행). --link-reason과 함께 줘야 하고, 기존 "
+                              "state 파일이 있어야 한다(새 state 생성 안 함). 원본은 절대 수정하지 않는다.")
+    parser.add_argument("--link-reason", default=None,
+                         help="--link-replacement와 함께 필수 - 왜 이 원본이 기술적 invalid이고 왜 이 대체가 "
+                              "필요한지 사람이 읽을 수 있는 사유(state/manifest에 그대로 보존됨).")
     args = parser.parse_args()
+
+    if args.link_replacement is not None and args.link_reason is None:
+        parser.error("--link-replacement는 --link-reason과 함께 줘야 함")
 
     state_path = Path(args.state_file)
     existing = load_state(state_path)
+
+    if args.link_replacement is not None:
+        if existing is None:
+            print(f"--link-replacement는 기존 state 파일이 있어야 함: {state_path}", file=sys.stderr)
+            sys.exit(1)
+        original_run_id, new_run_id = args.link_replacement
+        try:
+            link_technical_invalid_replacement(existing, original_run_id, new_run_id, args.link_reason)
+        except ValueError as e:
+            print(f"LINK REJECTED: {e}", file=sys.stderr)
+            sys.exit(1)
+        save_state_atomic(state_path, existing)
+        print(f"연결 완료: {original_run_id} -> {new_run_id} (state 파일: {state_path}). "
+              f"trial은 아직 실행되지 않음 - --resume으로 별도 실행할 것.")
+        return
 
     if args.resume or existing is not None:
         if existing is None:
@@ -491,6 +615,7 @@ def main():
 
     trials = build_matrix(plan_id)
     trials_to_run = [t for t in trials if t.scenario == args.scenario] if args.scenario else trials
+    trials_to_run = apply_replacements(trials_to_run, state.get("replacements", {}))
 
     if args.plan:
         print(json.dumps([t.__dict__ for t in trials_to_run], indent=2, ensure_ascii=False))
@@ -503,9 +628,13 @@ def main():
         run_sequence(trials_to_run, state, real_hooks(), state_path,
                      dry_run=args.dry_run, from_run_id=args.from_run_id)
     except SequenceAborted as e:
+        sync_replacement_results(state)
+        save_state_atomic(state_path, state)
         print(f"SEQUENCE ABORTED: {e}", file=sys.stderr)
         sys.exit(1)
 
+    sync_replacement_results(state)
+    save_state_atomic(state_path, state)
     print(f"완료. state 파일: {state_path}")
 
 

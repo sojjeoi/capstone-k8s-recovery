@@ -390,3 +390,168 @@ def test_real_check_git_drift_blocks_on_code_change(monkeypatch):
     monkeypatch.setattr(ras.subprocess, "run", fake_run)
     result = ras.real_check_git_drift()
     assert result["ok"] is False
+
+
+# ---- §103: 기술적 invalid 슬롯 대체 연결 (원본 보존, 자동 건너뛰기/재시도 금지, 순서 불변) ----
+
+def _state_with_failed_pod_kill_proposed():
+    trials = ras.build_matrix("mainexp-v1")
+    pod_kill = [t for t in trials if t.scenario == "pod_kill"]
+    state = _fresh_state(pod_kill, plan_id="mainexp-v1")
+    state["trials"]["pod_kill-native-01-mainexp-v1"]["status"] = "completed"
+    state["trials"]["pod_kill-native-01-mainexp-v1"]["result_hash"] = "native-hash"
+    state["trials"]["pod_kill-fixed_threshold-01-mainexp-v1"]["status"] = "completed"
+    state["trials"]["pod_kill-fixed_threshold-01-mainexp-v1"]["result_hash"] = "ft-hash"
+    state["trials"]["pod_kill-proposed-01-mainexp-v1"]["status"] = "failed"
+    state["trials"]["pod_kill-proposed-01-mainexp-v1"]["failure_reason"] = "실행기 종료 코드 1"
+    return state, pod_kill
+
+
+def test_link_replacement_rejects_non_technical_invalid_status():
+    """§103 - status=invalid(outcome=invalid_run, 유효한 실험 결과)나
+    completed/planned는 대체 연결 대상이 아니다 - 'failed'(하니스 자체가
+    깨진 기술적 invalid)만 허용한다. 잘못된 상태를 대체하려 하면 거부하고
+    원본은 손대지 않는다."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    state["trials"]["pod_kill-native-02-mainexp-v1"]["status"] = "invalid"
+    before = dict(state["trials"]["pod_kill-native-02-mainexp-v1"])
+    with pytest.raises(ValueError, match="기술적 invalid"):
+        ras.link_technical_invalid_replacement(state, "pod_kill-native-02-mainexp-v1",
+                                                "pod_kill-native-02-retry-mainexp-v1", "테스트 사유")
+    assert state["trials"]["pod_kill-native-02-mainexp-v1"] == before
+    assert "replacements" not in state or "pod_kill-native-02-mainexp-v1" not in state.get("replacements", {})
+
+
+def test_link_replacement_never_modifies_original_entry():
+    state, _ = _state_with_failed_pod_kill_proposed()
+    original_before = dict(state["trials"]["pod_kill-proposed-01-mainexp-v1"])
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1",
+        "detector crash root-cause 불명, cleanup timeout 수정 후 재시도")
+    assert state["trials"]["pod_kill-proposed-01-mainexp-v1"] == original_before, \
+        "원본 슬롯은 link 이후에도 절대 바뀌면 안 됨(원본 덮어쓰기 금지)"
+    print("OK - 대체 연결 후에도 원본 trial 항목은 완전히 그대로")
+
+
+def test_link_replacement_creates_replacement_slot_with_same_position_fields():
+    state, _ = _state_with_failed_pod_kill_proposed()
+    original = state["trials"]["pod_kill-proposed-01-mainexp-v1"]
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    replacement = state["trials"]["pod_kill-proposed-01-retry1-mainexp-v1"]
+    assert replacement["scenario"] == original["scenario"]
+    assert replacement["arm"] == original["arm"]
+    assert replacement["repetition"] == original["repetition"]
+    assert replacement["analysis_group"] == original["analysis_group"]
+    assert replacement["sequence_index"] == original["sequence_index"]
+    assert replacement["status"] == "planned"
+    assert replacement["result_hash"] is None
+    link = state["replacements"]["pod_kill-proposed-01-mainexp-v1"]
+    assert link["replacement_run_id"] == "pod_kill-proposed-01-retry1-mainexp-v1"
+    assert link["reason"] == "재시도"
+    assert link["original_result_hash"] == original.get("result_hash")
+    assert link["replacement_result_hash"] is None
+    print("OK - 대체 슬롯이 원본과 동일한 위치 정보로 생성되고 연결 기록이 남음")
+
+
+def test_link_replacement_rejects_duplicate_link_no_arbitrary_retry():
+    """§103 - 같은 원본을 두 번째로 다시 연결하려 하면 거부한다(임의 반복
+    재시도 금지) - 첫 연결이 그대로 유지돼야 한다."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "1차 재시도")
+    with pytest.raises(ValueError, match="이미.*대체 연결됨"):
+        ras.link_technical_invalid_replacement(
+            state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry2-mainexp-v1", "2차 재시도")
+    assert state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["replacement_run_id"] == \
+        "pod_kill-proposed-01-retry1-mainexp-v1", "두 번째 연결 시도가 첫 연결을 덮어쓰면 안 됨"
+    assert "pod_kill-proposed-01-retry2-mainexp-v1" not in state["trials"]
+    print("OK - 같은 원본을 두 번 연결할 수 없음(첫 연결 유지, 임의 재시도 금지)")
+
+
+def test_link_replacement_rejects_non_unique_replacement_run_id():
+    state, _ = _state_with_failed_pod_kill_proposed()
+    with pytest.raises(ValueError, match="고유"):
+        ras.link_technical_invalid_replacement(
+            state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-native-01-mainexp-v1", "잘못된 사유")
+    print("OK - 대체 run_id가 매트릭스에 이미 있으면 거부(고유해야 함)")
+
+
+def test_link_replacement_rejects_missing_reason_via_cli(tmp_path):
+    """--link-replacement는 --link-reason 없이 쓸 수 없다(CLI 레벨 강제)."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    state_path = tmp_path / "state.json"
+    ras.save_state_atomic(state_path, state)
+    proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "run_all_scenarios.py"),
+         "--link-replacement", "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1",
+         "--state-file", str(state_path)],
+        capture_output=True, text=True, cwd=Path(__file__).parent)
+    assert proc.returncode != 0
+    assert "--link-reason" in proc.stderr
+    reloaded = ras.load_state(state_path)
+    assert "replacements" not in reloaded or not reloaded["replacements"]
+    print("OK - --link-reason 없이는 CLI가 즉시 거부하고 state를 바꾸지 않음")
+
+
+def test_apply_replacements_preserves_order_and_position():
+    """§103 - 대체가 적용돼도 실행 순서 자체는 절대 안 바뀐다: 원본이 있던
+    바로 그 자리에 대체가 들어가고, 그 앞뒤 trial(예: fixed_threshold-02)의
+    위치는 그대로다."""
+    state, pod_kill_trials = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    result = ras.apply_replacements(pod_kill_trials, state["replacements"])
+    result_run_ids = [t.run_id for t in result]
+
+    original_run_ids = [t.run_id for t in pod_kill_trials]
+    proposed_idx = original_run_ids.index("pod_kill-proposed-01-mainexp-v1")
+    assert result_run_ids[proposed_idx] == "pod_kill-proposed-01-retry1-mainexp-v1", \
+        "대체는 원본과 정확히 같은 위치(순서)에 들어가야 함"
+    assert result_run_ids[proposed_idx + 1] == "pod_kill-fixed_threshold-02-mainexp-v1", \
+        "대체 다음 trial(fixed_threshold-02)의 위치가 바뀌면 안 됨"
+    # 나머지는 전부 원본 그대로(개수·순서 불변, 대체된 한 자리만 바뀜)
+    expected = list(original_run_ids)
+    expected[proposed_idx] = "pod_kill-proposed-01-retry1-mainexp-v1"
+    assert result_run_ids == expected
+    print("OK - 대체가 원본 위치를 정확히 대체하고 나머지 순서는 전혀 안 바뀜(fixed_threshold-02가 바로 다음)")
+
+
+def test_apply_replacements_leaves_unlinked_trials_untouched():
+    state, pod_kill_trials = _state_with_failed_pod_kill_proposed()
+    result = ras.apply_replacements(pod_kill_trials, state.get("replacements", {}))
+    assert [t.run_id for t in result] == [t.run_id for t in pod_kill_trials]
+    print("OK - 연결된 대체가 없으면 apply_replacements가 아무것도 안 바꿈")
+
+
+def test_run_sequence_does_not_auto_run_original_failed_slot_even_with_replacement_linked(tmp_path):
+    """§103 - 대체가 연결돼 있어도 원본 run_id 자체는 run_sequence()에
+    넘기는 실행 목록에 다시 등장하면 안 된다(apply_replacements가 이미
+    바꿔치기했으므로) - 원본이 실수로 다시 실행 시도되면 안 됨을
+    end-to-end로 확인."""
+    state, pod_kill_trials = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    trials_to_run = ras.apply_replacements(pod_kill_trials, state["replacements"])
+    # native-01/fixed_threshold-01은 이미 completed로 표시해뒀으니 run_sequence가 건너뛰고,
+    # 대체(retry1)만 새로 실행돼야 한다(원본 proposed-01은 목록 자체에 없음).
+    call_log = []
+    ras.run_sequence(trials_to_run, state, _make_hooks(call_log), tmp_path / "state.json")
+    run_trial_calls = [c[1] for c in call_log if c[0] == "run_trial"]
+    assert "pod_kill-proposed-01-mainexp-v1" not in run_trial_calls, "원본 failed 슬롯이 다시 실행되면 안 됨"
+    assert "pod_kill-proposed-01-retry1-mainexp-v1" in run_trial_calls
+    assert state["trials"]["pod_kill-proposed-01-mainexp-v1"]["status"] == "failed", "원본 status는 그대로 failed"
+    print("OK - 대체 연결 후에도 원본은 절대 재실행되지 않고 대체만 실행됨")
+
+
+def test_sync_replacement_results_updates_link_after_execution(tmp_path):
+    state, pod_kill_trials = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    trials_to_run = ras.apply_replacements(pod_kill_trials, state["replacements"])
+    ras.run_sequence(trials_to_run, state, _make_hooks([]), tmp_path / "state.json")
+    ras.sync_replacement_results(state)
+    link = state["replacements"]["pod_kill-proposed-01-mainexp-v1"]
+    assert link["replacement_status"] == "completed"
+    assert link["replacement_result_hash"] == "abc"  # _make_hooks 기본 run_trial의 fake result_hash
+    print("OK - 대체 trial 실행 후 연결 기록에 최신 status/result_hash가 반영됨")
