@@ -11757,3 +11757,160 @@ stale 감지 즉시 프로세스 전체를 죽이는** 설계다 - 순간적인 
 run_id 자동 생성(0건), 원본 결과·상태 수정(0건 - `proposed-01`/
 `proposed-03` 둘 다 원본 그대로), `TrialResult` 스키마·SLO·모델·장애
 조건 변경(0건) - 전부 준수.
+
+## §106 - `pod_kill-proposed-03-mainexp-v1` 크래시 근본원인 조사 + 오케스트레이터 preflight/postflight 실태 감사 (읽기 전용, state 무변경)
+
+사용자 지시대로 **순수 읽기 전용 조사**만 수행했다 - 공식 trial 재실행,
+`--link-replacement`, state 변경, `score_server.py`/threshold 수정,
+추가 pilot, 공식 블록 재개 전부 0건. `HEAD==origin/master==f43da4b`
+불변, `pod_kill-proposed-03-mainexp-v1`의 `status=invalid`·결과 JSON·
+hash 그대로 보존.
+
+### 106.1 코드 추적 - 정확히 무엇이 실패했나
+
+`score_server.py:_evaluate_v32b_verbose()`의 순서(176~184줄):
+1. `extract_window_strict()`로 6-feature 추출 - 실패 시 `"fail-closed:
+   feature 결측"`(다른 메시지).
+2. NaN/Inf 검사 - 실패 시 `"fail-closed: feature에 NaN/Inf 포함"`(다른
+   메시지).
+3. **`freshness_check_fn(FRESHNESS_PROBE_QUERY, FRESHNESS_MAX_AGE_SEC)`**
+   - 이번에 실패한 지점. `FRESHNESS_PROBE_QUERY = 'up{namespace=
+   "vllm-serving",job="vllm-active"}'`(score_server.py:73) - **6-feature
+   쿼리와 완전히 다른, 별도의 canary 쿼리**다.
+
+로그에 `[2026-09-23T05:39:30.94] score=-0.1353 ... seq=1`이 정상
+기록된 뒤 바로 `error: fail-closed: metric stale - 표본 없음`가
+나왔다는 것 자체가, **seq=1은 1~3단계를 전부 통과했다**는 증거다(점수가
+계산·기록됐으므로). 두 번째 평가 시도에서 1~2단계(6-feature 추출)는
+로그에 오류 메시지가 안 남은 걸로 보아 통과했을 가능성이 높고(6-feature
+전용 실패 메시지가 없음), 3단계(freshness canary)에서 멈췄다.
+
+**결론 1(확인됨): 6개 feature 자체가 그 순간 계산 불가능했던 게
+아니다 - `up{job="vllm-active"}` canary 쿼리 하나만 빈 결과("표본
+없음" - `prom_health.py:72`의 정확한 문자열)였다.**
+
+### 106.2 `up{job="vllm-active"}`가 왜 비었을 수 있는지 - 근거
+
+`gitops/apps/vllm-serving/servicemonitor.yaml`: `job="vllm-active"`는
+`vllm-active` **Service**를 대상으로 한 ServiceMonitor(라벨 selector
+`app: vllm-serving`, `/metrics` 15초 간격 스크랩)가 자동 생성한다 -
+즉 **Service의 EndpointSlice 기반 서비스 디스커버리**로 타겟이 정해진다.
+반면 6-feature 쿼리(`features.py:23-24`)는 `container_cpu_usage_
+seconds_total{namespace="vllm-serving",container="vllm"}`/`container_
+memory_working_set_bytes{...}` - **namespace+container 라벨로 매칭되는
+kubelet/cAdvisor 지표**이지 Service 엔드포인트와 무관하다.
+
+pod_kill은 정확히 "active pod을 죽인다"는 동작이다(`pod_kill_adapter.py`
+docstring, 이번 세션 초반 확인) - 죽은 뒤 교체 pod이 Ready가 될 때까지
+`vllm-active` Service의 EndpointSlice는 비어 있고, 그 구간 동안
+`up{job="vllm-active"}`는 "stale"이 아니라 **"타겟 자체가 없어 표본이
+아예 없음"**이 되는 게 이 아키텍처에서 구조적으로 자연스럽다 - 반면
+kubelet 기반 6-feature는 pod이 (죽어가는 중이든 새로 뜨는 중이든) 존재하는
+한 계속 값을 낼 수 있다.
+
+### 106.3 포트-포워드·연결 상태 - 원인에서 배제됨(확인됨)
+
+이 배치 전체(공식 대체 trial부터 `proposed-03` 크래시까지) 동안 켜둔
+`/tmp/pf-recovery8.log`/`/tmp/pf-prom8.log`를 그대로 확인 - **"Handling
+connection for 8080/9090"만 연속 기록, 끊김·재연결·오류 메시지 0건**.
+두 port-forward 터널 자체는 `proposed-03` 크래시 시점을 포함해 계속
+살아있었다 - **로컬 터널 단절은 원인에서 배제한다(확인됨)**.
+
+### 106.4 이전 `pod_kill × proposed` 실행과의 원본 기준 비교
+
+detector 로그의 평가 간격(seq 사이 시간차, 약 15~17초 주기)을 이용해
+`t_injection` 대비 "두 번째 평가가 몇 초 뒤에 일어났는지" 세 실행을
+비교(전부 원본 로그·`TrialResult`에서 직접 추출):
+
+| run_id | t_injection | 2차 평가 시각(추정 근거) | 경과 | 결과 |
+|---|---|---|---|---|
+| `diag2-pod_kill-proposed-01-...`(§104 진단 pilot) | 04:07:21.02 | 04:07:36.41(로그 직접 기록) | ~15.4초 | 성공 |
+| `pod_kill-proposed-01-retry1-mainexp-v1`(§105) | 05:06:16.65 | 05:06:35.98(로그 직접 기록) | ~19.3초 | 성공 |
+| `pod_kill-proposed-03-mainexp-v1`(이번 건) | 05:39:22.70 | 로그에 시각 없음(1차 성공 05:39:30.94 + 평가 주기 ~15~16초로 역산 시 ~05:39:46 부근) | **~24~25초(추정)** | **실패** |
+
+세 값 모두 15~25초 범위로 **크게 벗어나지 않지만**, 실패한 건이 가장
+늦다. "교체 pod이 Ready돼 엔드포인트에 다시 잡히기까지 걸리는 시간"이
+매번 다르다는 것(이 세션 전체에서 반복 관측된 vLLM 콜드스타트 시간
+편차 - 수십 초~수백 초)과 일치하는 패턴이다 - **고정된 임계값이 아니라
+매 pod_kill마다 달라지는 교체 pod 준비 시간의 자연스러운 편차**로
+보는 것이 세 값 모두를 일관되게 설명한다.
+
+### 106.5 판정 - 장애 주입 유발 vs 독립적 관측 인프라 장애
+
+**확인된 사실**:
+- 6-feature는 계산 가능했다(§106.1) - "관측 인프라 전체가 죽었다"는
+  아니다.
+- 실패한 canary(`up{job="vllm-active"}`)는 구조적으로 Service
+  엔드포인트 가용성에 종속돼 있고(§106.2), pod_kill은 바로 그 엔드포인트를
+  일시적으로 비우는 장애다.
+- 포트-포워드 단절은 배제됐다(§106.3).
+- 실패 시점까지의 경과시간이 성공한 두 사례보다 더 길었을 뿐, 같은
+  범위(수십 초) 안에 있다(§106.4).
+
+**확인되지 않은 것(추정으로 확정하지 않음)**: `proposed-03` 크래시
+그 정확한 순간의 `vllm-active` EndpointSlice 실제 상태·Prometheus
+타겟 목록은 K8s 이벤트 TTL(약 1시간)이 지나 직접 재확인이 불가능하다
+(이번 조사 시점 기준 사고로부터 약 7.8시간 경과). Prometheus 자체의
+과거 시계열(TSDB, 보통 더 긴 보존기간)을 이번 조사에서 조회하지
+않았다 - 라이브 조회 자체가 "읽기 전용"이라도 지시 범위(정적 증거
+대조)를 넘어설 수 있어 시도하지 않았다.
+
+**판정: 이번 실패는 장애 주입(pod_kill)이 `proposed` arm의 freshness
+canary 설계와 상호작용해 발생한 것일 가능성이 높다(구조적 근거
+충분) - 그러나 그 정확한 순간의 EndpointSlice 상태를 직접 재확인하지
+못했으므로 100% 확정은 아니다. 독립적인 관측 인프라 장애(포트-포워드
+단절 등)일 가능성은 §106.3의 실측으로 배제됐다.** 이 판정은
+`invalid_reason`이나 `status`를 바꾸는 근거로 쓰지 않았다 - 원본은
+그대로다.
+
+### 106.6 오케스트레이터 preflight/postflight 실태 감사
+
+`run_all_scenarios.py`의 `real_preflight()`/`real_postflight_cleanup_
+check()`를 직접 읽음 - **둘 다 무조건 `{"ok": True, "reason": None}`
+만 반환하는 스텁**이다(실제로 아무것도 확인하지 않음, §98 최초 구현
+그대로 미완성 상태).
+
+`run_once.py` 전체에서 `NotReady`/Node 상태/`MemoryPressure` 관련
+코드를 검색한 결과 **0건** - Node 상태를 확인하는 코드 자체가 없다.
+`pod_kill_adapter.py`/`run_pod_kill_trial.py`(및 load_ramp/network_
+degrade의 대응 파일들)에도 Node·Rollout·잔여 Chaos CR을 확인하는
+코드가 없다. 이런 검사(Node/pressure/잔여 리소스)는 **`memory_
+pressure_adapter.py`/`explore_memory_pressure_intensity.py`(§94~96,
+auxiliary negative-control 전용)에만 존재** - core 3개 시나리오와
+공유되지 않는다. `trial_observer.py`는 `python trial_observer.py
+watch ...`로 수동 기동하는 별도 CLI 도구일 뿐(§35/§40 시절 진단
+목적) - 어떤 core runner도 이를 import/자동 기동하지 않는다
+(`memory_pressure_adapter.py`만 import).
+
+**결론: `real_preflight`/`real_postflight_cleanup_check`가 약속하는
+Node·Rollout·잔여 리소스 검사는 core 3개 시나리오(load_ramp/pod_kill/
+network_degrade) 경로 어디에도 실제로 구현돼 있지 않다.** 이번 세션
+전체에서 각 trial 배치 전후 확인한 "Node Ready·Rollout Healthy·
+Chaos CR 0건·context null·`kubectl diff` 0"은 전부 이 세션의 운영자
+(나)가 그때그때 수동으로 kubectl을 실행해 확인한 것이지, 하니스
+코드 자체가 자동으로 수행한 것이 아니다 - `run_all_scenarios.py`를
+무인으로 장시간 돌리면(예: 야간 배치) 이 검사들은 **아무도 하지
+않는다.**
+
+### 106.7 향후 처리 방안 제안 (이번 턴에는 구현하지 않음)
+
+- **`proposed-03`**: §105와 동일한 패턴으로 새 고유 run_id를 명시
+  지정해 대체 연결(`link_technical_invalid_replacement`) 후 재개하는
+  것이 지금까지의 처리 방식과 일관된다 - 사용자 승인 시.
+- **§106.5 구조적 위험**: `score_server.py`의 freshness canary가
+  Service 엔드포인트 가용성에 의존하는 한 `proposed` arm은 pod_kill
+  계열 시나리오에서 구조적으로 이 실패 모드에 반복 노출될 수 있다 -
+  재시도·유예(grace) 로직 추가 여부는 사용자 판단.
+  `fixed_threshold`/`native`는 이 canary를 쓰지 않아 구조적으로
+  노출되지 않는다(비대칭).
+- **§106.6 gap**: `real_preflight`/`real_postflight_cleanup_check`에
+  실제 Node/Rollout/잔여 리소스 검사를 구현할지, 아니면 계속 운영자
+  수동 확인에 의존할지는 전적으로 사용자 결정 - 이번 턴은 구현하지
+  않았다.
+
+### 106.8 범위 제한 준수 확인
+
+`score_server.py` 수정(0건), threshold 변경(0건), 추가 pilot(0건),
+공식 trial 재개(0건), `--link-replacement`/state 변경(0건), `invalid`
+→`failed` 전환이나 대체 규칙 완화(0건) - 전부 준수. 읽기 전용 조사만
+수행했다.
