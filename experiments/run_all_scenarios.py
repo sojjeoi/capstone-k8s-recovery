@@ -129,6 +129,12 @@ def new_state_entry(trial: Trial) -> dict:
         "start_timestamp": None, "end_timestamp": None, "result_path": None,
         "audit_status": None, "cleanup_status": None, "failure_reason": None,
         "result_hash": None,
+        # §109(2026-09-24) - cleanup_status(ok/failed)만으로는 실패 사유가 안 남는다.
+        # postflight가 이제 completed/invalid/failed(러너 예외 포함) 4개 종료 경로
+        # 전부에서 시도되므로(run_sequence() 참고), 그 실패 사유를 원래 trial
+        # 실패 사유와 별도로 보존한다(둘 다 필요하면 SequenceAborted 메시지에서
+        # " | 추가로 postflight cleanup도 실패: ..."로 합쳐서 드러남).
+        "cleanup_reason": None,
     }
 
 
@@ -318,7 +324,17 @@ def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
     """§98 섹션2/6/8 - 결정론적 순서로 순차 실행. 중단 조건을 만나면
     `SequenceAborted`를 던지고 그 시점까지의 state는 이미 저장돼 있다(호출부가
     잡아서 보고만 하면 됨). dry_run=True면 클러스터에 닿는 어떤 hook도 부르지
-    않고(run_trial 호출 자체를 생략) preflight/drift 체크까지만 수행한다."""
+    않고(run_trial 호출 자체를 생략) preflight/drift 체크까지만 수행한다.
+
+    §109(2026-09-24) - `run_trial()`의 네 가지 종료 경로(정상 완료/invalid/
+    failed/러너 자체의 예외) 전부에서 `postflight_cleanup_check()`를 반드시
+    시도하고 그 결과를 state(`cleanup_status`/`cleanup_reason`)에 기록한다 -
+    §108까지는 invalid/failed면 postflight 호출 전에 즉시 중단해 클러스터가
+    깨끗한지 전혀 확인하지 않았다(크래시·무효 상태일 때야말로 확인이 가장
+    필요한 순간이었는데 정작 건너뛰고 있었음). 네 경로 중 어느 것도 다음
+    trial로 자동으로 넘어가지 않는다 - trial 자체 실패 사유는 그대로 보존되고,
+    postflight까지 실패하면 두 사유가 `SequenceAborted` 메시지에 모두
+    드러난다."""
     if from_run_id:
         idx = next((i for i, t in enumerate(trials) if t.run_id == from_run_id), None)
         if idx is None:
@@ -374,7 +390,20 @@ def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
             entry.update(status="running", start_timestamp=_now_iso())
             save_state_atomic(state_path, state)
 
-            outcome = hooks.run_trial(trial.__dict__)
+            # §109(2026-09-24) - run_trial()이 dict를 반환하지 않고 예외 자체를
+            # 던지는 경우(예: real_run_trial()의 subprocess.run()이 FileNotFoundError
+            # 등을 던짐)도 "failed" 종료 경로로 통일한다 - 이전엔 이 경우 run_sequence()
+            # 밖으로 그대로 새 나가 postflight/state 기록을 전혀 안 거치고
+            # 오케스트레이터 프로세스 자체가 죽었다(§109 이전 test_exception_during_
+            # network_degrade_block_still_restores_profile이 바로 이 옛 동작을
+            # 검증하던 테스트 - 이제 SequenceAborted로 바뀐 것을 검증하도록 갱신).
+            try:
+                outcome = hooks.run_trial(trial.__dict__)
+            except SequenceAborted:
+                raise
+            except Exception as e:
+                outcome = {"status": "failed", "failure_reason": f"run_trial 예외: {type(e).__name__}: {e}"}
+
             entry.update(status=outcome["status"], end_timestamp=_now_iso(),
                          result_path=outcome.get("result_path"),
                          failure_reason=outcome.get("failure_reason"),
@@ -382,12 +411,33 @@ def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
                          result_hash=outcome.get("result_hash"))
             save_state_atomic(state_path, state)
 
-            if outcome["status"] in ABORT_STATUSES:
-                raise SequenceAborted(f"{trial.run_id} -> {outcome['status']}: {outcome.get('failure_reason')}")
+            # §109 - completed/invalid/failed(러너 예외 포함) **네 경로 전부**에서
+            # postflight를 항상 시도한다. §108까지는 outcome이 ABORT_STATUSES면
+            # 여기 도달 전에 즉시 중단해 postflight 자체를 건너뛰었다 - 크래시·무효
+            # 상태일 때야말로 클러스터가 깨끗한지 확인이 가장 필요한데 정작 확인을
+            # 안 하고 있었다(사용자 지적). postflight 자신이 예외를 던져도(예상 밖
+            # K8s API 오류 등) 같은 방식으로 "실패"로 흡수해 반드시 결과를 state에
+            # 남긴다.
+            try:
+                cleanup = hooks.postflight_cleanup_check(trial.__dict__)
+            except SequenceAborted:
+                raise
+            except Exception as e:
+                cleanup = {"ok": False, "reason": f"postflight_cleanup_check 예외: {type(e).__name__}: {e}"}
 
-            cleanup = hooks.postflight_cleanup_check(trial.__dict__)
             entry["cleanup_status"] = "ok" if cleanup["ok"] else "failed"
+            entry["cleanup_reason"] = cleanup.get("reason")
             save_state_atomic(state_path, state)
+
+            # 어느 실패에서도(원본 trial 실패든 cleanup 실패든) 다음 trial로 넘어가지
+            # 않는다 - 원본 실패 사유는 보존하고, cleanup까지 실패하면 두 사유를 모두
+            # 드러낸다.
+            if outcome["status"] in ABORT_STATUSES:
+                reason = f"{trial.run_id} -> {outcome['status']}: {outcome.get('failure_reason')}"
+                if not cleanup["ok"]:
+                    reason += f" | 추가로 postflight cleanup도 실패: {cleanup['reason']}"
+                raise SequenceAborted(reason)
+
             if not cleanup["ok"]:
                 raise SequenceAborted(f"{trial.run_id} cleanup 검증 실패 - {cleanup['reason']}")
     finally:

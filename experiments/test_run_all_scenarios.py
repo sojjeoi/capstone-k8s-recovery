@@ -217,7 +217,130 @@ def test_cleanup_failure_aborts_sequence(tmp_path):
                           tmp_path / "state.json")
     assert state["trials"][trials[0].run_id]["status"] == "completed"
     assert state["trials"][trials[0].run_id]["cleanup_status"] == "failed"
-    assert trials[1].run_id not in [c[1] for c in call_log if c[0] == "run_trial"]
+
+
+# ---- §109(2026-09-24): postflight는 completed/invalid/failed/러너 예외 네 종료
+# 경로 모두에서 시도돼야 하고, 어느 경로든 다음 trial로 넘어가면 안 된다 ----
+
+def test_postflight_attempted_after_completed_outcome_records_cleanup(tmp_path):
+    trials = ras.build_matrix("P")[:1]
+    state = _fresh_state(trials)
+    call_log = []
+    ras.run_sequence(trials, state, _make_hooks(call_log), tmp_path / "state.json")
+    assert ("cleanup_check", trials[0].run_id) in call_log
+    assert state["trials"][trials[0].run_id]["cleanup_status"] == "ok"
+    print("OK - 정상 완료 경로도 postflight를 시도하고 결과를 state에 기록함(기존과 동일하게 유지)")
+
+
+def test_postflight_attempted_after_invalid_outcome_and_still_aborts(tmp_path):
+    """run_trial()이 반환한 status='invalid'(예: run_once.py의 TrialInvalid
+    경로 - preflight 실패로 인한 invalid와는 다름)도 postflight를 시도해야
+    한다 - §108까지는 여기서 postflight 호출 자체를 건너뛰었다."""
+    trials = ras.build_matrix("P")[:2]
+    state = _fresh_state(trials)
+
+    def run_trial_fn(trial):
+        return {"status": "invalid", "failure_reason": "fail-closed: metric stale - cache(...)"}
+
+    call_log = []
+    with pytest.raises(ras.SequenceAborted, match="invalid"):
+        ras.run_sequence(trials, state, _make_hooks(call_log, run_trial_fn=run_trial_fn),
+                          tmp_path / "state.json")
+    assert ("cleanup_check", trials[0].run_id) in call_log, "invalid 종료에서도 postflight가 시도돼야 함"
+    assert state["trials"][trials[0].run_id]["status"] == "invalid"
+    assert state["trials"][trials[0].run_id]["failure_reason"] == "fail-closed: metric stale - cache(...)"
+    assert state["trials"][trials[0].run_id]["cleanup_status"] == "ok"
+    assert trials[1].run_id not in [c[1] for c in call_log if c[0] == "run_trial"], "다음 trial로 넘어가면 안 됨"
+    print("OK - run_trial()의 invalid 종료도 postflight를 시도하고 cleanup 결과를 기록, 다음 trial은 시작 안 함")
+
+
+def test_postflight_attempted_after_failed_outcome_and_still_aborts(tmp_path):
+    trials = ras.build_matrix("P")[:2]
+    state = _fresh_state(trials)
+
+    def run_trial_fn(trial):
+        return {"status": "failed", "failure_reason": "HarnessCorrupted: detector 크래시"}
+
+    call_log = []
+    with pytest.raises(ras.SequenceAborted, match="failed"):
+        ras.run_sequence(trials, state, _make_hooks(call_log, run_trial_fn=run_trial_fn),
+                          tmp_path / "state.json")
+    assert ("cleanup_check", trials[0].run_id) in call_log, "failed 종료에서도 postflight가 시도돼야 함"
+    assert state["trials"][trials[0].run_id]["status"] == "failed"
+    assert state["trials"][trials[0].run_id]["failure_reason"] == "HarnessCorrupted: detector 크래시"
+    assert state["trials"][trials[0].run_id]["cleanup_status"] == "ok"
+    assert trials[1].run_id not in [c[1] for c in call_log if c[0] == "run_trial"], "다음 trial로 넘어가면 안 됨"
+    print("OK - run_trial()의 failed 종료(예: 크래시)도 postflight를 시도하고 cleanup 결과를 기록, 다음 trial은 시작 안 함")
+
+
+def test_postflight_attempted_after_runner_exception_and_still_aborts(tmp_path):
+    """run_trial()이 dict를 반환하지 않고 예외 자체를 던지는 네 번째
+    종료 경로(예: real_run_trial()의 subprocess.run()이 FileNotFoundError
+    등) - §108까지는 이 예외가 run_sequence() 밖으로 그대로 새 나가
+    postflight/state 기록을 전혀 안 거치고 오케스트레이터 자체가 죽었다."""
+    trials = ras.build_matrix("P")[:2]
+    state = _fresh_state(trials)
+
+    def run_trial_fn(trial):
+        raise FileNotFoundError("runner 스크립트를 찾을 수 없음")
+
+    call_log = []
+    with pytest.raises(ras.SequenceAborted, match="run_trial 예외") as exc_info:
+        ras.run_sequence(trials, state, _make_hooks(call_log, run_trial_fn=run_trial_fn),
+                          tmp_path / "state.json")
+    assert "FileNotFoundError" in str(exc_info.value)
+    assert ("cleanup_check", trials[0].run_id) in call_log, "러너 예외에서도 postflight가 시도돼야 함"
+    assert state["trials"][trials[0].run_id]["status"] == "failed"
+    assert "runner 스크립트를 찾을 수 없음" in state["trials"][trials[0].run_id]["failure_reason"]
+    assert state["trials"][trials[0].run_id]["cleanup_status"] == "ok"
+    assert trials[1].run_id not in [c[1] for c in call_log if c[0] == "run_trial"], "다음 trial로 넘어가면 안 됨"
+    print("OK - run_trial()이 예외 자체를 던져도(네 번째 종료 경로) failed로 흡수돼 postflight가 시도되고 "
+          "SequenceAborted로 승격됨(과거엔 오케스트레이터 프로세스 자체가 죽었음), 다음 trial은 시작 안 함")
+
+
+def test_both_original_and_cleanup_failure_reasons_shown_together(tmp_path):
+    """원본 trial 실패 사유와 postflight cleanup 실패 사유가 둘 다 나면
+    둘 다 드러나야 한다(어느 한쪽도 조용히 덮이면 안 됨)."""
+    trials = ras.build_matrix("P")[:1]
+    state = _fresh_state(trials)
+
+    def run_trial_fn(trial):
+        return {"status": "failed", "failure_reason": "원본 사유: HarnessCorrupted"}
+
+    call_log = []
+    with pytest.raises(ras.SequenceAborted) as exc_info:
+        ras.run_sequence(trials, state, _make_hooks(call_log, run_trial_fn=run_trial_fn, cleanup_ok=False),
+                          tmp_path / "state.json")
+    msg = str(exc_info.value)
+    assert "원본 사유: HarnessCorrupted" in msg
+    assert "fake cleanup fail" in msg  # _make_hooks()의 cleanup_ok=False 기본 사유 문구
+    entry = state["trials"][trials[0].run_id]
+    assert entry["failure_reason"] == "원본 사유: HarnessCorrupted", "원본 실패 사유는 그대로 보존돼야 함(cleanup 사유로 덮이면 안 됨)"
+    assert entry["cleanup_status"] == "failed"
+    assert entry["cleanup_reason"] == "fake cleanup fail"
+    print("OK - 원본 trial 실패 사유와 postflight cleanup 실패 사유가 둘 다 SequenceAborted 메시지와 state에 남음(어느 쪽도 안 덮임)")
+
+
+def test_postflight_exception_itself_is_absorbed_as_cleanup_failure(tmp_path):
+    """postflight_cleanup_check() 자신이 예외를 던져도(예상 밖 K8s API
+    오류 등) 삼켜지지 않고 cleanup 실패로 기록돼야 한다."""
+    trials = ras.build_matrix("P")[:1]
+    state = _fresh_state(trials)
+
+    def postflight_raises(trial):
+        raise RuntimeError("예상 밖 K8s API 오류")
+
+    hooks = _make_hooks([])
+    hooks = ras.Hooks(run_trial=hooks.run_trial, preflight=hooks.preflight,
+                       postflight_cleanup_check=postflight_raises,
+                       apply_profile=hooks.apply_profile, restore_profile=hooks.restore_profile,
+                       check_git_drift=hooks.check_git_drift, verify_result_hash=hooks.verify_result_hash)
+    with pytest.raises(ras.SequenceAborted, match="예상 밖 K8s API 오류"):
+        ras.run_sequence(trials, state, hooks, tmp_path / "state.json")
+    entry = state["trials"][trials[0].run_id]
+    assert entry["cleanup_status"] == "failed"
+    assert "postflight_cleanup_check 예외" in entry["cleanup_reason"]
+    print("OK - postflight_cleanup_check() 자신이 예외를 던져도 삼켜지지 않고 cleanup 실패로 state에 기록됨")
 
 
 def test_preflight_failure_marks_invalid_and_aborts(tmp_path):
@@ -262,6 +385,10 @@ def test_profile_applied_before_and_restored_after_network_degrade_block(tmp_pat
 
 
 def test_exception_during_network_degrade_block_still_restores_profile(tmp_path):
+    """§109부터 run_trial()이 던지는 예외는 run_sequence() 안에서
+    "failed" 종료 경로로 흡수돼 SequenceAborted로 승격된다(과거엔 이
+    RuntimeError가 그대로 밖으로 새 나갔다) - profile 복원은 그 승격과
+    무관하게 여전히 finally에서 보장돼야 한다."""
     trials = ras.build_matrix("P")
     state = _fresh_state(trials)
     call_log = []
@@ -271,7 +398,7 @@ def test_exception_during_network_degrade_block_still_restores_profile(tmp_path)
             raise RuntimeError("시뮬레이션된 Ctrl+C/예외")
         return {"status": "completed", "result_path": "x", "result_hash": "h"}
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ras.SequenceAborted, match="run_trial 예외"):
         ras.run_sequence(trials, state, _make_hooks(call_log, run_trial_fn=run_trial_fn),
                           tmp_path / "state.json")
 

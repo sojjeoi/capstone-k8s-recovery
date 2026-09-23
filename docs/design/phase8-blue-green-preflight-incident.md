@@ -12371,3 +12371,134 @@ preflight/postflight를 구현한 motivation이었다 - 앞으로의 공식
 `proposed-03` 상태/결과/hash 변경(0건), 추가 라이브 파일럿(0건 - 이번
 턴은 결정론적 subprocess 테스트만), 모델·threshold·SLO 수치 변경(0건),
 load_ramp 원본 결과 파일 수정(0건, 읽기만 함) - 전부 준수.
+
+## §109 - `run_sequence()` postflight 4-경로 보완 + `load_ramp`/`pod_kill`
+공식 재측정 계획 등록 (2026-09-24, 새 공식 trial은 이번 턴에도 시작하지
+않음)
+
+§108 변경은 그대로 유지한다. 이번 턴은 `run_all_scenarios.py`의 종료
+경로 하나를 마저 고치고(코드), 그 위에서 앞으로의 1차 공식 비교
+데이터를 어떻게 만들지 측정 전에 확정한다(규칙).
+
+### 109.1 `run_sequence()` - postflight를 4개 종료 경로 전부에서 시도
+
+**문제**: `run_sequence()`는 `hooks.run_trial()`이 `invalid`/`failed`를
+반환하면(`outcome["status"] in ABORT_STATUSES`) `postflight_cleanup_
+check()`를 부르기 **전에** 즉시 `SequenceAborted`를 던졌다 - §107/§108이
+구현한 8개 안전 검사(Node/Rollout/restart-baseline/Chaos CR/실험 pod/
+context/quiescent)가 정작 **크래시·무효 상태일 때는 한 번도 실행되지
+않는** 구조였다(가장 확인이 필요한 순간에 확인을 건너뜀). 게다가
+`hooks.run_trial()` 자체가 dict 대신 예외를 던지는 경우(예:
+`real_run_trial()`의 `subprocess.run()`이 `FileNotFoundError` 등을
+던짐 - 네 번째 종료 경로)는 `run_sequence()` 안에 아무 처리도 없어 그
+예외가 그대로 밖으로 새 나가 postflight/state 기록을 전혀 안 거치고
+오케스트레이터 프로세스 자체가 죽었다.
+
+**수정** ([run_all_scenarios.py](../../experiments/run_all_scenarios.py)):
+- `hooks.run_trial()` 호출을 `try/except`로 감싸 예외를 `{"status":
+  "failed", "failure_reason": "run_trial 예외: ..."}`로 흡수 - 네 번째
+  종료 경로를 나머지 셋(completed/invalid/failed)과 동일한 하나의
+  흐름으로 통일한다(`SequenceAborted`는 예외로 재던짐 - 이미 명시적
+  중단 신호인 걸 다시 감싸지 않음).
+- `postflight_cleanup_check()` 호출을 **`outcome["status"]` 판정보다
+  먼저**, 즉 completed/invalid/failed(러너 예외 포함) **네 경로 전부에서
+  무조건** 수행하도록 순서를 바꿨다. 이 호출 자체도 같은 방식으로
+  예외를 흡수한다(K8s API 예상 밖 오류 등이 나도 삼켜지지 않고 cleanup
+  실패로 기록됨).
+- 원본 trial의 `failure_reason`은 그대로 보존하고, cleanup까지 실패하면
+  `SequenceAborted` 메시지에 " | 추가로 postflight cleanup도 실패:
+  ..."로 **두 사유를 모두** 남긴다 - 어느 쪽도 조용히 덮지 않는다.
+  새 `cleanup_reason` state 필드(`new_state_entry()`에 추가, 기존
+  `cleanup_status`는 ok/failed만이라 사유가 안 남았음)에도 cleanup
+  실패 사유를 별도로 영구 기록한다.
+- 네 경로 중 무엇이 나든 다음 trial로 자동으로 넘어가지 않는다(기존과
+  동일 - `ABORT_STATUSES`/cleanup 실패 둘 다 `SequenceAborted`로
+  귀결) - 이번 수정은 "다음 trial 진행 여부"가 아니라 "그 전에 postflight를
+  실제로 실행하고 결과를 남기는가"만 바꿨다.
+
+**기존 테스트 영향**: `test_exception_during_network_degrade_block_
+still_restores_profile`이 옛 동작(러너 예외가 그대로 `RuntimeError`로
+새 나감)을 전제로 하고 있어, 새 동작(`SequenceAborted`로 흡수)에
+맞춰 갱신했다 - `finally`의 profile 복원 자체는 여전히 보장됨을
+동일하게 확인.
+
+**신규 테스트** - 4개 종료 경로 각각 postflight가 실제로 호출됐는지
+(`call_log`에 `"cleanup_check"` 존재), state에 결과가 기록됐는지, 다음
+trial이 시작 안 했는지를 확인하는 6개: `test_postflight_attempted_
+after_completed_outcome_records_cleanup`, `..._after_invalid_outcome_
+and_still_aborts`, `..._after_failed_outcome_and_still_aborts`,
+`..._after_runner_exception_and_still_aborts`, `test_both_original_
+and_cleanup_failure_reasons_shown_together`(원본·cleanup 사유가 둘 다
+드러나는지), `test_postflight_exception_itself_is_absorbed_as_cleanup_
+failure`(postflight 자신의 예외도 삼켜지지 않는지).
+
+**오프라인 전체 스위트**(`experiments/`+`anomaly-detection/`+
+`recovery-policy/`, 존재하지 않는 KUBECONFIG): **1026 passed, 3
+skipped**(§108의 1020건 + 이번 6개 신규, 기존과 동일한 `live_cluster`
+마커 3건, 새로 실패한 테스트 0건).
+
+### 109.2 `load_ramp`/`pod_kill` 공식 재측정 계획 등록 (측정 전 확정)
+
+**전제 확인**: `load_ramp` 15건(§101)과 `pod_kill` 6 valid + 2 중단
+(§103~§105)은 실행 당시 `real_preflight()`/`real_postflight_cleanup_
+check()`가 무조건 통과하는 스텁이었다(§106/§107/§108.6에서 이미
+확인) - **trial 사이 자동 안전 검사가 전혀 없었다**는 점에서 두
+블록이 완전히 동일한 조건이다. 이번 §109.1로 그 검사가 실제로
+채워졌으므로, 이 시점 이후의 공식 데이터와 그 이전 데이터는 근본적으로
+다른 하니스 보증 수준 위에서 만들어진다.
+
+**기존 결과 처리 - 원본 그대로 보존, 선행 자료로 분리**:
+- `load_ramp` 15건(`mainexp-v1`, 커밋 `4d6800f` 시점 코드)과 `pod_kill`
+  6 valid + 2 중단(`mainexp-v1`, §102~§105 커밋들)은 원본 JSON·hash·
+  `official-experiment-state.json`을 전혀 건드리지 않는다 - 이번 턴도
+  `--link-replacement`/state 변경 0건.
+- 두 블록 모두 **"선행 자료"**(precursor data)로 명시적으로 라벨링한다 -
+  각 절(§101, §102~§106)에 이미 기록된 "실행 시점 code_freeze_commit"과
+  "그 시점 real_preflight/postflight는 스텁이었다"(§106.6/§107.1/§108.6
+  참고)는 사실을 근거로, 향후 어떤 분석 문서에서도 이 두 블록의 데이터는
+  다음을 **반드시 명시**해야 한다: (a) trial 사이 자동 안전 검사 부재,
+  (b) 실행 당시 detector/하니스 버전(commit hash) - `load_ramp`는
+  `4d6800f`, `pod_kill`은 원본 6건이 §102 로그 캡처 수정 전후로 섞여
+  있음(2건은 로그 캡처 수정 전, 4건은 그 이후 - §105 참고)에 더해
+  `proposed-03`은 §106/§107의 freshness/skip-not-crash 수정 **이전**
+  버전으로 실행됐다.
+
+**1차 공식 비교 데이터 - 두 시나리오 모두 새 블록으로 전체 재실행**:
+- **`load_ramp` 15건 전체**를 새 `--plan-id`와 새 `--state-file`로
+  처음부터 다시 실행한다 - 기존 15건과 산술적으로 합치거나 그중
+  일부만 골라 새 데이터셋에 포함하지 않는다(요청 원문: "기존 결과 중
+  일부만 선택해 포함하지 마세요"). 강도(`chaos/scenario-load-ramp.yaml`
+  의 5단계 0.025/0.05/0.20/0.30/0.40 RPS, §26.3/§101.11에서 동결·재확인된
+  그대로)·arm 순서(`ARM_ORDER_BY_REP`, 변경 없음)·SLO(v3, threshold
+  0.648초)·모델(v3.2b, 동일 artifact hash)은 전부 기존과 완전히
+  동일하게 유지한다 - 이번 재측정은 **하니스의 안전검사/detector
+  견고성만 다르고 실험 조건 자체는 전혀 안 바뀐 반복**이다.
+- 이어서 **`pod_kill` 15건 전체**도 별도의 새 블록으로 동일한 원칙(새
+  plan_id, 동일 강도·arm 순서·SLO·모델, 기존 6 valid + 2 중단과
+  섞지 않음)으로 실행한다 - §107.3에서 등록했던 "pod_kill만 새로
+  15건" 계획을 이번 지시에 맞춰 **`load_ramp`까지 포함하도록 확장**한다
+  (§107.3의 pod_kill 전용 계획은 이 §109.2로 대체·확장됨).
+- 두 블록 모두 `run_all_scenarios.py --scenario {load_ramp|pod_kill}
+  --plan-id <새 값> --state-file <새 경로>`로 완전히 분리된 매트릭스를
+  쓴다 - `build_matrix()`가 `plan_id`로 모든 run_id를 결정론적으로
+  생성하므로 새 plan_id를 쓰면 두 블록의 run_id 전부가 기존 데이터와
+  절대 겹치지 않는다.
+- 분석 문서에는 "선행 자료(§101/§102~§106, 자동 안전검사 없음)"와
+  "1차 공식 비교 자료(§109 이후, 안전검사 포함)"를 항상 별도 절로
+  분리해 기록하고, 하나의 통계로 합치지 않는다 - `network_degrade`는
+  이 두 블록이 모두 정상 완료된 뒤 같은 원칙(신규 plan_id, 15건 전체)
+  으로 별도 계획한다(이번 턴에는 아직 계획하지 않음 - 지시 범위 밖).
+
+**실행 순서(계획, 아직 시작 안 함)**: (1) `load_ramp` 신규 15건 전체
+실행 -> 검증 -> (2) `pod_kill` 신규 15건 전체 실행(§107.6 결정론적
+검증 완료, §108.3 강화된 안전검사 포함) -> 검증 -> (3) 이후
+`network_degrade` 계획은 별도 지시 시 진행. 각 단계는 §98/§100/§101이
+확립한 것과 동일한 rigor(사전 매니페스트, preflight/postflight 매
+trial, 즉시중단 조건, 원본 대조)를 그대로 적용한다.
+
+### 109.3 범위 제한 준수 확인
+
+새 공식 `load_ramp`/`pod_kill` trial 실행(0건 - 계획만 등록), `--plan-id`
+지정 후 실제 `run_all_scenarios.py` 실행(0건), `network_degrade` 시작
+(0건), 기존 15건/6건/2건 결과·state·hash 변경(0건), 모델·threshold·SLO
+수치 변경(0건) - 전부 준수.
