@@ -11497,3 +11497,117 @@ null, `kubectl diff` 0. **클러스터에 잔여 위험 없음.**
 전부 준수. **진단 pilot은 목적을 달성하지 못했으므로, 공식 블록 재개
 여부를 판단할 근거가 아직 없다** - 사용자에게 재시도 여부를 묻고
 멈춘다.
+
+## §104 - 진단 pilot 2차 시도: 실행 성공, 그러나 §102가 고친 두 코드경로는 여전히 live 미검증(정직하게 기록)
+
+새 고유 run_id(`diag2-pod_kill-proposed-01-20260923T040035Z`)로 진단
+pilot을 1회 재실행했다. 1차 시도(§103.5)의 원본 결과·로그(Prometheus
+port-forward 누락으로 detector 시작 전 fail-closed)는 그대로 보존,
+공식 state에 연결된 대체 trial(`pod_kill-proposed-01-retry1-mainexp-
+v1`)과 나머지 공식 trial은 실행하지 않았다.
+
+### 104.1 사전 확인 - 두 port-forward 동시 검증
+
+`HEAD==origin/master`, working tree clean(기존 untracked 산출물 제외)
+확인 후 시작. 클러스터 정리 상태 확인(Node 2개 Ready, Rollout 단일
+revision `655945b99b` 1/1/1, Chaos CR 0건, `kubectl diff` 0). recovery-
+policy(8080)·Prometheus(9090) port-forward를 함께 기동 - `/healthz`
+200, `/-/healthy` 200 둘 다 확인. **Prometheus가 그 시점 실제 active
+pod(UID `940a0e84-7dcb-4c25-9cfe-7bfdad7723b6`)의 최신 CPU 지표를
+반환함을 cgroup id 문자열 대조로 직접 확인**한 뒤에야 preview 준비를
+시작했다. context null, audit outbox 157/157 pushed 확인.
+
+### 104.2 연결 감시 결과 - 관찰 기간 내내 0건 단절
+
+15초 간격 백그라운드 모니터로 `/healthz`·`/-/healthy`를 트라이얼 시작
+(04:00:57Z)부터 종료 후(04:10:29Z)까지 감시 - **36회 점검 전부
+recovery_policy=200, prometheus=200, 연결 단절(CONNECTION_DROP_DETECTED)
+0건**(`experiments/results/pilot/diagnostic2-portforward-monitor.log`
+보존).
+
+### 104.3 trial 결과 - `outcome=recovered`, 크래시 없이 정상 completion
+
+`diag2-pod_kill-proposed-01-20260923T040035Z`: `detected=true`,
+`detection_source=predictive`, `action=promote_preview`,
+`decision_outcome=executed_verified`, `promotion_verified=true`,
+`outcome=recovered`, `state=completed`. Causal timing chain 전부
+확인: `t_injection(04:07:21.02) < t_slo(04:07:23.04) < t_detection
+(04:08:08.72) < t_decision=t_api_request(04:08:08.75) < t_switch
+(04:08:15.89) < t_recovery(04:09:21.34)`, null 없이 순서대로. audit
+`status=complete`, `record_id`/`commit_sha`/`idempotency_key` 전부
+연결 확인.
+
+**detector 시작·생존**: 로그(`experiments/results/detector-logs/
+detector-isolation_forest-diag2-pod_kill-proposed-01-20260923T040035Z-
+20260923T040717Z.log`, §102에서 새로 만든 파일 리다이렉트 경로)가
+실제로 생성됐고, 시작 배너부터 매 평가 cycle의 score/판정/신호발행/
+cooldown-skip까지 18줄이 그대로 남아있음을 확인 - **감시 기간(04:07:20
+~04:09:52) 동안 detector가 계속 살아 정상 동작했다는 직접 증거**.
+로그의 `artifact_hashes.model.pkl=2102e4f5f0d0...a9243`가
+`SHA256SUMS.json`과 다시 한번 정확히 일치.
+
+**주입 대상 UID 고정**: K8s 이벤트(TTL 만료 전 즉시 조회, `experiments/
+results/pilot/diagnostic2-k8s-events-raw.json` 보존) - PodChaos
+`Applied`가 "vllm-serving-655945b99b-tqzhx"를 명시 - §104.1에서 사전에
+기록한 바로 그 active pod과 정확히 일치. promotion(`04:08:15`,
+`vllm-active` selector가 `655945b99b`→`6b66d8958c`로 전환) 이후 구
+revision(`655945b99b`)이 정확히 `scaleDownDelaySeconds=30`초 뒤
+(`04:08:45`) scale-down됨을 이벤트로 직접 확인.
+
+### 104.4 §102가 고친 두 코드경로 - 이번에도 live 검증 안 됨(중요, 축소 보고 금지)
+
+이 trial은 **탐지→promote_preview가 성공**했다 - 즉 준비된 preview가
+그대로 active가 됐고, `blue_green_prep.cleanup_unpromoted_preview()`는
+`current["active_selector"] != pre_active`(이미 promote됨)이므로
+**애초에 아무 것도 하지 않고 조용히 반환**한다(코드 자체가 그렇게
+설계돼 있음, §96). 그 함수 안에서만 호출되는 `wait_until_rolled_back()`
+(§102가 desired+current 이중 판정·180초 timeout·converging/stuck
+분류로 고친 바로 그 함수)은 **이번 trial에서 단 한 번도 호출되지
+않았다** - 60초 이내 케이스도, 60~180초 지연 수렴 케이스도 아니고,
+"애초에 그 코드가 실행 경로에 들어가지 않은" 경우다.
+
+마찬가지로 detector가 크래시하지 않았으므로 `run_once.py`의 크래시
+분기(`detector.is_alive()==False`→`get_crash_info()` 호출)도 이번에
+실행되지 않았다 - `Detector.get_crash_info` 메커니즘 자체는 §102의
+오프라인 테스트(`test_arm_controller.py` 4건, 실제 크래시하는 fake
+프로세스로 검증)에서만 확인된 상태 그대로다.
+
+**결론: §102의 두 수정 모두 여전히 오프라인 회귀 테스트로만 검증된
+상태이고, 이번 2차 진단 pilot으로도 live 검증을 추가하지 못했다.**
+이 pilot이 확실히 새로 검증한 것은 (1) detector 정상 동작·로그 영속화
+경로, (2) 주입 대상 UID 고정, (3) promote 성공 시의 timing/audit
+정합성, (4) 두 port-forward가 관찰 내내 끊기지 않을 때의 정상 동작 -
+전부 유의미하지만, §102가 고친 그 두 함수의 "실패 상황 처리" 자체를
+증명하지는 못한다.
+
+### 104.5 최종 클러스터 상태
+
+`phase=Healthy`(단발성 잔존 Degraded 아님 - 이번엔 promote 후 abort가
+전혀 없어 진짜로 완전히 수렴), `active==current==6b66d8958c`, 단일
+pod(`6b66d8958c-9k6jb`, restartCount=0), 다른 모든 RS desired=0. Chaos
+CR 0건, experiment-run context=null, `kubectl diff` 0, Node 2개 Ready.
+로컬 detector 프로세스 잔존 없음(HarnessCorrupted 없이 정상 종료).
+필수 연결 중단·detector 크래시·정리 실패 - **어느 것도 발생하지
+않았다**(중단 조건 미충족, 계속 진행해 정상 완료).
+
+### 104.6 범위 제한 준수 확인
+
+공식 대체 trial(`pod_kill-proposed-01-retry1-mainexp-v1`) 실행(0건),
+`fixed_threshold-02` 등 후속 공식 trial 실행(0건), 1차 진단 pilot의
+원본 결과·로그 수정(0건) - 전부 준수.
+
+### 104.7 공식 블록 재개에 대한 권고 (판단은 사용자 몫)
+
+- 이번 pilot으로 **detector 생존·로그 영속화·UID 고정·timing/audit
+  정합성·promote+scaledown 경로**는 실측으로 재확인됐다.
+- 그러나 **§102의 핵심 목적이었던 두 수정(크래시 진단 정보 보존,
+  preview cleanup의 180초 판정)은 여전히 오프라인 테스트로만 검증된
+  상태**다 - `proposed-01`이 처음 실패했던 바로 그 실패 모드(detector
+  크래시+cleanup 타임아웃)를 이번 pilot이 우연히도 재현하지 않았기
+  때문이다(재현 여부를 인위적으로 유도하지 않았다 - 유도하면 사전
+  등록되지 않은 조작이 된다).
+- 이 잔여 불확실성을 감안해 공식 블록 재개 여부는 사용자가 결정할
+  사항으로 남긴다 - 옵션: (a) 이 정도 실측 확인으로 충분하다고 보고
+  공식 대체 trial(`pod_kill-proposed-01-retry1-mainexp-v1`)을 진행,
+  (b) 크래시 재현을 굳이 시도하지 않고 대신 코드 리뷰만으로 충분하다고
+  판단, (c) 그 외 사용자가 원하는 다른 기준.
