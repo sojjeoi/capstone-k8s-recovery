@@ -239,6 +239,42 @@ def apply_replacements(trials: list, replacements: dict) -> list:
     return replaced
 
 
+def verify_and_backfill_original_hash(state: dict, original_run_id: str,
+                                       results_dir: Path = RESULTS_DIR) -> None:
+    """§105(2026-09-24, pod_kill-proposed-01-mainexp-v1 계기) - 대체가
+    연결된 원본의 `state["replacements"][original]["original_result_hash"]`
+    가 null인 경우(예: link 당시 원본 slot 자체의 result_hash가 §105
+    수정 이전 버전 real_run_trial()로 인해 비어 있었던 경우)만 실제 파일
+    기준으로 채운다. **원본 trial slot(state["trials"][original_run_id])
+    은 절대 건드리지 않는다** - 이 함수가 쓰는 건 replacements 링크
+    기록뿐이다.
+
+    이미 채워져 있으면(null이 아니면) 그 값을 신뢰하지 않고 매번 실제
+    파일의 현재 hash와 재대조한다 - 재개 때마다 호출되므로 이게 바로
+    "이후 재개 때도 불일치하면 fail-closed"에 해당한다(파일이 사후에
+    손상·변조됐을 가능성을 매번 다시 확인). 파일이 없거나, 파일 안의
+    run_id가 원본과 다르면(잘못된 파일을 가리키고 있을 위험) 즉시
+    ValueError로 fail-closed한다."""
+    if original_run_id not in state.get("replacements", {}):
+        raise ValueError(f"{original_run_id}에 연결된 대체가 없음 - link_technical_invalid_replacement()를 먼저 호출할 것")
+    link = state["replacements"][original_run_id]
+    result_path = results_dir / f"trial-{original_run_id}.json"
+    if not result_path.exists():
+        raise ValueError(f"원본 결과 파일이 없음: {result_path} - hash 검증 불가(fail-closed)")
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    if data.get("run_id") != original_run_id:
+        raise ValueError(
+            f"원본 결과 파일({result_path})의 run_id({data.get('run_id')!r})가 "
+            f"기대값({original_run_id!r})과 다름 - fail-closed")
+    actual_hash = compute_file_sha256(result_path)
+    stored = link.get("original_result_hash")
+    if stored is not None and stored != actual_hash:
+        raise ValueError(
+            f"{original_run_id}의 저장된 original_result_hash({stored})가 "
+            f"실제 파일 hash({actual_hash})와 불일치 - fail-closed")
+    link["original_result_hash"] = actual_hash
+
+
 def load_state(state_path: Path) -> Optional[dict]:
     if not state_path.exists():
         return None
@@ -373,6 +409,16 @@ def real_run_trial(trial: dict, python_exe: str = sys.executable) -> dict:
 
     result_path = RESULTS_DIR / f"trial-{trial['run_id']}.json"
     if proc.returncode != 0:
+        # §105(2026-09-24, pod_kill-proposed-01-mainexp-v1 계기) - 실행기가
+        # 비정상 종료해도(예: HarnessCorrupted) run_once.py는 그 전에 이미
+        # 결과 JSON을 써둔 상태일 수 있다(예외 던지기 전에 _write_result가
+        # 먼저 끝남). 그 파일이 실제로 있으면 경로·hash를 같이 보존한다 -
+        # 파일이 정말 없는 경우(더 이른 단계에서 죽음)와는 구분해야 나중에
+        # 대체 연결(link_technical_invalid_replacement)이 원본 hash를
+        # 검증할 근거가 생긴다.
+        if result_path.exists():
+            return {"status": "failed", "failure_reason": f"실행기 종료 코드 {proc.returncode}",
+                    "result_path": str(result_path), "result_hash": compute_file_sha256(result_path)}
         return {"status": "failed", "failure_reason": f"실행기 종료 코드 {proc.returncode}"}
     if not result_path.exists():
         return {"status": "failed", "failure_reason": "결과 파일이 생성되지 않음"}
@@ -591,6 +637,7 @@ def main():
         original_run_id, new_run_id = args.link_replacement
         try:
             link_technical_invalid_replacement(existing, original_run_id, new_run_id, args.link_reason)
+            verify_and_backfill_original_hash(existing, original_run_id)
         except ValueError as e:
             print(f"LINK REJECTED: {e}", file=sys.stderr)
             sys.exit(1)
@@ -612,6 +659,16 @@ def main():
         ).stdout.strip() or None
         trials = build_matrix(plan_id)
         state = build_initial_state(trials, plan_id, args.order_seed, code_freeze_commit)
+
+    # §105 - 재개할 때마다 연결된 모든 대체의 원본 hash를 재검증(불일치 시
+    # fail-closed) - 링크 생성 시점 1회가 아니라 매번, "파일이 그 사이
+    # 손상·변조되지 않았는가"를 다시 확인하기 위함.
+    for original_run_id in list(state.get("replacements", {}).keys()):
+        try:
+            verify_and_backfill_original_hash(state, original_run_id)
+        except ValueError as e:
+            print(f"REPLACEMENT ORIGINAL HASH VERIFICATION FAILED: {e}", file=sys.stderr)
+            sys.exit(1)
 
     trials = build_matrix(plan_id)
     trials_to_run = [t for t in trials if t.scenario == args.scenario] if args.scenario else trials

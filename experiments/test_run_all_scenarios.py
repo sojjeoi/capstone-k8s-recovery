@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -555,3 +556,142 @@ def test_sync_replacement_results_updates_link_after_execution(tmp_path):
     assert link["replacement_status"] == "completed"
     assert link["replacement_result_hash"] == "abc"  # _make_hooks 기본 run_trial의 fake result_hash
     print("OK - 대체 trial 실행 후 연결 기록에 최신 status/result_hash가 반영됨")
+
+
+# ---- §105: real_run_trial() 실패 시 결과 파일 보존 + 대체 링크 원본 hash 재검증 ----
+
+def _fake_completed_process(returncode):
+    proc = MagicMock()
+    proc.returncode = returncode
+    return proc
+
+
+def test_real_run_trial_failure_with_existing_result_file_preserves_path_and_hash(tmp_path, monkeypatch):
+    """§105(pod_kill-proposed-01-mainexp-v1 계기) - 실행기가 비정상 종료해도
+    (예: HarnessCorrupted) run_once.py가 그 전에 이미 결과 JSON을 써뒀을 수
+    있다 - 그 파일이 있으면 result_path/result_hash를 반드시 같이 보존해야
+    나중에 대체 연결이 원본 hash를 검증할 근거가 생긴다."""
+    monkeypatch.setattr(ras, "RESULTS_DIR", tmp_path)
+    result_path = tmp_path / "trial-pod_kill-proposed-99-mainexp-v1.json"
+    result_path.write_text(json.dumps({"run_id": "pod_kill-proposed-99-mainexp-v1", "outcome": "invalid_run"}),
+                            encoding="utf-8")
+    with patch.object(ras.subprocess, "run", return_value=_fake_completed_process(1)):
+        outcome = ras.real_run_trial({"scenario": "pod_kill", "arm": "proposed", "repetition": 99,
+                                       "run_id": "pod_kill-proposed-99-mainexp-v1", "sequence_index": 1})
+    assert outcome["status"] == "failed"
+    assert outcome["result_path"] == str(result_path)
+    assert outcome["result_hash"] == ras.compute_file_sha256(result_path)
+    print("OK - 실행기 비정상 종료여도 결과 파일이 있으면 경로/hash가 보존됨")
+
+
+def test_real_run_trial_failure_without_result_file_has_no_path_or_hash(tmp_path, monkeypatch):
+    """§105 - 결과 파일이 정말 없는 경우(더 이른 단계에서 죽음)는 위 케이스와
+    구분돼야 한다 - result_path/result_hash가 없어야(또는 None) 한다."""
+    monkeypatch.setattr(ras, "RESULTS_DIR", tmp_path)
+    with patch.object(ras.subprocess, "run", return_value=_fake_completed_process(1)):
+        outcome = ras.real_run_trial({"scenario": "pod_kill", "arm": "proposed", "repetition": 98,
+                                       "run_id": "pod_kill-proposed-98-mainexp-v1", "sequence_index": 1})
+    assert outcome["status"] == "failed"
+    assert outcome.get("result_path") is None
+    assert outcome.get("result_hash") is None
+    print("OK - 결과 파일이 없으면 result_path/result_hash가 채워지지 않음(파일 있는 경우와 구분됨)")
+
+
+def _state_with_linked_replacement_and_result_file(tmp_path, original_hash_in_link=None):
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    if original_hash_in_link is not None:
+        state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["original_result_hash"] = original_hash_in_link
+    result_path = tmp_path / "trial-pod_kill-proposed-01-mainexp-v1.json"
+    result_path.write_text(json.dumps({"run_id": "pod_kill-proposed-01-mainexp-v1", "outcome": "invalid_run"}),
+                            encoding="utf-8")
+    return state, result_path
+
+
+def test_verify_and_backfill_original_hash_fills_null_from_actual_file(tmp_path):
+    state, result_path = _state_with_linked_replacement_and_result_file(tmp_path)
+    assert state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["original_result_hash"] is None
+    ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1", results_dir=tmp_path)
+    expected = ras.compute_file_sha256(result_path)
+    assert state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["original_result_hash"] == expected
+    print("OK - null이던 original_result_hash가 실제 파일 기준으로 채워짐")
+
+
+def test_verify_and_backfill_original_hash_never_touches_original_trial_slot(tmp_path):
+    state, _ = _state_with_linked_replacement_and_result_file(tmp_path)
+    original_before = dict(state["trials"]["pod_kill-proposed-01-mainexp-v1"])
+    ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1", results_dir=tmp_path)
+    assert state["trials"]["pod_kill-proposed-01-mainexp-v1"] == original_before, \
+        "원본 failed 슬롯은 이 함수가 절대 건드리면 안 됨"
+    print("OK - 원본 JSON/슬롯은 backfill 이후에도 완전히 그대로")
+
+
+def test_verify_and_backfill_original_hash_noop_when_already_matching(tmp_path):
+    state, result_path = _state_with_linked_replacement_and_result_file(tmp_path)
+    correct_hash = ras.compute_file_sha256(result_path)
+    state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["original_result_hash"] = correct_hash
+    ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1", results_dir=tmp_path)
+    assert state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["original_result_hash"] == correct_hash
+    print("OK - 이미 일치하는 hash는 그대로 유지(재검증만 하고 통과)")
+
+
+def test_verify_and_backfill_original_hash_fails_closed_on_mismatch(tmp_path):
+    """§105 - '이후 재개 때도 불일치하면 fail-closed' 요구사항의 핵심 -
+    저장된 hash와 실제 파일의 현재 hash가 다르면(파일이 사후 변조/손상됐을
+    가능성) 즉시 거부해야 한다."""
+    state, _ = _state_with_linked_replacement_and_result_file(tmp_path, original_hash_in_link="stale-wrong-hash")
+    with pytest.raises(ValueError, match="불일치"):
+        ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1", results_dir=tmp_path)
+    assert state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["original_result_hash"] == "stale-wrong-hash", \
+        "검증 실패 시 기존 값을 조용히 덮어쓰면 안 됨"
+    print("OK - 저장된 hash와 실제 파일이 다르면 fail-closed(조용히 덮어쓰지 않음)")
+
+
+def test_verify_and_backfill_original_hash_fails_closed_on_missing_file(tmp_path):
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    # 원본 결과 파일을 tmp_path에 만들지 않음 - 파일이 정말 없는 경우
+    with pytest.raises(ValueError, match="없음"):
+        ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1", results_dir=tmp_path)
+    print("OK - 원본 결과 파일이 없으면 fail-closed(hash 검증 자체가 불가하므로)")
+
+
+def test_verify_and_backfill_original_hash_fails_closed_on_run_id_mismatch(tmp_path):
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    result_path = tmp_path / "trial-pod_kill-proposed-01-mainexp-v1.json"
+    result_path.write_text(json.dumps({"run_id": "some-other-run-id", "outcome": "invalid_run"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="run_id"):
+        ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1", results_dir=tmp_path)
+    print("OK - 파일 안 run_id가 기대값과 다르면 fail-closed(잘못된 파일을 가리킬 위험)")
+
+
+def test_verify_and_backfill_original_hash_requires_existing_link(tmp_path):
+    state, _ = _state_with_failed_pod_kill_proposed()
+    with pytest.raises(ValueError, match="연결된 대체가 없음"):
+        ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1", results_dir=tmp_path)
+    print("OK - 대체가 연결 안 된 원본에는 호출 자체가 거부됨")
+
+
+def test_main_resume_fails_closed_on_replacement_hash_mismatch(tmp_path):
+    """§105 - CLI --resume 경로에서도(단순 함수 호출이 아니라) 대체가 연결된
+    원본의 hash 불일치가 있으면 실행 전에 즉시 거부해야 한다."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["original_result_hash"] = "definitely-wrong"
+    # 원본 결과 파일은 상태 파일과 같은 디렉터리(results_dir 기본값)에 없으므로
+    # RESULTS_DIR 자체가 아니라 CLI의 기본 검증 대상이 tmp_path가 되도록 결과 파일을 만든다.
+    result_path = ras.RESULTS_DIR / "trial-pod_kill-proposed-01-mainexp-v1.json"
+    state_path = tmp_path / "state.json"
+    ras.save_state_atomic(state_path, state)
+    proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "run_all_scenarios.py"),
+         "--resume", "--dry-run", "--scenario", "pod_kill", "--state-file", str(state_path)],
+        capture_output=True, text=True, cwd=Path(__file__).parent)
+    assert proc.returncode != 0
+    assert "HASH VERIFICATION FAILED" in proc.stderr or "없음" in proc.stderr
+    print("OK - CLI --resume도 대체 원본 hash 불일치/파일없음 시 즉시 거부")
