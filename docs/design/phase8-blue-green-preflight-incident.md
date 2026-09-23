@@ -12085,9 +12085,78 @@ skipped**(기존과 동일한 3건의 `live_cluster` 마커 스킵, 새로 실�
 테스트 0건). `test_run_all_scenarios.py`: 73 passed(§107 신규 24건
 포함). `test_score_server_v32b.py`: 36 passed(§107 신규 6건 포함).
 
-### 107.5 범위 제한 준수 확인 (이 절 작성 시점까지)
+### 107.5 범위 제한 준수 확인 (구현·문서화 단계)
 
 `proposed-03` 상태(`invalid`)/결과 JSON/hash 무변경, `--link-replacement`
 미실행, state 파일 무변경, 공식 trial 재실행 0건, `network_degrade`
-미시작, 모델·threshold·SLO 수치 무변경 - 전부 준수. 다음 단계(라이브
-파일럿, §107.6)는 이 문서 커밋·푸시 이후 별도로 진행한다.
+미시작, 모델·threshold·SLO 수치 무변경 - 전부 준수. §107.1~107.5를
+커밋(`3a34359`)·푸시한 뒤 §107.6 라이브 파일럿을 진행했다.
+
+### 107.6 라이브 파일럿 결과 - `pilot107-pod_kill-proposed-01-20260923T145246Z`
+
+**사전 확인(파일럿 실행 전)**: working tree/origin 동기화 확인(`HEAD==
+origin/master==3a34359`), recovery-policy(8080)·Prometheus(9090)
+port-forward 둘 다 응답 확인, Prometheus가 **현재 active pod**(`vllm-
+serving-58bfc6d8cc-zfnp9`)의 4개 feature 원천(cpu/memory/queue/cache)과
+canary(`up{job="vllm-active"}`) 전부에 대해 <1초 차이의 신선한 표본을
+반환함을 직접 확인, `real_safety_checks()`를 실제 클러스터에 대해
+직접 실행해 7개 항목 전부 `ok:true`(§107.1 구현의 첫 라이브 실행,
+사전 상태가 깨끗함을 확인).
+
+**실행**: `run_pod_kill_trial.py --arm proposed --rep 1 --pilot --run-id
+pilot107-pod_kill-proposed-01-20260923T145246Z` (is_pilot=true,
+`results/pilot/`에 분리 저장, 공식 매트릭스/state 완전히 무관 -
+`run_all_scenarios.py` state 파일을 전혀 거치지 않음).
+
+**결과(TrialResult)**: `outcome: "recovered"`, `state: "completed"`,
+`detected: true`(`detection_source: "predictive"` - Isolation Forest가
+직접 잡음, reactive fallback 아님), `action: "promote_preview"`,
+`decision_outcome: "executed_verified"`, `promotion_verified: true`,
+`audit_status: "complete"`, `invalid_reason: null`. 타이밍: `t_injection`
+15:00:55.09 -> `t_detection` 15:01:46.58(약 51.5초) -> `t_switch`(promote
+완료) 15:02:08.21 -> `t_recovery` 15:03:14.44(주입 후 약 2분19초).
+
+**확인된 것**:
+- **detector 생존**: 첫 평가(seq=1, 주입 후 0.9초)부터 끝(seq=10)까지
+  크래시 없이 정상 동작(exit code 0). detector 로그(`detector-
+  isolation_forest-...-20260923T150052Z.log`) 전체를 직접 읽어 확인.
+- **cleanup**: trial 종료 직후 `real_safety_checks()`를 다시 라이브로
+  실행해 7개 항목 전부 `ok:true`로 재확인 - Rollout `Healthy`(pause
+  없음), 잔여 Chaos CR 0건(`kubectl get podchaos,networkchaos,
+  stresschaos` 직접 확인), namespace 안 pod이 정확히 2개(새 active
+  vllm-serving pod + recovery-policy)뿐임을 `kubectl get pods` 직접
+  확인 - 잔여 실험/detector pod 없음.
+
+**확인되지 않은 것(정직하게 명시, 과장 안 함)**: detector 로그를 처음부터
+끝까지 직접 읽은 결과, **이번 파일럿에서는 §106의 엔드포인트 공백/
+freshness 실패 자체가 발생하지 않았다** - `record_type: "evaluation_
+skipped"` 레코드 0건, seq=1~10 전부 정상 `score=...` 평가 결정만
+기록됐다. 즉 **§107이 구현한 핵심 동작("결측/stale이면 이 cycle만
+스킵하고 detector 프로세스는 안 죽는다")은 이번 라이브 파일럿에서
+실제로 트리거되지 않았다** - "무효 점수 차단"·"입력 복귀 후 정상
+평가 재개"는 갭 자체가 없었으므로 검증 대상이 아예 발생하지 않은
+것이다. 이 경로는 여전히 오프라인 테스트(`test_score_server_v32b.py`
+의 §107 신규 6건)로만 검증된 상태이고, 라이브로는 미확정이다.
+
+이는 §106 조사와 일관된다 - `pod_kill × proposed` 실행 4회(diag2/retry1/
+proposed-03/이번 파일럿) 중 갭이 실제로 발생해 실패까지 간 건
+`proposed-03` 1회뿐이었다. 갭 자체가 교체 pod의 kubelet/Service 엔드포인트
+등록 타이밍에 의존하는 확률적 사건이지 결정론적으로 재현되는 게 아니라는
+뜻이다. 지시대로 파일럿은 정확히 1회만 실행했고, 갭을 강제로 재현하기
+위한 추가 pilot은 실행하지 않았다(범위 밖).
+
+**판단**: trial 전체 무결성(감지→판정→promote→감사→정리)과 detector
+프로세스 자체의 안정성(크래시 0건, 정상 종료)은 라이브로 완전히
+검증됐다. 그러나 §107의 핵심 목표였던 "일시적 데이터 갭에서 detector가
+살아남는다"는 그 갭이 실제로 발생해야만 라이브로 검증 가능한데, 이번엔
+발생하지 않았다 - **그 특정 코드 경로(RuntimeError catch, evaluation_
+skipped 기록, gap_classification)는 라이브로는 여전히 미검증**이다.
+
+### 107.7 범위 제한 준수 확인 (파일럿 이후)
+
+공식 `pod_kill` 15-trial 블록 시작(0건 - 이번 파일럿은 `run_all_
+scenarios.py` state를 전혀 거치지 않음), `network_degrade` 시작(0건),
+`score_server.py`/threshold 추가 수정(0건), `proposed-03` 상태/결과
+변경(0건), 추가 pilot(0건, 지시대로 정확히 1회만) - 전부 준수. 포트
+포워드 2개는 파일럿 종료 후 로컬에서 정리했다(클러스터 상태와는
+무관 - 로컬 터널만 종료).
