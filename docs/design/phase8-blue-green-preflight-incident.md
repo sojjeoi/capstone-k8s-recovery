@@ -12502,3 +12502,159 @@ trial, 즉시중단 조건, 원본 대조)를 그대로 적용한다.
 지정 후 실제 `run_all_scenarios.py` 실행(0건), `network_degrade` 시작
 (0건), 기존 15건/6건/2건 결과·state·hash 변경(0건), 모델·threshold·SLO
 수치 변경(0건) - 전부 준수.
+
+## §110 - `load_ramp` 공식 재측정 1차 시도 - 2/15에서 postflight가 정상적으로
+중단시킴, 근본원인은 새 Rollout 검사의 오탐(false positive) (2026-09-24)
+
+§109에서 등록한 계획대로 `load_ramp` 새 공식 블록(`mainexp-v2`)을
+시작했다. **15건 전부 끝나지 않았다** - 2번째 trial의 postflight가
+Rollout 비정상을 감지해 `SequenceAborted`로 정상 중단됐고, 지시대로
+재시도·재개하지 않고 그 자리에서 조사만 진행했다. 기존 `mainexp-v1`
+15건은 전혀 건드리지 않았다.
+
+### 110.1 시작 전 확인 (전부 통과)
+
+- `HEAD==origin/master==4957ca6`, 추적 파일 변경 0건(untracked
+  `experiments/results/`·`anomaly-detection/v3/model_v32/artifacts/`만
+  존재 - 기존과 동일).
+- 모델 v3.2b: `load_and_verify_artifacts()` 직접 호출 - threshold=
+  `-0.0742929709960305`, `kept_feature_names`·`model.pkl`/`feature-
+  schema.json` SHA256 전부 §101.6/기존 오프라인 테스트 동결값과 일치.
+- SLO: `slo_judge.SLO_VERSION=="v3"`, `LATENCY_THRESHOLD=0.648`,
+  `AVAILABILITY_THRESHOLD=0.99`.
+- `fixed_threshold.compute_threshold_cores(3.0) == 2.7`.
+- `chaos/scenario-load-ramp.yaml`: SHA256
+  `fd5954ca9a8dac5e8cbe96232cb2cfca5bb49cb12839fb55eedeee56094a7186`(§101.11과
+  동일, 5단계 0.025/0.05/0.20/0.30/0.40 RPS×90초 그대로), `load_ramp_
+  adapter.IMAGE=="loadgen-runner:phase8-v3-boundaries"`(grep 확인).
+  현재 active pod image ID(`sha256:203c637f...`)도 §101 manifest와
+  동일.
+- **run_id 충돌 확인**: `build_matrix("mainexp-v2")`의 load_ramp 15개
+  run_id 집합과 기존 `official-experiment-state.json`의 전체 run_id
+  집합의 교집합을 직접 계산 - **0건**.
+- 위 전부를 [block-manifest-load_ramp-mainexp-v2.json](../../experiments/results/block-manifest-load_ramp-mainexp-v2.json)
+  에 기록(로컬, 기존 관례와 동일하게 `.gitignore` 대상).
+- `--plan --scenario load_ramp --plan-id mainexp-v2`: 정확히 15 trial,
+  `ARM_ORDER_BY_REP`(변경 없음) 그대로의 순서 확인.
+- `--dry-run` 실행 전 명시: **dry-run은 완전한 오프라인 시뮬레이션이
+  아니다** - `run_sequence()`는 dry-run에서도 매 trial마다
+  `hooks.check_git_drift()`(로컬)와 `hooks.preflight()`(실 클러스터에
+  직접 접근하는 `real_safety_checks()` - Node 목록, Rollout 상태,
+  ReplicaSet 목록, EndpointSlice 조회, recovery-policy `GET /admin/
+  experiment-run`·`GET /admin/quiescent`, Chaos CR 목록, pod 목록 -
+  전부 읽기 전용이지만 실제 클러스터/서비스에 닿음)를 호출한 뒤에만
+  `continue`한다. 이 사실을 명시한 뒤 포트포워드(8080/9090) 재기동 -
+  `--dry-run` 실행 결과 15개 trial 전부 `planned` 상태 그대로 정상
+  종료(exit 0) - preflight가 15번 전부 실 클러스터에서 통과했음을
+  뜻한다.
+
+### 110.2 실행 - 2/15에서 정상 중단
+
+`python run_all_scenarios.py --scenario load_ramp --plan-id mainexp-v2
+--state-file results/official-experiment-state-v2.json`(`is_pilot=false`,
+`--dry-run` 없음)를 백그라운드로 실행:
+
+| # | run_id | status | cleanup_status | 비고 |
+|---|---|---|---|---|
+| 1 | `load_ramp-native-01-mainexp-v2` | completed | **ok** | outcome=prevented, hash 일치 |
+| 2 | `load_ramp-fixed_threshold-01-mainexp-v2` | completed | **failed** | outcome=prevented, hash 일치, **postflight가 `[rollout_healthy_single_revision] Rollout phase='Degraded'(Healthy 아님)`로 실패 -> `SequenceAborted`** |
+| 3~15 | (전부) | **planned**(미실행) | - | 2번째 trial의 postflight 실패로 즉시 중단 - §109가 고친 바로 그 경로(정상 완료해도 postflight 실패면 다음 trial로 안 넘어감)가 정확히 의도대로 작동함 |
+
+프로세스 자체 종료 코드는 **1**(내 백그라운드 실행 스크립트의 마지막
+줄이 `echo`라 감싸는 셸 래퍼 자체는 0으로 보고됐지만, 실제 python
+`run_all_scenarios.py`의 종료 코드는 실행 로그에 직접 남은
+`EXIT_CODE=1`로 확인 - 헷갈리지 않도록 명시).
+
+### 110.3 근본원인 조사 - 새 Rollout 검사의 오탐(실제 클러스터/실험은 정상)
+
+**결론 먼저**: 이건 클러스터나 실험 자체의 문제가 **아니다** - §108에서
+새로 만든 `_check_rollout_healthy_single_revision()`의 `phase==
+"Healthy"` 절대 조건이, Argo Rollouts의 정상적인("promote 없이
+abort된") 사후 상태를 "비정상"으로 오탐(false positive)한 것이다.
+
+**증거(실시간 확인, `kubectl get events -n vllm-serving` +
+`kubectl get rollout -o json`)**:
+1. `fixed_threshold-01`은 detector가 SLO 위반을 한 번도 감지하지
+   못한 채(`detected=false`, `t_slo=None`, `outcome=prevented` -
+   §101의 원본 `fixed_threshold-01`과 **동일한 outcome**) 정상
+   종료했다 - preview는 준비됐지만(`t_preview_ready` 17:15:10,
+   `preview_prep_duration_sec=220.7초`) 끝내 promote되지 않았다.
+2. trial 정리 단계에서 `cleanup_unpromoted_preview()`(§19 기존 함수,
+   변경 없음)가 정확히 설계대로 동작 - `abort_preview()` 호출 후
+   `wait_until_rolled_back()`으로 실제 ReplicaSet이 0으로 줄어든 것까지
+   확인됨(K8s 이벤트: `RolloutAborted` -> `SuccessfulDelete` pod ->
+   `ScalingReplicaSet ... from 1 to 0` 순서로 전부 성공).
+3. **그런데 Argo Rollouts는 abort된 Rollout의 `status.phase`를
+   `"Degraded"`(`reason: RolloutAborted`)로 남겨두고, 다음 업데이트
+   시도가 있기 전까지 스스로 `"Healthy"`로 되돌리지 않는다** - 이건
+   Argo Rollouts 자체의 정상 동작(문서화된 의미: "마지막 업데이트
+   시도가 완료되지 못했다"는 이력성 상태 표시)이지, 지금 클러스터가
+   실제로 고장났다는 뜻이 아니다. 조사 시점 현재도 `phase=Degraded`
+   그대로였지만, `activeSelector`(`5c76fd4d74`, stable)는 전혀 안
+   바뀌었고 실제 서빙 pod(`vllm-serving-5c76fd4d74-9mq7z`, 이제
+   156분+ 무중단 Running, restartCount=0)도 트래픽도 전혀 영향을
+   안 받았다 - **실제 서빙은 시작부터 끝까지 100% 정상이었다.**
+4. 이 패턴(preview 준비 -> 미승격 -> abort -> phase 잔류)은
+   `fixed_threshold`처럼 감지가 안 되는 trial마다 구조적으로 반복될
+   수밖에 없다 - **`mainexp-v1`에서도 똑같이 일어났을 가능성이
+   매우 높다**(§101.3의 원본 `fixed_threshold-01`도 `prevented`로
+   동일 조건). 다만 그때는 `real_postflight_cleanup_check()`가
+   스텁이라 아무도 그 순간의 `phase`를 확인하지 않았고, 이후
+   trial들의 자체 preview-prep(template bump)이 매번 Rollout에
+   새 업데이트를 트리거하면서 `phase`가 자연스럽게 Progressing ->
+   Healthy로 넘어가 §101.7("종료 후 1회" 확인 시점)엔 이미 Healthy로
+   보였을 뿐이다 - **새 버그가 생긴 게 아니라, 항상 있었던 정상
+   동작을 이번에 처음으로 postflight가 들여다본 것**이다.
+
+**확인되지 않은 것**: `mainexp-v1`의 각 trial 직후 실제로 매번 이
+패턴이 발생했는지는(§101 당시 이 순간의 `phase`를 아무도 기록하지
+않아) 사후 재확인이 불가능하다 - "매우 가능성 높음"이지 확정은
+아니다.
+
+### 110.4 완료된 2건의 결과 (n=1씩 - 15건 완료가 아님, 통계로 취급하지 않음)
+
+**주의**: 아래는 arm당 1건씩뿐이다. 사용자가 요청한 "arm별 n=5 기술통계
+비교표"는 **15/15가 끝나야 작성 가능**하며, 이번 결과만으로는 만들지
+않는다(과장 금지). 원본 hash 대조만 완료 상태로 제시한다.
+
+| run_id | arm | outcome | detected | action | audit_status | hash 대조 |
+|---|---|---|---|---|---|---|
+| `load_ramp-native-01-mainexp-v2` | native | prevented | 해당없음(detector 없음) | none | `null`(native 관례와 일치) | state·파일 hash 일치 확인 |
+| `load_ramp-fixed_threshold-01-mainexp-v2` | fixed_threshold | prevented | false | none | `not_applicable`(§101.6과 동일 관례) | state·파일 hash 일치 확인 |
+
+두 결과 모두 `mainexp-v1`의 대응 trial(`load_ramp-native-01`/
+`load_ramp-fixed_threshold-01`, 둘 다 `prevented`)과 **outcome이
+동일**하다 - 재현성 관점에서는 긍정적 신호이나, n=1이라 이걸로 아무
+결론도 내리지 않는다. `mainexp-v1` 15건과 이번 2건은 **절대 합산하지
+않는다**(지시 그대로 - 별도 표로만 제시).
+
+### 110.5 향후 처리 제안 (이번 턴에는 구현하지 않음, 사용자 판단 대기)
+
+`_check_rollout_healthy_single_revision()`의 `phase != "Healthy"`
+절대조건을 다음 중 하나로 다듬는 방안을 제안한다(선택은 사용자 몫):
+- (a) `phase=="Degraded"`이고 reason이 정확히 `RolloutAborted`이며
+  ReplicaSet 레벨 확인(`_replicaset_desired`/`_replicaset_current`
+  둘 다 0)이 이미 통과한 경우만 예외로 허용.
+- (b) postflight가 abort 직후 짧은 유한 대기(예: 다음 preview-prep
+  전까지) 후 재확인하되, 자연 치유를 기다리는 게 아니라 "abort가
+  RS 레벨에서 완전히 반영됐는지"만 재확인(현재도 `cleanup_
+  unpromoted_preview()`가 이미 하고 있음 - phase 자체는 안 봄).
+- (c) postflight의 Rollout 검사에서 `phase`는 아예 제외하고 RS
+  desired/current·`previewSelector==activeSelector`(실질적 잔여
+  여부)만 본다 - `phase`는 "마지막 업데이트 이력"일 뿐 "지금 이
+  순간 정상인가"의 신뢰할 수 있는 지표가 아니라는 이번 조사 결론에
+  가장 부합.
+
+재실행(대체 연결이든 새 재시도든)은 이번 턴에 하지 않았고, 사용자가
+위 방향을 확정한 뒤 별도 턴에서 코드 수정 + 오프라인 회귀 테스트 +
+`mainexp-v2` 블록의 나머지 13건(또는 처음부터 새 plan_id로 재시작 -
+둘 다 사용자 판단) 재개를 진행할 것을 제안한다.
+
+### 110.6 범위 제한 준수 확인
+
+`mainexp-v1`(load_ramp 15건/pod_kill 6+2건) 원본·hash·state 변경(0건),
+`mainexp-v2` state/원본 파일 수정(0건 - 있는 그대로 보존), 재시도·재개
+(0건), `_check_rollout_healthy_single_revision()` 등 검사 로직 수정
+(0건 - 제안만 함), `pod_kill`/`network_degrade`/memory auxiliary 시작
+(0건, 애초에 도달 못 함), 모델·threshold·SLO 수치 변경(0건) - 전부
+준수. 포트포워드 2개는 조사 종료 후 로컬에서 정리했다.
