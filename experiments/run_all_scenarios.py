@@ -446,11 +446,57 @@ SAFETY_CHECK_POLL_TIMEOUT_SEC = 30.0
 SAFETY_CHECK_POLL_INTERVAL_SEC = 3.0
 
 
-def _check_active_pod_and_node() -> dict:
-    """active pod을 정확히 1개 찾고, 그 Node가 Ready+무압박 상태인지,
-    pod 자신이 OOMKilled 상태가 아닌지 확인한다(§107 - "Node"와
-    "restart/OOM" 두 항목을 하나로 묶음 - 어차피 같은 active pod 조회가
-    필요하다)."""
+def _node_conditions_healthy(conditions: dict) -> bool:
+    return (conditions.get("Ready") == "True" and conditions.get("MemoryPressure") == "False"
+            and conditions.get("DiskPressure") == "False" and conditions.get("PIDPressure") == "False")
+
+
+def _check_all_nodes_healthy() -> dict:
+    """§108(2026-09-24) - §107의 _check_active_pod_and_node()는 active pod이
+    떠 있는 노드 하나만 확인했다(이 클러스터는 sj-control/sj-worker 2개
+    노드 - 실측 확인, `kubectl get nodes`). control-plane 노드가 나빠지면
+    Rollout controller·Chaos Mesh 등 클러스터 전체 조율이 흔들릴 수 있는데
+    그건 active pod 쪽에서는 절대 안 보인다 - 그래서 클러스터의 **모든**
+    노드를 확인한다(workload가 어디서 뜨는지와 무관)."""
+    from kubernetes import client
+    import active_pod_resolver
+    active_pod_resolver.load_kube_config()
+    nodes = client.CoreV1Api().list_node().items
+    unhealthy = {}
+    for node in nodes:
+        conditions = {c.type: c.status for c in (node.status.conditions or [])}
+        if not _node_conditions_healthy(conditions):
+            unhealthy[node.metadata.name] = conditions
+    if unhealthy:
+        return {"ok": False, "reason": f"비정상 Node 발견: {unhealthy}"}
+    return {"ok": True, "reason": None}
+
+
+# §108(2026-09-24) - preflight가 기록한 active pod의 UID/restart_count를
+# postflight가 비교할 수 있게 하는 프로세스 내부 캐시(run_id로 키). Hooks.
+# postflight_cleanup_check의 기존 시그니처(Callable[[dict], dict], trial만
+# 받음)를 바꾸지 않기 위한 최소한의 선택 - run_sequence()가 preflight/
+# postflight를 같은 프로세스 안에서 순차 호출하는 실제 사용 패턴에서만
+# 유효하면 충분하다(오케스트레이터 프로세스가 그 사이에 재시작되면 baseline
+# 없이 fallback - 아래 함수 참고, 조용히 통과시키지 않고 절대값만 재확인).
+_PREFLIGHT_POD_BASELINE: dict = {}
+
+
+def _check_active_pod_restart_baseline(trial: dict, phase: str) -> dict:
+    """§108 - "pod_kill이 의도적으로 삭제한 대상 UID"와 "예상 밖 재시작"을
+    구분한다. pod_kill은 대상 pod을 완전히 delete하고 컨트롤러가 새 UID의
+    pod을 만든다(재시작이 아니라 신원 교체) - 그래서 UID가 바뀐 것 자체는
+    실패로 보지 않는다. 반면 같은 UID인데 restart_count가 늘었으면(예:
+    load_ramp/network_degrade처럼 pod을 안 죽이는 시나리오에서) 그건 pod_kill
+    메커니즘과 무관한 진짜 예상 밖 재시작이다(memory_pressure_adapter.py의
+    기존 baseline-restart_count-delta 관례와 같은 원리).
+
+    phase="pre": 현재 값을 baseline으로 기록만 하고 통과(비교 대상이 아직
+    없음). phase="post": 기록된 baseline과 비교 - UID 교체는 새 pod
+    자체의 restart_count>0/OOMKilled만 보고, UID 불변이면 restart_count
+    증가 여부를 본다. baseline이 없으면(preflight 없이 단독 호출 등)
+    delta 비교 없이 현재 절대값(OOMKilled/restart_count>0)만 fail-closed로
+    확인한다 - 조용히 통과시키지 않는다."""
     import active_pod_resolver
     import memory_pressure_adapter as mpa
     pods = active_pod_resolver.get_active_pods()
@@ -461,11 +507,32 @@ def _check_active_pod_and_node() -> dict:
         return {"ok": False, "reason": f"active pod {pods[0]['name']} 상세 조회 실패(404)"}
     if details["oom_killed"]:
         return {"ok": False, "reason": f"active pod {details['name']}이 OOMKilled 상태"}
-    conditions = mpa.get_node_conditions(details["node_name"])
-    healthy = (conditions.get("Ready") == "True" and conditions.get("MemoryPressure") == "False"
-               and conditions.get("DiskPressure") == "False" and conditions.get("PIDPressure") == "False")
-    if not healthy:
-        return {"ok": False, "reason": f"Node({details['node_name']}) 비정상: {conditions}"}
+
+    run_id = trial.get("run_id")
+    current_restart = details["restart_count"] or 0
+    if phase == "pre":
+        if run_id:
+            _PREFLIGHT_POD_BASELINE[run_id] = {"pod_uid": details["uid"], "restart_count": current_restart}
+        return {"ok": True, "reason": None}
+
+    baseline = _PREFLIGHT_POD_BASELINE.get(run_id)
+    if baseline is None:
+        if current_restart > 0:
+            return {"ok": False, "reason": f"active pod {details['name']}의 restart_count={current_restart} "
+                                            f"(preflight baseline 없어 절대값만 확인)"}
+        return {"ok": True, "reason": None}
+
+    if details["uid"] != baseline["pod_uid"]:
+        # 의도된 신원 교체(pod_kill 등) - 새 pod 자체가 이미 재시작 이력을
+        # 가지고 있으면(정상적인 첫 기동이라면 0이어야 함) 그것만 이상 신호.
+        if current_restart > 0:
+            return {"ok": False, "reason": f"교체된 새 pod {details['name']}의 restart_count={current_restart} "
+                                            f"(새로 생성된 pod은 0이어야 함 - 예상 밖)"}
+        return {"ok": True, "reason": None}
+
+    if current_restart > (baseline["restart_count"] or 0):
+        return {"ok": False, "reason": f"동일 pod({details['name']}, UID 불변)에서 예상 밖 restart 증가: "
+                                        f"baseline={baseline['restart_count']} -> 현재={current_restart}"}
     return {"ok": True, "reason": None}
 
 
@@ -482,14 +549,38 @@ def _check_active_endpoint(namespace: str = "vllm-serving") -> dict:
     return {"ok": True, "reason": None}
 
 
-def _check_rollout_not_stuck(name: str = "vllm-serving", namespace: str = "vllm-serving") -> dict:
-    """이전 trial의 network_degrade profile 전환이 promote/abort까지
-    끝나지 못하고 남았으면(§98 launch-readiness 당시 실측된 실패 형태)
-    Rollout이 promote 전 pause 상태로 남는다 - switch_probe_profile_live()가
-    정상 종료했다면 항상 False여야 한다."""
+def _check_rollout_healthy_single_revision(name: str = "vllm-serving", namespace: str = "vllm-serving") -> dict:
+    """§107의 _check_rollout_not_stuck()("promote 전 pause만 아니면 OK")를
+    §108에서 강화 - 실측(2026-09-23, 라이브 확인, `kubectl get rollout
+    vllm-serving -o json`)으로 확인된 3가지를 모두 본다:
+      1) status.phase == "Healthy"(Argo Rollouts 자체 판정 - Progressing/
+         Degraded/Paused 등이면 실패). is_paused_pre_promotion()이 놓치는
+         Degraded 등의 다른 비정상 phase까지 잡는다.
+      2) status.blueGreen.activeSelector == previewSelector(쉬고 있을 때는
+         실측상 항상 같은 값 - preview가 하나라도 진행 중이면 서로 달라짐,
+         "preview 잔여" 탐지).
+      3) 단일 revision 확인 - app=vllm-serving 라벨의 ReplicaSet 중 active
+         revision이 아닌데 desired replicas>0인 게 있으면(구 revision이
+         scale-down 안 끝남) 실패."""
     import blue_green_prep as bgp
-    if bgp.is_paused_pre_promotion(name, namespace):
-        return {"ok": False, "reason": "Rollout이 promote 전 pause 상태로 남아있음(이전 trial의 미완료 preview 의심)"}
+    obj = bgp._custom_api().get_namespaced_custom_object(
+        bgp.ROLLOUTS_GROUP, bgp.ROLLOUTS_VERSION, namespace, bgp.ROLLOUTS_PLURAL, name)
+    status = obj.get("status", {})
+    phase = status.get("phase")
+    if phase != "Healthy":
+        return {"ok": False, "reason": f"Rollout phase={phase!r}(Healthy 아님)"}
+    bg = status.get("blueGreen") or {}
+    active_selector, preview_selector = bg.get("activeSelector"), bg.get("previewSelector")
+    if active_selector != preview_selector:
+        return {"ok": False, "reason": f"preview 잔여 의심 - activeSelector({active_selector}) "
+                                        f"!= previewSelector({preview_selector})"}
+    apps = bgp._apps_api()
+    rs_list = apps.list_namespaced_replica_set(namespace, label_selector=f"app={name}").items
+    stray = [rs.metadata.name for rs in rs_list
+             if (rs.spec.replicas or 0) > 0
+             and rs.metadata.labels.get("rollouts-pod-template-hash") != active_selector]
+    if stray:
+        return {"ok": False, "reason": f"active 외 다른 revision에 desired>0 ReplicaSet 잔존(단일 revision 아님): {stray}"}
     return {"ok": True, "reason": None}
 
 
@@ -583,41 +674,44 @@ def _poll_until_ok(check_fn: Callable[[], dict], timeout_sec: float = SAFETY_CHE
     return result
 
 
-# §107(2026-09-23, phase8-blue-green-preflight-incident.md §106 조사 계기) -
-# §98/§100에서 약속했던 8개 검사(Node·Rollout·active endpoint·restart/OOM·
-# context·Chaos CR·실험 pod·detector 잔여) 중 7개를 여기서 실제로 수행한다
-# (restart/OOM은 _check_active_pod_and_node에 통합돼 있어 "8개 함수"가
-# 아니라 "8개 항목·6개 검사 함수"). **detector 잔여는 이 계층에서 직접
-# 확인할 방법이 없다**(§107 조사 결론 - Detector.is_alive()는 그 Popen을
-# 쥔 프로세스 안에서만 유효하고, run_all_scenarios.py는 각 trial을 별도
-# subprocess로 띄우므로 그 grandchild 프로세스를 외부에서 스캔할 인프라가
-# 이 코드베이스에 전혀 없음, psutil 등 새 의존성도 없음). context_clear +
-# quiescent 확인이 최선의 간접 신호다(진짜 detector가 남아 있다면 다음
-# trial의 register 시도가 409로 막히거나 quiescent가 안 됨) - 이 한계를
-# 과장하지 않고 문서에도 그대로 남긴다(§107.3).
-#
-# 함수 목록을 주입 가능하게 둔 건 테스트에서 실 클러스터 없이 fake 함수
-# 목록으로 완전히 대체하기 위함(memory_pressure_adapter.py의 기존
-# *_fn 주입 관례와 동일한 목적, 형태만 "함수 하나당 인자"가 아니라
-# "이름-함수 목록"으로 다름 - 검사 항목이 8개나 돼서 개별 인자로 받으면
-# 오히려 가독성이 떨어짐).
-SAFETY_CHECK_FUNCS = (
-    ("active_pod_and_node_health", _check_active_pod_and_node),
-    ("active_endpoint", _check_active_endpoint),
-    ("rollout_not_stuck", _check_rollout_not_stuck),
-    ("experiment_context_clear", _check_experiment_context_clear),
-    ("quiescent", lambda: _poll_until_ok(_check_quiescent)),
-    ("no_leftover_chaos_crs", lambda: _poll_until_ok(_check_no_leftover_chaos_crs)),
-    ("no_leftover_experiment_pods", _check_no_leftover_experiment_pods),
-)
+# §107/§108(2026-09-23~24, phase8-blue-green-preflight-incident.md §106/§107
+# 조사 계기) - §98/§100이 약속한 8개 검사(Node·Rollout·active endpoint·
+# restart/OOM·context·Chaos CR·실험 pod·detector 잔여) 중 7개를 여기서
+# 실제로 수행한다(restart/OOM은 _check_active_pod_restart_baseline에
+# 통합). **detector 잔여는 이 계층에서 직접 확인할 방법이 없다**(§107
+# 조사 결론 - Detector.is_alive()는 그 Popen을 쥔 프로세스 안에서만
+# 유효하고, run_all_scenarios.py는 각 trial을 별도 subprocess로 띄우므로
+# 그 grandchild 프로세스를 외부에서 스캔할 인프라가 이 코드베이스에 전혀
+# 없음, psutil 등 새 의존성도 없음 - 이 한계를 과장하지 않고 문서에도
+# 그대로 남긴다, §108.3). 자동 PASS 항목으로 세지 않는다 - 이 검사
+# 스위트에 아예 없다.
+def _default_safety_check_funcs(trial: dict, phase: str) -> tuple:
+    """§108 - restart-baseline 검사만 trial/phase(preflight="pre"/
+    postflight="post")를 필요로 하므로, 나머지 무인자 함수와 섞어 하나의
+    (이름, 무인자 콜러블) 목록으로 만든다. 함수 목록 자체를 주입 가능하게
+    두는 건(real_safety_checks의 check_funcs 인자) 테스트에서 실 클러스터
+    없이 fake 목록으로 완전히 대체하기 위함(memory_pressure_adapter.py의
+    기존 *_fn 주입 관례와 동일한 목적)."""
+    return (
+        ("all_nodes_healthy", _check_all_nodes_healthy),
+        ("active_endpoint", _check_active_endpoint),
+        ("rollout_healthy_single_revision", _check_rollout_healthy_single_revision),
+        ("active_pod_restart_baseline", lambda: _check_active_pod_restart_baseline(trial, phase)),
+        ("experiment_context_clear", _check_experiment_context_clear),
+        ("quiescent", lambda: _poll_until_ok(_check_quiescent)),
+        ("no_leftover_chaos_crs", lambda: _poll_until_ok(_check_no_leftover_chaos_crs)),
+        ("no_leftover_experiment_pods", _check_no_leftover_experiment_pods),
+    )
 
 
-def real_safety_checks(check_funcs=SAFETY_CHECK_FUNCS) -> dict:
+def real_safety_checks(trial: dict = None, phase: str = "pre", check_funcs=None) -> dict:
     """preflight/postflight 공용 검사 스위트 - 첫 실패 항목에서 멈추고
     그 이름·사유를 반환한다(run_sequence()가 이 reason을 그대로
-    SequenceAborted 메시지에 싣는다)."""
+    SequenceAborted 메시지에 싣는다). check_funcs를 명시하면(테스트 전용)
+    trial/phase는 무시되고 그 목록만 그대로 돈다."""
     checks = {}
-    for name, fn in check_funcs:
+    funcs = check_funcs if check_funcs is not None else _default_safety_check_funcs(trial or {}, phase)
+    for name, fn in funcs:
         result = fn()
         checks[name] = result
         if not result["ok"]:
@@ -626,11 +720,11 @@ def real_safety_checks(check_funcs=SAFETY_CHECK_FUNCS) -> dict:
 
 
 def real_preflight(trial: dict, state: dict) -> dict:
-    return real_safety_checks()
+    return real_safety_checks(trial, "pre")
 
 
 def real_postflight_cleanup_check(trial: dict) -> dict:
-    return real_safety_checks()
+    return real_safety_checks(trial, "post")
 
 
 def real_check_git_drift(cwd: Path = REPO_ROOT, allowed_prefix: str = AUDIT_LOG_PREFIX) -> dict:

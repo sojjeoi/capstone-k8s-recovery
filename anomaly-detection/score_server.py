@@ -95,6 +95,12 @@ FRESHNESS_PROBE_QUERIES = {
 # 스킵이 WINDOW_SEC를 넘기면(=window 전체가 이미 공백 구간 안에 들어간
 # 상태) "잠깐 꼬리만 걸친" 상황을 넘어 질적으로 다른 상태로 본다.
 PROLONGED_DATA_GAP_CYCLES = int(WINDOW_SEC // EVAL_INTERVAL_SEC)  # 60/15 = 4
+# §108(2026-09-24) - PROLONGED_DATA_GAP_CYCLES에 도달하면 main()이 이 코드로
+# 스스로 종료한다(0=정상 종료·1=처리 안 된 예외와 구분되는 값) - run_once.py의
+# TrialInvalid 메시지에 detector.get_crash_info()의 exit_code로 그대로
+# 노출되므로, 사후 감사 시 "진짜 크래시"와 "의도된 무효화"를 exit_code만
+# 보고도 구분할 수 있다.
+PROLONGED_DATA_GAP_EXIT_CODE = 3
 
 _DEPENDENCY_PIN_PATTERN = re.compile(r"^(scikit-learn|numpy)==([^\s#]+)")
 
@@ -176,6 +182,25 @@ def load_and_verify_artifacts(artifacts_dir: Path, expected_model_version: str) 
     }
 
 
+class DataGapFailClosed(RuntimeError):
+    """§108(2026-09-24) - "일시적으로 데이터가 없다"는 것을 명확히 아는
+    경우에만 이 타입으로 던진다: feature 결측(query가 정상 응답했지만
+    표본 자체가 없음)/NaN-Inf/metric stale(reason_kind가 "no_samples"
+    또는 "stale"). `RuntimeError`를 상속해 기존 `evaluate_v32b()` 외부
+    계약("결측/NaN/stale에 RuntimeError를 던짐", §86.2)은 그대로 유지된다
+    (`except RuntimeError`로도 여전히 잡힘) - 다만 `main()`의 루프는
+    **이 서브클래스만** 잡아 "이 cycle만 스킵"으로 처리한다(아래 참고).
+
+    Prometheus 연결 자체가 끊기거나(bounded retry 소진 - query_range_
+    with_bounded_retry가 던지는 평범한 RuntimeError, reason_kind가
+    "connection_error"/"api_error"인 freshness 실패), 모델/scaler/
+    feature-schema 계산 자체가 실패하는 경우(sklearn/numpy 예외 등)는
+    **절대 이 타입으로 감싸지 않는다** - 그런 경우는 "데이터 공백"이
+    아니라 "관측 인프라·하니스 자체의 고장"이므로 스킵하지 않고 trial이
+    명시적으로 중단돼야 한다(§107.2 근본 문제 조사에서 발견된 것과 같은
+    종류의 실수를 반복하지 않기 위한 명시적 경계)."""
+
+
 def _evaluate_v32b_verbose(model, scaler, schema, *,
                             query_range_fn: Callable = _query_range,
                             freshness_check_fn: Callable = check_metric_freshness,
@@ -184,8 +209,11 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
     같은 2단계(8-feature 추출 -> `apply_feature_schema()`로 6개만
     순서대로 선택 -> scaler.transform -> decision_function)를 실시간
     window에 적용한다. missing/NaN/Inf/stale 중 하나라도 있으면 score를
-    만들지 않고 예외를 던진다(fail-closed) - 호출부가 이 예외를 삼키지
-    않고 그대로 올려 signal도 안 보내지게 한다.
+    만들지 않고 `DataGapFailClosed`를 던진다(fail-closed) - 호출부가 이
+    예외를 삼키지 않고 그대로 올려 signal도 안 보내지게 한다. 그 외
+    (Prometheus 연결 실패, 모델/scaler/스키마 계산 오류)는 `DataGapFailClosed`
+    가 **아닌** 다른 예외 타입으로 그대로 전파된다(§108 - 아래
+    `DataGapFailClosed` 클래스 docstring 참고).
 
     §88(2026-09-21) - evidence 로깅에 raw/ordered/scaled feature vector가
     필요해져 중간값을 전부 담은 dict를 반환하도록 분리했다(판정 로직
@@ -197,21 +225,35 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
     def bounded_query_range_fn(promql, s, e):
         return query_range_with_bounded_retry(promql, s, e, query_range_fn=query_range_fn)
 
+    # feats가 None인 경우는 extract_window_strict()가 "쿼리는 정상 응답했지만
+    # 표본이 0개"일 때만 반환한다 - bounded_query_range_fn이 연결 실패로
+    # retry를 전부 소진하면 여기 도달하기 전에 이미 평범한 RuntimeError가
+    # 이 함수 밖으로 새 나간다(§108, DataGapFailClosed와 다른 타입 - 아래
+    # 클래스 docstring 참고). 따라서 이 raise는 항상 "진짜 데이터 공백"만
+    # 감싼다.
     feats, reason = extract_window_strict(start, end, bounded_query_range_fn)
     if feats is None:
-        raise RuntimeError(f"fail-closed: feature 결측 - {reason}")
+        raise DataGapFailClosed(f"fail-closed: feature 결측 - {reason}")
     if any(v is None or math.isnan(v) or math.isinf(v) for v in feats):
-        raise RuntimeError(f"fail-closed: feature에 NaN/Inf 포함: {feats}")
+        raise DataGapFailClosed(f"fail-closed: feature에 NaN/Inf 포함: {feats}")
 
-    # §107 - 4개 feature 원천을 개별 확인(위 FRESHNESS_PROBE_QUERIES 주석
-    # 참고) - 첫 stale/결측 지점에서 바로 raise(기존과 동일하게 "하나라도
-    # 문제면 이 cycle은 score를 만들지 않는다"는 fail-closed 원칙 자체는
-    # 안 바뀜, 어떤 원천이 문제인지만 더 정확해짐).
+    # §107/§108 - 4개 feature 원천을 개별 확인(위 FRESHNESS_PROBE_QUERIES
+    # 주석 참고). reason_kind로 "진짜 데이터 공백"(no_samples/stale)과
+    # "Prometheus 자체에 못 닿음"(connection_error/api_error, 또는
+    # freshness_check_fn이 reason_kind를 아예 안 주는 예전 방식이면 안전
+    # 쪽으로 "공백 아님"으로 취급 - None은 no_samples/stale에 안 속하므로
+    # 자동으로 이 분기를 탐)을 구분한다 - 전자만 DataGapFailClosed.
     freshness_by_metric = {}
     for metric_name, probe_promql in FRESHNESS_PROBE_QUERIES.items():
         freshness = freshness_check_fn(probe_promql, FRESHNESS_MAX_AGE_SEC)
         if not freshness["fresh"]:
-            raise RuntimeError(f"fail-closed: metric stale - {metric_name}({probe_promql}): {freshness.get('reason')}")
+            reason_kind = freshness.get("reason_kind")
+            if reason_kind in ("no_samples", "stale"):
+                raise DataGapFailClosed(
+                    f"fail-closed: metric stale - {metric_name}({probe_promql}): {freshness.get('reason')}")
+            raise RuntimeError(
+                f"fail-closed: Prometheus 조회 실패(데이터 공백 아님, reason_kind={reason_kind!r}) - "
+                f"{metric_name}({probe_promql}): {freshness.get('reason')}")
         freshness_by_metric[metric_name] = freshness
 
     x6 = apply_feature_schema(feats, schema)
@@ -358,13 +400,20 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
          evidence_log_path: str = None, stop_file_path: str = None):
     """§92 - main loop을 write-ahead evidence 순서로 재구성했다(판정
     로직은 전혀 안 바꿈, IO 순서만 강화):
-      0) §107 - `_evaluate_v32b_verbose()`가 fail-closed RuntimeError(결측/
-         NaN/stale)를 던지면 이 cycle만 스킵하고(`record_type:
-         "evaluation_skipped"`로 evidence에 남김) loop는 계속 돈다 -
-         프로세스 자체를 종료시키지 않는다(과거엔 이 예외가 그대로 새
-         나가 detector 전체가 죽었다, phase8-blue-green-preflight-incident.md
-         §106/§107 참고). 그 외 예상 밖 예외는 그대로 전파돼 프로세스를
-         종료시킨다(기존과 동일).
+      0) §107/§108 - `_evaluate_v32b_verbose()`가 `DataGapFailClosed`(결측/
+         NaN/stale - "진짜 데이터 공백"만)를 던지면 이 cycle만 스킵하고
+         (`record_type: "evaluation_skipped"`로 evidence에 남김) loop는
+         계속 돈다 - 프로세스 자체를 종료시키지 않는다(과거엔 이 예외가
+         그대로 새 나가 detector 전체가 죽었다, phase8-blue-green-preflight-
+         incident.md §106/§107 참고). 단, 연속 스킵이 `PROLONGED_DATA_GAP_
+         CYCLES`(=WINDOW_SEC/EVAL_INTERVAL_SEC)에 도달하면 "장기 공백"으로
+         보고 그 자리에서 스스로 `PROLONGED_DATA_GAP_EXIT_CODE`로 종료한다
+         (§108 - run_once.py의 기존 detector.is_alive() 감시가 이를
+         TrialInvalid로 승격, "정상 미탐지"와 절대 섞이지 않게 함). Prometheus
+         연결 실패(bounded retry 소진)나 모델/scaler/스키마 계산 오류처럼
+         `DataGapFailClosed`가 **아닌** 예외는 여기서 안 잡히고 그대로
+         전파돼 프로세스를 종료시킨다(§108 - "데이터 공백으로 삼키지 말고
+         trial이 명시적으로 중단되게" 하기 위한 의도적 경계).
       1) feature/score/streak 계산(변경 없음)
       2) `evaluation_decision` record를 **외부 HTTP 신호 전에** 먼저
          flush+fsync(§92 forensic이 지목한 §91의 근본 취약점 - 기존엔
@@ -410,13 +459,16 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
             wall_clock_before = datetime.now(timezone.utc).isoformat()
             try:
                 verbose = _evaluate_v32b_verbose(model, scaler, schema)
-            except RuntimeError as e:
-                # §107 - fail-closed 조건(결측/NaN/stale)에 한해서만 잡는다.
-                # 이 3개는 _evaluate_v32b_verbose()가 명시적으로 RuntimeError로
-                # 표현하는, 이미 알려진("fail-closed: ...") 데이터 품질 문제뿐이다.
-                # 그 외의 진짜 예상 밖 예외(다른 예외 타입)는 여기서 안 잡고
-                # 그대로 위로 새 나가 프로세스를 종료시킨다(기존과 동일 -
-                # 진짜 버그를 조용히 삼키면 안 됨).
+            except DataGapFailClosed as e:
+                # §107/§108 - DataGapFailClosed만 잡는다(RuntimeError 전체가
+                # 아님) - _evaluate_v32b_verbose()가 명시적으로 이 타입으로
+                # 표현하는, 이미 알려진("fail-closed: ...") **데이터 공백**
+                # 문제뿐이다(결측/NaN/stale). Prometheus 연결 실패(bounded
+                # retry 소진 - 평범한 RuntimeError)나 모델/scaler/스키마
+                # 계산 오류(다른 예외 타입)는 여기 안 걸리고 그대로 위로
+                # 새 나가 프로세스를 종료시킨다(§108 - "데이터 공백으로
+                # 삼키지 말고 trial이 명시적으로 중단되게" 하기 위한 의도적
+                # 경계, DataGapFailClosed 클래스 docstring 참고).
                 consecutive_data_gap_cycles += 1
                 gap_classification = ("prolonged" if consecutive_data_gap_cycles >= PROLONGED_DATA_GAP_CYCLES
                                        else "transient")
@@ -437,6 +489,33 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
                         "consecutive_data_gap_cycles": consecutive_data_gap_cycles,
                         "gap_classification": gap_classification,
                     })
+                if gap_classification == "prolonged":
+                    # §108(2026-09-24) - 4회 연속(=WINDOW_SEC 전체가 갭 안에
+                    # 들어간 상태, 사전 등록 기준) 데이터 공백을 "기록만 하고
+                    # 계속 살아있는" 예전 동작을 점검한 결과: 이 상태를 방치하면
+                    # "아무 것도 평가 못 함"이 "정상적인 미탐지"(계속 정상
+                    # score만 나옴)와 evidence상 구분되지 않는 채로 trial이
+                    # completed로 끝날 위험이 있다. 여기서 명시적으로 프로세스를
+                    # 종료해 run_once.py의 기존 detector.is_alive() 감시(코드
+                    # 변경 없음)가 TrialInvalid로 승격하게 한다 - 그 결과
+                    # outcome=invalid_run이 되고, run_all_scenarios.py의 기존
+                    # ABORT_STATUSES(변경 없음, "invalid" 이미 포함)가 이후
+                    # 공식 trial도 자동으로 중단시킨다(오케스트레이터 코드
+                    # 변경 불필요 - 기존에 이미 있던, 테스트된 메커니즘 재사용).
+                    if evidence_file is not None:
+                        _write_evidence_line(evidence_file, {
+                            "record_type": "prolonged_data_gap_invalidated",
+                            "run_id": experiment_run_id,
+                            "invalidated_at_utc": datetime.now(timezone.utc).isoformat(),
+                            "last_evaluation_seq": evaluation_seq,
+                            "consecutive_data_gap_cycles": consecutive_data_gap_cycles,
+                            "reason": str(e),
+                            "exit_code": PROLONGED_DATA_GAP_EXIT_CODE,
+                        })
+                    print(f"  -> [invalidate] 연속 {consecutive_data_gap_cycles}회(>= "
+                          f"{PROLONGED_DATA_GAP_CYCLES}cycle = {WINDOW_SEC}초) 데이터 공백 - "
+                          f"사전 등록 기준에 따라 trial 무효화, exit_code={PROLONGED_DATA_GAP_EXIT_CODE}로 종료")
+                    sys.exit(PROLONGED_DATA_GAP_EXIT_CODE)
                 if once:
                     return
                 if stop_file_path is not None and os.path.exists(stop_file_path):

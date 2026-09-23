@@ -12160,3 +12160,214 @@ scenarios.py` state를 전혀 거치지 않음), `network_degrade` 시작(0건),
 변경(0건), 추가 pilot(0건, 지시대로 정확히 1회만) - 전부 준수. 포트
 포워드 2개는 파일럿 종료 후 로컬에서 정리했다(클러스터 상태와는
 무관 - 로컬 터널만 종료).
+
+## §108 - 예외 유형 분리(데이터 공백 vs 인프라 실패) + 장기 공백 무효화
+경로 구현 + orchestrator 안전 검사 강화 + 결정론적 fake-Prometheus 검증 +
+load_ramp 15건 사후 감사 (2026-09-24, 공식 `pod_kill` 15-trial 블록은
+이번 턴에도 시작하지 않음)
+
+§107 구현을 실제 클러스터/결정론적 테스트로 다시 점검한 결과 발견된
+3가지 경계 문제를 보완한다. `proposed-03`은 이번에도 `invalid` 그대로
+보존했고, `--link-replacement`/공식 trial 재실행/`network_degrade`
+시작 전부 0건이다.
+
+### 108.1 detector 예외 유형 분리 - "진짜 데이터 공백"과 "인프라 실패" 구분
+
+**문제**: §107의 `main()`은 `except RuntimeError`로 광범위하게 잡았다 -
+`_evaluate_v32b_verbose()`가 결측/NaN/stale에 의도적으로 던지는
+RuntimeError뿐 아니라, Prometheus 연결이 완전히 끊겨 `query_range_with_
+bounded_retry()`가 재시도를 전부 소진하고 던지는 RuntimeError까지
+**같은 걸로** 잡아 "이 cycle만 스킵"으로 처리해버릴 위험이 있었다 -
+이러면 관측 인프라 자체가 고장났는데도 detector가 계속 "정상적으로
+갭을 스킵 중"인 것처럼 조용히 돌아간다(요청에서 지적된 정확한 위험).
+
+**수정** ([score_server.py](../../anomaly-detection/score_server.py)):
+- 새 예외 클래스 `DataGapFailClosed(RuntimeError)` - 결측/NaN-Inf/
+  metric stale **3가지에만** 쓴다. `RuntimeError`를 상속해 기존
+  `evaluate_v32b()` 외부 계약(§86.2, "결측/NaN/stale에 RuntimeError")은
+  그대로 유지(`except RuntimeError`로도 여전히 잡힘 - 하위호환).
+- [prom_health.py](../../anomaly-detection/v3/prom_health.py)의
+  `check_metric_freshness()`에 `reason_kind` 필드 추가 -
+  `"no_samples"`/`"stale"`(진짜 데이터 공백) vs `"connection_error"`/
+  `"api_error"`(Prometheus 자체에 못 닿음)를 명시적으로 구분. freshness
+  루프는 `reason_kind`가 앞의 둘일 때만 `DataGapFailClosed`를 던지고,
+  그 외(연결 실패·API 오류·reason_kind 불명 - 안전 쪽으로 "공백 아님"
+  취급)는 평범한 예외로 전파한다.
+- feature 결측(`extract_window_strict()`가 `None`을 반환하는 경우)은
+  구조적으로 이미 "쿼리가 정상 응답했지만 표본 0개"일 때만 일어난다 -
+  연결 실패는 `query_range_with_bounded_retry()`가 그 이전에 이미
+  평범한 RuntimeError로 던지므로 여기 도달 자체가 안 된다(코드 추적으로
+  확인, 별도 분기 불필요).
+- `main()`의 except 절을 `except RuntimeError`에서 `except
+  DataGapFailClosed`로 좁혔다 - 모델/scaler/스키마 계산 오류(예:
+  `apply_feature_schema()` 실패)나 연결 실패는 `DataGapFailClosed`가
+  아니므로 이제 자동으로 이 except를 빠져나가 trial을 명시적으로
+  중단시킨다(전파 → score_server.py 프로세스 종료 → run_once.py의 기존
+  `detector.is_alive()` 감시가 `TrialInvalid`로 승격, §108.2와 같은
+  경로).
+
+**테스트** - [test_score_server_v32b.py](../../anomaly-detection/test_score_server_v32b.py)
+에 6개 신규(결측/NaN/stale이 실제로 `DataGapFailClosed` 서브클래스인지
+`isinstance` 확인 3건 + `connection_error`/`api_error`/`reason_kind`
+불명이 `DataGapFailClosed`가 **아님**을 확인 3건) + Prometheus 완전
+두절(bounded retry 소진) 시나리오 1건 + 모델/스키마 계산 오류(깨진
+schema로 재현) 1건 + main() 레벨에서 평범한 RuntimeError가 스킵되지
+않고 그대로 전파되는지 확인하는 회귀 테스트 1건. [test_prom_health.py](../../anomaly-detection/v3/test_prom_health.py)
+에 `reason_kind` 4가지 분기 + fresh 케이스까지 5개 신규.
+
+### 108.2 4회 연속 데이터 공백 - "기록만 하고 계속 삶"에서 "trial 무효화"로
+
+**문제**: §107은 `PROLONGED_DATA_GAP_CYCLES`(=WINDOW_SEC/EVAL_INTERVAL_SEC
+=4) 이상 연속 공백을 evidence에 `"prolonged"`로 **기록만 하고** detector는
+계속 살아있었다 - 이러면 "아무 것도 평가하지 못한 구간"이 "정상적으로
+계속 evaluate했지만 전부 정상(미탐지)"과 evidence상 구분은 되지만,
+trial 자체는 여전히 `completed`로 끝날 수 있어 사전 등록된 기준에 따른
+명시적 무효화 경로가 없었다.
+
+**수정** - `PROLONGED_DATA_GAP_CYCLES`에 도달하면(사전 등록 기준,
+WINDOW_SEC=60초 근거는 §107.2와 동일) `record_type: "prolonged_data_gap_
+invalidated"` evidence를 남긴 뒤 detector가 스스로 `PROLONGED_DATA_GAP_
+EXIT_CODE=3`으로 종료한다(`sys.exit(3)`). **오케스트레이터 코드는 전혀
+안 바꿨다** - `run_once.py`의 기존 `detector.is_alive()` 감시(§102에서
+이미 구현된 것, 변경 없음)가 이 종료를 그대로 `TrialInvalid`로 승격 ->
+`outcome=invalid_run` -> `run_all_scenarios.py`의 기존 `ABORT_STATUSES`
+(`"invalid"` 이미 포함, 변경 없음)가 이후 공식 trial을 자동으로
+중단시킨다 - 새 메커니즘을 만들지 않고 §102/§98에서 이미 검증된 기존
+경로 2개를 그대로 재사용했다.
+
+1~3회 일시 공백(transient)은 §107과 동일하게 점수·신호 없이 스킵만
+기록하고 다음 cycle로 계속 진행한다(무효화 없음).
+
+**테스트**: `test_prolonged_data_gap_invalidates_trial_and_exits`(신규,
+§107의 옛 "기록만 함" 테스트를 대체) - `pytest.raises(SystemExit)`로
+정확히 `PROLONGED_DATA_GAP_CYCLES`번째 cycle에서 `exit_code=3`으로
+멈추는지, `evaluation_skipped`가 딱 그만큼만 기록되고 그 이상 계속
+돌지 않는지 확인. `test_data_gap_resets_consecutive_streak_not_carried_
+across_gap`(기존, §107)로 1회 일시 공백 후 평가가 재개되고 연속
+스트릭이 안 이어붙는 것도 재확인.
+
+### 108.3 orchestrator 안전 검사 강화 - 양쪽 Node·Rollout 3항목·restart 구분
+
+[run_all_scenarios.py](../../experiments/run_all_scenarios.py) §107
+구현을 다음 3가지로 강화했다:
+
+1. **양쪽 Node** - §107의 `_check_active_pod_and_node()`는 active pod이
+   뜬 노드(`sj-worker`) 하나만 확인했다. 이 클러스터는 `sj-control`
+   (control-plane)/`sj-worker` 2개 노드가 있는데(`kubectl get nodes`
+   실측 확인), control-plane 노드가 나빠지면 Rollout controller·Chaos
+   Mesh 등 클러스터 전체 조율이 흔들릴 수 있음에도 active pod 쪽에서는
+   전혀 안 보인다. 새 `_check_all_nodes_healthy()`가 `list_node()`로
+   **클러스터의 모든 노드**를 확인한다.
+2. **Rollout 3항목** - §107의 `_check_rollout_not_stuck()`("promote 전
+   pause만 아니면 OK")를 `_check_rollout_healthy_single_revision()`으로
+   강화 - (a) `status.phase == "Healthy"`(라이브 실측 확인,
+   `kubectl get rollout -o json` - Progressing/Degraded 등 pause가
+   아닌 다른 비정상 phase까지 잡음), (b) `blueGreen.activeSelector ==
+   previewSelector`(쉬고 있을 때는 실측상 항상 같은 값 - preview 잔여
+   탐지), (c) 단일 revision(`app=vllm-serving` 라벨의 ReplicaSet 중
+   active가 아닌데 desired>0인 게 없는지 - 구 revision scale-down 잔류
+   탐지).
+3. **restart 구분** - 새 `_check_active_pod_restart_baseline(trial,
+   phase)`가 preflight(`phase="pre"`)에서 active pod의 UID·restart_count를
+   process-local 캐시(`_PREFLIGHT_POD_BASELINE`, run_id 키)에 기록하고,
+   postflight(`phase="post"`)에서 비교한다 - **UID가 바뀌었으면**(pod_kill이
+   대상을 delete하고 컨트롤러가 새 UID pod을 만든 것 - 의도된 신원 교체)
+   그 자체로는 실패시키지 않고 새 pod 자체의 restart_count(정상이면 0)만
+   본다. **UID가 그대로인데 restart_count가 늘었으면**(load_ramp/
+   network_degrade 등 pod을 안 죽이는 시나리오에서) 그건 pod_kill
+   메커니즘과 무관한 진짜 예상 밖 재시작으로 fail-closed한다. baseline이
+   없으면(preflight 없이 단독 호출 등) delta 비교 없이 현재 절대값만
+   확인(조용히 통과 안 시킴).
+
+**detector 잔여는 여전히 자동 검증 대상이 아니다** - §107에서 이미
+확인한 대로 이 계층에서 직접 확인할 방법이 없고(psutil 등 새 의존성도
+없음), `real_safety_checks()`의 8개 체크 목록에 아예 없다 - "자동 PASS
+항목"으로 세지 않고, 코드 주석·이 문서 양쪽에 "수동 확인 필요" 책임을
+명시한다(context_clear/quiescent가 간접 신호이긴 하나 직접 확인이
+아님을 §107.1.1에 이미 명시, 이번 턴도 동일).
+
+**테스트**: `test_run_all_scenarios.py`에 신규 15개(양쪽 Node 정상/
+control-plane만 비정상/pressure 3건, Rollout Healthy·preview 잔여·
+단일 revision 위반 4건, restart baseline pre-기록/pod개수이상/
+OOMKilled/동일UID증가/UID교체무해/UID교체후재시작/baseline없음
+7건, delegate 시그니처 변경 1건). **라이브 재확인**(2회, port-forward
+포함) - §107 구현 직후 및 §108 구현 직후 둘 다 `real_safety_checks()`를
+실제 클러스터에 직접 실행해 8개 항목 전부 `ok:true` 확인(all_nodes_
+healthy/active_endpoint/rollout_healthy_single_revision/active_pod_
+restart_baseline/experiment_context_clear/quiescent/no_leftover_
+chaos_crs/no_leftover_experiment_pods).
+
+### 108.4 결정론적 fake-Prometheus subprocess 검증 (라이브 파일럿 반복 대신)
+
+§107.6에서 확인된 대로 pod_kill의 엔드포인트 공백은 확률적 이벤트(4회
+관측 중 1회만 재현)라, "재현될 때까지 파일럿을 반복"하는 대신 fake
+Prometheus HTTP 서버로 3가지 경로를 결정론적으로 증명했다 - 새 파일
+[test_score_server_data_gap_subprocess.py](../../anomaly-detection/test_score_server_data_gap_subprocess.py)
+(`test_score_server_e2e_race.py`의 기존 패턴 - 실제 `score_server.py`
+subprocess + loopback fake HTTP 서버 + `PROMETHEUS_URL` 환경변수 - 그대로
+재사용):
+
+| 시나리오 | 재현 방법 | 결과 |
+|---|---|---|
+| 일시 공백(1cycle) | fake 서버가 cycle 2에서만 freshness를 빈 응답으로 줌 | `evaluation_skipped` 정확히 1건(cycle 2), 프로세스 생존, cycle 3부터 평가 재개 - **PASS** |
+| 장기 공백(4cycle+) | fake 서버가 매 cycle 계속 빈 응답 | `evaluation_skipped` 정확히 `PROLONGED_DATA_GAP_CYCLES`건, `prolonged_data_gap_invalidated` 1건, `exit_code=3`으로 자진 종료 - **PASS** |
+| 연결 실패 | Prometheus URL을 아무 것도 안 듣는 포트로 지정(서버 자체를 안 띄움) | `evaluation_skipped` 0건(데이터 공백으로 안 삼킴), `bounded retry` 소진 메시지와 함께 실패 종료(`returncode=2`, argparse 표준 오류 경로) - **PASS** |
+
+3개 시나리오 모두 feature 추출(query_range)은 항상 정상 값을 주도록
+구성했다 - §106/§107이 확인한 `proposed-03`의 실제 구조(6-feature는
+계산 가능, freshness canary만 실패)를 그대로 재현하기 위함. 전부
+실제 cluster/port-forward 없이, 매 실행마다 100% 동일하게 재현된다.
+
+### 108.5 오프라인 전체 스위트 (`experiments/`+`anomaly-detection/`+`recovery-policy/`)
+
+존재하지 않는 KUBECONFIG에서 3개 패키지 전체: **1020 passed, 3
+skipped**(기존과 동일한 `live_cluster` 마커 3건, 새로 실패한 테스트
+0건), 경고 2건은 `recovery-policy/main.py`의 FastAPI `@app.on_event`
+deprecation(이번 턴과 무관, 기존부터 있던 것).
+
+### 108.6 `load_ramp` 15건 사후 감사 - 당시 수동 안전 점검 근거가 얼마나 남아 있는가
+
+§101(load_ramp 15-trial 공식 블록, 2026-09-22) 실행 당시
+`real_preflight()`/`real_postflight_cleanup_check()`는 §106/§107이
+확인한 대로 **무조건 통과하는 스텁**이었다 - `official-load_ramp-run.log`
+를 직접 확인해도(§101 원본 로그, 61줄) Node/Rollout/Chaos/restart/
+quiescent/endpoint 관련 언급이 **0건**이다. 즉 이 블록에서 자동으로
+수행된 안전 검사는 없다 - 남아있는 건 그 당시 운영자(나)가 수동으로
+수행하고 이 문서 §101.7에 적어둔 것뿐이다. 8개 항목 각각에 대해
+확인 가능한 근거와 그 한계를 그대로 표시한다(확인 불가능한 건
+"미확인"으로 남기고 임의로 채우지 않음).
+
+| 항목 | 남아있는 근거 | 커버리지 | 판정 |
+|---|---|---|---|
+| Node(양쪽) | §101.7 "Node 2개 Ready" | 15 trial **전체 종료 후 1회**만(시작 전·trial 사이 개별 확인 없음) | 종료 시점 상태만 확인됨, 중간 상태는 **미확인** |
+| Rollout Healthy·단일 revision | §101.7 "phase=Healthy, active==current==788f5664b9(단일 revision)" | 종료 후 1회 | 종료 시점만 확인됨, 중간 상태는 **미확인**(preview 잔여 항목인 activeSelector==previewSelector 자체는 §101 당시 개념이 없어 직접 기록되지 않음 - "단일 revision" 서술로 간접 추정만 가능) |
+| active endpoint(1:1) | 직접 기록 없음(Rollout Healthy+pod Running으로 간접 추정만 가능) | - | **미확인**(당시 개념 자체가 없었음) |
+| restart/OOM | §101.7 "pod restartCount=0, recovery-policy restartCount=0" | 종료 시점의 절대값 - 단, restartCount는 단조증가이고 load_ramp는 pod을 안 죽이므로(UID 불변 전제) **종료 시점 값이 0이라는 것은 15 trial 전체 구간 동안 단 한 번도 재시작이 없었다는 것의 수학적 증거가 된다**(간접이지만 확정적 추론 - 절대값이 0이면 그 이전 어느 시점의 값도 0 이하일 수 없으므로) | **확인됨**(전체 구간, 간접 추론) |
+| experiment-run context | §101.7 "experiment-run context=null" | 종료 후 1회 | 종료 시점만 확인됨, 중간 상태는 **미확인** |
+| quiescent | 문서 어디에도 기록 없음 | - | **미확인**(당시 확인 자체를 안 함, Alertmanager 알림 이력도 TTL 만료로 사후 재확인 불가 - §102/§106과 동일 제약) |
+| Chaos CR 잔여 | §101.7 "Chaos CR 0건" | 종료 후 1회 - 단, load_ramp는애초에 Chaos Mesh CR을 전혀 안 씀(`kubectl run`으로 pod 직접 생성, chaos-mesh 미사용) | 종료 시점 확인됨(구조적으로도 해당 없음에 가까움) |
+| **실험 pod 잔여(ramp-inj-\*/ramp-probe-\*)** | §101 어디에도 명시적 확인 기록 없음 | - | **미확인 - load_ramp 15건 중 가장 직접적으로 관련된 항목인데 정작 확인 기록이 없는 가장 큰 gap** |
+| detector 잔여 | 개념 자체가 §107 이전엔 없었음 | - | **해당 시점 기준 미확인(개념 부재)** |
+
+§100(launch-readiness gate, load_ramp 시작 **직전**)이 network_degrade
+프로필 round-trip을 라이브로 검증하면서 그 시점의 클러스터가 clean했음을
+별도로 확인했으므로, "블록 시작 전" 상태에 한해서는 §101.7과는 별개로
+한 겹 더 있다 - 다만 이것도 load_ramp 전용 preflight가 아니라
+launch-readiness 전체를 위한 것이었다.
+
+**결론**: 15건 전부에 걸쳐 확실히 말할 수 있는 건 "restartCount=0"
+(수학적으로 전체 구간 보장) 하나뿐이다. 나머지(Node/Rollout/context/
+Chaos CR)는 "블록 시작 직전 1회(§100) + 종료 직후 1회(§101.7)"의
+양 끝점만 확인됐고, 15 trial 사이 14번의 전환 구간 자체는 전부
+미확인이다. quiescent·실험 pod 잔여·detector 잔여는 시작부터 끝까지
+전혀 확인되지 않았다. 이 gap 자체가 바로 §107/§108에서 실제
+preflight/postflight를 구현한 motivation이었다 - 앞으로의 공식
+블록(§107.3에 등록한 새 `pod_kill` 15건 포함)부터는 이 15개 항목
+전부가 **매 trial마다** 자동으로 확인된다.
+
+### 108.7 범위 제한 준수 확인
+
+공식 `pod_kill` 15-trial 블록 시작(0건), `network_degrade` 시작(0건),
+`proposed-03` 상태/결과/hash 변경(0건), 추가 라이브 파일럿(0건 - 이번
+턴은 결정론적 subprocess 테스트만), 모델·threshold·SLO 수치 변경(0건),
+load_ramp 원본 결과 파일 수정(0건, 읽기만 함) - 전부 준수.

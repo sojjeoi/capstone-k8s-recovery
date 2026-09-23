@@ -87,6 +87,57 @@ def test_bounded_retry_single_success_needs_no_retry():
     print("OK - 첫 시도가 성공하면 retry·sleep 없이 바로 반환")
 
 
+# ---------------------------------------------------------------------------
+# §108(2026-09-24) - check_metric_freshness()의 reason_kind: "진짜 데이터 공백"
+# (no_samples/stale)과 "Prometheus 자체에 못 닿음"(connection_error/api_error)을
+# 구분해야 score_server.py가 데이터 공백으로 오인해 삼키지 않는다.
+# ---------------------------------------------------------------------------
+
+def test_freshness_fresh_sample_has_no_reason_kind():
+    now = __import__("time").time()
+    with patch.object(ph.requests, "get", return_value=_resp(
+            {"status": "success", "data": {"result": [{"value": [now, "1"]}]}})):
+        result = ph.check_metric_freshness("up")
+    assert result["fresh"] is True
+    assert result["reason_kind"] is None
+    print("OK - 신선한 표본이면 fresh=True, reason_kind=None")
+
+
+def test_freshness_no_samples_reason_kind():
+    with patch.object(ph.requests, "get", return_value=_resp(
+            {"status": "success", "data": {"result": []}})):
+        result = ph.check_metric_freshness("up")
+    assert result["fresh"] is False
+    assert result["reason_kind"] == "no_samples"
+    print("OK - 정상 응답인데 표본이 0개면 reason_kind='no_samples'(진짜 데이터 공백)")
+
+
+def test_freshness_stale_sample_reason_kind():
+    old_ts = __import__("time").time() - 999.0
+    with patch.object(ph.requests, "get", return_value=_resp(
+            {"status": "success", "data": {"result": [{"value": [old_ts, "1"]}]}})):
+        result = ph.check_metric_freshness("up", max_age_sec=120.0)
+    assert result["fresh"] is False
+    assert result["reason_kind"] == "stale"
+    print("OK - 표본은 있지만 max_age_sec보다 오래됐으면 reason_kind='stale'(진짜 데이터 공백)")
+
+
+def test_freshness_api_error_reason_kind():
+    with patch.object(ph.requests, "get", return_value=_resp({"status": "error"})):
+        result = ph.check_metric_freshness("up")
+    assert result["fresh"] is False
+    assert result["reason_kind"] == "api_error"
+    print("OK - HTTP 200이어도 body status!=success면 reason_kind='api_error'(데이터 공백 아님 - 인프라 문제)")
+
+
+def test_freshness_connection_error_reason_kind():
+    with patch.object(ph.requests, "get", side_effect=ConnectionError("연결 거부")):
+        result = ph.check_metric_freshness("up")
+    assert result["fresh"] is False
+    assert result["reason_kind"] == "connection_error"
+    print("OK - 요청 자체가 실패하면 reason_kind='connection_error'(데이터 공백 아님 - 인프라 문제)")
+
+
 if __name__ == "__main__":
     tests = [obj for name, obj in list(globals().items()) if name.startswith("test_") and callable(obj)]
     for t in tests:

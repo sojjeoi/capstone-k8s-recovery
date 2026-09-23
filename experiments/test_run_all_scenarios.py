@@ -735,11 +735,12 @@ def test_real_safety_checks_stops_at_first_failure_and_names_it():
 
 def test_real_preflight_and_postflight_delegate_to_real_safety_checks(monkeypatch):
     calls = []
-    monkeypatch.setattr(ras, "real_safety_checks", lambda: calls.append("called") or _ok())
+    monkeypatch.setattr(ras, "real_safety_checks", lambda trial, phase: calls.append((trial["run_id"], phase)) or _ok())
     assert ras.real_preflight({"run_id": "x"}, {}) == _ok()
     assert ras.real_postflight_cleanup_check({"run_id": "x"}) == _ok()
-    assert calls == ["called", "called"]
-    print("OK - real_preflight/real_postflight_cleanup_check가 real_safety_checks()를 그대로 씀(같은 검사 스위트 공유)")
+    assert calls == [("x", "pre"), ("x", "post")]
+    print("OK - real_preflight/real_postflight_cleanup_check가 real_safety_checks(trial, phase)를 "
+          "'pre'/'post'로 구분해 호출(같은 검사 스위트 공유, restart-baseline 비교에 phase가 필요)")
 
 
 def test_poll_until_ok_retries_within_timeout_then_succeeds(monkeypatch):
@@ -773,52 +774,160 @@ def test_poll_until_ok_gives_up_after_timeout_fail_closed(monkeypatch):
     print("OK - timeout을 넘기도록 계속 실패하면 무한정 기다리지 않고 마지막 결과 그대로 fail-closed 반환")
 
 
-def test_check_active_pod_and_node_ok_when_healthy(monkeypatch):
+def _fake_node(name, ready="True", mem="False", disk="False", pid="False"):
+    class C:
+        def __init__(self, type_, status):
+            self.type, self.status = type_, status
+    class Status:
+        conditions = [C("Ready", ready), C("MemoryPressure", mem), C("DiskPressure", disk), C("PIDPressure", pid)]
+    class Node:
+        metadata = type("M", (), {"name": name})()
+        status = Status()
+    return Node()
+
+
+def test_check_all_nodes_healthy_ok_when_both_nodes_healthy(monkeypatch):
+    from kubernetes import client
+    import active_pod_resolver
+    monkeypatch.setattr(active_pod_resolver, "load_kube_config", lambda: None)
+
+    class FakeCoreApi:
+        def list_node(self):
+            return type("L", (), {"items": [_fake_node("sj-control"), _fake_node("sj-worker")]})()
+
+    monkeypatch.setattr(client, "CoreV1Api", FakeCoreApi)
+    result = ras._check_all_nodes_healthy()
+    assert result["ok"] is True
+    print("OK - 클러스터의 모든 Node(§108 - control-plane 포함, active pod 노드 하나만이 아님)가 정상이면 ok=True")
+
+
+def test_check_all_nodes_healthy_fails_when_control_plane_node_unhealthy(monkeypatch):
+    """§108 핵심 확인 - active pod은 sj-worker에만 뜨지만, sj-control(active
+    pod과 무관한 control-plane 노드)이 나빠져도 잡혀야 한다(§107은 active
+    pod의 노드만 봐서 이걸 놓쳤다)."""
+    from kubernetes import client
+    import active_pod_resolver
+    monkeypatch.setattr(active_pod_resolver, "load_kube_config", lambda: None)
+
+    class FakeCoreApi:
+        def list_node(self):
+            return type("L", (), {"items": [_fake_node("sj-control", ready="False"), _fake_node("sj-worker")]})()
+
+    monkeypatch.setattr(client, "CoreV1Api", FakeCoreApi)
+    result = ras._check_all_nodes_healthy()
+    assert result["ok"] is False
+    assert "sj-control" in result["reason"]
+    print("OK - active pod과 무관한 control-plane 노드(sj-control)가 NotReady여도 잡힘(§107은 놓쳤던 항목)")
+
+
+def test_check_all_nodes_healthy_fails_on_pressure(monkeypatch):
+    from kubernetes import client
+    import active_pod_resolver
+    monkeypatch.setattr(active_pod_resolver, "load_kube_config", lambda: None)
+
+    class FakeCoreApi:
+        def list_node(self):
+            return type("L", (), {"items": [_fake_node("sj-worker", mem="True")]})()
+
+    monkeypatch.setattr(client, "CoreV1Api", FakeCoreApi)
+    result = ras._check_all_nodes_healthy()
+    assert result["ok"] is False
+    print("OK - MemoryPressure 등 다른 압박 조건도 잡힘")
+
+
+def _patch_active_pod(monkeypatch, uid="u1", restart_count=0, oom_killed=False, name="vllm-x"):
     import active_pod_resolver
     import memory_pressure_adapter as mpa
-    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": "vllm-x", "uid": "u1"}])
-    monkeypatch.setattr(mpa, "get_pod_details", lambda name: {
-        "name": name, "uid": "u1", "node_name": "sj-worker", "oom_killed": False})
-    monkeypatch.setattr(mpa, "get_node_conditions", lambda node: {
-        "Ready": "True", "MemoryPressure": "False", "DiskPressure": "False", "PIDPressure": "False"})
-    result = ras._check_active_pod_and_node()
+    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": name, "uid": uid}])
+    monkeypatch.setattr(mpa, "get_pod_details", lambda n: {
+        "name": n, "uid": uid, "node_name": "sj-worker", "oom_killed": oom_killed, "restart_count": restart_count})
+
+
+def test_restart_baseline_pre_phase_records_baseline_and_passes(monkeypatch):
+    ras._PREFLIGHT_POD_BASELINE.clear()
+    _patch_active_pod(monkeypatch, uid="u1", restart_count=0)
+    result = ras._check_active_pod_restart_baseline({"run_id": "run-a"}, "pre")
     assert result["ok"] is True
-    print("OK - active pod 1개+Node 정상+OOMKilled 아님이면 ok=True")
+    assert ras._PREFLIGHT_POD_BASELINE["run-a"] == {"pod_uid": "u1", "restart_count": 0}
+    print("OK - phase='pre'는 현재 pod UID/restart_count를 baseline으로 기록만 하고 통과")
 
 
-def test_check_active_pod_and_node_fails_on_wrong_pod_count(monkeypatch):
+def test_restart_baseline_fails_on_wrong_pod_count(monkeypatch):
     import active_pod_resolver
     monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [])
-    result = ras._check_active_pod_and_node()
+    result = ras._check_active_pod_restart_baseline({"run_id": "run-x"}, "pre")
     assert result["ok"] is False
     assert "개수 이상" in result["reason"]
     print("OK - active pod이 정확히 1개가 아니면(0개/2개 이상) 실패")
 
 
-def test_check_active_pod_and_node_fails_on_oom_killed(monkeypatch):
-    import active_pod_resolver
-    import memory_pressure_adapter as mpa
-    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": "vllm-x", "uid": "u1"}])
-    monkeypatch.setattr(mpa, "get_pod_details", lambda name: {
-        "name": name, "uid": "u1", "node_name": "sj-worker", "oom_killed": True})
-    result = ras._check_active_pod_and_node()
+def test_restart_baseline_fails_on_oom_killed(monkeypatch):
+    _patch_active_pod(monkeypatch, oom_killed=True)
+    result = ras._check_active_pod_restart_baseline({"run_id": "run-x"}, "pre")
     assert result["ok"] is False
     assert "OOMKilled" in result["reason"]
-    print("OK - active pod이 OOMKilled 상태면 실패")
+    print("OK - active pod이 OOMKilled 상태면 phase 무관하게 실패")
 
 
-def test_check_active_pod_and_node_fails_on_node_not_ready(monkeypatch):
-    import active_pod_resolver
-    import memory_pressure_adapter as mpa
-    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": "vllm-x", "uid": "u1"}])
-    monkeypatch.setattr(mpa, "get_pod_details", lambda name: {
-        "name": name, "uid": "u1", "node_name": "sj-worker", "oom_killed": False})
-    monkeypatch.setattr(mpa, "get_node_conditions", lambda node: {
-        "Ready": "False", "MemoryPressure": "False", "DiskPressure": "False", "PIDPressure": "False"})
-    result = ras._check_active_pod_and_node()
+def test_restart_baseline_same_uid_restart_increase_fails():
+    """pod_kill이 아닌 시나리오(load_ramp/network_degrade 등, pod 교체 없음)
+    에서 같은 pod이 재시작하면(UID 불변, restart_count 증가) 예상 밖으로
+    잡아야 한다."""
+    ras._PREFLIGHT_POD_BASELINE.clear()
+    with pytest.MonkeyPatch.context() as mp:
+        _patch_active_pod(mp, uid="u1", restart_count=0)
+        pre = ras._check_active_pod_restart_baseline({"run_id": "run-b"}, "pre")
+        assert pre["ok"] is True
+    with pytest.MonkeyPatch.context() as mp:
+        _patch_active_pod(mp, uid="u1", restart_count=1)  # 같은 UID, restart_count만 증가
+        post = ras._check_active_pod_restart_baseline({"run_id": "run-b"}, "post")
+    assert post["ok"] is False
+    assert "예상 밖 restart 증가" in post["reason"]
+    print("OK - 동일 pod(UID 불변)에서 restart_count가 늘면 예상 밖 재시작으로 실패(pod_kill의 의도된 교체와 구분)")
+
+
+def test_restart_baseline_uid_change_from_pod_kill_is_not_flagged():
+    """pod_kill이 대상을 delete하고 새 UID의 pod이 뜨는 건 의도된 교체이므로
+    그 자체로는 실패시키지 않는다 - 새 pod의 restart_count가 0(정상적인
+    첫 기동)이면 통과해야 한다."""
+    ras._PREFLIGHT_POD_BASELINE.clear()
+    with pytest.MonkeyPatch.context() as mp:
+        _patch_active_pod(mp, uid="u1", restart_count=0)
+        pre = ras._check_active_pod_restart_baseline({"run_id": "run-c"}, "pre")
+        assert pre["ok"] is True
+    with pytest.MonkeyPatch.context() as mp:
+        _patch_active_pod(mp, uid="u2", restart_count=0, name="vllm-y")  # pod_kill이 만든 새 pod
+        post = ras._check_active_pod_restart_baseline({"run_id": "run-c"}, "post")
+    assert post["ok"] is True
+    print("OK - pod_kill이 의도적으로 삭제한 대상의 UID 교체는 그 자체로 실패시키지 않음(새 pod의 restart_count=0이면 통과)")
+
+
+def test_restart_baseline_uid_change_but_new_pod_already_restarted_fails():
+    """UID가 바뀌었어도(교체는 정상) 그 새 pod 자체가 이미 재시작 이력이
+    있으면(정상적인 첫 기동이면 0이어야 함) 예상 밖으로 잡아야 한다."""
+    ras._PREFLIGHT_POD_BASELINE.clear()
+    with pytest.MonkeyPatch.context() as mp:
+        _patch_active_pod(mp, uid="u1", restart_count=0)
+        ras._check_active_pod_restart_baseline({"run_id": "run-d"}, "pre")
+    with pytest.MonkeyPatch.context() as mp:
+        _patch_active_pod(mp, uid="u2", restart_count=2, name="vllm-y")
+        post = ras._check_active_pod_restart_baseline({"run_id": "run-d"}, "post")
+    assert post["ok"] is False
+    assert "예상 밖" in post["reason"]
+    print("OK - 교체된 새 pod 자체가 이미 재시작 이력이 있으면(restart_count>0) 예상 밖으로 실패")
+
+
+def test_restart_baseline_without_preflight_falls_back_to_absolute_check():
+    """preflight 없이 postflight만 단독 호출되면(baseline 없음) delta 비교
+    없이 현재 절대값(restart_count>0)만 fail-closed로 확인한다 - 조용히
+    통과시키지 않는다."""
+    ras._PREFLIGHT_POD_BASELINE.clear()
+    with pytest.MonkeyPatch.context() as mp:
+        _patch_active_pod(mp, uid="u9", restart_count=1)
+        result = ras._check_active_pod_restart_baseline({"run_id": "never-preflighted"}, "post")
     assert result["ok"] is False
-    assert "Node(sj-worker)" in result["reason"]
-    print("OK - Node가 NotReady/pressure면 실패")
+    assert "baseline 없어" in result["reason"]
+    print("OK - baseline이 없으면(preflight 미실행) delta 비교 없이 현재 restart_count>0만으로 fail-closed")
 
 
 def test_check_active_endpoint_ok_when_one_to_one(monkeypatch):
@@ -845,21 +954,61 @@ def test_check_active_endpoint_fails_when_endpoint_empty():
     print("OK - endpoint IP가 0개면(§106 조사의 pod_kill 갭 상황) 실패")
 
 
-def test_check_rollout_not_stuck_fails_when_paused_pre_promotion(monkeypatch):
-    import blue_green_prep as bgp
-    monkeypatch.setattr(bgp, "is_paused_pre_promotion", lambda name, ns: True)
-    result = ras._check_rollout_not_stuck()
-    assert result["ok"] is False
-    assert "pause" in result["reason"]
-    print("OK - Rollout이 promote 전 pause 상태로 남아있으면(이전 trial 미완료 preview 의심) 실패")
+def _fake_rs(name, replicas, pod_hash):
+    class RS:
+        metadata = type("M", (), {"name": name, "labels": {"rollouts-pod-template-hash": pod_hash}})()
+        spec = type("S", (), {"replicas": replicas})()
+    return RS()
 
 
-def test_check_rollout_not_stuck_ok_when_not_paused(monkeypatch):
+def _patch_rollout(monkeypatch, phase="Healthy", active="abc123", preview=None, rs_items=None):
     import blue_green_prep as bgp
-    monkeypatch.setattr(bgp, "is_paused_pre_promotion", lambda name, ns: False)
-    result = ras._check_rollout_not_stuck()
+
+    class FakeCustomApi:
+        def get_namespaced_custom_object(self, group, version, ns, plural, name):
+            return {"status": {"phase": phase, "blueGreen": {
+                "activeSelector": active, "previewSelector": preview if preview is not None else active}}}
+
+    class FakeAppsApi:
+        def list_namespaced_replica_set(self, ns, label_selector):
+            return type("L", (), {"items": rs_items or [_fake_rs("vllm-serving-" + active, 1, active)]})()
+
+    monkeypatch.setattr(bgp, "_custom_api", lambda: FakeCustomApi())
+    monkeypatch.setattr(bgp, "_apps_api", lambda: FakeAppsApi())
+
+
+def test_check_rollout_healthy_single_revision_ok_at_rest(monkeypatch):
+    _patch_rollout(monkeypatch, phase="Healthy", active="abc123")
+    result = ras._check_rollout_healthy_single_revision()
     assert result["ok"] is True
-    print("OK - Rollout이 pause 상태가 아니면 ok=True")
+    print("OK - phase=Healthy + activeSelector==previewSelector(preview 없음) + 단일 revision이면 ok=True")
+
+
+def test_check_rollout_healthy_single_revision_fails_when_not_healthy_phase(monkeypatch):
+    _patch_rollout(monkeypatch, phase="Progressing", active="abc123")
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is False
+    assert "Progressing" in result["reason"]
+    print("OK - status.phase가 Healthy가 아니면(§107의 is_paused_pre_promotion만으로는 못 잡던 Degraded/Progressing 등) 실패")
+
+
+def test_check_rollout_healthy_single_revision_fails_when_preview_residual(monkeypatch):
+    _patch_rollout(monkeypatch, phase="Healthy", active="abc123", preview="def456")
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is False
+    assert "preview 잔여" in result["reason"]
+    print("OK - activeSelector != previewSelector면(preview 잔여 의심) 실패")
+
+
+def test_check_rollout_healthy_single_revision_fails_when_old_revision_has_replicas(monkeypatch):
+    _patch_rollout(monkeypatch, phase="Healthy", active="abc123", rs_items=[
+        _fake_rs("vllm-serving-abc123", 1, "abc123"),
+        _fake_rs("vllm-serving-oldrev", 1, "oldrev"),  # active가 아닌데 desired=1로 남음
+    ])
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is False
+    assert "vllm-serving-oldrev" in result["reason"]
+    print("OK - active가 아닌 다른 revision의 ReplicaSet에 desired>0이 남아있으면(단일 revision 아님) 실패")
 
 
 def test_check_experiment_context_clear_fails_when_context_active(monkeypatch):
