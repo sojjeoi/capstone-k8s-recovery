@@ -135,6 +135,19 @@ def new_state_entry(trial: Trial) -> dict:
         # 실패 사유와 별도로 보존한다(둘 다 필요하면 SequenceAborted 메시지에서
         # " | 추가로 postflight cleanup도 실패: ..."로 합쳐서 드러남).
         "cleanup_reason": None,
+        # §111(2026-09-24) - real_safety_checks()가 이미 계산해두고도 버려지던
+        # 항목별 세부 결과(checks dict)를 이제 durable하게 남긴다 - "Healthy"와
+        # "aborted_preview_rolled_back"(§111 Rollout 예외)처럼 같은 ok=True라도
+        # 서로 다른 근거로 통과했는지를 사후에 구분하기 위함(§110 사고 - 이
+        # 구분이 없어서 처음엔 이걸 진짜 문제로 오인할 뻔했다).
+        "preflight_checks": None,
+        "postflight_checks": None,
+        # §111 - completed인데 cleanup_status=failed인 trial을 재개 흐름에
+        # 다시 포함시키려면, 재실행이 아니라 사람이 현재 클러스터 상태·당시
+        # 이벤트 근거를 직접 대조해 내린 판정을 여기 별도로 기록해야 한다
+        # (adjudicate_cleanup_failure() 참고) - 원본 cleanup_status/
+        # cleanup_reason은 이 판정이 있어도 절대 덮어쓰지 않는다.
+        "cleanup_adjudication": None,
     }
 
 
@@ -224,6 +237,40 @@ def sync_replacement_results(state: dict) -> None:
         if replacement_entry is not None:
             link["replacement_result_hash"] = replacement_entry.get("result_hash")
             link["replacement_status"] = replacement_entry.get("status")
+
+
+def adjudicate_cleanup_failure(state: dict, run_id: str, verdict: str, reason: str,
+                                evidence: Optional[dict] = None) -> None:
+    """§111(2026-09-24, load_ramp-fixed_threshold-01-mainexp-v2 계기) -
+    `status=completed`인데 `cleanup_status=failed`인 trial을 재개 흐름에서
+    다시 진행시키려면(그 trial 자체를 재실행하는 게 아니다 - trial 결과는
+    이미 유효할 수 있음), run_sequence()가 자동으로 판단하지 않고 **사람이
+    현재 클러스터 상태와 당시 이벤트 근거를 직접 대조해 내린 판정**을 이
+    함수로 별도 기록해야 한다. 원본 `cleanup_status`/`cleanup_reason`은
+    이 판정이 생겨도 절대 덮어쓰지 않는다(원래 실패 기록 그대로 보존 -
+    link_technical_invalid_replacement()가 원본 trial slot을 절대 안
+    건드리는 것과 같은 원칙).
+
+    verdict:
+      "resolved_false_positive" - 재검증 결과 실제 문제가 아니었음이
+        확인됨(예: §111의 Rollout phase=Degraded+RolloutAborted 오탐).
+        이 값만 run_sequence()의 재개 skip-check를 통과시킨다.
+      "confirmed_problem" - 재검증 결과 진짜 문제로 확정됨. 판정 자체는
+        기록되지만 run_sequence()는 여전히 자동으로 건너뛰지 않는다 -
+        재실행 여부·방법은 이 함수의 책임 밖(완전히 별도 결정 필요)."""
+    if run_id not in state["trials"]:
+        raise ValueError(f"{run_id}이 state에 없음")
+    entry = state["trials"][run_id]
+    if entry["status"] != "completed":
+        raise ValueError(f"{run_id}의 status가 completed가 아님({entry['status']!r}) - adjudication 대상이 아님")
+    if entry.get("cleanup_status") == "ok":
+        raise ValueError(f"{run_id}은 이미 cleanup_status=ok - adjudication 불필요")
+    if verdict not in ("resolved_false_positive", "confirmed_problem"):
+        raise ValueError(f"알 수 없는 verdict: {verdict!r}(resolved_false_positive|confirmed_problem만 허용)")
+    entry["cleanup_adjudication"] = {
+        "verdict": verdict, "reason": reason, "evidence": evidence or {},
+        "adjudicated_at_utc": _now_iso(),
+    }
 
 
 def apply_replacements(trials: list, replacements: dict) -> list:
@@ -319,6 +366,31 @@ class Hooks:
     verify_result_hash: Callable[[dict], bool]
 
 
+def _completed_trial_resumable_reason(entry: dict, hooks: "Hooks") -> Optional[str]:
+    """§111(2026-09-24) - "completed니까 건너뛰어도 된다"고 판단하기 전에
+    반드시 통과해야 하는 두 조건을 한곳에 모은다(메인 루프의 매 trial
+    skip-check와 `--from-run-id`의 사전 검증 둘 다 이 함수를 쓴다 - 규칙이
+    두 곳에서 갈라지지 않게). 통과하면 None, 실패하면 중단 사유 문자열을
+    반환한다(호출부가 `SequenceAborted`로 승격).
+
+    1) `cleanup_status != "ok"`인데 사람이 명시적으로 `verdict=
+       resolved_false_positive`로 adjudicate하지 않았으면 건너뛰지 않는다
+       (load_ramp-fixed_threshold-01-mainexp-v2 사고 - 예전엔 status만 보고
+       조용히 건너뛰었다). `adjudicate_cleanup_failure()`가 남기는 판정만
+       인정하고, 원본 `cleanup_status`/`cleanup_reason`은 이 함수가 절대
+       참조해 덮어쓰지 않는다.
+    2) hash가 실제 파일과 다르면(사후 손상·변조 가능성) 건너뛰지 않는다 -
+       `cleanup_status`가 이미 ok였어도 매번 재확인한다."""
+    if entry.get("cleanup_status") != "ok":
+        adjudication = entry.get("cleanup_adjudication")
+        if not adjudication or adjudication.get("verdict") != "resolved_false_positive":
+            return (f"{entry['run_id']}이 completed지만 cleanup_status={entry.get('cleanup_status')!r} - "
+                    f"명시적 adjudication(verdict=resolved_false_positive) 없이는 자동으로 건너뛰지 않음")
+    if not hooks.verify_result_hash(entry):
+        return f"{entry['run_id']}의 저장된 result hash가 실제 결과 파일과 다름 - 중단"
+    return None
+
+
 def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
                   dry_run: bool = False, from_run_id: Optional[str] = None) -> dict:
     """§98 섹션2/6/8 - 결정론적 순서로 순차 실행. 중단 조건을 만나면
@@ -344,8 +416,9 @@ def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
             if not entry or entry["status"] != "completed":
                 raise SequenceAborted(
                     f"--from-run-id 이전 trial {prior.run_id}이 completed 상태가 아님({entry and entry['status']}) - 중단")
-            if not hooks.verify_result_hash(entry):
-                raise SequenceAborted(f"{prior.run_id}의 저장된 result hash가 실제 결과 파일과 다름 - 중단")
+            reason = _completed_trial_resumable_reason(entry, hooks)
+            if reason:
+                raise SequenceAborted(reason)
         trials = trials[idx:]
 
     current_scenario = None
@@ -354,6 +427,14 @@ def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
             entry = state["trials"][trial.run_id]
 
             if entry["status"] == "completed":
+                # §111(2026-09-24, load_ramp-fixed_threshold-01-mainexp-v2 계기) -
+                # status만 보고 건너뛰면 안 된다. cleanup_status=failed인데
+                # 명시적 adjudication(verdict=resolved_false_positive) 없이
+                # 자동으로 넘어가던 gap이 있었다 - 그리고 completed+cleanup=ok라도
+                # 결과 파일이 사후에 손상/변조됐을 수 있으니 매번 hash를 재확인한다.
+                reason = _completed_trial_resumable_reason(entry, hooks)
+                if reason:
+                    raise SequenceAborted(reason)
                 continue
             if entry["status"] in ABORT_STATUSES:
                 raise SequenceAborted(
@@ -379,6 +460,10 @@ def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
                 raise SequenceAborted(f"git drift 감지 - {drift['reason']}")
 
             pre = hooks.preflight(trial.__dict__, state)
+            # §111 - real_safety_checks()가 이미 계산한 항목별 세부 결과를
+            # durable하게 남긴다("Healthy" vs "aborted_preview_rolled_back"처럼
+            # 같은 ok=True도 서로 다른 근거로 통과했는지 사후 구분 가능해야 함).
+            entry["preflight_checks"] = pre.get("checks")
             if not pre["ok"]:
                 entry.update(status="invalid", failure_reason=pre["reason"], end_timestamp=_now_iso())
                 save_state_atomic(state_path, state)
@@ -427,6 +512,7 @@ def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
 
             entry["cleanup_status"] = "ok" if cleanup["ok"] else "failed"
             entry["cleanup_reason"] = cleanup.get("reason")
+            entry["postflight_checks"] = cleanup.get("checks")
             save_state_atomic(state_path, state)
 
             # 어느 실패에서도(원본 trial 실패든 cleanup 실패든) 다음 trial로 넘어가지
@@ -600,38 +686,100 @@ def _check_active_endpoint(namespace: str = "vllm-serving") -> dict:
 
 
 def _check_rollout_healthy_single_revision(name: str = "vllm-serving", namespace: str = "vllm-serving") -> dict:
-    """§107의 _check_rollout_not_stuck()("promote 전 pause만 아니면 OK")를
-    §108에서 강화 - 실측(2026-09-23, 라이브 확인, `kubectl get rollout
-    vllm-serving -o json`)으로 확인된 3가지를 모두 본다:
-      1) status.phase == "Healthy"(Argo Rollouts 자체 판정 - Progressing/
-         Degraded/Paused 등이면 실패). is_paused_pre_promotion()이 놓치는
-         Degraded 등의 다른 비정상 phase까지 잡는다.
-      2) status.blueGreen.activeSelector == previewSelector(쉬고 있을 때는
-         실측상 항상 같은 값 - preview가 하나라도 진행 중이면 서로 달라짐,
-         "preview 잔여" 탐지).
-      3) 단일 revision 확인 - app=vllm-serving 라벨의 ReplicaSet 중 active
-         revision이 아닌데 desired replicas>0인 게 있으면(구 revision이
-         scale-down 안 끝남) 실패."""
+    """§107/§108의 절대조건("phase==Healthy만 통과")을 §111에서 다듬었다 -
+    실사고 계기(load_ramp-fixed_threshold-01-mainexp-v2, docs/design/
+    phase8-blue-green-preflight-incident.md §110): detector가 SLO 위반을
+    감지 못해 promote 없이 끝난 trial은 `cleanup_unpromoted_preview()`가
+    미승격 preview를 abort하는데, Argo Rollouts는 abort된 Rollout의
+    `status.phase`를 다음 업데이트 시도 전까지 `"Degraded"`(reason
+    `RolloutAborted`)로 남겨둔다 - 이건 Argo Rollouts 자체의 정상 동작이지
+    클러스터 이상이 아니다(§110 - `kubectl get events` 실측으로 확인, 실제
+    서빙 pod은 전혀 영향 없었음). 하지만 이 예외를 함부로 다 허용하면 안
+    되므로, **원인이 정확히 RolloutAborted이고 미승격 preview의 복원이
+    실제로 완료됐다는 근거가 전부 있을 때만** 예외로 허용하고, 그 결과를
+    `"healthy"`와 구분되는 `"aborted_preview_rolled_back"`로 분류해
+    반환한다(호출부가 `Healthy`로 오인해 기록하지 않도록 - `run_sequence()`
+    가 `checks`를 `preflight_checks`/`postflight_checks`에 그대로 저장).
+    phase 검사 자체를 없애지 않았다 - Degraded의 다른 원인(reason이
+    RolloutAborted가 아님)은 여전히 그대로 실패 처리한다.
+
+    검사 내용:
+      1) `phase == "Healthy"` -> `classification="healthy"`, 정상 경로.
+      2) `phase == "Degraded"`이고 `conditions`에 `type=Progressing,
+         status=False, reason=RolloutAborted`가 있으면 ->
+         `classification="aborted_preview_rolled_back"` 후보 - 아래 근거를
+         전부 확인해야 통과: `pauseConditions`가 비어있음(잔여 pause
+         없음), `activeSelector`가 있고 active Service EndpointSlice에
+         주소가 있음(안정 revision이 실제로 서빙 중), active pod 이름이
+         `activeSelector` 해시를 포함(선택 재확인). 그 외 Degraded
+         원인(예: 실제 실패로 인한 Degraded)은 그대로 실패.
+      3) 단일 revision 확인(1·2 공통) - `app={name}` 라벨의 ReplicaSet 중
+         active가 아닌 것들의 desired **AND current AND ready** 전부 0이어야
+         함(§108까지는 desired만 봄 - preview pod이 Terminating 중이라
+         desired는 이미 0인데 current/ready가 아직 안 줄어든 경우까지
+         잡기 위해 강화, §102 wait_until_rolled_back()과 같은 이유).
+      4) `classification=="healthy"`일 때만 `activeSelector==
+         previewSelector`(아무 preview도 진행 중이 아님)도 확인한다 -
+         `aborted_preview_rolled_back` 상태에서는 `previewSelector`가
+         이미 지워진 preview의 옛 해시를 계속 들고 있는 게 정상이라
+         (실측 확인) 이 비교 자체가 무의미하다."""
+    import active_pod_resolver
     import blue_green_prep as bgp
     obj = bgp._custom_api().get_namespaced_custom_object(
         bgp.ROLLOUTS_GROUP, bgp.ROLLOUTS_VERSION, namespace, bgp.ROLLOUTS_PLURAL, name)
     status = obj.get("status", {})
     phase = status.get("phase")
-    if phase != "Healthy":
-        return {"ok": False, "reason": f"Rollout phase={phase!r}(Healthy 아님)"}
     bg = status.get("blueGreen") or {}
     active_selector, preview_selector = bg.get("activeSelector"), bg.get("previewSelector")
-    if active_selector != preview_selector:
-        return {"ok": False, "reason": f"preview 잔여 의심 - activeSelector({active_selector}) "
-                                        f"!= previewSelector({preview_selector})"}
+    conditions = status.get("conditions") or []
+
+    if phase == "Healthy":
+        classification = "healthy"
+    elif phase == "Degraded" and any(
+            c.get("type") == "Progressing" and c.get("status") == "False" and c.get("reason") == "RolloutAborted"
+            for c in conditions):
+        classification = "aborted_preview_rolled_back"
+    else:
+        return {"ok": False, "reason": f"Rollout phase={phase!r}(Healthy 아님, RolloutAborted 예외 조건도 아님)",
+                "classification": "unhealthy"}
+
+    if classification == "aborted_preview_rolled_back":
+        if status.get("pauseConditions"):
+            return {"ok": False, "reason": f"Degraded+RolloutAborted인데 pauseConditions가 남아있음(복원 미완료): "
+                                            f"{status.get('pauseConditions')}", "classification": "unhealthy"}
+        if not active_selector:
+            return {"ok": False, "reason": "Degraded+RolloutAborted인데 activeSelector를 확인할 수 없음",
+                    "classification": "unhealthy"}
+        endpoint_ips = _endpointslice_addresses(namespace, "vllm-active")
+        if not endpoint_ips:
+            return {"ok": False, "reason": "Degraded+RolloutAborted인데 active Service endpoint가 비어있음"
+                                            "(안정 revision 서빙 확인 불가)", "classification": "unhealthy"}
+        active_pods = active_pod_resolver.get_active_pods()
+        if len(active_pods) != 1 or active_selector not in active_pods[0]["name"]:
+            return {"ok": False, "reason": f"Degraded+RolloutAborted인데 active pod이 activeSelector"
+                                            f"({active_selector})와 일치하지 않음: {active_pods}",
+                    "classification": "unhealthy"}
+
     apps = bgp._apps_api()
     rs_list = apps.list_namespaced_replica_set(namespace, label_selector=f"app={name}").items
-    stray = [rs.metadata.name for rs in rs_list
-             if (rs.spec.replicas or 0) > 0
-             and rs.metadata.labels.get("rollouts-pod-template-hash") != active_selector]
+    stray = []
+    for rs in rs_list:
+        if rs.metadata.labels.get("rollouts-pod-template-hash") == active_selector:
+            continue
+        desired = rs.spec.replicas or 0
+        current = rs.status.replicas or 0
+        ready = rs.status.ready_replicas or 0
+        if desired > 0 or current > 0 or ready > 0:
+            stray.append({"name": rs.metadata.name, "desired": desired, "current": current, "ready": ready})
     if stray:
-        return {"ok": False, "reason": f"active 외 다른 revision에 desired>0 ReplicaSet 잔존(단일 revision 아님): {stray}"}
-    return {"ok": True, "reason": None}
+        return {"ok": False, "reason": f"active 외 다른 revision에 잔존 replica 있음(단일 revision 아님): {stray}",
+                "classification": "unhealthy"}
+
+    if classification == "healthy" and active_selector != preview_selector:
+        return {"ok": False, "reason": f"preview 잔여 의심 - activeSelector({active_selector}) "
+                                        f"!= previewSelector({preview_selector})", "classification": "unhealthy"}
+
+    return {"ok": True, "reason": None, "classification": classification}
 
 
 def _check_experiment_context_clear(url: str = LOCAL_RECOVERY_POLICY_URL) -> dict:
@@ -962,10 +1110,25 @@ def main():
     parser.add_argument("--link-reason", default=None,
                          help="--link-replacement와 함께 필수 - 왜 이 원본이 기술적 invalid이고 왜 이 대체가 "
                               "필요한지 사람이 읽을 수 있는 사유(state/manifest에 그대로 보존됨).")
+    parser.add_argument("--adjudicate-cleanup", nargs=2, default=None, metavar=("RUN_ID", "VERDICT"),
+                         help="§111 - status=completed인데 cleanup_status=failed인 RUN_ID에 대해 사람이 현재 "
+                              "클러스터 상태·당시 이벤트 근거를 직접 대조해 내린 판정을 기록만 하고 종료한다"
+                              "(trial 실행 없음 - 그 trial 자체는 재실행하지 않음). VERDICT는 "
+                              "resolved_false_positive|confirmed_problem만 허용. --adjudicate-reason과 함께 "
+                              "줘야 함. 원본 cleanup_status/cleanup_reason은 절대 안 건드림 - "
+                              "verdict=resolved_false_positive만 run_sequence()의 재개 skip을 허용시킨다.")
+    parser.add_argument("--adjudicate-reason", default=None,
+                         help="--adjudicate-cleanup과 함께 필수 - 판정 근거(사람이 읽을 수 있는 사유, state에 "
+                              "그대로 보존됨).")
+    parser.add_argument("--adjudicate-evidence-file", default=None,
+                         help="--adjudicate-cleanup과 함께 선택 - 현재 클러스터 상태/K8s 이벤트 등 근거를 담은 "
+                              "JSON 파일 경로(state에 그대로 보존됨).")
     args = parser.parse_args()
 
     if args.link_replacement is not None and args.link_reason is None:
         parser.error("--link-replacement는 --link-reason과 함께 줘야 함")
+    if args.adjudicate_cleanup is not None and args.adjudicate_reason is None:
+        parser.error("--adjudicate-cleanup은 --adjudicate-reason과 함께 줘야 함")
 
     state_path = Path(args.state_file)
     existing = load_state(state_path)
@@ -984,6 +1147,24 @@ def main():
         save_state_atomic(state_path, existing)
         print(f"연결 완료: {original_run_id} -> {new_run_id} (state 파일: {state_path}). "
               f"trial은 아직 실행되지 않음 - --resume으로 별도 실행할 것.")
+        return
+
+    if args.adjudicate_cleanup is not None:
+        if existing is None:
+            print(f"--adjudicate-cleanup은 기존 state 파일이 있어야 함: {state_path}", file=sys.stderr)
+            sys.exit(1)
+        run_id, verdict = args.adjudicate_cleanup
+        evidence = None
+        if args.adjudicate_evidence_file:
+            evidence = json.loads(Path(args.adjudicate_evidence_file).read_text(encoding="utf-8"))
+        try:
+            adjudicate_cleanup_failure(existing, run_id, verdict, args.adjudicate_reason, evidence)
+        except ValueError as e:
+            print(f"ADJUDICATION REJECTED: {e}", file=sys.stderr)
+            sys.exit(1)
+        save_state_atomic(state_path, existing)
+        print(f"판정 기록 완료: {run_id} -> {verdict} (state 파일: {state_path}). "
+              f"trial은 재실행되지 않음 - 원본 cleanup_status/cleanup_reason은 그대로 보존됨.")
         return
 
     if args.resume or existing is not None:

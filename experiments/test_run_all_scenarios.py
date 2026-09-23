@@ -146,6 +146,7 @@ def test_run_sequence_skips_completed_on_resume(tmp_path):
     trials = ras.build_matrix("P")[:3]
     state = _fresh_state(trials)
     state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "ok"
     call_log = []
     ras.run_sequence(trials, state, _make_hooks(call_log), tmp_path / "state.json")
     assert all(c[1] != trials[0].run_id for c in call_log if c[0] == "run_trial")
@@ -343,6 +344,156 @@ def test_postflight_exception_itself_is_absorbed_as_cleanup_failure(tmp_path):
     print("OK - postflight_cleanup_check() 자신이 예외를 던져도 삼켜지지 않고 cleanup 실패로 state에 기록됨")
 
 
+# ---------------------------------------------------------------------------
+# §111(2026-09-24, load_ramp-fixed_threshold-01-mainexp-v2 사고 계기) -
+# status=completed + cleanup_status=failed는 명시적 adjudication
+# (verdict=resolved_false_positive) 없이는 자동으로 건너뛰면 안 된다.
+# 원본 실패 기록은 절대 덮어쓰지 않는다.
+# ---------------------------------------------------------------------------
+
+def test_resume_does_not_auto_skip_completed_with_failed_cleanup_without_adjudication(tmp_path):
+    trials = ras.build_matrix("P")[:2]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "failed"
+    state["trials"][trials[0].run_id]["cleanup_reason"] = "[rollout_healthy_single_revision] Rollout phase='Degraded'"
+    state["trials"][trials[0].run_id]["result_hash"] = "abc"
+    call_log = []
+    with pytest.raises(ras.SequenceAborted, match="adjudication"):
+        ras.run_sequence(trials, state, _make_hooks(call_log, verify_hash_fn=lambda e: True),
+                          tmp_path / "state.json")
+    assert trials[1].run_id not in [c[1] for c in call_log if c[0] == "run_trial"], "다음 trial로 넘어가면 안 됨"
+    # 원본 실패 기록은 손대지 않아야 함.
+    assert state["trials"][trials[0].run_id]["cleanup_status"] == "failed"
+    assert state["trials"][trials[0].run_id]["cleanup_reason"] == "[rollout_healthy_single_revision] Rollout phase='Degraded'"
+    print("OK - completed+cleanup_status=failed는 명시적 adjudication 없이는 자동으로 건너뛰지 않고 중단, 원본 기록 보존")
+
+
+def test_resume_skips_with_explicit_resolved_false_positive_adjudication(tmp_path):
+    trials = ras.build_matrix("P")[:2]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "failed"
+    state["trials"][trials[0].run_id]["cleanup_reason"] = "[rollout_healthy_single_revision] Rollout phase='Degraded'"
+    state["trials"][trials[0].run_id]["result_hash"] = "abc"
+    ras.adjudicate_cleanup_failure(state, trials[0].run_id, "resolved_false_positive",
+                                    "재검증 결과 Argo Rollouts의 정상적인 abort-후 잔류 상태였음(§110)",
+                                    evidence={"pauseConditions": None})
+    call_log = []
+    ras.run_sequence(trials, state, _make_hooks(call_log, verify_hash_fn=lambda e: True), tmp_path / "state.json")
+    assert trials[1].run_id in [c[1] for c in call_log if c[0] == "run_trial"], "adjudication 후에는 다음 trial로 진행해야 함"
+    # 원본 실패 기록은 여전히 그대로 - adjudication이 덮어쓰지 않음.
+    assert state["trials"][trials[0].run_id]["cleanup_status"] == "failed"
+    assert state["trials"][trials[0].run_id]["cleanup_adjudication"]["verdict"] == "resolved_false_positive"
+    print("OK - 명시적 adjudication(verdict=resolved_false_positive)이 있으면 다음 trial로 진행, "
+          "원본 cleanup_status/cleanup_reason은 여전히 'failed'로 보존됨(소급 수정 없음)")
+
+
+def test_resume_still_blocks_with_confirmed_problem_adjudication(tmp_path):
+    """verdict=confirmed_problem은 판정 자체는 기록되지만 여전히 자동으로
+    건너뛰지 않는다 - 진짜 문제로 확정됐다는 뜻이라 재실행 여부는 별도 결정."""
+    trials = ras.build_matrix("P")[:2]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "failed"
+    state["trials"][trials[0].run_id]["cleanup_reason"] = "[all_nodes_healthy] Node sj-worker NotReady"
+    state["trials"][trials[0].run_id]["result_hash"] = "abc"
+    ras.adjudicate_cleanup_failure(state, trials[0].run_id, "confirmed_problem",
+                                    "재검증 결과 실제로 Node가 NotReady 상태였음이 확인됨")
+    call_log = []
+    with pytest.raises(ras.SequenceAborted, match="adjudication"):
+        ras.run_sequence(trials, state, _make_hooks(call_log, verify_hash_fn=lambda e: True),
+                          tmp_path / "state.json")
+    assert trials[1].run_id not in [c[1] for c in call_log if c[0] == "run_trial"]
+    print("OK - verdict=confirmed_problem은 판정은 기록되지만 여전히 자동으로 건너뛰지 않음(재실행은 별도 결정)")
+
+
+def test_resume_blocks_on_hash_mismatch_even_when_cleanup_status_ok(tmp_path):
+    """§111 - completed+cleanup_status=ok라도 결과 파일 hash가 저장값과
+    다르면(사후 손상·변조 가능성) 자동으로 건너뛰면 안 된다."""
+    trials = ras.build_matrix("P")[:2]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "ok"
+    state["trials"][trials[0].run_id]["result_hash"] = "original-hash"
+    call_log = []
+    with pytest.raises(ras.SequenceAborted, match="hash"):
+        ras.run_sequence(trials, state, _make_hooks(call_log, verify_hash_fn=lambda e: False),
+                          tmp_path / "state.json")
+    assert trials[1].run_id not in [c[1] for c in call_log if c[0] == "run_trial"]
+    print("OK - completed+cleanup_status=ok라도 결과 파일 hash가 저장값과 다르면 자동으로 건너뛰지 않고 중단")
+
+
+def test_adjudicate_cleanup_failure_rejects_non_completed_status():
+    trials = ras.build_matrix("P")[:1]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "failed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "failed"
+    with pytest.raises(ValueError, match="completed"):
+        ras.adjudicate_cleanup_failure(state, trials[0].run_id, "resolved_false_positive", "사유")
+    print("OK - status가 completed가 아니면 adjudication 거부")
+
+
+def test_adjudicate_cleanup_failure_rejects_already_ok_cleanup():
+    trials = ras.build_matrix("P")[:1]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "ok"
+    with pytest.raises(ValueError, match="불필요"):
+        ras.adjudicate_cleanup_failure(state, trials[0].run_id, "resolved_false_positive", "사유")
+    print("OK - cleanup_status가 이미 ok면 adjudication 자체가 불필요하다고 거부")
+
+
+def test_adjudicate_cleanup_failure_rejects_unknown_verdict():
+    trials = ras.build_matrix("P")[:1]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "failed"
+    with pytest.raises(ValueError, match="verdict"):
+        ras.adjudicate_cleanup_failure(state, trials[0].run_id, "looks_fine_i_guess", "사유")
+    print("OK - 알 수 없는 verdict는 거부(resolved_false_positive|confirmed_problem만 허용)")
+
+
+def test_adjudicate_cleanup_failure_never_touches_original_cleanup_fields():
+    trials = ras.build_matrix("P")[:1]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "failed"
+    state["trials"][trials[0].run_id]["cleanup_reason"] = "원본 실패 사유 그대로"
+    ras.adjudicate_cleanup_failure(state, trials[0].run_id, "resolved_false_positive", "판정 사유",
+                                    evidence={"k": "v"})
+    entry = state["trials"][trials[0].run_id]
+    assert entry["cleanup_status"] == "failed", "원본 cleanup_status를 절대 덮어쓰면 안 됨"
+    assert entry["cleanup_reason"] == "원본 실패 사유 그대로"
+    assert entry["cleanup_adjudication"] == {
+        "verdict": "resolved_false_positive", "reason": "판정 사유", "evidence": {"k": "v"},
+        "adjudicated_at_utc": entry["cleanup_adjudication"]["adjudicated_at_utc"],
+    }
+    print("OK - adjudication은 원본 cleanup_status/cleanup_reason을 절대 안 건드리고 별도 필드에만 기록")
+
+
+def test_main_cli_adjudicate_cleanup_records_verdict_without_running_trial(tmp_path):
+    trials = ras.build_matrix("P")[:1]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "failed"
+    state["trials"][trials[0].run_id]["cleanup_reason"] = "[rollout_healthy_single_revision] Rollout phase='Degraded'"
+    state_path = tmp_path / "state.json"
+    ras.save_state_atomic(state_path, state)
+    proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "run_all_scenarios.py"),
+         "--adjudicate-cleanup", trials[0].run_id, "resolved_false_positive",
+         "--adjudicate-reason", "테스트 - CLI 경로 확인",
+         "--state-file", str(state_path)],
+        capture_output=True, text=True, cwd=Path(__file__).parent)
+    assert proc.returncode == 0, proc.stderr
+    reloaded = ras.load_state(state_path)
+    entry = reloaded["trials"][trials[0].run_id]
+    assert entry["cleanup_adjudication"]["verdict"] == "resolved_false_positive"
+    assert entry["cleanup_status"] == "failed", "CLI 경로도 원본 cleanup_status를 안 건드려야 함"
+    print("OK - CLI --adjudicate-cleanup이 판정만 기록하고 종료(trial 실행 없음), 원본 cleanup_status 보존")
+
+
 def test_preflight_failure_marks_invalid_and_aborts(tmp_path):
     trials = ras.build_matrix("P")[:2]
     state = _fresh_state(trials)
@@ -457,6 +608,7 @@ def test_from_run_id_skips_prior_completed_with_matching_hash(tmp_path):
     for t in trials[:2]:
         state["trials"][t.run_id]["status"] = "completed"
         state["trials"][t.run_id]["result_hash"] = "matches"
+        state["trials"][t.run_id]["cleanup_status"] = "ok"
     call_log = []
     ras.run_sequence(trials, state, _make_hooks(call_log), tmp_path / "state.json",
                       from_run_id=trials[2].run_id)
@@ -468,6 +620,7 @@ def test_from_run_id_aborts_on_hash_mismatch(tmp_path):
     state = _fresh_state(trials)
     state["trials"][trials[0].run_id]["status"] = "completed"
     state["trials"][trials[0].run_id]["result_hash"] = "stale"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "ok"
     call_log = []
     with pytest.raises(ras.SequenceAborted, match="hash"):
         ras.run_sequence(trials, state, _make_hooks(call_log, verify_hash_fn=lambda e: False),
@@ -528,8 +681,10 @@ def _state_with_failed_pod_kill_proposed():
     state = _fresh_state(pod_kill, plan_id="mainexp-v1")
     state["trials"]["pod_kill-native-01-mainexp-v1"]["status"] = "completed"
     state["trials"]["pod_kill-native-01-mainexp-v1"]["result_hash"] = "native-hash"
+    state["trials"]["pod_kill-native-01-mainexp-v1"]["cleanup_status"] = "ok"
     state["trials"]["pod_kill-fixed_threshold-01-mainexp-v1"]["status"] = "completed"
     state["trials"]["pod_kill-fixed_threshold-01-mainexp-v1"]["result_hash"] = "ft-hash"
+    state["trials"]["pod_kill-fixed_threshold-01-mainexp-v1"]["cleanup_status"] = "ok"
     state["trials"]["pod_kill-proposed-01-mainexp-v1"]["status"] = "failed"
     state["trials"]["pod_kill-proposed-01-mainexp-v1"]["failure_reason"] = "실행기 종료 코드 1"
     return state, pod_kill
@@ -1081,20 +1236,35 @@ def test_check_active_endpoint_fails_when_endpoint_empty():
     print("OK - endpoint IP가 0개면(§106 조사의 pod_kill 갭 상황) 실패")
 
 
-def _fake_rs(name, replicas, pod_hash):
+def _fake_rs(name, replicas, pod_hash, current=None, ready=None):
+    """current/ready 생략 시 desired(replicas)와 같은 값 - 기존 호출부(전부
+    "desired와 실제가 같은" 정상/이상 케이스)는 그대로 동작하고, §111의
+    "desired=0인데 current/ready가 아직 안 줄어든 Terminating 중" 케이스만
+    명시적으로 다르게 지정한다."""
+    current = replicas if current is None else current
+    ready = replicas if ready is None else ready
     class RS:
         metadata = type("M", (), {"name": name, "labels": {"rollouts-pod-template-hash": pod_hash}})()
         spec = type("S", (), {"replicas": replicas})()
+        status = type("St", (), {"replicas": current, "ready_replicas": ready})()
     return RS()
 
 
-def _patch_rollout(monkeypatch, phase="Healthy", active="abc123", preview=None, rs_items=None):
+_ROLLOUT_ABORTED_CONDITIONS = [
+    {"type": "Progressing", "status": "False", "reason": "RolloutAborted", "message": "Rollout aborted update"},
+]
+
+
+def _patch_rollout(monkeypatch, phase="Healthy", active="abc123", preview=None, rs_items=None,
+                    conditions=None, pause_conditions=None):
     import blue_green_prep as bgp
 
     class FakeCustomApi:
         def get_namespaced_custom_object(self, group, version, ns, plural, name):
-            return {"status": {"phase": phase, "blueGreen": {
-                "activeSelector": active, "previewSelector": preview if preview is not None else active}}}
+            return {"status": {"phase": phase, "pauseConditions": pause_conditions,
+                                "conditions": conditions or [],
+                                "blueGreen": {"activeSelector": active,
+                                              "previewSelector": preview if preview is not None else active}}}
 
     class FakeAppsApi:
         def list_namespaced_replica_set(self, ns, label_selector):
@@ -1104,11 +1274,123 @@ def _patch_rollout(monkeypatch, phase="Healthy", active="abc123", preview=None, 
     monkeypatch.setattr(bgp, "_apps_api", lambda: FakeAppsApi())
 
 
+def _patch_active_pod_and_endpoint_for_rollout(monkeypatch, active_hash="abc123", pod_name=None, endpoint_ips=None):
+    """§111 - Degraded+RolloutAborted 예외 경로가 추가로 확인하는 active
+    Service selector/endpoint 증거를 채운다."""
+    import active_pod_resolver
+    pod_name = pod_name if pod_name is not None else f"vllm-serving-{active_hash}-xyz"
+    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": pod_name, "uid": "u1"}])
+    monkeypatch.setattr(ras, "_endpointslice_addresses",
+                         lambda ns, svc: endpoint_ips if endpoint_ips is not None else ["10.0.0.1"])
+
+
 def test_check_rollout_healthy_single_revision_ok_at_rest(monkeypatch):
     _patch_rollout(monkeypatch, phase="Healthy", active="abc123")
     result = ras._check_rollout_healthy_single_revision()
     assert result["ok"] is True
-    print("OK - phase=Healthy + activeSelector==previewSelector(preview 없음) + 단일 revision이면 ok=True")
+    assert result["classification"] == "healthy"
+    print("OK - phase=Healthy + activeSelector==previewSelector(preview 없음) + 단일 revision이면 "
+          "ok=True, classification='healthy'(§111 - aborted_preview_rolled_back와 구별)")
+
+
+# ---------------------------------------------------------------------------
+# §111(2026-09-24, load_ramp-fixed_threshold-01-mainexp-v2 사고 계기) -
+# phase=Degraded+RolloutAborted는 미승격 preview가 정상적으로 abort+복원된
+# 뒤 Argo Rollouts가 다음 업데이트 전까지 남겨두는 정상 상태다(§110 조사) -
+# 근거가 전부 확인될 때만 예외로 허용하고 "healthy"와 구별해 기록한다.
+# ---------------------------------------------------------------------------
+
+def test_check_rollout_aborted_preview_fully_restored_is_allowed_and_classified_distinctly(monkeypatch):
+    """정확한 경로 - phase=Degraded, reason=RolloutAborted, pauseConditions
+    없음, active endpoint 있음, active pod이 activeSelector와 일치, 다른
+    모든 revision의 desired/current/ready 전부 0."""
+    _patch_rollout(monkeypatch, phase="Degraded", active="abc123",
+                    conditions=_ROLLOUT_ABORTED_CONDITIONS, pause_conditions=None,
+                    rs_items=[
+                        _fake_rs("vllm-serving-abc123", 1, "abc123"),
+                        _fake_rs("vllm-serving-oldpreview", 0, "def456"),  # abort된 preview, 완전히 scale-down됨
+                    ])
+    _patch_active_pod_and_endpoint_for_rollout(monkeypatch, active_hash="abc123")
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is True
+    assert result["classification"] == "aborted_preview_rolled_back", (
+        "이 예외 경로는 'healthy'가 아니라 구별되는 값으로 기록돼야 함(요청 원문)")
+    print("OK - phase=Degraded+RolloutAborted이고 복원 근거가 전부 있으면 예외로 허용되지만 "
+          "classification='aborted_preview_rolled_back'로 'healthy'와 구별해 기록됨")
+
+
+def test_check_rollout_degraded_other_reason_still_blocks(monkeypatch):
+    """Degraded인데 reason이 RolloutAborted가 아니면(진짜 문제일 수 있음)
+    예외를 적용하지 않고 그대로 실패시켜야 한다."""
+    other_conditions = [{"type": "Progressing", "status": "False", "reason": "ProgressDeadlineExceeded",
+                          "message": "timed out waiting for rollout to finish"}]
+    _patch_rollout(monkeypatch, phase="Degraded", active="abc123", conditions=other_conditions)
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is False
+    assert result["classification"] == "unhealthy"
+    assert "RolloutAborted" in result["reason"]
+    print("OK - phase=Degraded인데 reason이 RolloutAborted가 아니면(예: ProgressDeadlineExceeded) 예외 없이 실패")
+
+
+def test_check_rollout_aborted_preview_fails_if_pause_conditions_remain(monkeypatch):
+    _patch_rollout(monkeypatch, phase="Degraded", active="abc123",
+                    conditions=_ROLLOUT_ABORTED_CONDITIONS,
+                    pause_conditions=[{"reason": "BlueGreenPause"}])
+    _patch_active_pod_and_endpoint_for_rollout(monkeypatch, active_hash="abc123")
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is False
+    assert result["classification"] == "unhealthy"
+    assert "pauseConditions" in result["reason"]
+    print("OK - Degraded+RolloutAborted라도 pauseConditions가 남아있으면(복원 미완료 의심) 예외 미적용, 실패")
+
+
+def test_check_rollout_aborted_preview_fails_if_endpoint_empty(monkeypatch):
+    _patch_rollout(monkeypatch, phase="Degraded", active="abc123", conditions=_ROLLOUT_ABORTED_CONDITIONS)
+    _patch_active_pod_and_endpoint_for_rollout(monkeypatch, active_hash="abc123", endpoint_ips=[])
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is False
+    assert result["classification"] == "unhealthy"
+    assert "endpoint" in result["reason"]
+    print("OK - Degraded+RolloutAborted인데 active Service endpoint가 비어있으면(안정 revision 서빙 미확인) 실패")
+
+
+def test_check_rollout_aborted_preview_fails_if_active_pod_mismatch(monkeypatch):
+    _patch_rollout(monkeypatch, phase="Degraded", active="abc123", conditions=_ROLLOUT_ABORTED_CONDITIONS)
+    _patch_active_pod_and_endpoint_for_rollout(monkeypatch, active_hash="abc123",
+                                                pod_name="vllm-serving-def456-zzz")  # activeSelector와 다른 pod
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is False
+    assert result["classification"] == "unhealthy"
+    print("OK - Degraded+RolloutAborted인데 active pod이 activeSelector와 안 맞으면 실패")
+
+
+def test_check_rollout_aborted_preview_fails_if_stray_replicas_remain(monkeypatch):
+    """§111 - 원인이 정확히 RolloutAborted여도 잔여 replica(desired/current/
+    ready 중 하나라도 0이 아님)가 있으면 예외를 적용하지 않는다."""
+    _patch_rollout(monkeypatch, phase="Degraded", active="abc123",
+                    conditions=_ROLLOUT_ABORTED_CONDITIONS,
+                    rs_items=[
+                        _fake_rs("vllm-serving-abc123", 1, "abc123"),
+                        _fake_rs("vllm-serving-oldpreview", 0, "def456", current=1, ready=0),  # 아직 Terminating 중
+                    ])
+    _patch_active_pod_and_endpoint_for_rollout(monkeypatch, active_hash="abc123")
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is False
+    assert "잔존 replica" in result["reason"]
+    print("OK - RolloutAborted 예외 조건이어도 preview RS가 아직 Terminating 중(current>0)이면 실패(desired만 보던 §108 강화)")
+
+
+def test_check_rollout_healthy_path_fails_on_current_or_ready_residue_even_if_desired_zero(monkeypatch):
+    """§111 - phase=Healthy 경로에서도 desired=0인데 current/ready가 아직
+    안 줄어든 경우를 §108(desired만 확인)보다 엄격하게 잡는다."""
+    _patch_rollout(monkeypatch, phase="Healthy", active="abc123", rs_items=[
+        _fake_rs("vllm-serving-abc123", 1, "abc123"),
+        _fake_rs("vllm-serving-terminating", 0, "oldrev", current=1, ready=1),
+    ])
+    result = ras._check_rollout_healthy_single_revision()
+    assert result["ok"] is False
+    assert "잔존 replica" in result["reason"]
+    print("OK - phase=Healthy여도 desired=0/current>0(아직 Terminating 중)인 잔여 revision이 있으면 실패")
 
 
 def test_check_rollout_healthy_single_revision_fails_when_not_healthy_phase(monkeypatch):
