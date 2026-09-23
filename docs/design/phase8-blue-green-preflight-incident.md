@@ -11611,3 +11611,149 @@ CR 0건, experiment-run context=null, `kubectl diff` 0, Node 2개 Ready.
   공식 대체 trial(`pod_kill-proposed-01-retry1-mainexp-v1`)을 진행,
   (b) 크래시 재현을 굳이 시도하지 않고 대신 코드 리뷰만으로 충분하다고
   판단, (c) 그 외 사용자가 원하는 다른 기준.
+
+## §105 - 원본 hash 보완(`link_technical_invalid_replacement`) + `pod_kill` 재개 - 6/15 유효 확보 후 새 크래시로 재중단(원인 이번엔 확인됨)
+
+사용자가 공식 재개를 승인하되, 먼저 대체 연결의 `original_result_hash`
+공백을 보완하라고 지시했다. 보완·검증·재개를 순서대로 수행했고,
+6번째 신규 trial(`pod_kill-proposed-03-mainexp-v1`)에서 **§102 진단
+수정 덕분에 이번엔 원인이 확인되는** 새 크래시로 다시 중단됐다 -
+지시대로 자동 재시도하지 않고 여기서 멈춘다. `network_degrade`는
+시작하지 않았다.
+
+### 105.1 코드 수정 - `real_run_trial()` 실패 시 결과 파일 보존 + 대체 원본 hash 검증
+
+`real_run_trial()`이 subprocess 비정상 종료 시에도(HarnessCorrupted 등)
+결과 JSON이 이미 존재하면 `result_path`/`result_hash`를 함께 보존하도록
+수정(파일이 정말 없는 경우와 구분하는 오프라인 테스트 2건 포함).
+`verify_and_backfill_original_hash(state, original_run_id)` 신규 -
+대체 연결의 `original_result_hash`가 null이면 실제 파일 기준으로 채우고,
+이미 채워져 있으면 매번 실제 파일과 재대조해 불일치 시 fail-closed -
+**원본 trial slot(`state["trials"][original]`)은 절대 건드리지 않는다.**
+`--link-replacement` 직후와 매 `--resume`마다 자동 실행되도록 CLI에
+배선. 오프라인 회귀 테스트 9건 신규, 전체 스위트 971 passed/0 failed/
+3 skipped(`KUBECONFIG` 미존재).
+
+### 105.2 hash 재검증 결과
+
+공식 state에서 `pod_kill-proposed-01-mainexp-v1`의 `original_result_hash`
+를 실제 파일 기준으로 백필 - **`701db59876b12a8de78337da4d9df1abd045320b13e16c33b38d51f2a072e237`
+(사용자 제시값과 정확히 일치)**. load_ramp 15건 + pod_kill 유효 2건 =
+**17/17 stored hash 재검증, 불일치 0건**. 원본 `failed` 슬롯 자체
+(`state["trials"]["pod_kill-proposed-01-mainexp-v1"]`)는 backfill
+전후 완전히 동일(`result_path`/`result_hash` 여전히 `None`) - 원본
+불변 확인.
+
+### 105.3 `--plan`/`--dry-run` 순서 확인
+
+`--plan --resume --scenario pod_kill`: 남은 순서가 정확히
+`sequence_index=18`의 `pod_kill-proposed-01-retry1-mainexp-v1`부터
+시작해 `19=fixed_threshold-02`로 이어짐(사전 등록 순서 그대로) 확인.
+`--dry-run --resume`: 클러스터 호출 0건, 대체는 `planned`·원본은
+`failed`로 그대로 유지 확인.
+
+### 105.4 공식 대체 trial(`pod_kill-proposed-01-retry1-mainexp-v1`) - 단독 실행·검증
+
+`run_all_scenarios.py`의 실제 함수(`build_matrix`/`apply_replacements`/
+`run_sequence`/`real_hooks`/`sync_replacement_results`)를 그대로 써서
+이 trial 하나만 먼저 실행(지시대로 "첫 실행을 확인한 후에만" 나머지
+진행). 결과: `outcome=recovered`, `detected=true`(predictive),
+`action=promote_preview`, `promotion_verified=true`, `audit_status=
+complete`. detector 로그(`detector-isolation_forest-pod_kill-proposed-
+01-retry1-mainexp-v1-20260923T050616Z.log`) 생성 확인, `model.pkl`
+hash가 `SHA256SUMS.json`과 재차 일치. K8s 이벤트로 주입 대상이 사전
+active pod(`vllm-serving-6b66d8958c-9k6jb`)과 정확히 일치함을, promote
+(`05:07:15`)+구 revision scale-down(`05:07:45`, 정확히 30초 뒤)을 확인.
+최종 상태 `phase=Healthy`, 단일 revision, Chaos CR 0건, context null,
+`kubectl diff` 0 - **문제 없음, 나머지 진행 승인 기준 충족.**
+
+### 105.5 나머지 진행 - 5건 추가 유효 확보 후 새 크래시로 중단
+
+`--resume --scenario pod_kill`로 이어서 실행한 결과:
+
+| sequence | run_id | outcome |
+|---|---|---|
+| 19 | `pod_kill-fixed_threshold-02-mainexp-v1` | recovered |
+| 20 | `pod_kill-proposed-02-mainexp-v1` | recovered |
+| 21 | `pod_kill-native-02-mainexp-v1` | recovered |
+| 22 | `pod_kill-proposed-03-mainexp-v1` | **invalid_run(크래시) - 여기서 중단** |
+
+`pod_kill-proposed-03-mainexp-v1`에서 detector가 관찰 도중(seq=1
+평가 직후) 다시 죽었다 - **이번엔 §102 진단 수정 덕분에 원인이
+확인된다**: 전용 로그(`detector-isolation_forest-pod_kill-proposed-
+03-mainexp-v1-20260923T053922Z.log`)에 **`score_server.py: error:
+fail-closed: metric stale`**(argparse 스타일 에러, `exit_code=2`)가
+그대로 남아 있다 - **score_server.py 자신의 의도된 fail-closed
+설계**(관찰 도중 Prometheus 지표가 stale해지면 오래된 데이터로 채점하지
+않고 스스로 종료)가 실제로 발동한 것이다. 첫 평가 cycle(seq=1)은
+정상 처리됐고, 두 번째 평가 시점에 지표 신선도 확인이 실패해 즉시
+종료했다.
+
+**`invalid_reason`에 exit_code·run_id·log 경로가 그대로 기록됨**
+(`run_once.py`의 §102 크래시 메시지 강화 덕분): `"detector가 관찰
+도중 비정상 종료 (exit_code=2, run_id=pod_kill-proposed-03-mainexp-v1,
+log=...detector-logs\detector-isolation_forest-pod_kill-proposed-03-
+mainexp-v1-20260923T053922Z.log)"`. 이번엔 cleanup도 정상 완료(HarnessCorrupted
+아님, `SEQUENCE ABORTED: ... -> invalid: ...`로 정상 종료) - 미승격
+preview(`6f6677f545`)가 자동으로 0/0/0까지 정리됨을 확인.
+
+**최종 클러스터 상태**: `phase=Degraded`(§35.3류 정상 잔존 - abort 없이
+그냥 invalid로 끝난 경우도 마지막 template 변경 이력이 남는 것으로
+보임, 실제 리소스는 클린), 단일 active revision(`58bfc6d8cc`, 1/1/1,
+restartCount=0), 다른 모든 RS desired=0, Chaos CR 0건, context null,
+`kubectl diff` 0, Node 2개 Ready. **잔여 위험 없음.**
+
+지시대로(**"크래시... 발생하면 즉시 멈추고 자동 재시도하지 마세요"**)
+자동 재시도·대체 run_id 생성을 하지 않고 여기서 멈췄다. `native-03`
+이후 8개 trial은 손대지 않은 채 `planned`로 남아 있다.
+
+### 105.6 이번 크래시가 §102 "원인 불명"이었던 첫 크래시에 시사하는 것 (근거 있는 추정, 확정 아님)
+
+이번 로그가 보여주는 정확한 실패 모드(첫 평가는 성공, 그 다음 평가
+직전 Prometheus 지표 신선도 검사 실패로 즉시 종료)는 `pod_kill-
+proposed-01-mainexp-v1`(§102, 로그 없어 원인 불명으로 남김)이 겪었을
+법한 **개연성 있는 후보**다 - 그러나 §102 사고는 로그가 없어 이 가설을
+확정할 증거가 없다. **이 관측 자체는 새로운 사실(§105.5)이고, §102의
+"원인 불명" 판정을 소급해서 바꾸지 않는다** - 그 판정은 그대로 유지한다.
+
+### 105.7 발견된 잠재적 설계 이슈 (수정은 이번 턴 범위 밖, 기록만)
+
+`score_server.py`의 지표 신선도(freshness) fail-closed 검사가 **단발성
+stale 감지 즉시 프로세스 전체를 죽이는** 설계다 - 순간적인 port-forward
+지연·scrape 주기 겹침 등 일시적 상황도 detector 전체를 죽여 그 trial을
+무효화시킬 수 있다(재시도·대기 로직 없음). 이번 turn의 지시 범위(대체
+연결·해시 보완·블록 재개)를 벗어나므로 코드를 수정하지 않았다 - 사실만
+기록한다.
+
+### 105.8 현재 `pod_kill` 블록 상태 - 미완료, 6/15 유효
+
+| 분류 | run_id | 상태 |
+|---|---|---|
+| 유효(1) | `pod_kill-native-01-mainexp-v1` | recovered |
+| 유효(2) | `pod_kill-fixed_threshold-01-mainexp-v1` | recovered |
+| 보존된 기술적 실패 | `pod_kill-proposed-01-mainexp-v1` | failed(HarnessCorrupted, §102) - **대체됨** |
+| 유효(3, 대체) | `pod_kill-proposed-01-retry1-mainexp-v1` | recovered |
+| 유효(4) | `pod_kill-fixed_threshold-02-mainexp-v1` | recovered |
+| 유효(5) | `pod_kill-proposed-02-mainexp-v1` | recovered |
+| 유효(6) | `pod_kill-native-02-mainexp-v1` | recovered |
+| 보존된 신규 실패 | `pod_kill-proposed-03-mainexp-v1` | invalid_run(detector 크래시, 원인 확인됨 - §105.5) - **미해결, 대체 미연결** |
+| 미실행(8건) | `native-03`~`proposed-05` | planned |
+
+**`collect_metrics.build_comparison()`로 현재 유효 6건만 검증**
+(pilot 2건·기존 결과와 분리 로드) - `included_in_main_analysis=6/6`,
+실제 모순 이슈 0건(누락 반복 3/4/5 안내만 있음 - 블록 미완료 상태이므로
+당연함). **이전 진단 pilot 2건(`diag2-...`/최초 실패 pilot)은 이
+집계와 이번 §105 어디에도 포함하지 않았다** - `results/pilot/`
+경로로 물리적으로 분리돼 있어 혼입 자체가 불가능하다.
+
+**블록은 아직 끝나지 않았다** - 15/15 유효 결과 확보에는 `proposed-03`
+슬롯의 처리(대체 연결 여부 등 사용자 결정)와 나머지 8개 trial 실행이
+더 필요하다. 사용자에게 `proposed-03` 처리 방침(대체 연결 / §105.7
+이슈 우선 수정 / 다른 방침)을 묻고 여기서 멈춘다.
+
+### 105.9 범위 제한 준수 확인
+
+`network_degrade` 블록 시작(0건), `proposed-03` 자동 재시도·대체
+run_id 자동 생성(0건), 원본 결과·상태 수정(0건 - `proposed-01`/
+`proposed-03` 둘 다 원본 그대로), `TrialResult` 스키마·SLO·모델·장애
+조건 변경(0건) - 전부 준수.
