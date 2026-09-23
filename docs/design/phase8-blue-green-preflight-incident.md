@@ -11263,3 +11263,144 @@ range)로 비교 가능하다(§101.4/101.5에 이미 제시됨) - 45건이 필�
 
 **현재 Phase 8 위치**: load_ramp 15회 완료 → 설정 동결값 최종 대조
 완료(이 절) → `pod_kill` 15회 대기.
+
+## §102 - `pod_kill` 블록 2/15에서 중단: detector 크래시 조사 + 진단 공백·cleanup 타임아웃 수정 (Chaos 주입·본 trial 재개 없음)
+
+`pod_kill` 블록을 `native-01`(recovered)→`fixed_threshold-01`
+(recovered)까지 정상 진행하다 3번째(`proposed-01`)에서 `HarnessCorrupted`
+로 중단됐다(하니스 commit `a6d8fed`). 사용자 지시(선택지 B)에 따라 이번
+턴은 조사·수정만 하고 `fixed_threshold-02` 이후 어떤 공식 trial도
+시작하지 않았다 - `pod_kill` 블록은 여전히 2/15 상태로 정지해 있다.
+
+### 102.1 증거 보존
+
+`experiments/results/incident-pod_kill-proposed-01/`(로컬, 결과물과
+동일하게 `.gitignore`로 커밋 제외)에 원본을 그대로 보존:
+- `00-evidence-hashes.json` - state 파일·trial 결과·run 로그·probe
+  CSV의 SHA256/크기/mtime.
+- `01-k8s-events-raw.json`(TTL 만료 후 조회, 0건 - 만료 사실 자체를
+  기록) + `01b-k8s-events-transcript-reconstruction.md`(사고 직후
+  이전 턴에서 실측 조회한 원본 kubectl 출력을 그대로 옮겨 보존,
+  절대시각 역산 포함).
+- `02-experiment-context-before-clear.json`/`04-...-after-clear.json`
+  - clear 전/후 `/admin/experiment-run` 응답.
+- `03-audit-check.json` - `/admin/audit/pod_kill-proposed-01-mainexp-v1`
+  (반응형 fallback 2건, 전부 `pushed`).
+- `05-crash-investigation-findings.md` - 크래시 원인 조사, timeout
+  타임라인 재구성.
+- `06-summary.md` - 조치 요약, 측정조건 commit 추적, 대체 제안.
+
+### 102.2 detector 크래시 원인 - 확인 가능한 것과 불명인 것
+
+**확인됨**: `run_once.py:762-763`의 `is_alive()` 폴링(1초 간격)이 관찰
+도중 감지 - preview 준비·baseline·주입까지는 전부 정상(`injection_
+valid=true`, target=`vllm-serving-655945b99b-tmwf2`, 주입 직전 고정
+대상과 일치). recovery-policy의 독립적 반응형 fallback(Alertmanager
+`VLLMTargetDown`)은 `t_detection=20:16:15`에 별도로 발화해 `observe_
+only/no_action`으로 정상 처리됨 - 예측 detector가 죽어 있는 동안에도
+반응형 경로는 살아있었다는 증거.
+
+**불명으로 확정(추정 금지)**: exit code, 정확한 크래시 시각(1초 폴링
+간격보다 정밀한 기록 없음), stdout/stderr 전부 - `arm_controller.py`의
+기존 `_subprocess_detector()`가 `stdout=subprocess.PIPE`로 캡처만 하고
+아무도 읽지 않아, 죽는 순간 버퍼 내용이 통째로 유실됐다. 로컬 머신
+자체의 그 시각 자원 상태도 사후 확인 불가(detector는 K8s pod가 아니라
+로컬 subprocess). **root cause는 영구히 복구 불가능 - 원인 불명으로
+기록하고 추정으로 확정하지 않는다.**
+
+### 102.3 preview 정리 타임라인 재구성 - "지연된 정상 수렴"으로 판정
+
+K8s 이벤트(TTL 만료 전 조회분, §102.1)를 `t_injection`/`t_preview_ready`
+와 대조해 절대시각 확정(조회 시점 T≈20:18:46Z): `abort_preview()` 호출
+≈20:16:01Z(`t_run_end=20:17:01.86` = 60초 검증창이 끝난 시점과 정확히
+일치), 실제 RS `7b99bc9c79` scale-down 완료 ≈20:18:10Z - **총 소요
+~129초, 60초 검증창을 ~69초 초과했지만 이후 재확인(수 분·수 시간 뒤)
+결과 실제로는 0/0/0까지 완전히 수렴**했다(`RolloutAborted`→
+`ScalingReplicaSet...from 1 to 0`→`SuccessfulDelete` 순서가 정상적으로
+전부 일어남, Rollout이 다른 방향으로 튀거나 멈추지 않음). 정황상 유력한
+지연 원인(확정 아님): 이 2-node 클러스터의 유일한 worker에 pod_kill
+대상 교체와 preview 정리 pod 종료가 동시에 겹쳤을 가능성.
+
+### 102.4 orphaned experiment-run context 정리 (복구 조치, trial 결과 불변)
+
+cleanup이 예외로 중단돼 `run_once()`의 context-clear 단계까지 못 가서
+`/admin/experiment-run`에 `pod_kill-proposed-01-mainexp-v1`이 그대로
+남아 있었다 - 이 상태로는 다음 trial 시작 시 `run_once()`가 fail-closed로
+즉시 거부한다(`test_active_context_blocks_new_trial_start`가 검증하는
+그 가드와 동일 메커니즘). **정리 전 읽기 전용 재확인**: Node 2개 Ready,
+Rollout 단일 revision(`655945b99b` 1/1/1, 나머지 전부 0/0/0), Chaos CR
+0건, `kubectl diff` 0, 로컬에 detector 프로세스 잔존 없음 - 예상 밖
+active 작업이나 다른 run_id는 없었다. `POST /admin/experiment-run/clear
+?run_id=pod_kill-proposed-01-mainexp-v1`(run_id 불일치 시 409로 거부하는
+fail-closed 엔드포인트, 안전 확인됨) 호출 → `{"status":"cleared"}` →
+재확인 `{"current":null}`. **`trial-pod_kill-proposed-01-mainexp-v1.json`
+결과 파일과 state의 `failed` 상태는 건드리지 않았다.**
+
+### 102.5 하니스 수정 3건
+
+1. **`arm_controller._subprocess_detector()`**(§101 계기) - `stdout=
+   subprocess.PIPE`(아무도 안 읽어 OS 파이프 버퍼가 차면 자식 프로세스
+   쓰기가 블로킹될 위험 + 크래시 시 유실)를 `experiments/results/
+   detector-logs/detector-{name}-{run_id}-{ts}.log` 파일 리다이렉트로
+   교체, 자식 프로세스에 `PYTHONUNBUFFERED=1` 추가(급작스러운 강제종료
+   시에도 마지막 줄까지 최대한 flush). `Detector.get_crash_info()`
+   (신규, 선택 필드 - `run_once.py`의 `Detector`에 `get_crash_info:
+   Optional[Callable[[], dict]] = None` 추가, 기존 호출부·테스트
+   전부 하위호환)로 `{exit_code, log_path, run_id}` 노출 -
+   `run_once.py:762-763`의 크래시 메시지에 자동 반영돼 `invalid_reason`
+   에 그대로 남는다(`TrialResult` 스키마 변경 없음, 기존 free-text
+   필드 내용만 풍부해짐). `fixed_threshold.py`/`score_server.py` 소스를
+   직접 확인해 credential·민감 환경변수를 stdout에 출력하지 않음을
+   검증.
+2. **`blue_green_prep.wait_until_rolled_back()`** - 완료 판정이 기존엔
+   `spec.replicas`(desired)만 봐서 pod가 아직 Terminating 중(`status.
+   replicas`=current가 아직 안 줄어듦)인데도 "완료"로 오판할 여지가
+   있었다 - desired·current 둘 다 0이어야 완료로 보도록 강화(정확성
+   개선, 단순 timeout 연장 아님). `ROLLBACK_VERIFY_TIMEOUT_SEC`를
+   60→180초로 상향 - 근거: 이번 사고 실측 지연(~129초)의 약 1.4배
+   여유(§102.3). `return_details=True`(기본 False, 기존 호출부 5곳
+   전부 영향 없음)로 "converging"(desired가 최소 한 번은 0을 찍은
+   진행 관측)과 "stuck"(그런 관측이 전혀 없음)을 구분해서 반환.
+3. 오프라인 회귀 테스트 7건 신규: `test_blue_green_prep.py` 3건
+   (current까지 봐야 완료로 인정, converging/stuck 분류, 기본 반환
+   타입이 여전히 순수 bool임을 명시 확인), `test_arm_controller.py`
+   4건(크래시해도 exit_code/run_id/log_path가 남고 로그 파일에 실제
+   출력이 보존됨, 로그 디렉터리 경로 확인, 대량 출력에도 블로킹 없이
+   정상 종료 - 파이프 미사용 실측 증명).
+
+### 102.6 오프라인 스위트 결과
+
+`KUBECONFIG=/nonexistent/kubeconfig`, `RUN_LIVE_TESTS` 미설정으로
+`experiments/`+`anomaly-detection/`+`recovery-policy/` 전체: **951
+passed, 0 failed, 3 skipped**(§99/§101과 동일한 기존 `@pytest.mark.
+live_cluster` 3건 - 이번 결함과 무관). SLO·모델·threshold·장애 주입
+조건·`TrialResult` 스키마는 전혀 변경하지 않았다.
+
+### 102.7 측정 조건 추적 (하니스 commit별)
+
+| trial | outcome | 실행 시 하니스 commit |
+|---|---|---|
+| `pod_kill-native-01-mainexp-v1` | recovered(유효) | `a6d8fed` |
+| `pod_kill-fixed_threshold-01-mainexp-v1` | recovered(유효) | `a6d8fed` |
+| `pod_kill-proposed-01-mainexp-v1` | invalid_run→HarnessCorrupted | `a6d8fed` |
+
+앞 2건은 이번에 고친 진단 공백·타임아웃 문제의 영향을 받지 않았다(그
+결함은 "detector 크래시 + cleanup이 60초를 넘길 때"만 드러나는데 이
+조건 자체가 없었음) - 유효성은 그대로 유지된다.
+
+### 102.8 공식 `proposed-01` 대체 제안
+
+이번 하니스 수정을 반영한 뒤 **동일 run_id(`pod_kill-proposed-01-
+mainexp-v1`)로 재실행**하는 것을 제안한다 - `run_all_scenarios.py`
+공식 state에서 이 항목은 여전히 `failed`(자동 스킵 대상 아님)이므로,
+사용자가 재개를 승인하면 `--resume`이 정확히 이 지점부터 이어간다.
+대체 run_id는 생성하지 않았다(지시 준수) - 재실행 여부·시점은 사용자
+결정 사항으로 남긴다.
+
+### 102.9 범위 제한 준수 확인
+
+이번 턴 금지 사항 - 공식 trial 재시도(0건), 대체 run_id 생성(0건),
+`fixed_threshold-02` 등 다음 trial 시작(0건), SLO·모델·threshold·장애
+주입 조건 변경(0건), `TrialResult` 스키마 변경(0건), 기존 `failed`
+state·trial 결과 수정(0건) - 전부 준수. `pod_kill` 블록은 2/15로 정지된
+채 다음 지시를 기다린다.

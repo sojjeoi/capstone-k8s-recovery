@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import uuid
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -165,6 +166,59 @@ def test_subprocess_detector_crash_is_observed_as_not_alive():
         time.sleep(0.05)
     assert detector.is_alive() is False, "즉시 종료되는 프로세스는 곧 is_alive()=False여야 함"
     print("OK - 서브프로세스가 크래시하면 is_alive()가 False로 관측됨")
+
+
+def test_subprocess_detector_crash_preserves_stdout_to_log_file(tmp_path):
+    """§101(2026-09-23, pod_kill-proposed-01-mainexp-v1 실사고 계기) - 크래시
+    전에 찍은 출력이 stdout=PIPE(아무도 안 읽음)처럼 유실되지 않고 파일에
+    남아야 한다. PYTHONUNBUFFERED=1 없이도 print 직후 sys.exit()이면 정상
+    인터프리터 종료 경로를 타 flush되지만, 이 테스트는 "파일에 실제로
+    남는지" 자체를 확인한다(파이프였다면 아무도 안 읽어 검증 자체가 불가)."""
+    with patch.object(arm_controller, "DETECTOR_LOG_DIR", tmp_path):
+        detector = _subprocess_detector(
+            [sys.executable, "-c", "print('hello from crashing detector'); import sys; sys.exit(1)"],
+            "trivial", run_id="test-run-crash-log")
+        detector.start()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and detector.is_alive():
+            time.sleep(0.05)
+        assert detector.is_alive() is False
+        crash_info = detector.get_crash_info()
+    assert crash_info["exit_code"] == 1, crash_info
+    assert crash_info["run_id"] == "test-run-crash-log", crash_info
+    log_path = Path(crash_info["log_path"])
+    assert log_path.exists(), f"로그 파일이 생성되지 않음: {log_path}"
+    assert "hello from crashing detector" in log_path.read_text(encoding="utf-8")
+    print("OK - 크래시해도 exit_code/run_id/log_path가 남고 로그 파일에 실제 출력이 보존됨")
+
+
+def test_subprocess_detector_log_dir_created_under_results():
+    assert arm_controller.DETECTOR_LOG_DIR.name == "detector-logs"
+    assert arm_controller.DETECTOR_LOG_DIR.parent.name == "results"
+    print("OK - detector 로그는 experiments/results/detector-logs/ 아래에 남음(기존 결과물과 같은 관례)")
+
+
+def test_subprocess_detector_no_pipe_used_for_stdout(tmp_path):
+    """§101 - stdout이 subprocess.PIPE가 아니라 실제 파일 객체여야 한다 -
+    PIPE면 아무도 안 읽을 때 OS 파이프 버퍼가 차서 자식 프로세스의 쓰기가
+    블로킹될 위험이 있다(대량 출력을 내는 detector일수록 실제로 닿을 수
+    있음). 대량 출력을 내는 명령으로 짧은 시간 안에 정상 종료되는지 확인해
+    이 위험이 없음을 실측으로 증명한다."""
+    with patch.object(arm_controller, "DETECTOR_LOG_DIR", tmp_path):
+        # 파이프 기본 버퍼(보통 64KB)를 확실히 넘기는 양을 짧은 시간에 출력
+        detector = _subprocess_detector(
+            [sys.executable, "-c", "print('x' * 200000)"], "trivial", run_id="test-large-output")
+        detector.start()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and detector.is_alive():
+            time.sleep(0.02)
+        elapsed = time.monotonic() - deadline + 5
+        crash_info = detector.get_crash_info()
+    assert crash_info["exit_code"] == 0, "대량 출력 후 정상 종료해야 함(파이프 블로킹 없음)"
+    assert elapsed < 5, "5초 안에 끝나야 함 - 안 끝나면 파이프 버퍼 블로킹 의심"
+    log_path = Path(crash_info["log_path"])
+    assert log_path.stat().st_size >= 200000, "대량 출력이 전부 파일에 남아야 함"
+    print("OK - 대량 출력에도 블로킹 없이 정상 종료하고 전부 파일에 남음(파이프 미사용 확인)")
 
 
 def test_stop_file_for_derives_deterministic_path_from_evidence_log():

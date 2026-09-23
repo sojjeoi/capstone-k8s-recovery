@@ -137,8 +137,10 @@ def test_wait_until_rolled_back_polls_until_converged():
         {"active_selector": "stableA", "current_pod_hash": "previewB"},  # 2차
     ]
     rs_desired_calls = [1, 0]  # 1차: 아직 안 줄어듦(경합), 2차: 수렴
+    rs_current_calls = [1, 0]  # §101 - desired와 함께 current(실제 떠 있는 pod 수)도 0이어야 완료
     with patch("blue_green_prep.get_blue_green_status", side_effect=status_calls), \
-         patch("blue_green_prep._replicaset_desired", side_effect=rs_desired_calls):
+         patch("blue_green_prep._replicaset_desired", side_effect=rs_desired_calls), \
+         patch("blue_green_prep._replicaset_current", side_effect=rs_current_calls):
         ok = wait_until_rolled_back("vllm-serving", "vllm-serving", "stableA", "previewB",
                                      timeout=1.0, poll_interval=0.01)
     assert ok is True
@@ -147,11 +149,65 @@ def test_wait_until_rolled_back_polls_until_converged():
 
 def test_wait_until_rolled_back_gives_up_after_timeout():
     with patch("blue_green_prep.get_blue_green_status", return_value={"active_selector": "stableA", "current_pod_hash": "previewB"}), \
-         patch("blue_green_prep._replicaset_desired", return_value=1):  # 계속 안 줄어듦
+         patch("blue_green_prep._replicaset_desired", return_value=1), \
+         patch("blue_green_prep._replicaset_current", return_value=1):  # 계속 안 줄어듦
         ok = wait_until_rolled_back("vllm-serving", "vllm-serving", "stableA", "previewB",
                                      timeout=0.03, poll_interval=0.01)
     assert ok is False
     print("OK - timeout 내내 수렴 안 되면 False(호출자가 HarnessCorrupted로 승격)")
+
+
+def test_wait_until_rolled_back_completion_requires_current_zero_too():
+    """§101(2026-09-23, pod_kill-proposed-01-mainexp-v1 실사고 계기) - desired
+    (spec.replicas)만 0이고 current(status.replicas, 실제 아직 떠 있는 pod
+    수)는 아직 1이면(pod가 Terminating 중) 완료로 오판하면 안 된다 - 예전
+    코드는 desired만 봐서 이 상태를 "rollback 완료"로 잘못 판정할 수 있었다."""
+    with patch("blue_green_prep.get_blue_green_status", return_value={"active_selector": "stableA", "current_pod_hash": "previewB"}), \
+         patch("blue_green_prep._replicaset_desired", return_value=0), \
+         patch("blue_green_prep._replicaset_current", return_value=1):  # desired는 내려갔지만 pod가 아직 안 없어짐
+        ok = wait_until_rolled_back("vllm-serving", "vllm-serving", "stableA", "previewB",
+                                     timeout=0.03, poll_interval=0.01)
+    assert ok is False
+    print("OK - desired=0이어도 current(실제 pod 수)가 아직 0이 아니면 완료로 오판하지 않음")
+
+
+def test_wait_until_rolled_back_classifies_converging_vs_stuck():
+    """§101 - 지연된 정상 수렴(converging: desired가 최소 한 번은 0으로
+    내려가는 진행을 관측)과 영구 잔여(stuck: 그런 진행이 전혀 없음)를
+    구분한다 - 둘 다 timeout 안엔 rollback을 완료 못 했다는 점은 같지만
+    심각도가 다르다(전자는 "조금 더 걸릴 뿐", 후자는 "abort 자체가
+    반영조차 안 됐을 수 있음")."""
+    with patch("blue_green_prep.get_blue_green_status", return_value={"active_selector": "stableA", "current_pod_hash": "previewB"}), \
+         patch("blue_green_prep._replicaset_desired", side_effect=[0, 0]), \
+         patch("blue_green_prep._replicaset_current", side_effect=[1, 1]):  # desired는 내려갔지만(진행 중) current가 안 따라옴
+        converging = wait_until_rolled_back("vllm-serving", "vllm-serving", "stableA", "previewB",
+                                             timeout=0.02, poll_interval=0.01, return_details=True)
+    assert converging["rolled_back"] is False
+    assert converging["classification"] == "converging"
+
+    with patch("blue_green_prep.get_blue_green_status", return_value={"active_selector": "stableA", "current_pod_hash": "previewB"}), \
+         patch("blue_green_prep._replicaset_desired", return_value=1), \
+         patch("blue_green_prep._replicaset_current", return_value=1):  # desired조차 한 번도 안 내려감
+        stuck = wait_until_rolled_back("vllm-serving", "vllm-serving", "stableA", "previewB",
+                                        timeout=0.02, poll_interval=0.01, return_details=True)
+    assert stuck["rolled_back"] is False
+    assert stuck["classification"] == "stuck"
+    print("OK - desired가 한 번이라도 0을 찍었으면 converging, 전혀 안 그랬으면 stuck으로 구분")
+
+
+def test_wait_until_rolled_back_default_return_type_unchanged():
+    """return_details 기본값(False)에서는 기존 호출부(blue_green_prep.py
+    2곳, run_all_scenarios.py, collect_session.py, aba_diagnostic.py)가
+    전부 그대로 기대하는 순수 bool을 반환해야 한다 - dict가 섞여 나오면
+    `if wait_until_rolled_back(...):` 같은 기존 호출부가 전부 잘못된
+    truthy 판정(빈 dict가 아닌 이상 항상 True)을 하게 된다."""
+    with patch("blue_green_prep.get_blue_green_status", return_value={"active_selector": "stableA", "current_pod_hash": "previewB"}), \
+         patch("blue_green_prep._replicaset_desired", return_value=0), \
+         patch("blue_green_prep._replicaset_current", return_value=0):
+        ok = wait_until_rolled_back("vllm-serving", "vllm-serving", "stableA", "previewB",
+                                     timeout=1.0, poll_interval=0.01)
+    assert ok is True and isinstance(ok, bool)
+    print("OK - return_details 생략 시 기존과 동일하게 순수 bool 반환")
 
 
 def test_cleanup_unpromoted_preview_aborts_when_not_promoted():

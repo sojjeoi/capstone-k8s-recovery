@@ -26,7 +26,14 @@ ROLLOUTS_PLURAL = "rollouts"
 # SLO나 복구시간 판정 기준이 아니라 "실험 준비 단계"의 최대 대기시간일 뿐이라,
 # 관측된 최댓값(350.3초)에도 137초 여유를 두는 480초로 상향한다.
 PREVIEW_PREP_TIMEOUT_SEC = 480.0
-ROLLBACK_VERIFY_TIMEOUT_SEC = 60.0
+# §101(2026-09-23) - pod_kill-proposed-01-mainexp-v1 실사고: abort 요청부터
+# 실제 scale-down 완료까지 실측 ~129초(단일 worker 노드에 pod_kill 대상
+# 교체와 preview 정리가 겹친 상황, docs/design/phase8-blue-green-preflight-
+# incident.md §101 근거). 60초는 이 실측값보다 짧아 정상 지연 수렴을 놓쳤다 -
+# 그 최악값의 약 1.4배 여유를 두고 180초로 상향(wait_until_rolled_back() 참고,
+# 단순 timeout 연장이 아니라 완료 판정 자체도 desired+current 둘 다 보도록
+# 같이 고쳤다).
+ROLLBACK_VERIFY_TIMEOUT_SEC = 180.0
 ROLLBACK_VERIFY_POLL_SEC = 3.0
 
 
@@ -101,20 +108,65 @@ def _replicaset_desired(namespace: str, pod_hash: str) -> Optional[int]:
     return items[0].spec.replicas if items else None
 
 
+def _replicaset_current(namespace: str, pod_hash: str) -> Optional[int]:
+    """§101(2026-09-23) - status.replicas(실제 아직 떠 있는 pod 수)는
+    spec.replicas(desired)와 달리 종료 처리 중엔 한동안 그대로 남아있다 -
+    controller가 desired를 0으로 반영하는 것과 그 pod가 실제로 없어지는
+    것 사이엔 시간차가 있다(termination grace period 등). "desired는 이미
+    0인데 실제 종료가 진행 중"과 "desired조차 아직 안 바뀜(abort 자체가
+    반영 안 됨)"을 구분하는 근거로 쓴다 - 새 K8s 리소스 종류를 조회하지
+    않고 이미 읽던 ReplicaSet 객체의 다른 필드 하나를 더 보는 것뿐이다."""
+    items = _apps_api().list_namespaced_replica_set(
+        namespace, label_selector=f"rollouts-pod-template-hash={pod_hash}"
+    ).items
+    return items[0].status.replicas if items else None
+
+
 def wait_until_rolled_back(name: str, namespace: str, expected_active_hash: Optional[str], aborted_hash: str,
                             timeout: float = ROLLBACK_VERIFY_TIMEOUT_SEC,
-                            poll_interval: float = ROLLBACK_VERIFY_POLL_SEC) -> bool:
+                            poll_interval: float = ROLLBACK_VERIFY_POLL_SEC,
+                            return_details: bool = False):
     """abort 이후 activeSelector가 원래대로고 우리가 만든 preview RS가 실제로
     0으로 줄었는지 실측 확인한다(2026-09-19 추가) - abort() 호출 자체가 성공해도
     controller reconcile은 비동기라 즉시 반영을 보장하지 않는다. 이미 조건이
-    충족된 상태에서 호출해도 첫 poll에서 바로 True를 반환하므로 idempotent."""
+    충족된 상태에서 호출해도 첫 poll에서 바로 True를 반환하므로 idempotent.
+
+    §101(2026-09-23, pod_kill-proposed-01-mainexp-v1 실사고 계기) - 두 가지를
+    고쳤다. (1) 완료 판정 자체가 기존엔 desired(spec.replicas)==0만 봐서,
+    pod가 아직 Terminating 중(status.replicas가 아직 안 줄어듦)인데도
+    "rollback 완료"로 오판할 여지가 있었다 - 이제 desired·current 둘 다
+    0이어야 완료로 본다(더 엄격해진 정확한 기준이지 단순 timeout 연장이
+    아니다). (2) timeout을 60초→180초로 늘렸다 - 근거: 이번 사고에서 실측한
+    abort 요청(~20:16:01)부터 실제 scale-down 완료(~20:18:10)까지 총
+    ~129초(K8s 이벤트 타임스탬프로 재구성, docs/design/phase8-blue-green-
+    preflight-incident.md §101 참고) - 이 클러스터가 worker 노드 1개뿐이라
+    pod_kill 대상 교체와 preview 정리가 같은 노드에서 겹치면 reconcile이
+    오래 걸릴 수 있다. 180초는 실측 최악값(129초)의 약 1.4배 여유.
+    `return_details=True`(기본 False, 기존 호출부 전부 bool 그대로 받음)면
+    {"rolled_back": bool, "classification": "rolled_back"|"converging"|
+    "stuck", "final_rs_desired": int|None, "final_rs_current": int|None}를
+    반환한다 - "converging"은 timeout 안에 못 끝났지만 desired가 최소 한 번은
+    0으로 내려가는 진행을 관측한 경우(지연된 정상 수렴), "stuck"은 그 관측이
+    전혀 없었던 경우(정말 멈춤 - 더 심각하게 취급해야 함)를 구분한다."""
     deadline = time.monotonic() + timeout
+    desired_ever_zero = False
+    rs_desired = rs_current = None
     while time.monotonic() < deadline:
         status = get_blue_green_status(name, namespace)
         rs_desired = _replicaset_desired(namespace, aborted_hash) or 0
-        if status["active_selector"] == expected_active_hash and rs_desired == 0:
+        if rs_desired == 0:
+            desired_ever_zero = True
+        rs_current = _replicaset_current(namespace, aborted_hash) or 0
+        if status["active_selector"] == expected_active_hash and rs_desired == 0 and rs_current == 0:
+            if return_details:
+                return {"rolled_back": True, "classification": "rolled_back",
+                        "final_rs_desired": rs_desired, "final_rs_current": rs_current}
             return True
         time.sleep(poll_interval)
+    classification = "converging" if desired_ever_zero else "stuck"
+    if return_details:
+        return {"rolled_back": False, "classification": classification,
+                "final_rs_desired": rs_desired, "final_rs_current": rs_current}
     return False
 
 

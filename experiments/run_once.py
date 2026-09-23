@@ -275,11 +275,16 @@ class Detector:
     "isolation_forest" - 각 스크립트가 post_to_recovery_policy()에 실제로
     보내는 detector= 태그와 정확히 일치) - TrialResult.detector_process에
     기록돼, 이 trial이 어떤 detector로 실행되려 했는지 사후 감사할 수
-    있게 한다."""
+    있게 한다.
+    get_crash_info(): 선택 구현(2026-09-23 - pod_kill-proposed-01-mainexp-v1
+    detector crash 사후조사 계기, §101 launch-readiness gate). is_alive()가
+    False가 된 뒤(=이미 죽은 뒤) 호출해 {"exit_code", "log_path", "run_id"}를
+    돌려준다. 미구현(None)이면 기존과 동일하게 진단 정보 없이 무효화만 한다."""
     start: Callable[[], None]
     is_alive: Callable[[], bool]
     stop: Callable[[], None]
     name: str
+    get_crash_info: Optional[Callable[[], dict]] = None
 
 
 @dataclass
@@ -760,7 +765,12 @@ def run_once(
                 result.probe_valid = False
                 raise TrialInvalid("probe가 관찰 도중 비정상 종료")
             if detector is not None and not detector.is_alive():
-                raise TrialInvalid("detector가 관찰 도중 비정상 종료")
+                crash_info = detector.get_crash_info() if detector.get_crash_info is not None else {}
+                raise TrialInvalid(
+                    "detector가 관찰 도중 비정상 종료 "
+                    f"(exit_code={crash_info.get('exit_code')}, run_id={crash_info.get('run_id')}, "
+                    f"log={crash_info.get('log_path')})"
+                )
             if injector.is_done() and result.t_injection_end is None:
                 result.t_injection_end = _now()
             if not result.target_replaced and injector.get_target_replacement is not None:

@@ -172,8 +172,12 @@ def _stop_file_for(evidence_log_path: str) -> str:
 GRACEFUL_STOP_TIMEOUT_SEC = 50.0
 
 
+DETECTOR_LOG_DIR = Path(__file__).parent / "results" / "detector-logs"
+
+
 def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None,
-                          stop_file_path: Optional[str] = None) -> Detector:
+                          stop_file_path: Optional[str] = None,
+                          run_id: Optional[str] = None) -> Detector:
     """서브프로세스 생명주기 관리 자체를 detector 스크립트 내용과 분리한
     작은 헬퍼(2026-09-18 추가, 테스트 용이성) - make_detector_for_arm()이
     실제 detector 스크립트로 이걸 쓰고, 테스트는 어떤 명령이든(예:
@@ -189,24 +193,63 @@ def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None,
     Popen.terminate()==TerminateProcess()는 대상 프로세스에 어떤 정리
     기회도 주지 않는 즉시종료라(§92 forensic), 이 경로가 유일하게 실제
     "정상 종료"를 만들 수 있다. stop_file_path가 None이면(기본값, 기존
-    모든 호출부) 동작이 기존과 100% 동일 - 즉시 terminate()부터 시작."""
-    state = {"proc": None}
+    모든 호출부) 동작이 기존과 100% 동일 - 즉시 terminate()부터 시작.
+
+    §101(2026-09-23) - pod_kill-proposed-01-mainexp-v1에서 detector가
+    관찰 도중 크래시했을 때 stdout/stderr가 어디에도 남지 않는 진단
+    공백을 발견해 수정한다. 이전엔 stdout=subprocess.PIPE로 캡처만
+    하고 그 파이프를 읽는 코드가 어디에도 없었다 - (1) 아무도 안 읽는
+    파이프는 OS 파이프 버퍼(보통 64KB)가 차면 자식 프로세스의 쓰기
+    호출 자체가 블로킹되는 위험이 있고(detector가 오래 도는 프로세스라
+    출력이 누적되면 실제로 닿을 수 있는 위험), (2) 죽는 순간 버퍼
+    내용도 함께 유실돼 크래시 원인을 사후에 전혀 알 수 없었다(이번
+    사고가 정확히 이 상태). 파이프 대신 파일로 직접 리다이렉트하면
+    OS 파이프 버퍼 자체가 없어져 (1)이 원천적으로 사라지고, 파일은
+    프로세스가 살아있는 동안 계속 쌓여 크래시 시점까지의 출력이 남는다
+    (2) 해결. 자식 프로세스에 PYTHONUNBUFFERED=1도 함께 준다 - CPython은
+    출력이 TTY가 아니면(파일 리다이렉트가 정확히 이 경우) 기본적으로
+    완전 버퍼링을 쓰므로, 이게 없으면 정상 종료 전 인터프리터 셧다운으로
+    플러시되는 "보통의" 크래시(처리 안 된 예외 등)는 잡히지만 그보다
+    더 급작스러운 강제종료 시엔 버퍼링된 마지막 줄이 파일에 아직 안
+    쓰였을 수 있다 - 그 위험까지 줄인다."""
+    state = {"proc": None, "log_path": None, "log_file": None}
 
     def start():
         env = dict(os.environ)
         env.setdefault("RECOVERY_POLICY_SIGNAL_URL", LOCAL_RECOVERY_POLICY_SIGNAL_URL)
+        env["PYTHONUNBUFFERED"] = "1"
+        DETECTOR_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        log_path = DETECTOR_LOG_DIR / f"detector-{name}-{run_id or 'unknown'}-{ts}.log"
+        log_file = open(log_path, "w", encoding="utf-8")
+        state["log_path"] = log_path
+        state["log_file"] = log_file
         state["proc"] = subprocess.Popen(
             cmd, cwd=cwd, env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+            stdout=log_file, stderr=subprocess.STDOUT,
         )
 
     def is_alive():
         proc = state["proc"]
         return proc is not None and proc.poll() is None
 
+    def get_crash_info() -> dict:
+        proc = state["proc"]
+        return {
+            "exit_code": proc.returncode if proc is not None else None,
+            "log_path": str(state["log_path"]) if state["log_path"] is not None else None,
+            "run_id": run_id,
+        }
+
+    def _close_log():
+        log_file = state["log_file"]
+        if log_file is not None and not log_file.closed:
+            log_file.close()
+
     def stop() -> dict:
         proc = state["proc"]
         if proc is None or proc.poll() is not None:
+            _close_log()
             return {"already_stopped": True, "graceful": None, "exit_code": proc.returncode if proc else None}
 
         if stop_file_path is not None:
@@ -216,6 +259,7 @@ def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None,
                 pass  # stop-file을 못 만들어도 아래 강제종료 경로로 자연스럽게 이어짐
             try:
                 proc.wait(timeout=GRACEFUL_STOP_TIMEOUT_SEC)
+                _close_log()
                 return {"already_stopped": False, "graceful": True, "exit_code": proc.returncode,
                          "stopped_at_utc": datetime.now(timezone.utc).isoformat()}
             except subprocess.TimeoutExpired:
@@ -227,10 +271,11 @@ def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None,
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=STOP_TIMEOUT_SEC)
+        _close_log()
         return {"already_stopped": False, "graceful": False, "exit_code": proc.returncode,
                  "stopped_at_utc": datetime.now(timezone.utc).isoformat()}
 
-    return Detector(start=start, is_alive=is_alive, stop=stop, name=name)
+    return Detector(start=start, is_alive=is_alive, stop=stop, name=name, get_crash_info=get_crash_info)
 
 
 def make_detector_for_arm(
@@ -263,7 +308,8 @@ def make_detector_for_arm(
     prom_fn = prometheus_check_fn or _prometheus_reachable_and_fresh
     cmd = _build_detector_command(arm, run_id, evidence_log_path=evidence_log_path)
     stop_file_path = _stop_file_for(evidence_log_path) if evidence_log_path is not None else None
-    base = _subprocess_detector(cmd, spec["name"], cwd=str(ANOMALY_DETECTION_DIR), stop_file_path=stop_file_path)
+    base = _subprocess_detector(cmd, spec["name"], cwd=str(ANOMALY_DETECTION_DIR),
+                                 stop_file_path=stop_file_path, run_id=run_id)
 
     def start_with_reachability_preflight():
         signal_url = _resolved_signal_url()
@@ -279,7 +325,8 @@ def make_detector_for_arm(
             )
         base.start()
 
-    return Detector(start=start_with_reachability_preflight, is_alive=base.is_alive, stop=base.stop, name=base.name)
+    return Detector(start=start_with_reachability_preflight, is_alive=base.is_alive, stop=base.stop, name=base.name,
+                     get_crash_info=base.get_crash_info)
 
 
 def wrap_injector_with_preview_prep(
