@@ -11404,3 +11404,96 @@ mainexp-v1`)로 재실행**하는 것을 제안한다 - `run_all_scenarios.py`
 주입 조건 변경(0건), `TrialResult` 스키마 변경(0건), 기존 `failed`
 state·trial 결과 수정(0건) - 전부 준수. `pod_kill` 블록은 2/15로 정지된
 채 다음 지시를 기다린다.
+
+## §103 - 기술적 invalid 대체 절차 구현·검증 + 진단 pilot 1회 시도(환경 준비 미비로 목적 미달성)
+
+`pod_kill-proposed-01-mainexp-v1`에 단순 `--resume`이나 동일 run_id
+재실행을 쓰지 않고, `run_all_scenarios.py`에 fail-closed 대체 연결
+절차를 새로 구현·검증했다. 공식 대체 trial과 나머지 공식 trial은
+이번 턴에 실행하지 않았다.
+
+### 103.1 기존 결과 hash 기록
+
+load_ramp 15건 + pod_kill 유효 2건(`native-01`/`fixed_threshold-01`) -
+**17/17 stored_result_hash == 실제 파일 SHA256 일치**(불일치 0건).
+`pod_kill-proposed-01-mainexp-v1`(실패)은 state에 `result_hash=null`
+(orchestrator가 subprocess 비정상 종료 시 hash를 기록하지 않는 기존
+동작) - 실제 파일 자체의 hash(`701db598...`, §102 조사 시 이미 확보)는
+`experiments/results/incident-pod_kill-proposed-01/00-evidence-hashes.
+json`에 보존돼 있다.
+
+### 103.2 `link_technical_invalid_replacement()` 설계·구현
+
+`run_all_scenarios.py`에 신규: **`status="failed"`(HarnessCorrupted 등
+하니스 결함으로 subprocess가 비정상 종료)만 대체 연결 대상**이고,
+`status="invalid"`(`outcome=invalid_run`, 유효한 실험 결과)는 절대
+대체하지 않는다 - 이 구분을 코드 레벨에서 강제한다(`TECHNICAL_INVALID_
+STATUSES = ("failed",)`).
+
+- `link_technical_invalid_replacement(state, original, replacement, reason)`
+  - 원본이 `failed`가 아니면 거부. 대체 run_id가 원본과 같거나 이미
+    매트릭스/state에 있으면 거부(고유성 강제). **원본이 이미 다른
+    대체와 연결돼 있으면 거부**(임의 반복 재시도 금지 - 평생 한 번만).
+  - 원본 슬롯(`state["trials"][original]`)은 **절대 수정하지 않는다**.
+  - 관계·사유·각 result_hash는 별도 `state["replacements"][original]`
+    에만 기록(`TrialResult` 스키마 무관, 기존 17개 결과 무변경).
+  - 대체 슬롯은 원본과 완전히 같은 scenario/arm/repetition/
+    analysis_group/sequence_index로 state에 새로 추가.
+- `apply_replacements(trials, replacements)` - 실행 목록에서 연결된
+  원본을 정확히 같은 위치의 대체로 바꿔치기(순서 불변), 원본은 목록에서
+  아예 사라져 다시 실행 시도되지 않는다.
+- `sync_replacement_results(state)` - 대체 실행 후 연결 기록의
+  status/result_hash를 갱신.
+- CLI: `--link-replacement ORIGINAL NEW --link-reason "..."` - 연결만
+  하고 종료(실행 안 함), `--link-reason` 없으면 즉시 거부.
+
+### 103.3 오프라인 회귀 테스트 13건 + 전체 스위트
+
+원본 불변, 잘못된 상태(`invalid`/`completed`) 거부, 중복 연결 거부,
+대체 run_id 고유성 거부, CLI `--link-reason` 필수, `apply_replacements`
+순서 보존(대체 다음에 `fixed_threshold-02`가 오는지까지 확인), 대체
+연결 후에도 원본이 `run_sequence()`에서 재실행되지 않음, 실행 후 결과
+동기화 - 전부 통과. `KUBECONFIG=/nonexistent/kubeconfig` 전체 스위트
+**961 passed, 0 failed, 3 skipped**(기존 live_cluster 마커).
+
+### 103.4 실제 `--plan`/`--dry-run` 라이브 검증
+
+공식 state 파일에 실제로 연결: `pod_kill-proposed-01-mainexp-v1` →
+`pod_kill-proposed-01-retry1-mainexp-v1`(사유: detector crash 진단
+공백 + cleanup timeout, 둘 다 §102에서 수정 완료). `--plan --resume
+--scenario pod_kill` 확인 결과 **대체가 정확히 원본 위치(`sequence_
+index=18`)에 들어가고 바로 다음이 `pod_kill-fixed_threshold-02-mainexp-
+v1`(`sequence_index=19`)** - 요구사항 그대로 확인. `--dry-run --resume`
+은 클러스터 호출 0건으로 종료, 원본 `failed` 상태와 대체 `planned`
+상태 모두 정확히 유지됨을 재확인.
+
+### 103.5 진단 pilot 1회 시도 - 환경 준비 미비로 목적 미달성(정직하게 기록)
+
+`run_pod_kill_trial.py --arm proposed --pilot`(`is_pilot=true`, 공식
+state와 무관한 별도 pilot 경로)를 실행했다. **결과: 준비 단계에서
+Prometheus 접근 불가로 fail-closed 종료**(`invalid_reason="Prometheus
+접근 불가 또는 지표가 오래됨 - detector 시작 안 함(fail-closed,
+arm=proposed)"`, `injection_valid=false`, `t_injection=null`) -
+**detector 자체가 시작되지 않아 §102에서 고친 크래시 로그 캡처·180초
+cleanup 판정 어느 쪽도 검증하지 못했다.**
+
+원인은 하니스 결함이 아니라 **이번 세션의 준비 실수**다 - 진단 pilot
+실행 전 recovery-policy port-forward(8080)만 재기동하고 Prometheus
+port-forward(9090)를 재기동하지 않았다(직전 §102 조사 작업 중 열어뒀던
+포트가 이미 끊긴 상태였음). 사후 확인 결과 `localhost:9090`이 실제로
+불통이었음을 확인해 원인을 명확히 특정했다.
+
+**부수 확인(피해 없음)**: 이 pilot이 준비한 preview(`5f7d669b9`)는
+detector 시작 실패로 `TrialInvalid`가 발생하자 하니스의 기존
+`cleanup_unpromoted_preview()` 경로로 정상 자동 정리됨(desired/current
+0/0 확인) - Rollout `active=655945b99b`(불변), Chaos CR 0건, context
+null, `kubectl diff` 0. **클러스터에 잔여 위험 없음.**
+
+### 103.6 범위 제한 준수 확인
+
+공식 대체 trial(`pod_kill-proposed-01-retry1-mainexp-v1`) 실행(0건),
+나머지 공식 trial 실행(0건), 대체 run_id 자동 생성(0건 - 명시적으로
+직접 지정), 원본 결과·상태 수정(0건), `TrialResult` 스키마 변경(0건) -
+전부 준수. **진단 pilot은 목적을 달성하지 못했으므로, 공식 블록 재개
+여부를 판단할 근거가 아직 없다** - 사용자에게 재시도 여부를 묻고
+멈춘다.
