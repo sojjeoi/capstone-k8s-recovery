@@ -375,9 +375,13 @@ def test_evidence_log_survives_redirected_stdout_buffering():
 
 
 def test_evidence_log_preserves_last_evaluation_before_crash():
-    """§87.1 - 다음 cycle에서 크래시해도 이전 cycle까지의 evidence는
-    보존돼야 한다(매 cycle 직후 flush+fsync, 크래시 이후 버퍼에 남아
-    유실되는 경로 자체가 없음을 확인)."""
+    """§87.1 - 다음 cycle에서 진짜 예상 밖 예외(RuntimeError가 아닌 버그류)가
+    나도 이전 cycle까지의 evidence는 보존돼야 한다(매 cycle 직후
+    flush+fsync, 크래시 이후 버퍼에 남아 유실되는 경로 자체가 없음을
+    확인). §107(2026-09-23)부터 RuntimeError(결측/NaN/stale fail-closed)는
+    더 이상 루프를 죽이지 않고 스킵+계속이므로(아래 §107 절 테스트 참고),
+    이 테스트는 "진짜 처리 안 된 예외"가 여전히 프로세스를 죽이고 그 전
+    evidence는 보존된다는 것만 확인하도록 예외 타입을 바꿨다."""
     calls = {"n": 0}
 
     def fake_verbose(model, scaler, schema, **kwargs):
@@ -385,8 +389,8 @@ def test_evidence_log_preserves_last_evaluation_before_crash():
         if calls["n"] == 1:
             return {"window_start_utc": "t0s", "window_end_utc": "t0e", "raw_feature_vector": [1.0] * 8,
                     "ordered_feature_vector": [1.0] * 6, "scaled_feature_vector": [1.0] * 6,
-                    "score": 0.05, "freshness": {"fresh": True}}
-        raise RuntimeError("fail-closed: simulated crash on 2nd cycle")
+                    "score": 0.05, "freshness_by_metric": {}}
+        raise KeyError("simulated genuinely unexpected bug on 2nd cycle (not a fail-closed RuntimeError)")
 
     import tempfile
     with tempfile.TemporaryDirectory() as d:
@@ -397,12 +401,179 @@ def test_evidence_log_preserves_last_evaluation_before_crash():
                 ss.main(str(V32B_ARTIFACTS_DIR), "v3.2b", once=False, experiment_run_id="test-run",
                         evidence_log_path=str(evidence_path))
                 assert False, "2번째 cycle에서 예외가 발생해야 함"
-            except RuntimeError:
+            except KeyError:
                 pass
         lines = evidence_path.read_text(encoding="utf-8").splitlines()
         assert len(lines) == 1
         assert json.loads(lines[0])["score"] == 0.05
-    print("OK - 다음 cycle 크래시 전에 기록된 evaluation은 evidence 파일에 그대로 보존됨")
+    print("OK - 진짜 예상 밖 예외로 크래시해도 그 전 evaluation은 evidence 파일에 그대로 보존됨")
+
+
+# ---------------------------------------------------------------------------
+# §107 - 데이터 갭(결측/NaN/stale)은 detector 프로세스 자체를 죽이지 않고
+# 이 cycle만 스킵한다(pod_kill-proposed-03-mainexp-v1 사후조사 계기,
+# phase8-blue-green-preflight-incident.md §106/§107)
+# ---------------------------------------------------------------------------
+
+def _run_main_n_cycles_raw(evidence_path, verbose_side_effect, n, *, once=False):
+    """_run_main_n_cycles()와 같은 목적이지만 _evaluate_v32b_verbose 자체를
+    호출자가 정한 side_effect로 대체한다(기존 헬퍼는 _anomalous_verbose로
+    고정돼 있어 §107 스킵 시나리오를 못 만듦). n cycle 뒤 StopIteration으로
+    빠져나온다."""
+    calls = {"n": 0}
+
+    def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] >= n:
+            raise StopIteration("test: n cycles reached")
+
+    with patch.object(ss, "_evaluate_v32b_verbose", side_effect=verbose_side_effect), \
+         patch.object(ss.time, "sleep", side_effect=fake_sleep):
+        try:
+            ss.main(str(V32B_ARTIFACTS_DIR), "v3.2b", once=once, experiment_run_id="test-run",
+                    evidence_log_path=str(evidence_path))
+        except StopIteration:
+            pass
+
+
+def test_freshness_probe_queries_checks_each_feature_source_independently():
+    """up{job="vllm-active"} 단일 canary 대신 4개 feature 원천을 개별
+    확인한다는 걸 직접 확인 - 하나만 stale이어도 잡히고, 어떤 promql이
+    호출됐는지도 볼 수 있다."""
+    a = _load_real_artifacts()
+    seen_promqls = []
+
+    def selective_stale_fn(promql, max_age_sec):
+        seen_promqls.append(promql)
+        if "kv_cache_usage_perc" in promql:
+            return {"fresh": False, "age_sec": 999.0, "reason": "age 999.0s > 120.0s"}
+        return {"fresh": True, "age_sec": 1.0, "reason": None}
+
+    try:
+        ss.evaluate_v32b(a["model"], a["scaler"], a["schema"],
+                          query_range_fn=_constant_query_range_fn(NORMAL_VALUES),
+                          freshness_check_fn=selective_stale_fn)
+        assert False, "cache만 stale이어도 fail-closed로 score가 안 나와야 함"
+    except RuntimeError as e:
+        assert "cache" in str(e) and "stale" in str(e)
+    assert seen_promqls == list(ss.FRESHNESS_PROBE_QUERIES.values())[:len(seen_promqls)]
+    print(f"OK - 4개 feature 원천을 개별 확인({seen_promqls}), cache 하나만 stale이어도 구체적으로 지목해 fail-closed")
+
+
+def test_evaluate_verbose_runtime_error_skips_cycle_without_crashing_loop():
+    """§107 핵심 회귀 테스트 - _evaluate_v32b_verbose()가 RuntimeError(결측/
+    NaN/stale)를 던져도 main()의 while 루프가 죽지 않고 다음 cycle로
+    넘어가야 한다(과거 버그: 이 예외가 그대로 새 나가 detector 프로세스
+    전체가 종료됨 - pod_kill-proposed-03-mainexp-v1이 바로 이 경로로
+    invalid_run이 됨)."""
+    calls = {"n": 0}
+
+    def fake_verbose(model, scaler, schema, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("fail-closed: metric stale - cache(...): 표본 없음")
+        return {"window_start_utc": "t0s", "window_end_utc": "t0e", "raw_feature_vector": [1.0] * 8,
+                "ordered_feature_vector": [1.0] * 6, "scaled_feature_vector": [1.0] * 6,
+                "score": 0.05, "freshness_by_metric": {}}
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        _run_main_n_cycles_raw(evidence_path, fake_verbose, n=4)
+        recs = _read_jsonl(evidence_path)
+        decisions = [r for r in recs if r["record_type"] == "evaluation_decision"]
+        skipped = [r for r in recs if r["record_type"] == "evaluation_skipped"]
+        assert len(skipped) == 1, "2번째 cycle(RuntimeError)은 evaluation_skipped 1건으로 기록돼야 함"
+        assert skipped[0]["evaluation_seq"] == 2
+        assert skipped[0]["consecutive_data_gap_cycles"] == 1
+        assert skipped[0]["gap_classification"] == "transient"
+        assert "fail-closed" in skipped[0]["reason"]
+        # 1,3,4번째 cycle은 정상 평가(2번째만 스킵) - 루프가 안 죽고 계속 돌았다는 직접 증거.
+        assert len(decisions) == 3, decisions
+        assert [d["evaluation_seq"] for d in decisions] == [1, 3, 4]
+    print("OK - RuntimeError(fail-closed 데이터 갭)는 그 cycle만 스킵하고 loop는 계속 돔(프로세스 안 죽음)")
+
+
+def test_prolonged_data_gap_classified_differently_from_transient():
+    """§107 - "장기간 입력이 없는 경우"를 단순 "미탐지"와 구별하는 판정.
+    연속 스킵이 PROLONGED_DATA_GAP_CYCLES(=WINDOW_SEC/EVAL_INTERVAL_SEC)
+    미만이면 transient, 그 이상이면 prolonged로 evidence에 명시적으로
+    구분해 남긴다."""
+    def always_raises(model, scaler, schema, **kwargs):
+        raise RuntimeError("fail-closed: metric stale - queue(...): 표본 없음")
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        _run_main_n_cycles_raw(evidence_path, always_raises, n=ss.PROLONGED_DATA_GAP_CYCLES + 2)
+        skipped = [r for r in _read_jsonl(evidence_path) if r["record_type"] == "evaluation_skipped"]
+        assert len(skipped) == ss.PROLONGED_DATA_GAP_CYCLES + 2
+        classifications = [r["gap_classification"] for r in skipped]
+        assert classifications[:ss.PROLONGED_DATA_GAP_CYCLES - 1] == ["transient"] * (ss.PROLONGED_DATA_GAP_CYCLES - 1)
+        assert classifications[ss.PROLONGED_DATA_GAP_CYCLES - 1:] == (
+            ["prolonged"] * (len(classifications) - ss.PROLONGED_DATA_GAP_CYCLES + 1))
+    print(f"OK - 연속 데이터 갭이 {ss.PROLONGED_DATA_GAP_CYCLES}cycle({ss.WINDOW_SEC}초, WINDOW_SEC와 동일 근거) "
+          f"이상 지속되면 gap_classification이 transient에서 prolonged로 바뀜")
+
+
+def test_data_gap_resets_consecutive_streak_not_carried_across_gap():
+    """스킵된 cycle은 anomalous로도 정상으로도 확정할 수 없으므로 스트릭을
+    리셋한다(그 갭 동안 진짜로 계속 이상 상태였는지 증거가 없어, 조용히
+    이어붙이면 근거 없는 연속성을 만들어내는 것과 같다)."""
+    calls = {"n": 0}
+
+    def fake_verbose(model, scaler, schema, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise RuntimeError("fail-closed: metric stale - cache(...): 표본 없음")
+        return {"window_start_utc": "t0s", "window_end_utc": "t0e", "raw_feature_vector": [1.0] * 8,
+                "ordered_feature_vector": [1.0] * 6, "scaled_feature_vector": [1.0] * 6,
+                "score": -999.0, "freshness_by_metric": {}}  # 갭 전후 모두 anomalous 값
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        _run_main_n_cycles_raw(evidence_path, fake_verbose, n=4)
+        decisions = [r for r in _read_jsonl(evidence_path) if r["record_type"] == "evaluation_decision"]
+        # cycle4(seq=4)는 갭 직후 첫 정상 평가 - 갭 전 연속 2회(seq 1,2)가 이어붙지 않고 1부터 다시 시작해야 함.
+        seq4 = next(r for r in decisions if r["evaluation_seq"] == 4)
+        assert seq4["consecutive_anomalous"] == 1, seq4
+    print("OK - 데이터 갭(스킵) 이후 연속 카운트는 갭 이전 값을 이어받지 않고 1부터 다시 시작함")
+
+
+def test_once_mode_returns_after_skip_without_retry_loop():
+    """--once는 수동 단발 호출용이다 - 스킵이 나도 무한 재시도하지 않고
+    once 계약대로 그 자리에서 반환해야 한다."""
+    def always_raises(model, scaler, schema, **kwargs):
+        raise RuntimeError("fail-closed: feature 결측 - queue 지표 응답 없음")
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        _run_main_n_cycles_raw(evidence_path, always_raises, n=999, once=True)
+        skipped = [r for r in _read_jsonl(evidence_path) if r["record_type"] == "evaluation_skipped"]
+        assert len(skipped) == 1
+    print("OK - once=True에서 스킵이 나도 재시도 안 하고 그 자리에서 반환(정확히 1건만 기록)")
+
+
+def test_non_runtimeerror_exception_from_verbose_still_propagates_and_crashes():
+    """§107 - RuntimeError(fail-closed 데이터 품질 문제)만 스킵 대상이다.
+    다른 예외 타입(진짜 버그)은 여전히 그대로 전파돼 프로세스를 종료시켜야
+    한다 - 모든 예외를 조용히 삼키는 회귀를 방지."""
+    def raises_value_error(model, scaler, schema, **kwargs):
+        raise ValueError("이건 fail-closed 데이터 갭이 아니라 진짜 버그")
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        with patch.object(ss, "_evaluate_v32b_verbose", side_effect=raises_value_error):
+            try:
+                ss.main(str(V32B_ARTIFACTS_DIR), "v3.2b", once=True, experiment_run_id="test-run",
+                        evidence_log_path=str(evidence_path))
+                assert False, "ValueError는 그대로 전파돼야 함"
+            except ValueError:
+                pass
+    print("OK - RuntimeError가 아닌 예외는 스킵 대상이 아니라 그대로 전파(모든 예외를 삼키는 회귀 방지)")
 
 
 def test_long_continuous_anomalous_streak_produces_multiple_signals_not_collapsed_to_one_episode():

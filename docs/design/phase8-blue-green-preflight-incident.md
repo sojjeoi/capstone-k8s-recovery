@@ -11914,3 +11914,180 @@ Chaos CR 0건·context null·`kubectl diff` 0"은 전부 이 세션의 운영자
 공식 trial 재개(0건), `--link-replacement`/state 변경(0건), `invalid`
 →`failed` 전환이나 대체 규칙 완화(0건) - 전부 준수. 읽기 전용 조사만
 수행했다.
+
+## §107 - preflight/postflight 실제 구현 + score_server.py freshness 재설계 +
+새 detector 버전 분리 규칙 등록 (측정 전 문서 등록, 아직 라이브 파일럿
+전 - HEAD는 이 절 작성 시점 기준)
+
+§106 조사 결과를 바탕으로 실제 구현·테스트·문서 등록까지 진행한다.
+`pod_kill-proposed-03-mainexp-v1`은 §106에서 확인한 대로 **`invalid`
+그대로 보존**했고, 이번 턴에서도 `failed`로 재분류하거나 대체
+연결(`--link-replacement`)하지 않았다 - state/원본 결과 파일 무변경.
+공식 trial 재실행·`network_degrade` 시작도 이번 턴 범위 밖이다.
+
+### 107.1 `real_preflight()`/`real_postflight_cleanup_check()` 실제 구현
+
+[run_all_scenarios.py](../../experiments/run_all_scenarios.py)에
+`real_safety_checks()`(공용 검사 스위트)와 그 안에 조합되는 6개 검사
+함수를 구현했다. §98/§100이 약속한 8개 항목과 실제 위치·책임의 대응:
+
+| 약속한 항목 | 실제 위치(함수) | 방법 | 비고 |
+|---|---|---|---|
+| Node | `_check_active_pod_and_node()` | active pod의 node를 찾아 `Ready`/`MemoryPressure`/`DiskPressure`/`PIDPressure` 4-condition 확인(K8s python client) | |
+| restart/OOM | `_check_active_pod_and_node()` (통합) | 같은 active pod 조회에서 `oom_killed` 플래그 확인 | pod_kill이 만드는 "정상적인" 재시작(주입 자체)과 구분하기 위해, "이 순간 active pod이 OOM으로 죽어있는가"만 본다(§107.1.1 참고 - 재시작 delta 추적은 하지 않음) |
+| Rollout | `_check_rollout_not_stuck()` | `blue_green_prep.is_paused_pre_promotion()` 재사용 - promote 전 pause 상태로 남아있으면 실패 | §98 launch-readiness 당시 실측된 실패 형태(미완료 preview)를 그대로 겨냥 |
+| active endpoint | `_check_active_endpoint()` | active pod 수 : `vllm-active` EndpointSlice 주소 수가 1:1인지 확인 | §106이 발견한 pod_kill 엔드포인트 공백 구간을 orchestrator 층에서도 독립적으로 잡을 수 있음 |
+| context | `_check_experiment_context_clear()` | `GET /admin/experiment-run` -> `current`가 null인지 확인 | §102/§103 orphaned context 사고의 재발 탐지 - run_once.py 자신도 trial 시작 전 같은 걸 확인하지만, subprocess가 크래시로 중간에 죽으면 그 자체 확인이 실행 안 되므로 orchestrator 층의 독립 확인이 필요 |
+| Chaos CR | `_check_no_leftover_chaos_crs()` | `list_namespaced_custom_object`로 podchaos/networkchaos/stresschaos 3종류 전체 나열 | 기존엔 각 어댑터가 "자기가 만든 CR 하나"의 존재 여부만 확인했을 뿐, 전체 나열 헬퍼 자체가 없었음(§106 조사에서 확인한 gap) - finalizer 삭제 전파 지연을 흡수하려고 `_poll_until_ok()`로 최대 30초(§102 wait_until_rolled_back 교훈과 동일 근거의 유한 대기, memory_pressure_adapter.CLEANUP_VERIFY_TIMEOUT_SEC과 동일 값 재사용) 재확인 |
+| 실험 pod | `_check_no_leftover_experiment_pods()` | `ramp-inj-*`/`ramp-probe-*` 이름 접두사로 필터링 | load_ramp_adapter.py의 이 pod들은 label이 없어(§107 조사 실측 확인) 이름 접두사만 쓸 수 있음 |
+| quiescent(추가) | `_check_quiescent()` | `GET /admin/quiescent` | 원래 8개 목록엔 없었지만 recovery-policy 자신의 계약(§6)과 같은 이유로 orchestrator 층에서도 재확인이 의미 있어 포함 |
+| **detector 잔여** | **없음(직접 확인 불가)** | - | 아래 107.1.1 참고 |
+
+각 검사는 `check_fn: Callable -> dict`로 주입 가능하게 짜여 있어(기존
+`memory_pressure_adapter.py`의 `*_fn` 주입 관례와 동일한 목적),
+[test_run_all_scenarios.py](../../experiments/test_run_all_scenarios.py)의
+§107 절(24개 신규 테스트)이 실 클러스터 없이 각 검사·조합 로직(첫 실패
+항목에서 멈춤, 폴링 재시도, timeout 시 fail-closed)을 전부 검증한다 -
+`conftest.py`의 `cluster_guard`가 `live_cluster` 마커 없는 테스트의 실제
+K8s 접근을 차단하므로, 이 테스트들이 몰래 실제 클러스터를 건드릴 수 없다.
+
+`real_preflight()`/`real_postflight_cleanup_check()`는 둘 다
+`real_safety_checks()`를 그대로 호출한다(같은 검사 스위트 공유 - "trial
+시작 전에 깨끗해야 한다"와 "trial이 끝난 뒤 다시 깨끗해야 한다"는 사실상
+같은 조건이라 분리할 이유가 없었음). 이미 `run_sequence()`(변경 없음)가
+`preflight`/`postflight_cleanup_check`의 `ok=False`를 즉시
+`SequenceAborted`로 승격해 다음 trial로 넘어가지 않는다는 것은
+`test_preflight_failure_marks_invalid_and_aborts` 등 기존 테스트가 이미
+증명하고 있다 - 이번 구현은 그 계약을 실제 내용으로 채웠을 뿐, 호출
+시점·중단 로직 자체는 손대지 않았다.
+
+#### 107.1.1 detector 잔여 - 확인 불가능함을 그대로 남김(과장 금지)
+
+**이 계층에서 detector 잔여를 직접 확인할 방법이 없다.** `run_once.py`의
+`Detector.is_alive()`는 그 detector를 직접 띄운 프로세스 안에서만
+유효한데(자신의 `subprocess.Popen` 핸들을 쥐고 있어야 `poll()`이
+의미 있음), `run_all_scenarios.py`는 각 trial을 별도 subprocess로
+띄우므로(파일 최상단 docstring에 이미 명시된 설계 - "injector/detector/
+preview 배선 로직은 각 러너·arm_controller.py에 이미 있으므로 여기서
+다시 구현하지 않는다") 그 grandchild 프로세스를 외부에서 스캔할 방법이
+이 코드베이스에 전혀 없다(`psutil` 등 OS 프로세스 목록 조회 라이브러리
+자체가 설치돼 있지 않음 - 이번 조사로 확인, 새 의존성 추가는 이번
+범위 밖). `_check_experiment_context_clear()`/`_check_quiescent()`가
+최선의 간접 신호다 - 진짜 detector가 살아남아 신호를 계속 보내고
+있다면 다음 trial의 context 등록 시도가 409로 막히거나 quiescent가
+안 될 가능성이 높다. 하지만 이건 간접 신호일 뿐 직접 확인이 아니므로,
+과장하지 않고 코드 주석과 이 문서 양쪽에 한계를 그대로 남긴다.
+
+### 107.2 `score_server.py` freshness 재설계 - 데이터 갭 ≠ 프로세스 종료
+
+**근본 문제(§106이 밝힌 것)**: `up{job="vllm-active"}` 단일 canary로
+6개 feature 전체의 신선도를 대신 판단했는데, 이 canary는 Service
+EndpointSlice 존재 여부에 구조적으로 묶여 있어 pod_kill의 엔드포인트
+공백 구간에 불필요하게 단독으로 실패할 수 있었다. **더 심각한 근본
+문제(이번 구현 과정에서 코드 추적으로 새로 확인한 것)**:
+`_evaluate_v32b_verbose()`가 이 조건에서 raise하는 `RuntimeError`를
+`main()`의 `while True` 루프가 전혀 잡지 않아, 이 예외가 그대로 밖으로
+새 나가 **detector 프로세스 자체가 종료**됐다(`run_once.py`는 이를
+"detector가 관찰 도중 비정상 종료"로 관측 - `pod_kill-proposed-03-
+mainexp-v1`이 정확히 이 경로로 `invalid_run`이 됨). 즉 15~25초짜리
+일시적 데이터 갭 단 한 번이 남은 trial 전체의 detector를 없애버리는
+구조였다 - "이 cycle의 score/신호를 안 낸다"와 "detector가 죽는다"를
+같은 걸로 취급한 게 과도한 fail-closed였다.
+
+**구현한 변경 2가지** ([score_server.py](../../anomaly-detection/score_server.py)):
+
+1. **per-feature freshness 확인** - `FRESHNESS_PROBE_QUERY`(단일 canary)를
+   `FRESHNESS_PROBE_QUERIES`(4개 feature 원천 각각의 raw 쿼리 - cpu/memory는
+   kubelet/cAdvisor 기반, queue/cache는 vLLM 자체 `/metrics`)로 교체했다.
+   `_evaluate_v32b_verbose()`는 이제 4개를 순서대로 확인하고 첫 stale/
+   결측 지점에서 그 **feature 이름을 구체적으로 지목**해 raise한다
+   (예: `"fail-closed: metric stale - cache(vllm:kv_cache_usage_perc): 표본 없음"`).
+   cpu만 `rate(...[30s])` 대신 raw counter를 쓴다(기존 §86.1 주석이 이미
+   경고한 대로 `rate()`를 신선도 판정에 직접 쓰면 스크레이프 타이밍에
+   따라 간헐적으로 오탐이 남) - **feature 계산 자체(METRICS, 모델 입력)는
+   전혀 안 바꿨다**, 이 판정에서만 다른 쿼리를 씀.
+2. **loop-level skip, not crash** - `main()`의 `while True` 안에서
+   `_evaluate_v32b_verbose()` 호출을 `try/except RuntimeError`로 감쌌다.
+   결측/NaN/stale 중 하나로 이 예외가 나면: 그 cycle의 score/신호는
+   내지 않고(요청대로), `record_type: "evaluation_skipped"` evidence
+   레코드에 사유·`consecutive_data_gap_cycles`(연속 스킵 횟수)·
+   `gap_classification`(`"transient"` 또는 `"prolonged"`)을 남긴 뒤 다음
+   cycle로 넘어간다 - **프로세스는 종료되지 않는다.** `RuntimeError`가
+   **아닌** 다른 예외 타입(진짜 예상 밖 버그)은 이 except에 안 걸리고
+   그대로 전파돼 프로세스를 종료시킨다(기존과 동일 - 모든 예외를
+   조용히 삼키는 회귀를 만들지 않기 위한 의도적 경계).
+
+**"장기간 입력 없음" vs "미탐지" 구분**: `PROLONGED_DATA_GAP_CYCLES =
+WINDOW_SEC // EVAL_INTERVAL_SEC = 4`(60초/15초) - 연속 스킵이
+feature window 길이(60초)를 넘기면 "window 꼬리만 갭에 걸친" 상황을
+넘어 "window 전체가 갭 안에 있는" 질적으로 다른 상태로 본다. 4회 미만
+연속 스킵은 `"transient"`, 4회 이상은 `"prolonged"`로 evidence에
+명시적으로 구분해 남긴다 - 이 값 자체가 trial 유효성을 판정하지는
+않는다(그건 여전히 `run_once.py`/사후 분석의 몫), 순수하게 "무엇이
+있었는지"를 정확히 기록하는 역할만 한다. 스킵된 cycle은
+`consecutive_anomalous`(연속 이상 스트릭)를 **리셋**한다 - 갭 동안
+실제로 이상 상태가 계속됐다는 증거가 없는 채로 조용히 이어붙이면
+근거 없는 연속성을 만들어내는 것과 같기 때문이다(`advance_streak()`
+자체는 전혀 건드리지 않음 - 이 cycle엔 아예 호출하지 않는 것으로
+루프 쪽에서만 처리).
+
+**변경하지 않은 것**: 모델(`model.pkl`/`scaler.pkl`), `threshold`,
+`CONSECUTIVE_THRESHOLD`/`COOLDOWN_SEC`/`WINDOW_SEC`/`EVAL_INTERVAL_SEC`/
+`FRESHNESS_MAX_AGE_SEC` 등 SLO/runtime replay 상수, `advance_streak()`의
+판정 로직, `evaluate_v32b()`의 외부 계약(여전히 결측/NaN/stale에
+`RuntimeError`를 던짐 - `fixed_threshold.py`는 이 함수들을 아예 안 쓰므로
+영향 없음을 grep으로 확인) - 전부 그대로.
+
+[test_score_server_v32b.py](../../anomaly-detection/test_score_server_v32b.py)에
+6개 신규 테스트(per-feature 개별 확인, 스킵-후-계속 회귀, transient/
+prolonged 구분, 갭 이후 스트릭 리셋, `--once` 모드에서의 스킵 처리,
+RuntimeError 아닌 예외는 여전히 전파) + 기존 테스트 1건 수정(크래시
+시나리오의 예외 타입을 RuntimeError에서 진짜 예상 밖 예외로 교체 -
+RuntimeError는 더 이상 크래시를 뜻하지 않으므로).
+
+### 107.3 새 detector 버전과 기존 6건 결과의 분리 규칙
+
+**기존 `pod_kill` 6개 유효 결과 + 2건 중단 이력(`proposed-01` 기술적
+실패, `proposed-03` invalid)은 원본 JSON·hash·state 그대로 전혀
+건드리지 않는다.** 이번 턴에서 `--link-replacement`도, state 변경도
+하지 않았다.
+
+**분리 방법(코드 변경 없이 기존 CLI 인자로 충분)**: 이번 §107 구현이
+반영된 detector로 새 공식 `pod_kill` 15-trial 블록을 시작할 때는,
+기존 `run_all_scenarios_state.json`을 계속 쓰지 않고 **새
+`--state-file`과 새 `--plan-id`**로 완전히 분리된 매트릭스를 만든다
+(`build_matrix()`가 `plan_id`로 모든 `run_id`를 결정론적으로 생성하므로,
+새 `plan_id`를 쓰면 15개 run_id 전부가 기존 6건/2건과 절대 겹치지
+않는다 - 예: `pod_kill-native-01-mainexp-v2`처럼 접미사 자체가
+달라짐). 기존 state 파일(`mainexp-v1` 접미사, 6 valid + 2 중단 +
+load_ramp 15건)은 그대로 보존되고, 새 state 파일이 새 detector 버전의
+15건을 독립적으로 담는다 - 두 state 파일의 `code_freeze_commit`(state
+최상위 필드, 매트릭스 생성 시점의 git HEAD)이 서로 다른 커밋을
+가리키므로 사후에도 "어느 detector 버전으로 실행됐는지"가 파일 자체로
+구분된다.
+
+**새 공식 블록 계획(기준안, 아직 실행하지 않음)**: 기존과 동일한
+15-trial 순서(§98의 `ARM_ORDER_BY_REP`, 5블록×3-arm 고정 순서, 변경
+없음)를 **새 run_id로 처음부터 전부(15/15) 재실행**한다 - 기존 6건과
+새 15건을 산술적으로 이어붙이거나 섞어서 "pod_kill 15건 완성"으로
+취급하지 않는다(detector 버전이 다르므로 같은 조건의 반복이 아님).
+집계·분석 문서에는 반드시 "구 detector(§107 이전, 6 valid + 2 중단,
+`mainexp-v1`)"와 "신 detector(§107 이후, 15 valid 목표, `mainexp-v2`
+가칭)"를 별도 절로 분리해 기록하고, 절대 하나의 통계로 합치지 않는다.
+이 계획은 §107.4의 라이브 파일럿이 정상 확인된 뒤, 사용자 승인을 받아
+별도 턴에서 실행한다.
+
+### 107.4 오프라인 스위트 재확인
+
+존재하지 않는 KUBECONFIG(`/nonexistent/kubeconfig`)에서
+`anomaly-detection/`+`experiments/` 전체 스위트: **929 passed, 3
+skipped**(기존과 동일한 3건의 `live_cluster` 마커 스킵, 새로 실패한
+테스트 0건). `test_run_all_scenarios.py`: 73 passed(§107 신규 24건
+포함). `test_score_server_v32b.py`: 36 passed(§107 신규 6건 포함).
+
+### 107.5 범위 제한 준수 확인 (이 절 작성 시점까지)
+
+`proposed-03` 상태(`invalid`)/결과 JSON/hash 무변경, `--link-replacement`
+미실행, state 파일 무변경, 공식 trial 재실행 0건, `network_degrade`
+미시작, 모델·threshold·SLO 수치 무변경 - 전부 준수. 다음 단계(라이브
+파일럿, §107.6)는 이 문서 커밋·푸시 이후 별도로 진행한다.

@@ -64,13 +64,37 @@ WINDOW_SEC = 60  # 평가 대상 trailing window (slo-definition.md와 동일 �
 CONSECUTIVE_THRESHOLD = 3  # 이 횟수만큼 연속으로 이상이어야 신호 발행 (단발 노이즈 방지)
 COOLDOWN_SEC = 60  # 신호 발행 후 이 시간 동안은 재발행 안 함
 FRESHNESS_MAX_AGE_SEC = 120.0  # WINDOW_SEC(60초)보다 넉넉히 큰 상한 - arm_controller.py의 동일 상수와 같은 값
-# METRICS["cpu"]는 rate(...[30s]) - 인스턴트 쿼리로 신선도만 확인하기엔
-# 30초 구간 안에 표본이 2개 이상 있어야 계산되는 rate()라 스크레이프
-# 타이밍에 따라 간헐적으로 빈 응답이 나올 수 있음을 실측으로 확인했다
-# (2026-09-21, 8회 중 1회 재현). `up`(스크레이프마다 항상 1개씩 찍히는
-# 순수 gauge, 윈도우 계산 자체가 없음)으로 신선도를 확인해 이 문제를
-# 피한다 - feature 추출 자체(METRICS)는 그대로 둔다.
-FRESHNESS_PROBE_QUERY = 'up{namespace="vllm-serving",job="vllm-active"}'
+# §107(2026-09-23, docs/design/phase8-blue-green-preflight-incident.md §106
+# - pod_kill-proposed-03-mainexp-v1 사후조사 계기) - 예전엔 up{job=
+# "vllm-active"} 단일 canary로 6개 feature 전체의 신선도를 대신 판단했다.
+# 이 canary는 vllm-active Service의 EndpointSlice 존재 여부에 구조적으로
+# 묶여 있다(gitops/apps/vllm-serving/servicemonitor.yaml - 같은
+# ServiceMonitor가 vllm-active/vllm-preview 두 Service를 모두 스크랩).
+# pod_kill이 만드는 엔드포인트 공백 구간에는 cpu/memory(kubelet/cAdvisor
+# 기반, Service 엔드포인트와 무관)는 여전히 계산 가능한데 canary만 비어
+# "fail-closed: metric stale"이 걸릴 수 있다(§106 조사 결론 - "가능성
+# 높음, 100% 확정 아님"). queue/cache는 vLLM 자체 /metrics로 같은
+# ServiceMonitor를 타므로 canary와 같은 구조적 취약점을 공유한다("6개
+# feature가 계산 가능했다는 사실만으로 신선함까지 증명되지 않는다").
+#
+# 그래서 하나의 대리 지표 대신 4개 feature 원천 각각의 실제 표본 시각을
+# 개별 확인한다. cpu만 METRICS의 rate(...[30s]) 대신 raw counter를
+# 쓴다 - rate()를 신선도 판정에 직접 쓰면 안 되는 이유는 아래 원래 있던
+# 설명 그대로다(30초 구간 안에 표본이 2개 이상 있어야 계산되는 rate()라
+# 스크레이프 타이밍에 따라 간헐적으로 빈 응답이 나올 수 있음을 실측으로
+# 확인함, 2026-09-21, 8회 중 1회 재현) - feature 계산 자체(METRICS)는
+# 전혀 안 바꾸고 이 판정에서만 다른 쿼리를 쓴다.
+FRESHNESS_PROBE_QUERIES = {
+    "cpu": 'container_cpu_usage_seconds_total{namespace="vllm-serving",container="vllm"}',
+    "memory": 'container_memory_working_set_bytes{namespace="vllm-serving",container="vllm"}',
+    "queue": "vllm:num_requests_waiting",
+    "cache": "vllm:kv_cache_usage_perc",
+}
+# §107 - "장기간 입력이 없는 경우를 단순한 미탐지와 구별"하는 기준. WINDOW_SEC
+# (60초) 자체가 feature 계산에 쓰는 trailing window 길이이므로, 연속
+# 스킵이 WINDOW_SEC를 넘기면(=window 전체가 이미 공백 구간 안에 들어간
+# 상태) "잠깐 꼬리만 걸친" 상황을 넘어 질적으로 다른 상태로 본다.
+PROLONGED_DATA_GAP_CYCLES = int(WINDOW_SEC // EVAL_INTERVAL_SEC)  # 60/15 = 4
 
 _DEPENDENCY_PIN_PATTERN = re.compile(r"^(scikit-learn|numpy)==([^\s#]+)")
 
@@ -179,9 +203,16 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
     if any(v is None or math.isnan(v) or math.isinf(v) for v in feats):
         raise RuntimeError(f"fail-closed: feature에 NaN/Inf 포함: {feats}")
 
-    freshness = freshness_check_fn(FRESHNESS_PROBE_QUERY, FRESHNESS_MAX_AGE_SEC)
-    if not freshness["fresh"]:
-        raise RuntimeError(f"fail-closed: metric stale - {freshness.get('reason')}")
+    # §107 - 4개 feature 원천을 개별 확인(위 FRESHNESS_PROBE_QUERIES 주석
+    # 참고) - 첫 stale/결측 지점에서 바로 raise(기존과 동일하게 "하나라도
+    # 문제면 이 cycle은 score를 만들지 않는다"는 fail-closed 원칙 자체는
+    # 안 바뀜, 어떤 원천이 문제인지만 더 정확해짐).
+    freshness_by_metric = {}
+    for metric_name, probe_promql in FRESHNESS_PROBE_QUERIES.items():
+        freshness = freshness_check_fn(probe_promql, FRESHNESS_MAX_AGE_SEC)
+        if not freshness["fresh"]:
+            raise RuntimeError(f"fail-closed: metric stale - {metric_name}({probe_promql}): {freshness.get('reason')}")
+        freshness_by_metric[metric_name] = freshness
 
     x6 = apply_feature_schema(feats, schema)
     x_scaled = scaler.transform([x6])
@@ -190,7 +221,7 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
         "window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(),
         "raw_feature_vector": feats, "ordered_feature_vector": x6,
         "scaled_feature_vector": [float(v) for v in x_scaled[0]],
-        "score": score, "freshness": freshness,
+        "score": score, "freshness_by_metric": freshness_by_metric,
     }
 
 
@@ -327,6 +358,13 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
          evidence_log_path: str = None, stop_file_path: str = None):
     """§92 - main loop을 write-ahead evidence 순서로 재구성했다(판정
     로직은 전혀 안 바꿈, IO 순서만 강화):
+      0) §107 - `_evaluate_v32b_verbose()`가 fail-closed RuntimeError(결측/
+         NaN/stale)를 던지면 이 cycle만 스킵하고(`record_type:
+         "evaluation_skipped"`로 evidence에 남김) loop는 계속 돈다 -
+         프로세스 자체를 종료시키지 않는다(과거엔 이 예외가 그대로 새
+         나가 detector 전체가 죽었다, phase8-blue-green-preflight-incident.md
+         §106/§107 참고). 그 외 예상 밖 예외는 그대로 전파돼 프로세스를
+         종료시킨다(기존과 동일).
       1) feature/score/streak 계산(변경 없음)
       2) `evaluation_decision` record를 **외부 HTTP 신호 전에** 먼저
          flush+fsync(§92 forensic이 지목한 §91의 근본 취약점 - 기존엔
@@ -352,6 +390,17 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
     consecutive_anomalous = 0
     last_signal_at = None
     evaluation_seq = 0
+    # §107(2026-09-23) - pod_kill-proposed-03-mainexp-v1 사후조사(§106) 결론:
+    # _evaluate_v32b_verbose()의 fail-closed RuntimeError(결측/NaN/stale)가
+    # 이 while 루프를 통째로 죽여 detector 프로세스 자체가 종료됐다(run_once.py
+    # 쪽에서는 "detector가 관찰 도중 비정상 종료"로 관측됨). pod_kill의
+    # 엔드포인트 공백처럼 15~25초짜리 일시적 갭 한 번 때문에 남은 trial
+    # 전체의 detector가 사라지는 건 과도한 fail-closed다 - "이 cycle의
+    # score/신호를 내지 않는다"와 "detector 프로세스 자체가 죽는다"는
+    # 서로 다른 요구이므로 분리한다. consecutive_data_gap_cycles는 "정상
+    # 평가가 몇 cycle째 연속으로 안 되고 있는가"만 추적한다(판정 로직인
+    # advance_streak()는 전혀 안 건드림).
+    consecutive_data_gap_cycles = 0
     evidence_file = open(evidence_log_path, "a", encoding="utf-8") if evidence_log_path else None
 
     try:
@@ -359,7 +408,53 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
             evaluation_seq += 1
             correlation_id = uuid.uuid4().hex
             wall_clock_before = datetime.now(timezone.utc).isoformat()
-            verbose = _evaluate_v32b_verbose(model, scaler, schema)
+            try:
+                verbose = _evaluate_v32b_verbose(model, scaler, schema)
+            except RuntimeError as e:
+                # §107 - fail-closed 조건(결측/NaN/stale)에 한해서만 잡는다.
+                # 이 3개는 _evaluate_v32b_verbose()가 명시적으로 RuntimeError로
+                # 표현하는, 이미 알려진("fail-closed: ...") 데이터 품질 문제뿐이다.
+                # 그 외의 진짜 예상 밖 예외(다른 예외 타입)는 여기서 안 잡고
+                # 그대로 위로 새 나가 프로세스를 종료시킨다(기존과 동일 -
+                # 진짜 버그를 조용히 삼키면 안 됨).
+                consecutive_data_gap_cycles += 1
+                gap_classification = ("prolonged" if consecutive_data_gap_cycles >= PROLONGED_DATA_GAP_CYCLES
+                                       else "transient")
+                # 미확정 cycle이다 - anomalous로도 정상으로도 간주하지 않고
+                # 스트릭을 리셋한다(advance_streak() 자체는 호출하지 않음 -
+                # 판정 함수는 안 바꾸고 이 loop의 호출 여부만 조절).
+                consecutive_anomalous = 0
+                print(f"[{datetime.now(timezone.utc).isoformat()}] 평가 스킵(seq={evaluation_seq}, "
+                      f"연속 {consecutive_data_gap_cycles}회 데이터 갭, {gap_classification}) - {e}")
+                if evidence_file is not None:
+                    _write_evidence_line(evidence_file, {
+                        "record_type": "evaluation_skipped",
+                        "wall_clock_before_utc": wall_clock_before,
+                        "wall_clock_after_utc": datetime.now(timezone.utc).isoformat(),
+                        "run_id": experiment_run_id, "model_version": model_version,
+                        "evaluation_seq": evaluation_seq, "correlation_id": correlation_id,
+                        "reason": str(e),
+                        "consecutive_data_gap_cycles": consecutive_data_gap_cycles,
+                        "gap_classification": gap_classification,
+                    })
+                if once:
+                    return
+                if stop_file_path is not None and os.path.exists(stop_file_path):
+                    print(f"  -> [shutdown] stop-file 감지({stop_file_path}) - 정상 종료(seq={evaluation_seq})")
+                    if evidence_file is not None:
+                        _write_evidence_line(evidence_file, {
+                            "record_type": "detector_shutdown",
+                            "run_id": experiment_run_id,
+                            "requested_via": "stop_file",
+                            "exited_at_utc": datetime.now(timezone.utc).isoformat(),
+                            "last_evaluation_seq": evaluation_seq,
+                            "exit_reason": "graceful_stop_file",
+                        })
+                    return
+                time.sleep(EVAL_INTERVAL_SEC)
+                continue
+
+            consecutive_data_gap_cycles = 0  # 정상 평가 성공 - 갭 카운터 리셋
             score = verbose["score"]
             now = time.monotonic()
             step = advance_streak(score, threshold, consecutive_anomalous, last_signal_at, now)

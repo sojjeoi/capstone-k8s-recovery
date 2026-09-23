@@ -429,12 +429,208 @@ def real_run_trial(trial: dict, python_exe: str = sys.executable) -> dict:
             "result_path": str(result_path), "result_hash": compute_file_sha256(result_path)}
 
 
-def real_preflight(trial: dict, state: dict) -> dict:
+LOCAL_RECOVERY_POLICY_URL = "http://localhost:8080"  # run_once.py의 RECOVERY_POLICY_URL과 동일 전제(port-forward)
+CHAOS_GROUP = "chaos-mesh.org"
+CHAOS_VERSION = "v1alpha1"
+CHAOS_PLURALS = ("podchaos", "networkchaos", "stresschaos")  # pod_kill_adapter/network_degrade_adapter/memory_pressure_adapter가 각각 쓰는 CR 종류
+# load_ramp_adapter.py의 ramp-inj-*/ramp-probe-* pod은 label이 없다(실측
+# 확인, §107 조사) - 이름 접두사로만 걸러낼 수 있다.
+RESIDUAL_POD_NAME_PREFIXES = ("ramp-inj-", "ramp-probe-")
+# §107(2026-09-23) - chaos CR 삭제(finalizer 처리)·Alertmanager 알림 해소는
+# 즉시 반영되지 않을 수 있다(자연스러운 전파 지연) - §102의 wait_until_
+# rolled_back() 교훈과 동일하게, 무기한 대기가 아니라 근거 있는 유한 시간
+# 동안 재확인한다. memory_pressure_adapter.CLEANUP_VERIFY_TIMEOUT_SEC(30초)와
+# 같은 값을 그대로 재사용(같은 종류의 K8s 컨트롤러 전파 지연이라 같은 여유가
+# 근거 있음).
+SAFETY_CHECK_POLL_TIMEOUT_SEC = 30.0
+SAFETY_CHECK_POLL_INTERVAL_SEC = 3.0
+
+
+def _check_active_pod_and_node() -> dict:
+    """active pod을 정확히 1개 찾고, 그 Node가 Ready+무압박 상태인지,
+    pod 자신이 OOMKilled 상태가 아닌지 확인한다(§107 - "Node"와
+    "restart/OOM" 두 항목을 하나로 묶음 - 어차피 같은 active pod 조회가
+    필요하다)."""
+    import active_pod_resolver
+    import memory_pressure_adapter as mpa
+    pods = active_pod_resolver.get_active_pods()
+    if len(pods) != 1:
+        return {"ok": False, "reason": f"active pod 개수 이상(기대 1, 실제 {len(pods)}): {pods}"}
+    details = mpa.get_pod_details(pods[0]["name"])
+    if details is None:
+        return {"ok": False, "reason": f"active pod {pods[0]['name']} 상세 조회 실패(404)"}
+    if details["oom_killed"]:
+        return {"ok": False, "reason": f"active pod {details['name']}이 OOMKilled 상태"}
+    conditions = mpa.get_node_conditions(details["node_name"])
+    healthy = (conditions.get("Ready") == "True" and conditions.get("MemoryPressure") == "False"
+               and conditions.get("DiskPressure") == "False" and conditions.get("PIDPressure") == "False")
+    if not healthy:
+        return {"ok": False, "reason": f"Node({details['node_name']}) 비정상: {conditions}"}
     return {"ok": True, "reason": None}
+
+
+def _check_active_endpoint(namespace: str = "vllm-serving") -> dict:
+    """active pod 수와 vllm-active EndpointSlice의 주소 수가 정확히
+    1:1로 맞는지 확인한다(_verify_active_selector_and_endpoints()는
+    promote 직후의 특정 hash를 검증하는 용도라 여기선 안 씀 - 이건
+    "지금 이 순간 정상인가"만 본다)."""
+    import active_pod_resolver
+    pods = active_pod_resolver.get_active_pods()
+    ips = _endpointslice_addresses(namespace, "vllm-active")
+    if len(pods) != 1 or len(ips) != 1:
+        return {"ok": False, "reason": f"active endpoint 이상(active pod={len(pods)}개, endpoint IP={len(ips)}개)"}
+    return {"ok": True, "reason": None}
+
+
+def _check_rollout_not_stuck(name: str = "vllm-serving", namespace: str = "vllm-serving") -> dict:
+    """이전 trial의 network_degrade profile 전환이 promote/abort까지
+    끝나지 못하고 남았으면(§98 launch-readiness 당시 실측된 실패 형태)
+    Rollout이 promote 전 pause 상태로 남는다 - switch_probe_profile_live()가
+    정상 종료했다면 항상 False여야 한다."""
+    import blue_green_prep as bgp
+    if bgp.is_paused_pre_promotion(name, namespace):
+        return {"ok": False, "reason": "Rollout이 promote 전 pause 상태로 남아있음(이전 trial의 미완료 preview 의심)"}
+    return {"ok": True, "reason": None}
+
+
+def _check_experiment_context_clear(url: str = LOCAL_RECOVERY_POLICY_URL) -> dict:
+    """§102/§103 사고(orphaned experiment-run context)의 재발을 orchestrator
+    층에서도 독립적으로 확인한다 - run_once.py 자신도 trial 시작 전 이
+    엔드포인트를 확인하지만(계약서 §6), 그건 "정상 종료한" 하니스에만
+    해당한다. subprocess가 크래시로 중간에 죽으면 run_once.py의 자체
+    정리가 아예 실행되지 못하므로, 그 경우를 잡아내는 건 이 orchestrator
+    층의 책임이다."""
+    import requests
+    try:
+        resp = requests.get(f"{url}/admin/experiment-run", timeout=10)
+        resp.raise_for_status()
+    except Exception as e:
+        return {"ok": False, "reason": f"recovery-policy 연결 실패(포트포워드 확인 필요): {e}"}
+    current = resp.json().get("current")
+    if current is not None:
+        return {"ok": False, "reason": f"이전 trial의 experiment-run context가 정리되지 않음: {current}"}
+    return {"ok": True, "reason": None}
+
+
+def _check_quiescent(url: str = LOCAL_RECOVERY_POLICY_URL) -> dict:
+    """recovery-policy 자신의 /admin/quiescent(계약서 §6)를 orchestrator
+    층에서도 재확인 - 이유는 _check_experiment_context_clear()와 동일
+    (크래시한 subprocess는 자체 확인을 못 함)."""
+    import requests
+    try:
+        resp = requests.get(f"{url}/admin/quiescent", timeout=10)
+        resp.raise_for_status()
+    except Exception as e:
+        return {"ok": False, "reason": f"recovery-policy quiescent 확인 연결 실패: {e}"}
+    data = resp.json()
+    if not data.get("quiescent"):
+        return {"ok": False, "reason": f"quiescent 아님(active_count={data.get('active_count')})"}
+    return {"ok": True, "reason": None}
+
+
+def _list_leftover_chaos_crs(namespace: str = "vllm-serving") -> dict:
+    from kubernetes import client
+    import active_pod_resolver
+    active_pod_resolver.load_kube_config()
+    api = client.CustomObjectsApi()
+    leftover = {}
+    for plural in CHAOS_PLURALS:
+        items = api.list_namespaced_custom_object(CHAOS_GROUP, CHAOS_VERSION, namespace, plural).get("items", [])
+        if items:
+            leftover[plural] = [i["metadata"]["name"] for i in items]
+    return leftover
+
+
+def _check_no_leftover_chaos_crs(namespace: str = "vllm-serving") -> dict:
+    """3개 시나리오(pod_kill/network_degrade/memory_pressure)가 쓰는
+    CHAOS_PLURALS 전체에 남은 CR이 있는지 확인한다 - 기존엔 각 어댑터가
+    "자기가 만든 CR 하나"의 존재 여부만 확인했을 뿐, 이렇게 전체를
+    나열해 잔여를 잡는 헬퍼는 전혀 없었다(§107 조사에서 확인된 gap)."""
+    leftover = _list_leftover_chaos_crs(namespace)
+    if leftover:
+        return {"ok": False, "reason": f"잔여 Chaos CR 발견: {leftover}"}
+    return {"ok": True, "reason": None}
+
+
+def _list_leftover_experiment_pods(namespace: str = "vllm-serving") -> list:
+    from kubernetes import client
+    import active_pod_resolver
+    active_pod_resolver.load_kube_config()
+    core = client.CoreV1Api()
+    pods = core.list_namespaced_pod(namespace).items
+    return [p.metadata.name for p in pods if p.metadata.name.startswith(RESIDUAL_POD_NAME_PREFIXES)]
+
+
+def _check_no_leftover_experiment_pods(namespace: str = "vllm-serving") -> dict:
+    leftover = _list_leftover_experiment_pods(namespace)
+    if leftover:
+        return {"ok": False, "reason": f"잔여 실험 pod 발견: {leftover}"}
+    return {"ok": True, "reason": None}
+
+
+def _poll_until_ok(check_fn: Callable[[], dict], timeout_sec: float = SAFETY_CHECK_POLL_TIMEOUT_SEC,
+                    poll_interval_sec: float = SAFETY_CHECK_POLL_INTERVAL_SEC) -> dict:
+    """일부 확인은 즉시 확정되지 않는 자연스러운 전파 지연이 있다(chaos
+    CR의 finalizer 삭제 처리) - §102의 wait_until_rolled_back() 교훈(무기한
+    연장이 아니라 근거 있는 유한 대기+재확인)을 그대로 적용한다. timeout
+    안에 한 번도 ok가 안 되면 마지막 결과를 그대로 반환한다(무한정
+    기다리지 않고 fail-closed)."""
+    deadline = time.monotonic() + timeout_sec
+    result = check_fn()
+    while not result["ok"] and time.monotonic() < deadline:
+        time.sleep(poll_interval_sec)
+        result = check_fn()
+    return result
+
+
+# §107(2026-09-23, phase8-blue-green-preflight-incident.md §106 조사 계기) -
+# §98/§100에서 약속했던 8개 검사(Node·Rollout·active endpoint·restart/OOM·
+# context·Chaos CR·실험 pod·detector 잔여) 중 7개를 여기서 실제로 수행한다
+# (restart/OOM은 _check_active_pod_and_node에 통합돼 있어 "8개 함수"가
+# 아니라 "8개 항목·6개 검사 함수"). **detector 잔여는 이 계층에서 직접
+# 확인할 방법이 없다**(§107 조사 결론 - Detector.is_alive()는 그 Popen을
+# 쥔 프로세스 안에서만 유효하고, run_all_scenarios.py는 각 trial을 별도
+# subprocess로 띄우므로 그 grandchild 프로세스를 외부에서 스캔할 인프라가
+# 이 코드베이스에 전혀 없음, psutil 등 새 의존성도 없음). context_clear +
+# quiescent 확인이 최선의 간접 신호다(진짜 detector가 남아 있다면 다음
+# trial의 register 시도가 409로 막히거나 quiescent가 안 됨) - 이 한계를
+# 과장하지 않고 문서에도 그대로 남긴다(§107.3).
+#
+# 함수 목록을 주입 가능하게 둔 건 테스트에서 실 클러스터 없이 fake 함수
+# 목록으로 완전히 대체하기 위함(memory_pressure_adapter.py의 기존
+# *_fn 주입 관례와 동일한 목적, 형태만 "함수 하나당 인자"가 아니라
+# "이름-함수 목록"으로 다름 - 검사 항목이 8개나 돼서 개별 인자로 받으면
+# 오히려 가독성이 떨어짐).
+SAFETY_CHECK_FUNCS = (
+    ("active_pod_and_node_health", _check_active_pod_and_node),
+    ("active_endpoint", _check_active_endpoint),
+    ("rollout_not_stuck", _check_rollout_not_stuck),
+    ("experiment_context_clear", _check_experiment_context_clear),
+    ("quiescent", lambda: _poll_until_ok(_check_quiescent)),
+    ("no_leftover_chaos_crs", lambda: _poll_until_ok(_check_no_leftover_chaos_crs)),
+    ("no_leftover_experiment_pods", _check_no_leftover_experiment_pods),
+)
+
+
+def real_safety_checks(check_funcs=SAFETY_CHECK_FUNCS) -> dict:
+    """preflight/postflight 공용 검사 스위트 - 첫 실패 항목에서 멈추고
+    그 이름·사유를 반환한다(run_sequence()가 이 reason을 그대로
+    SequenceAborted 메시지에 싣는다)."""
+    checks = {}
+    for name, fn in check_funcs:
+        result = fn()
+        checks[name] = result
+        if not result["ok"]:
+            return {"ok": False, "reason": f"[{name}] {result['reason']}", "checks": checks}
+    return {"ok": True, "reason": None, "checks": checks}
+
+
+def real_preflight(trial: dict, state: dict) -> dict:
+    return real_safety_checks()
 
 
 def real_postflight_cleanup_check(trial: dict) -> dict:
-    return {"ok": True, "reason": None}
+    return real_safety_checks()
 
 
 def real_check_git_drift(cwd: Path = REPO_ROOT, allowed_prefix: str = AUDIT_LOG_PREFIX) -> dict:

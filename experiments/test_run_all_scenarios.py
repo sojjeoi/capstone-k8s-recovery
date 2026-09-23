@@ -695,3 +695,308 @@ def test_main_resume_fails_closed_on_replacement_hash_mismatch(tmp_path):
     assert proc.returncode != 0
     assert "HASH VERIFICATION FAILED" in proc.stderr or "없음" in proc.stderr
     print("OK - CLI --resume도 대체 원본 hash 불일치/파일없음 시 즉시 거부")
+
+
+# ---- §107: real_preflight()/real_postflight_cleanup_check() 실제 안전 검사 ----
+
+def _ok(**extra):
+    return {"ok": True, "reason": None, **extra}
+
+
+def _fail(reason, **extra):
+    return {"ok": False, "reason": reason, **extra}
+
+
+def test_real_safety_checks_all_pass_returns_ok():
+    funcs = (("a", lambda: _ok()), ("b", lambda: _ok()))
+    result = ras.real_safety_checks(check_funcs=funcs)
+    assert result["ok"] is True
+    assert set(result["checks"]) == {"a", "b"}
+    print("OK - 모든 개별 검사가 통과하면 real_safety_checks 전체도 ok=True")
+
+
+def test_real_safety_checks_stops_at_first_failure_and_names_it():
+    calls = []
+
+    def a():
+        calls.append("a")
+        return _fail("a 실패 사유")
+
+    def b():
+        calls.append("b")
+        return _ok()
+
+    result = ras.real_safety_checks(check_funcs=(("a", a), ("b", b)))
+    assert result["ok"] is False
+    assert "[a] a 실패 사유" == result["reason"]
+    assert calls == ["a"], "첫 실패 이후 뒤 검사는 실행되면 안 됨(불필요한 클러스터 호출 방지)"
+    print("OK - 첫 실패 항목에서 멈추고 그 이름을 reason에 남김, 뒤 검사는 실행 안 함")
+
+
+def test_real_preflight_and_postflight_delegate_to_real_safety_checks(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ras, "real_safety_checks", lambda: calls.append("called") or _ok())
+    assert ras.real_preflight({"run_id": "x"}, {}) == _ok()
+    assert ras.real_postflight_cleanup_check({"run_id": "x"}) == _ok()
+    assert calls == ["called", "called"]
+    print("OK - real_preflight/real_postflight_cleanup_check가 real_safety_checks()를 그대로 씀(같은 검사 스위트 공유)")
+
+
+def test_poll_until_ok_retries_within_timeout_then_succeeds(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(ras.time, "sleep", lambda s: sleeps.append(s))
+    attempts = {"n": 0}
+
+    def flaky():
+        attempts["n"] += 1
+        return _ok() if attempts["n"] >= 3 else _fail("아직 전파 중")
+
+    result = ras._poll_until_ok(flaky, timeout_sec=100.0, poll_interval_sec=3.0)
+    assert result["ok"] is True
+    assert attempts["n"] == 3
+    assert sleeps == [3.0, 3.0]
+    print("OK - 일시적 실패는 poll_interval마다 재시도해 timeout 안에 성공하면 ok=True로 수렴")
+
+
+def test_poll_until_ok_gives_up_after_timeout_fail_closed(monkeypatch):
+    real_monotonic = ras.time.monotonic()
+    clock = {"t": real_monotonic}
+    monkeypatch.setattr(ras.time, "monotonic", lambda: clock["t"])
+
+    def fake_sleep(s):
+        clock["t"] += s
+    monkeypatch.setattr(ras.time, "sleep", fake_sleep)
+
+    result = ras._poll_until_ok(lambda: _fail("영구 잔여"), timeout_sec=10.0, poll_interval_sec=3.0)
+    assert result["ok"] is False
+    assert result["reason"] == "영구 잔여"
+    print("OK - timeout을 넘기도록 계속 실패하면 무한정 기다리지 않고 마지막 결과 그대로 fail-closed 반환")
+
+
+def test_check_active_pod_and_node_ok_when_healthy(monkeypatch):
+    import active_pod_resolver
+    import memory_pressure_adapter as mpa
+    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": "vllm-x", "uid": "u1"}])
+    monkeypatch.setattr(mpa, "get_pod_details", lambda name: {
+        "name": name, "uid": "u1", "node_name": "sj-worker", "oom_killed": False})
+    monkeypatch.setattr(mpa, "get_node_conditions", lambda node: {
+        "Ready": "True", "MemoryPressure": "False", "DiskPressure": "False", "PIDPressure": "False"})
+    result = ras._check_active_pod_and_node()
+    assert result["ok"] is True
+    print("OK - active pod 1개+Node 정상+OOMKilled 아님이면 ok=True")
+
+
+def test_check_active_pod_and_node_fails_on_wrong_pod_count(monkeypatch):
+    import active_pod_resolver
+    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [])
+    result = ras._check_active_pod_and_node()
+    assert result["ok"] is False
+    assert "개수 이상" in result["reason"]
+    print("OK - active pod이 정확히 1개가 아니면(0개/2개 이상) 실패")
+
+
+def test_check_active_pod_and_node_fails_on_oom_killed(monkeypatch):
+    import active_pod_resolver
+    import memory_pressure_adapter as mpa
+    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": "vllm-x", "uid": "u1"}])
+    monkeypatch.setattr(mpa, "get_pod_details", lambda name: {
+        "name": name, "uid": "u1", "node_name": "sj-worker", "oom_killed": True})
+    result = ras._check_active_pod_and_node()
+    assert result["ok"] is False
+    assert "OOMKilled" in result["reason"]
+    print("OK - active pod이 OOMKilled 상태면 실패")
+
+
+def test_check_active_pod_and_node_fails_on_node_not_ready(monkeypatch):
+    import active_pod_resolver
+    import memory_pressure_adapter as mpa
+    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": "vllm-x", "uid": "u1"}])
+    monkeypatch.setattr(mpa, "get_pod_details", lambda name: {
+        "name": name, "uid": "u1", "node_name": "sj-worker", "oom_killed": False})
+    monkeypatch.setattr(mpa, "get_node_conditions", lambda node: {
+        "Ready": "False", "MemoryPressure": "False", "DiskPressure": "False", "PIDPressure": "False"})
+    result = ras._check_active_pod_and_node()
+    assert result["ok"] is False
+    assert "Node(sj-worker)" in result["reason"]
+    print("OK - Node가 NotReady/pressure면 실패")
+
+
+def test_check_active_endpoint_ok_when_one_to_one(monkeypatch):
+    import active_pod_resolver
+    monkeypatch.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": "vllm-x", "uid": "u1"}])
+    monkeypatch.setattr(ras, "_endpointslice_addresses", lambda ns, svc: ["10.0.0.1"])
+    result = ras._check_active_endpoint()
+    assert result["ok"] is True
+    print("OK - active pod 1개 + endpoint IP 1개면 ok=True")
+
+
+def test_check_active_endpoint_fails_when_endpoint_empty():
+    """pod_kill이 만드는 엔드포인트 공백 구간을 그대로 재현 - active pod은
+    있지만(교체 대기 중이라 0개일 수도 있음) EndpointSlice 주소가 없음."""
+    import active_pod_resolver
+
+    result = None
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(active_pod_resolver, "get_active_pods", lambda: [{"name": "vllm-x", "uid": "u1"}])
+        mp.setattr(ras, "_endpointslice_addresses", lambda ns, svc: [])
+        result = ras._check_active_endpoint()
+    assert result["ok"] is False
+    assert "endpoint" in result["reason"]
+    print("OK - endpoint IP가 0개면(§106 조사의 pod_kill 갭 상황) 실패")
+
+
+def test_check_rollout_not_stuck_fails_when_paused_pre_promotion(monkeypatch):
+    import blue_green_prep as bgp
+    monkeypatch.setattr(bgp, "is_paused_pre_promotion", lambda name, ns: True)
+    result = ras._check_rollout_not_stuck()
+    assert result["ok"] is False
+    assert "pause" in result["reason"]
+    print("OK - Rollout이 promote 전 pause 상태로 남아있으면(이전 trial 미완료 preview 의심) 실패")
+
+
+def test_check_rollout_not_stuck_ok_when_not_paused(monkeypatch):
+    import blue_green_prep as bgp
+    monkeypatch.setattr(bgp, "is_paused_pre_promotion", lambda name, ns: False)
+    result = ras._check_rollout_not_stuck()
+    assert result["ok"] is True
+    print("OK - Rollout이 pause 상태가 아니면 ok=True")
+
+
+def test_check_experiment_context_clear_fails_when_context_active(monkeypatch):
+    import requests
+
+    class FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"current": {"run_id": "pod_kill-proposed-99-x", "scenario": "pod_kill"}}
+
+    monkeypatch.setattr(requests, "get", lambda url, timeout: FakeResp())
+    result = ras._check_experiment_context_clear()
+    assert result["ok"] is False
+    assert "정리되지 않음" in result["reason"]
+    print("OK - §102/§103 사고(orphaned experiment-run context)와 동일 상황을 orchestrator 층에서 독립적으로 탐지")
+
+
+def test_check_experiment_context_clear_ok_when_null(monkeypatch):
+    import requests
+
+    class FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"current": None}
+
+    monkeypatch.setattr(requests, "get", lambda url, timeout: FakeResp())
+    result = ras._check_experiment_context_clear()
+    assert result["ok"] is True
+    print("OK - context가 null이면 ok=True")
+
+
+def test_check_experiment_context_clear_fails_closed_on_connection_error(monkeypatch):
+    import requests
+
+    def raise_conn_error(url, timeout):
+        raise requests.exceptions.ConnectionError("연결 거부")
+    monkeypatch.setattr(requests, "get", raise_conn_error)
+    result = ras._check_experiment_context_clear()
+    assert result["ok"] is False
+    assert "연결 실패" in result["reason"]
+    print("OK - recovery-policy 연결 자체가 안 되면(포트포워드 끊김 등) fail-closed(ok=False), 조용히 통과 안 시킴")
+
+
+def test_check_quiescent_fails_when_not_quiescent(monkeypatch):
+    import requests
+
+    class FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"quiescent": False, "active_count": 2}
+
+    monkeypatch.setattr(requests, "get", lambda url, timeout: FakeResp())
+    result = ras._check_quiescent()
+    assert result["ok"] is False
+    assert "quiescent 아님" in result["reason"]
+    print("OK - 이전 trial의 critical alert가 아직 안 풀렸으면(quiescent=False) 실패")
+
+
+def test_check_no_leftover_chaos_crs_ok_when_empty(monkeypatch):
+    from kubernetes import client
+    import active_pod_resolver
+
+    monkeypatch.setattr(active_pod_resolver, "load_kube_config", lambda: None)
+
+    class FakeCustomApi:
+        def list_namespaced_custom_object(self, group, version, ns, plural):
+            return {"items": []}
+
+    monkeypatch.setattr(client, "CustomObjectsApi", FakeCustomApi)
+    result = ras._check_no_leftover_chaos_crs()
+    assert result["ok"] is True
+    print("OK - 3종류(podchaos/networkchaos/stresschaos) 전부 비어있으면 ok=True")
+
+
+def test_check_no_leftover_chaos_crs_fails_when_leftover_found(monkeypatch):
+    from kubernetes import client
+    import active_pod_resolver
+
+    monkeypatch.setattr(active_pod_resolver, "load_kube_config", lambda: None)
+
+    class FakeCustomApi:
+        def list_namespaced_custom_object(self, group, version, ns, plural):
+            if plural == "podchaos":
+                return {"items": [{"metadata": {"name": "pod-kill-abc123"}}]}
+            return {"items": []}
+
+    monkeypatch.setattr(client, "CustomObjectsApi", FakeCustomApi)
+    result = ras._check_no_leftover_chaos_crs()
+    assert result["ok"] is False
+    assert "podchaos" in result["reason"] and "pod-kill-abc123" in result["reason"]
+    print("OK - 어느 하나라도 CR이 남아있으면(기존엔 이런 전체 나열 검사 자체가 없었음, §107 조사) 실패하고 구체적 이름까지 남김")
+
+
+def test_check_no_leftover_experiment_pods_ok_when_none_match(monkeypatch):
+    from kubernetes import client
+    import active_pod_resolver
+
+    monkeypatch.setattr(active_pod_resolver, "load_kube_config", lambda: None)
+
+    class FakePod:
+        def __init__(self, name):
+            self.metadata = type("M", (), {"name": name})()
+
+    class FakeCoreApi:
+        def list_namespaced_pod(self, ns):
+            return type("L", (), {"items": [FakePod("vllm-serving-abc123")]})()
+
+    monkeypatch.setattr(client, "CoreV1Api", FakeCoreApi)
+    result = ras._check_no_leftover_experiment_pods()
+    assert result["ok"] is True
+    print("OK - ramp-inj-*/ramp-probe-* 접두사에 안 걸리는 정상 pod만 있으면 ok=True")
+
+
+def test_check_no_leftover_experiment_pods_fails_on_ramp_prefix(monkeypatch):
+    """load_ramp_adapter.py의 ramp-inj-*/ramp-probe-* pod은 label이 없어
+    (§107 조사) 이름 접두사로만 걸러낼 수 있다는 걸 그대로 검증한다."""
+    from kubernetes import client
+    import active_pod_resolver
+
+    monkeypatch.setattr(active_pod_resolver, "load_kube_config", lambda: None)
+
+    class FakePod:
+        def __init__(self, name):
+            self.metadata = type("M", (), {"name": name})()
+
+    class FakeCoreApi:
+        def list_namespaced_pod(self, ns):
+            return type("L", (), {"items": [FakePod("ramp-inj-deadbeef")]})()
+
+    monkeypatch.setattr(client, "CoreV1Api", FakeCoreApi)
+    result = ras._check_no_leftover_experiment_pods()
+    assert result["ok"] is False
+    assert "ramp-inj-deadbeef" in result["reason"]
+    print("OK - 잔여 ramp-inj-*/ramp-probe-* pod을 이름 접두사로 탐지")
