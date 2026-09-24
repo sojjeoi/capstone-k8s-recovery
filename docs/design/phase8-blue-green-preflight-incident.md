@@ -13899,3 +13899,121 @@ proposed-01-mainexp-v1` 연결만 존재하며 무관).
 
 **이번 턴은 여기서 정지** - 위 절차는 제안일 뿐 실행하지 않았다. 다음
 live 턴에서 별도 지시에 따라 진행한다.
+
+## §121 - `network_degrade-native-01` 대체 연결 시도 - 기존 `--link-replacement` 절차 자체의 구조적 한계 발견, live 미착수
+
+### 121.1 사전확인 - 전부 통과
+
+`HEAD==origin/master==f149e47`(§120 커밋, `3f622a1` 수정이 조상 커밋임을
+`git merge-base --is-ancestor`로 직접 확인), 추적 파일 변경 0건.
+`official-experiment-state.json`(v1) 완료 21건 + `official-experiment-
+state-v2.json`(v2) 완료 30건 = 51건 전부 실제 `sha256sum`이 state
+`result_hash`와 일치(불일치 0건). `network_degrade-native-01-mainexp-v1`
+재확인: `status="failed"`, `cleanup_status="ok"`, `result_hash=None` -
+§119/§120과 완전히 동일, 변경 없음.
+
+### 121.2 `--link-replacement` 시도 - 즉시 거부됨 (state 변경 0건)
+
+```
+python run_all_scenarios.py --link-replacement network_degrade-native-01-mainexp-v1 \
+  network_degrade-native-01-retry1-mainexp-v1 --link-reason "..." \
+  --state-file results/official-experiment-state.json
+```
+
+결과: `LINK REJECTED: 원본 결과 파일이 없음: .../trial-network_degrade-
+native-01-mainexp-v1.json - hash 검증 불가(fail-closed)` (exit 1).
+
+**state 변경 0건임을 직접 확인**: CLI 핸들러(`run_all_scenarios.py`
+1191-1205행)는 `link_technical_invalid_replacement()`(메모리 내
+`existing` dict만 수정)와 `verify_and_backfill_original_hash()`를
+순서대로 호출한 뒤에만 `save_state_atomic()`을 호출한다 - 후자가
+`ValueError`를 던지면 `except`가 `sys.exit(1)`로 즉시 종료해 **`save_
+state_atomic()` 자체가 호출되지 않는다.** 실제로 state 파일을 재확인한
+결과 `replacements` 딕셔너리에 `network_degrade-native-01-mainexp-v1`
+관련 항목이 전혀 없고(기존 §105의 `pod_kill-proposed-01-mainexp-v1`
+연결만 그대로 존재), `network_degrade-native-01-retry1-mainexp-v1`도
+`state["trials"]`에 없음 - **디스크상 state는 이번 시도로 단 1바이트도
+바뀌지 않았다.**
+
+### 121.3 근본 원인 - `verify_and_backfill_original_hash()`가 "결과 파일이 애초에 존재한 적 없음"과 "존재했어야 하는데 사라짐"을 구분하지 못한다
+
+`experiments/run_all_scenarios.py:322-355`의
+`verify_and_backfill_original_hash()`를 직접 확인:
+
+```python
+result_path = results_dir / f"trial-{original_run_id}.json"
+if not result_path.exists():
+    raise ValueError(f"원본 결과 파일이 없음: {result_path} - hash 검증 불가(fail-closed)")
+```
+
+이 함수는 **무조건** 원본 결과 파일이 실제로 존재할 것을 요구한다 -
+§105의 `pod_kill-proposed-01-mainexp-v1` 선례(detector subprocess
+크래시 - `run_once()`가 이미 상당히 진행된 뒤 죽어서 결과 파일이
+존재했음)를 기준으로 설계된 것으로 보인다. 그러나
+`network_degrade-native-01-mainexp-v1`은 §119에서 확인했듯
+**`run_network_degrade_trial.py`가 `_verify_probe_profile()`에서
+injection 진입 전, `run_once()` 호출 자체보다도 훨씬 이전 단계에서
+즉시 종료**했다 - 결과 파일이 "사라진" 게 아니라 **애초에 생성된 적이
+없다**(state 자신의 `result_path=None`/`result_hash=None`이 이미 이
+사실을 기록하고 있다 - §105가 만든 기존 테스트
+`test_real_run_trial_failure_without_result_file_has_no_path_or_hash`
+가 정확히 이 케이스를 별도로 구분해 검증해 둔 바로 그 상황이다).
+
+**결론**: 이건 클러스터·데이터 문제가 아니라 `verify_and_backfill_
+original_hash()`가 "파일이 있어야 하는데 없어짐(데이터 손실 의심)"과
+"애초에 파일이 생성될 단계까지 못 감(정상적으로 기록된 무결과)"이라는
+서로 다른 두 상황을 구분하지 못하는 **기존 대체-연결 절차 자체의
+구조적 공백**이다 - §119/§120의 배선 결함과는 별개의, 이번에 새로
+발견한 문제.
+
+### 121.4 시도하지 않은 것 (지시 그대로 준수)
+
+- 가드 우회(예: `--skip`류 플래그 추가, 함수 직접 호출로 CLI 우회)
+  시도 0건.
+- `official-experiment-state.json` 수동 편집 0건.
+- 가짜/자리표시 결과 파일 생성 0건(데이터 조작이므로 절대 금지 대상).
+- `verify_and_backfill_original_hash()` 코드 수정 0건(이번 턴 지시는
+  "기존 절차로 연결"이었지 코드 변경이 아니었으므로, 발견 즉시 멈추고
+  보고).
+- 이후 어떤 live 클러스터 명령도 실행하지 않음(활성 pod probe timeout이
+  계속 `1`(base)임을 재확인 - 이번 턴 전체가 클러스터 무접촉).
+
+### 121.5 제안하는 수정 방향 (구현하지 않음, 다음 턴 지시 대기)
+
+`verify_and_backfill_original_hash()`가 파일 부재를 판정하기 전에,
+**원본 trial 자신의 state 기록**(`state["trials"][original_run_id]`)의
+`result_path`/`result_hash`를 먼저 확인하도록 제안한다:
+
+- 원본 state 기록의 `result_path`/`result_hash`가 **둘 다 `None`**이면
+  (=`real_run_trial()` 자신이 애초에 결과 파일을 못 만들었다고 이미
+  기록해 둔 경우) - 파일 부재는 예상된 정상 상태이므로 **fail-closed
+  하지 않고 `original_result_hash=None`을 그대로 유지**한 채 통과시킨다
+  (검증할 파일 자체가 없으므로 "검증됨"이 아니라 "검증 대상 없음"으로
+  명확히 구분해 기록).
+- 원본 state 기록에 `result_hash`가 **채워져 있는데** 파일이 실제로는
+  없으면 - 이건 진짜 데이터 손실/삭제 의심이므로 **지금과 동일하게
+  fail-closed**(변경 없음).
+- 이 구분 기준(원본 state 자신의 기록을 신뢰 근거로 삼음) 자체가
+  `real_run_trial()`이 §105 이후 항상 정확하게 채워온 필드이므로 새
+  데이터를 요구하지 않는다.
+- 어떤 수정이든 오프라인 회귀 테스트(파일 없음+원본 hash 없음 ->
+  통과, 파일 없음+원본 hash 있음 -> 여전히 fail-closed, 파일 있음+hash
+  불일치 -> 여전히 fail-closed, 기존 §105 케이스 회귀 없음)를 먼저
+  추가해 통과시킨 뒤에만 실사용한다.
+
+### 121.6 이번 턴 결과
+
+- 유효 완료 trial: **0/3**(연결 자체가 거부되어 어떤 trial도 시작되지
+  않음 - `--plan`/`--dry-run`/사전점검/base→tolerant 전환/실행 전부
+  착수하지 못함).
+- `network_degrade-native-01-mainexp-v1` 원본 결과·state·hash: 변경
+  0건(재확인 완료).
+- 기존 51건(v1 21건+v2 30건) 공식 결과·hash: 변경 0건.
+- 클러스터: 전 과정 무접촉(활성 pod probe timeout `1`(base) 그대로,
+  Git/live diff 확인할 필요조차 없었음 - kubectl 변경 명령 자체를
+  한 번도 실행하지 않았음).
+- 소요 시간: 약 5분 이내(사전확인+연결 시도+조사+문서화).
+
+**반복 2~5, memory auxiliary는 애초에 시작 대상이 아니었고 이번에도
+시작하지 않았다.** `network_degrade` 공식 블록의 실제 첫 반복 실행은
+위 §121.5의 수정이 구현·테스트되고 별도 지시가 있을 때까지 보류한다.
