@@ -13226,3 +13226,101 @@ mainexp-v2`의 기존 모든 native 트라이얼과 동일한, 애초에 detecto
 - 포트포워드 2개는 문서 작성 후 로컬에서 종료 예정.
 - 이번 턴은 여기서 정지 - 나머지 `pod_kill` 12건, `network_degrade`,
   memory auxiliary로 자동 진행하지 않는다.
+
+## §116 - `pod_kill` 공식 재측정 2차 반복 블록(2~3반복, 6건) 실행 - 전부 정상 완료
+
+### 116.1 범위
+
+§115의 1차 반복(3건) 이후, 이번 턴은 사전 등록된 반복 2~3의 6건만
+실행: `fixed_threshold-02 → proposed-02 → native-02 → proposed-03 →
+native-03 → fixed_threshold-03`(`--from-run-id`/`--to-run-id`로 경계
+지정). 반복 4~5, `network_degrade`, memory auxiliary는 시작하지 않음.
+
+### 116.2 사전점검 재확인 (전부 이번 턴에 직접 재확인, 2026-09-24)
+
+- `git`: 시작 시 `HEAD==origin/master==14a5626`, 추적 파일 변경 0건.
+- 라이브 클러스터: 두 Node `Ready`+pressure 없음, `Rollout vllm-serving`
+  진짜 `phase=Healthy`(activeSelector==previewSelector==
+  currentPodHash==stableRS=="84cd9b9fb7", pauseConditions=null,
+  §115 3건 실행 후의 pod), 활성 pod 재시작 0회, Chaos CR 잔여 0,
+  실험 pod 잔여 0, detector 프로세스 잔여 0.
+- 포트포워드 재수립 후 recovery-policy(`{"status":"ok"}`)·
+  Prometheus(`Healthy`) 헬스체크 정상, `/admin/quiescent`=true,
+  `/admin/experiment-run`=null.
+- Prometheus 신선도: 4개 feature 쿼리 전부 현재 활성 pod
+  (`vllm-serving-84cd9b9fb7-7j2n9`) 기준 1.5초 미만 age.
+- 기존 공식 완료 18건(load_ramp 15 + pod_kill 3) 전부의
+  `results/trial-*.json` 실제 sha256이 state의 `result_hash`와
+  글자 하나까지 일치(불일치 0건) - 직접 재계산으로 확인.
+- 이번 턴 목표 6건 전부 `status=planned`(미착수) 확인.
+- `--plan --from-run-id pod_kill-fixed_threshold-02-mainexp-v2
+  --to-run-id pod_kill-fixed_threshold-03-mainexp-v2`로 정확히 6건·
+  지정 순서만 미리보기됨을 확인. `--dry-run --resume`(읽기 전용,
+  실제 클러스터 접근)으로 6건 전부 8개 preflight 항목 전부
+  `ok=true`, `rollout_healthy_single_revision.classification==
+  "healthy"` 기록 확인.
+
+### 116.3 실행 (90분 제한 내, 실제 약 43분 소요)
+
+시작 시각 기록 후 `--resume --from-run-id pod_kill-fixed_threshold-02-
+mainexp-v2 --to-run-id pod_kill-fixed_threshold-03-mainexp-v2`(dry-run
+아님)를 백그라운드 실행. 6건 전부 `outcome=recovered`/
+`state=completed`로 중단 조건 없이 정상 종료
+(`t_injection` 07:50:58Z ~ `t_recovery` 08:33:35Z, 총 약 43분 -
+90분 한도 내, 새 trial 시작 없이 강제 종료도 없음).
+
+| run_id | detector | detected | detection_source | decision_outcome | promotion_verified | audit_status |
+|---|---|---|---|---|---|---|
+| pod_kill-fixed_threshold-02-mainexp-v2 | fixed_threshold | True | reactive | executed_verified | True | complete |
+| pod_kill-proposed-02-mainexp-v2 | isolation_forest | True | predictive | executed_verified | True | complete |
+| pod_kill-native-02-mainexp-v2 | (없음) | False | - | - | - | - |
+| pod_kill-proposed-03-mainexp-v2 | isolation_forest | True | predictive | executed_verified | True | complete |
+| pod_kill-native-03-mainexp-v2 | (없음) | False | - | - | - | - |
+| pod_kill-fixed_threshold-03-mainexp-v2 | fixed_threshold | True | reactive | executed_verified | True | complete |
+
+`native-02`/`native-03`의 `detected`/`decision_outcome`/
+`audit_record_id` 전부 `None`인 것은 §115.4에서 이미 확인한 native
+arm의 정상 패턴과 동일(detector가 없는 arm이므로 감사할 결정 자체가
+없음).
+
+### 116.4 사후 검증 (매 trial 이후 실제로 확인)
+
+- 6건 전부 postflight 8개 항목 전부 `ok=true`,
+  `rollout_healthy_single_revision.classification=="healthy"`,
+  `cleanup_status=="ok"`.
+- 6건 전부 `results/trial-pod_kill-*-mainexp-v2.json`의 실제
+  `sha256sum`이 state의 `result_hash`와 정확히 일치(fixed_threshold-02:
+  `cac3f064...`, proposed-02: `91c40c1c...`, native-02: `0692cdcf...`,
+  proposed-03: `e37ceb95...`, native-03: `0523d5c7...`,
+  fixed_threshold-03: `f496c5d7...`).
+- `injection_valid=True`, `baseline_valid=True`, `probe_valid=True`
+  6건 전부.
+- detector 로그 4건(`fixed_threshold-02`/`proposed-02`/`proposed-03`/
+  `fixed_threshold-03`) 전부 `Traceback`/`Error`/`Exception`/
+  `DataGapFailClosed`/`prolonged_data_gap_invalidated`/
+  `evaluation_skipped` 매치 0건 - 크래시·데이터 공백 없이 정상 종료.
+- `fixed_threshold`·`proposed` 4건 전부 `audit_record_id` 발급,
+  `audit_status=="complete"`.
+- 최종 라이브 상태: `phase=Healthy`, 단일 revision(`755d5bdf7d`,
+  6회 pod_kill로 pod 교체 - 정상), 1/1/1, pod 정확히 2개, Chaos CR
+  잔여 0, 실험 pod 잔여 0, `/admin/quiescent`=true, `/admin/
+  experiment-run`=null.
+
+### 116.5 보존/범위 확인
+
+- §115의 1차 반복 3건(`native-01`/`fixed_threshold-01`/`proposed-01`)
+  결과·hash 변경 0건(재확인: 3건 hash 전부 §115 기록값과 동일).
+- `load_ramp mainexp-v2`(16개 항목) 구조·hash 변경 0건.
+- `official-experiment-state.json`(v1)은 이번 턴 명령도 전부
+  `--state-file results/official-experiment-state-v2.json`만 지정했으므로
+  열리지 않음(`pod_kill` 완료 수 여전히 6건, 변경 없음).
+- `pod_kill` 나머지 반복 4~5(`native-04/05`,
+  `fixed_threshold-04/05`, `proposed-04/05`)는 `status=planned` 그대로,
+  `network_degrade`·memory auxiliary는 시작하지 않음.
+- 이번 턴 동안 원격에 `recovery-policy-bot`이 만든 audit-log 커밋
+  23건(§113.11/§115와 동일한 종류, `audit-log/*.jsonl`만 변경)이
+  들어와 있어 `git pull`(fast-forward 아닌 merge, 충돌 없음)로 통합 후
+  이 문서 커밋과 함께 푸시.
+- 포트포워드 2개는 문서 작성 후 로컬에서 종료.
+- 이번 턴은 여기서 정지 - 반복 4~5, `network_degrade`, memory
+  auxiliary로 자동 진행하지 않는다.
