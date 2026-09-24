@@ -1316,6 +1316,40 @@ def test_main_cli_link_replacement_with_valid_noresult_evidence_file_succeeds(tm
     print("OK - CLI --noresult-evidence-file로 '애초에 결과 없음' 경로가 정상 완료되고 근거가 저장됨")
 
 
+def test_main_cli_plan_reverifies_noresult_replacement_using_stored_evidence(tmp_path):
+    """§123(2026-09-24, network_degrade-native-01-mainexp-v1 재개 시도 계기) -
+    링크 시점에만 evidence를 받고 끝나면 안 된다: --plan/--dry-run/--resume은
+    전부 재개할 때마다 모든 replacement의 원본 hash를 재검증하는데(§105),
+    --noresult-evidence-file 없이 호출되는 이 경로들이 이미 저장된 evidence를
+    재사용하지 못하면 링크 직후 첫 --plan부터 막힌다(실제로 이 결함이 났었음).
+    이미 검증·저장된 evidence를 재검증 루프가 그대로 재사용해 --plan이
+    정상 통과해야 한다."""
+    original_run_id = "pod_kill-proposed-97-synthetic-cli-test"
+    replacement_run_id = "pod_kill-proposed-97-synthetic-cli-test-retry1"
+    state = _minimal_failed_trial_state(original_run_id)
+    state_path = tmp_path / "state.json"
+    ras.save_state_atomic(state_path, state)
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(json.dumps(_valid_noresult_evidence(original_run_id)), encoding="utf-8")
+    link_proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "run_all_scenarios.py"),
+         "--link-replacement", original_run_id, replacement_run_id,
+         "--link-reason", "테스트 - 재검증 재사용 확인",
+         "--noresult-evidence-file", str(evidence_path),
+         "--state-file", str(state_path)],
+        capture_output=True, text=True, cwd=Path(__file__).parent)
+    assert link_proc.returncode == 0, link_proc.stderr
+
+    # --noresult-evidence-file 없이 --plan만 호출 - 저장된 evidence를 재사용해야 통과
+    plan_proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "run_all_scenarios.py"),
+         "--plan", "--resume", "--state-file", str(state_path)],
+        capture_output=True, text=True, cwd=Path(__file__).parent)
+    assert plan_proc.returncode == 0, plan_proc.stderr
+    assert "REPLACEMENT ORIGINAL HASH VERIFICATION FAILED" not in plan_proc.stderr
+    print("OK - 링크 이후 --plan이 evidence 재입력 없이도 저장된 evidence로 재검증 통과")
+
+
 def test_main_resume_fails_closed_on_replacement_hash_mismatch(tmp_path):
     """§105 - CLI --resume 경로에서도(단순 함수 호출이 아니라) 대체가 연결된
     원본의 hash 불일치가 있으면 실행 전에 즉시 거부해야 한다."""

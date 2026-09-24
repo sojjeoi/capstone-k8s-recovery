@@ -1335,9 +1335,16 @@ def main():
     # §105 - 재개할 때마다 연결된 모든 대체의 원본 hash를 재검증(불일치 시
     # fail-closed) - 링크 생성 시점 1회가 아니라 매번, "파일이 그 사이
     # 손상·변조되지 않았는가"를 다시 확인하기 위함.
+    # §123(2026-09-24) - §121/§122의 "결과 파일 애초에 없음" 경로로 연결된
+    # replacement는 재검증 때마다 새 evidence를 CLI로 다시 받을 방법이 없다
+    # (--plan/--dry-run/--resume엔 --noresult-evidence-file이 없음) - 링크
+    # 시점에 이미 구조적으로 검증해 저장해 둔 evidence를 그대로 재사용한다.
+    # 파일이 실제로 존재하는 일반 케이스는 이 값이 애초에 안 쓰이므로(첫
+    # 분기에서 조기 반환) 영향 없음.
     for original_run_id in list(state.get("replacements", {}).keys()):
         try:
-            verify_and_backfill_original_hash(state, original_run_id)
+            stored_evidence = state["replacements"][original_run_id].get("original_no_result_evidence")
+            verify_and_backfill_original_hash(state, original_run_id, noresult_evidence=stored_evidence)
         except ValueError as e:
             print(f"REPLACEMENT ORIGINAL HASH VERIFICATION FAILED: {e}", file=sys.stderr)
             sys.exit(1)
