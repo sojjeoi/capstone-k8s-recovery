@@ -319,8 +319,43 @@ def apply_replacements(trials: list, replacements: dict) -> list:
     return replaced
 
 
+def _validate_noresult_evidence(evidence: dict, original_run_id: str,
+                                 result_path: Path, pilot_result_path: Path) -> None:
+    """§121(2026-09-24, network_degrade-native-01-mainexp-v1 계기) - "원본이
+    애초에 결과 파일을 만든 적이 없다"는 주장을 사람이 조합한 evidence만으로
+    무조건 신뢰하지 않는다. 검증 가능한 부분(파일이 지금 정말 없는지)은 이
+    함수가 직접 재확인하고, 검증 불가능한 부분(과거 로그 내용)은 구조적
+    sanity check만 수행한다 - `adjudicate_cleanup_failure()`와 같은
+    "사람이 근거를 명시적으로 남기되, 코드가 확인 가능한 부분은 직접
+    재확인한다"는 원칙."""
+    if not isinstance(evidence, dict):
+        raise ValueError("noresult_evidence는 dict여야 함(fail-closed)")
+    if evidence.get("original_run_id") != original_run_id:
+        raise ValueError(
+            f"noresult_evidence.original_run_id({evidence.get('original_run_id')!r})가 "
+            f"대상({original_run_id!r})과 다름 - fail-closed")
+    if result_path.exists() or pilot_result_path.exists():
+        raise ValueError(
+            f"noresult_evidence 검증 시점에 결과 파일이 실제로 존재함"
+            f"({result_path if result_path.exists() else pilot_result_path}) - fail-closed")
+    excerpt = evidence.get("preflight_failure_log_excerpt")
+    if not excerpt or not isinstance(excerpt, str):
+        raise ValueError("noresult_evidence.preflight_failure_log_excerpt가 없거나 비어 있음(fail-closed)")
+    if "ProbeProfileMismatch" not in excerpt:
+        raise ValueError(
+            "noresult_evidence.preflight_failure_log_excerpt가 ProbeProfileMismatch를 "
+            "포함하지 않음 - 사전실행 실패라는 근거 불충분(fail-closed)")
+    if "_verify_probe_profile" not in excerpt:
+        raise ValueError(
+            "noresult_evidence.preflight_failure_log_excerpt가 _verify_probe_profile 호출 "
+            "지점을 포함하지 않음 - run_once() 이전 실패라는 근거 불충분(fail-closed)")
+    if not evidence.get("preflight_failure_log_source"):
+        raise ValueError("noresult_evidence.preflight_failure_log_source(근거 출처)가 없음(fail-closed)")
+
+
 def verify_and_backfill_original_hash(state: dict, original_run_id: str,
-                                       results_dir: Path = RESULTS_DIR) -> None:
+                                       results_dir: Path = RESULTS_DIR,
+                                       noresult_evidence: Optional[dict] = None) -> None:
     """§105(2026-09-24, pod_kill-proposed-01-mainexp-v1 계기) - 대체가
     연결된 원본의 `state["replacements"][original]["original_result_hash"]`
     가 null인 경우(예: link 당시 원본 slot 자체의 result_hash가 §105
@@ -334,25 +369,76 @@ def verify_and_backfill_original_hash(state: dict, original_run_id: str,
     "이후 재개 때도 불일치하면 fail-closed"에 해당한다(파일이 사후에
     손상·변조됐을 가능성을 매번 다시 확인). 파일이 없거나, 파일 안의
     run_id가 원본과 다르면(잘못된 파일을 가리키고 있을 위험) 즉시
-    ValueError로 fail-closed한다."""
+    ValueError로 fail-closed한다.
+
+    §121(2026-09-24, network_degrade-native-01-mainexp-v1 계기) - 파일이
+    없을 때 곧바로 fail-closed하기 전에, "애초에 파일을 만든 적이 없는"
+    정당한 경우(주입 전 fail-closed로 `run_once()` 자체가 호출되지 않음)
+    인지 판별한다. **주의**: 원본 trial slot 자신의 `result_path`/
+    `result_hash`가 둘 다 null이라는 사실 하나만으로는 판별 근거로 쓰지
+    않는다 - `pod_kill-proposed-01-mainexp-v1`(§105) 사례도 이 두 필드가
+    둘 다 null이었지만 실제로는 파일이 존재했다(§105 이전 `real_run_
+    trial()`이 성공 시에도 이 필드를 못 채우던 시절의 결과) - null/null은
+    "파일이 없었다"를 전혀 보장하지 않는다. 유일하게 신뢰 가능한 신호는
+    "파일이 지금 실제로 없는가"이며(이미 위에서 확인됨), 그 위에 추가로
+    (1) link에 이전에 기록된 hash가 없어야 하고(있었는데 지금 없어졌다면
+    분실/변조 의심), (2) 원본 slot 자신의 result_path/result_hash가
+    서로 내적으로 일치해야 하며(하나만 null이면 그 자체가 모순),
+    (3) 다른 알려진 위치(`results/pilot/`)에도 없어야 하고, (4) 사람이
+    명시적으로 제출한 사전실행 실패 근거(`noresult_evidence`)가 구조적
+    sanity check를 통과해야 한다 - 이 네 가지가 전부 충족될 때만 "애초에
+    결과 없음"으로 통과시키고, 그 근거 자체를 `link["original_no_result_
+    evidence"]`에 영구 기록한다(연결 뒤 사후 감사 가능하도록)."""
     if original_run_id not in state.get("replacements", {}):
         raise ValueError(f"{original_run_id}에 연결된 대체가 없음 - link_technical_invalid_replacement()를 먼저 호출할 것")
     link = state["replacements"][original_run_id]
     result_path = results_dir / f"trial-{original_run_id}.json"
-    if not result_path.exists():
-        raise ValueError(f"원본 결과 파일이 없음: {result_path} - hash 검증 불가(fail-closed)")
-    data = json.loads(result_path.read_text(encoding="utf-8"))
-    if data.get("run_id") != original_run_id:
-        raise ValueError(
-            f"원본 결과 파일({result_path})의 run_id({data.get('run_id')!r})가 "
-            f"기대값({original_run_id!r})과 다름 - fail-closed")
-    actual_hash = compute_file_sha256(result_path)
+
+    if result_path.exists():
+        data = json.loads(result_path.read_text(encoding="utf-8"))
+        if data.get("run_id") != original_run_id:
+            raise ValueError(
+                f"원본 결과 파일({result_path})의 run_id({data.get('run_id')!r})가 "
+                f"기대값({original_run_id!r})과 다름 - fail-closed")
+        actual_hash = compute_file_sha256(result_path)
+        stored = link.get("original_result_hash")
+        if stored is not None and stored != actual_hash:
+            raise ValueError(
+                f"{original_run_id}의 저장된 original_result_hash({stored})가 "
+                f"실제 파일 hash({actual_hash})와 불일치 - fail-closed")
+        link["original_result_hash"] = actual_hash
+        return
+
+    # 여기부터는 기본 위치에 파일이 없다 - "애초에 없었다"고 결론짓기 전에
+    # 아래 조건을 전부 확인한다(§121, 위 docstring 참고).
     stored = link.get("original_result_hash")
-    if stored is not None and stored != actual_hash:
+    if stored is not None:
         raise ValueError(
-            f"{original_run_id}의 저장된 original_result_hash({stored})가 "
-            f"실제 파일 hash({actual_hash})와 불일치 - fail-closed")
-    link["original_result_hash"] = actual_hash
+            f"원본 결과 파일이 없음: {result_path} - 이전에 기록된 hash({stored})가 "
+            f"있어 분실/변조 의심(fail-closed)")
+
+    orig_entry = state["trials"][original_run_id]
+    orig_path_field = orig_entry.get("result_path")
+    orig_hash_field = orig_entry.get("result_hash")
+    if (orig_path_field is None) != (orig_hash_field is None):
+        raise ValueError(
+            f"{original_run_id}의 state 기록에서 result_path/result_hash 중 "
+            f"하나만 None(내적 불일치) - 대체 연결 불가(fail-closed)")
+
+    pilot_result_path = results_dir / "pilot" / f"trial-{original_run_id}.json"
+    if pilot_result_path.exists():
+        raise ValueError(
+            f"원본 결과 파일이 pilot 디렉터리에 존재함({pilot_result_path}) - "
+            f"기본 위치({result_path})와 불일치, 수동 확인 필요(fail-closed)")
+
+    if noresult_evidence is None:
+        raise ValueError(
+            f"원본 결과 파일이 없음: {result_path} - 사전실행 실패 근거"
+            f"(noresult_evidence) 없이는 '애초에 결과 없음'으로 통과시킬 수 없음(fail-closed)")
+    _validate_noresult_evidence(noresult_evidence, original_run_id, result_path, pilot_result_path)
+
+    link["original_result_hash"] = None
+    link["original_no_result_evidence"] = noresult_evidence
 
 
 def load_state(state_path: Path) -> Optional[dict]:
@@ -1178,6 +1264,13 @@ def main():
     parser.add_argument("--adjudicate-evidence-file", default=None,
                          help="--adjudicate-cleanup과 함께 선택 - 현재 클러스터 상태/K8s 이벤트 등 근거를 담은 "
                               "JSON 파일 경로(state에 그대로 보존됨).")
+    parser.add_argument("--noresult-evidence-file", default=None,
+                         help="§121 - --link-replacement 대상 원본이 결과 파일을 애초에 만든 적이 없는 경우"
+                              "(주입 전 fail-closed로 run_once() 자체가 호출되지 않음)에만 필요한 근거 JSON "
+                              "파일 경로. {original_run_id, preflight_failure_log_excerpt, "
+                              "preflight_failure_log_source} 필드가 필요하며, 원본 결과 파일이 실제로 존재하면 "
+                              "이 근거와 무관하게 거부된다(fail-closed) - verify_and_backfill_original_hash() "
+                              "참고.")
     args = parser.parse_args()
 
     if args.link_replacement is not None and args.link_reason is None:
@@ -1193,9 +1286,12 @@ def main():
             print(f"--link-replacement는 기존 state 파일이 있어야 함: {state_path}", file=sys.stderr)
             sys.exit(1)
         original_run_id, new_run_id = args.link_replacement
+        noresult_evidence = None
+        if args.noresult_evidence_file is not None:
+            noresult_evidence = json.loads(Path(args.noresult_evidence_file).read_text(encoding="utf-8"))
         try:
             link_technical_invalid_replacement(existing, original_run_id, new_run_id, args.link_reason)
-            verify_and_backfill_original_hash(existing, original_run_id)
+            verify_and_backfill_original_hash(existing, original_run_id, noresult_evidence=noresult_evidence)
         except ValueError as e:
             print(f"LINK REJECTED: {e}", file=sys.stderr)
             sys.exit(1)

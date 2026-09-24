@@ -1107,6 +1107,215 @@ def test_verify_and_backfill_original_hash_requires_existing_link(tmp_path):
     print("OK - 대체가 연결 안 된 원본에는 호출 자체가 거부됨")
 
 
+# ---- §121: verify_and_backfill_original_hash()의 "결과 파일이 애초에 없었음" 경로
+# (network_degrade-native-01-mainexp-v1 계기 - _verify_probe_profile()에서
+# run_once() 호출 전 즉시 fail-closed해 결과 파일이 아예 생성된 적 없음) ----
+
+def _valid_noresult_evidence(run_id="pod_kill-proposed-01-mainexp-v1"):
+    return {
+        "original_run_id": run_id,
+        "preflight_failure_log_excerpt": (
+            "Traceback (most recent call last):\n"
+            '  File "run_network_degrade_trial.py", line 158, in <module>\n'
+            "    main()\n"
+            '  File "run_network_degrade_trial.py", line 113, in main\n'
+            "    _verify_probe_profile(expected_timeout)\n"
+            "ProbeProfileMismatch: readinessProbe.timeoutSeconds 실측값(11)이 "
+            "요청한 profile의 기대값(1.0)과 다름\n"
+        ),
+        "preflight_failure_log_source": "docs/design/phase8-blue-green-preflight-incident.md §119.2",
+    }
+
+
+def test_verify_and_backfill_original_hash_noresult_path_succeeds_with_valid_evidence(tmp_path):
+    """§121 - 파일이 애초에 없고, 원본 slot의 result_path/result_hash가 둘 다
+    null(내적 일치)이며, pilot에도 없고, 사전실행 실패 근거가 구조적 sanity check를
+    통과하면 original_result_hash=None으로 통과시키고 근거를 영구 기록한다."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    evidence = _valid_noresult_evidence()
+    ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1",
+                                           results_dir=tmp_path, noresult_evidence=evidence)
+    link = state["replacements"]["pod_kill-proposed-01-mainexp-v1"]
+    assert link["original_result_hash"] is None
+    assert link["original_no_result_evidence"] == evidence
+    print("OK - 유효한 noresult_evidence로 '애초에 결과 없음' 경로가 정상 통과되고 근거가 영구 기록됨")
+
+
+def test_verify_and_backfill_original_hash_noresult_path_rejects_without_evidence(tmp_path):
+    """§121 - null/null이고 파일도 없어도, evidence 없이는 그냥 통과시키면 안 된다."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    with pytest.raises(ValueError, match="근거"):
+        ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1", results_dir=tmp_path)
+    print("OK - noresult_evidence 없이는 null/null만으로 통과 안 됨")
+
+
+@pytest.mark.parametrize("bad_evidence,match", [
+    ({"preflight_failure_log_excerpt": "x", "preflight_failure_log_source": "y"}, "original_run_id"),
+    ({"original_run_id": "pod_kill-proposed-01-mainexp-v1",
+      "preflight_failure_log_source": "y"}, "excerpt"),
+    ({"original_run_id": "pod_kill-proposed-01-mainexp-v1",
+      "preflight_failure_log_excerpt": "그냥 아무 텍스트",
+      "preflight_failure_log_source": "y"}, "ProbeProfileMismatch"),
+    ({"original_run_id": "pod_kill-proposed-01-mainexp-v1",
+      "preflight_failure_log_excerpt": "ProbeProfileMismatch: ...",
+      "preflight_failure_log_source": "y"}, "_verify_probe_profile"),
+    ({"original_run_id": "pod_kill-proposed-01-mainexp-v1",
+      "preflight_failure_log_excerpt": "_verify_probe_profile ... ProbeProfileMismatch: ..."}, "log_source"),
+], ids=["missing_run_id", "missing_excerpt", "excerpt_lacks_mismatch_marker",
+        "excerpt_lacks_call_site_marker", "missing_source"])
+def test_verify_and_backfill_original_hash_noresult_path_rejects_invalid_evidence(tmp_path, bad_evidence, match):
+    """§121 - 사람이 제출한 근거라도 구조적으로 불충분하면 거부한다(무조건 신뢰 안 함)."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    with pytest.raises(ValueError, match=match):
+        ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1",
+                                               results_dir=tmp_path, noresult_evidence=bad_evidence)
+    print(f"OK - 불충분한 evidence({match} 관련 필드 문제)는 거부됨")
+
+
+def test_validate_noresult_evidence_rejects_when_file_actually_exists(tmp_path):
+    """§121 - _validate_noresult_evidence() 자신도(호출부가 이미 파일 부재를
+    확인한 뒤에만 부르지만, 방어적으로) 검증 시점에 파일이 실제로 존재하면
+    evidence 내용과 무관하게 거부해야 한다."""
+    result_path = tmp_path / "trial-pod_kill-proposed-01-mainexp-v1.json"
+    result_path.write_text(json.dumps({"run_id": "pod_kill-proposed-01-mainexp-v1"}), encoding="utf-8")
+    pilot_result_path = tmp_path / "pilot" / "trial-pod_kill-proposed-01-mainexp-v1.json"
+    with pytest.raises(ValueError, match="존재함"):
+        ras._validate_noresult_evidence(_valid_noresult_evidence(), "pod_kill-proposed-01-mainexp-v1",
+                                         result_path, pilot_result_path)
+    print("OK - 파일이 실제로 존재하면 noresult_evidence와 무관하게 거부")
+
+
+def test_verify_and_backfill_original_hash_null_null_but_file_exists_uses_existing_backfill_path(tmp_path):
+    """§121 - 원본 slot의 result_path/result_hash가 둘 다 null이어도(예: §105 이전
+    real_run_trial() 시절 결과 - 실제 pod_kill-proposed-01-mainexp-v1의 정확한
+    모양), 파일이 실제로 존재하면 기존 backfill 경로로 정상 처리돼야 한다 -
+    null/null이라는 사실만으로 '애초에 없었음' 경로로 잘못 분류하면 안 된다."""
+    state, result_path = _state_with_linked_replacement_and_result_file(tmp_path)
+    assert state["trials"]["pod_kill-proposed-01-mainexp-v1"]["result_path"] is None
+    assert state["trials"]["pod_kill-proposed-01-mainexp-v1"]["result_hash"] is None
+    ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1", results_dir=tmp_path)
+    expected = ras.compute_file_sha256(result_path)
+    assert state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["original_result_hash"] == expected
+    assert "original_no_result_evidence" not in state["replacements"]["pod_kill-proposed-01-mainexp-v1"]
+    print("OK - 원본 slot이 null/null이어도 파일이 실존하면 기존 backfill 경로로 처리됨(새 경로로 오분류 안 됨)")
+
+
+def test_verify_and_backfill_original_hash_rejects_one_field_null_inconsistency(tmp_path):
+    """§121 - 원본 slot의 result_path/result_hash 중 하나만 null이면(내적 모순),
+    파일이 없어도 '애초에 없었음' 경로로 들어가지 못하고 즉시 거부돼야 한다."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    state["trials"]["pod_kill-proposed-01-mainexp-v1"]["result_path"] = \
+        "results/trial-pod_kill-proposed-01-mainexp-v1.json"
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    with pytest.raises(ValueError, match="내적 불일치"):
+        ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1",
+                                               results_dir=tmp_path, noresult_evidence=_valid_noresult_evidence())
+    print("OK - result_path/result_hash 중 하나만 null이면 evidence가 있어도 거부")
+
+
+def test_verify_and_backfill_original_hash_rejects_stored_hash_with_missing_file(tmp_path):
+    """§121 - link에 이미 기록된 original_result_hash가 있는데 파일이 지금 없으면
+    (§105 backfill 이후 파일이 사라진 경우 등) '애초에 없었음' 경로로 절대 들어가지
+    못하고 분실/변조 의심으로 거부돼야 한다."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    state["replacements"]["pod_kill-proposed-01-mainexp-v1"]["original_result_hash"] = "previously-recorded-hash"
+    with pytest.raises(ValueError, match="분실/변조"):
+        ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1",
+                                               results_dir=tmp_path, noresult_evidence=_valid_noresult_evidence())
+    print("OK - 이전에 기록된 hash가 있는데 파일이 없으면 evidence가 있어도 거부(분실/변조 의심)")
+
+
+def test_verify_and_backfill_original_hash_rejects_when_pilot_copy_exists(tmp_path):
+    """§121 - 기본 위치엔 없어도 pilot 디렉터리에 결과 파일이 있으면 '애초에 없었음'
+    으로 통과시키면 안 된다(다른 위치 확인 요구사항)."""
+    state, _ = _state_with_failed_pod_kill_proposed()
+    ras.link_technical_invalid_replacement(
+        state, "pod_kill-proposed-01-mainexp-v1", "pod_kill-proposed-01-retry1-mainexp-v1", "재시도")
+    pilot_dir = tmp_path / "pilot"
+    pilot_dir.mkdir()
+    (pilot_dir / "trial-pod_kill-proposed-01-mainexp-v1.json").write_text(
+        json.dumps({"run_id": "pod_kill-proposed-01-mainexp-v1"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="pilot"):
+        ras.verify_and_backfill_original_hash(state, "pod_kill-proposed-01-mainexp-v1",
+                                               results_dir=tmp_path, noresult_evidence=_valid_noresult_evidence())
+    print("OK - pilot 디렉터리에 결과 파일이 있으면 거부(다른 위치 확인)")
+
+
+def _minimal_failed_trial_state(run_id):
+    """§121 CLI 테스트 전용 - 실제 experiments/results/의 어떤 파일과도 이름이
+    겹치지 않는 합성 run_id로 최소 state를 만든다(CLI 서브프로세스는
+    RESULTS_DIR 기본값(실제 프로젝트 results/)을 그대로 쓰므로, 기존
+    pod_kill-proposed-01-mainexp-v1 같은 실제 run_id를 쓰면 진짜 결과
+    파일과 충돌해 '파일 없음' 경로를 테스트할 수 없다)."""
+    trial = ras.Trial(run_id=run_id, scenario="pod_kill", arm="proposed", repetition=1,
+                       analysis_group="core_fault_comparison", sequence_index=1)
+    state = _fresh_state([trial], plan_id="mainexp-v1")
+    state["trials"][run_id]["status"] = "failed"
+    state["trials"][run_id]["failure_reason"] = "테스트 - 사전실행 실패(합성)"
+    return state
+
+
+def test_link_replacement_leaves_state_completely_unchanged_on_rejection(tmp_path):
+    """§121 - CLI --link-replacement가 verify_and_backfill_original_hash()에서
+    거부되면(noresult_evidence 없음 등), state 파일은 디스크상 단 1바이트도 바뀌면
+    안 된다 - main()이 두 함수를 순서대로 호출한 뒤에만 save_state_atomic()을
+    부르는 원자성을 CLI 레벨에서 직접 검증."""
+    original_run_id = "pod_kill-proposed-99-synthetic-cli-test"
+    replacement_run_id = "pod_kill-proposed-99-synthetic-cli-test-retry1"
+    state = _minimal_failed_trial_state(original_run_id)
+    state_path = tmp_path / "state.json"
+    ras.save_state_atomic(state_path, state)
+    before_bytes = state_path.read_bytes()
+    proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "run_all_scenarios.py"),
+         "--link-replacement", original_run_id, replacement_run_id,
+         "--link-reason", "테스트 - 원자성 확인", "--state-file", str(state_path)],
+        capture_output=True, text=True, cwd=Path(__file__).parent)
+    assert proc.returncode != 0
+    assert "LINK REJECTED" in proc.stderr
+    after_bytes = state_path.read_bytes()
+    assert before_bytes == after_bytes, "링크가 거부됐는데도 state 파일이 변경됨(원자성 위반)"
+    reloaded = ras.load_state(state_path)
+    assert "replacements" not in reloaded or not reloaded["replacements"]
+    assert replacement_run_id not in reloaded["trials"]
+    print("OK - 링크 거부 시 state 파일이 디스크상 1바이트도 안 바뀜(원자성 확인)")
+
+
+def test_main_cli_link_replacement_with_valid_noresult_evidence_file_succeeds(tmp_path):
+    """§121 - --noresult-evidence-file로 유효한 근거를 주면 CLI 레벨에서도
+    '애초에 결과 없음' 경로가 정상 완료된다."""
+    original_run_id = "pod_kill-proposed-98-synthetic-cli-test"
+    replacement_run_id = "pod_kill-proposed-98-synthetic-cli-test-retry1"
+    state = _minimal_failed_trial_state(original_run_id)
+    state_path = tmp_path / "state.json"
+    ras.save_state_atomic(state_path, state)
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(json.dumps(_valid_noresult_evidence(original_run_id)), encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "run_all_scenarios.py"),
+         "--link-replacement", original_run_id, replacement_run_id,
+         "--link-reason", "테스트 - CLI evidence 경로 확인",
+         "--noresult-evidence-file", str(evidence_path),
+         "--state-file", str(state_path)],
+        capture_output=True, text=True, cwd=Path(__file__).parent)
+    assert proc.returncode == 0, proc.stderr
+    reloaded = ras.load_state(state_path)
+    link = reloaded["replacements"][original_run_id]
+    assert link["original_result_hash"] is None
+    assert link["original_no_result_evidence"]["preflight_failure_log_source"] == \
+        _valid_noresult_evidence(original_run_id)["preflight_failure_log_source"]
+    print("OK - CLI --noresult-evidence-file로 '애초에 결과 없음' 경로가 정상 완료되고 근거가 저장됨")
+
+
 def test_main_resume_fails_closed_on_replacement_hash_mismatch(tmp_path):
     """§105 - CLI --resume 경로에서도(단순 함수 호출이 아니라) 대체가 연결된
     원본의 hash 불일치가 있으면 실행 전에 즉시 거부해야 한다."""
