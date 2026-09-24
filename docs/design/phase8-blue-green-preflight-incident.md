@@ -13076,3 +13076,153 @@ context=null`. 포트포워드 2개는 정리 후 로컬에서 종료했다.
 실험 리소스 삭제(0건 - 정확히 2개 pod만), 포괄적 정리(0건), 모델·
 threshold·SLO·`TrialResult` 스키마 변경(0건), `pod_kill`/
 `network_degrade` 시작(0건) - 전부 준수.
+
+## §114 - `run_sequence()`/`--plan`에 `--to-run-id` 경계 기능 추가(부분 블록 실행용)
+
+`pod_kill` 재측정을 이번 반복 블록(3건)만 실행하려면 기존 하니스에
+"여기까지만 돌려라"라는 경계 기능이 없었다(`--from-run-id`는 있었지만
+끝점을 지정하는 대칭 기능이 없었고, `--plan` 미리보기도 그 경계를
+반영하지 못했다). `run_sequence()`에 `to_run_id` 파라미터를 추가해
+`--from-run-id`가 지정한 블록 뒤에서 `trials = trials[:idx+1]`로
+슬라이싱하고, 그 지점에 도달하면 **정상 반환**한다(`SequenceAborted`가
+아님 - "문제가 생겨 중단"과 "지시된 대로 여기서 멈춤"은 다른
+사건이므로 구분). 순수 함수 `_preview_trial_range()`를 추가해
+`--plan`도 동일한 슬라이싱을 사이드이펙트 없이 미리 계산해서 보여주게
+했다. `--to-run-id`가 매트릭스에 없는 run_id를 가리키면 `--from-run-id`
+와 마찬가지로 예외로 처리한다.
+
+신규 테스트 6건(`test_to_run_id_stops_after_inclusive_point_without_
+aborting`, `test_to_run_id_raises_if_not_in_matrix`,
+`test_to_run_id_combined_with_from_run_id`,
+`test_preview_trial_range_matches_run_sequence_slicing`,
+`test_preview_trial_range_raises_on_unknown_to_run_id`,
+`test_main_cli_plan_reflects_to_run_id_scope`)을 추가해 109개 테스트
+전부 통과, `KUBECONFIG=/nonexistent`로 3개 디렉터리 전체 오프라인
+스위트 1048 passed / 3 skipped / 0 failed 확인 후 커밋(`440d0b5`)·
+`origin/master`에 푸시(fast-forward, 충돌 없음).
+
+## §115 - `pod_kill` 공식 재측정 1차 반복 블록(3건) 실행 - VPN 재연결 후 재개, 전부 정상 완료
+
+### 115.1 배경
+
+이전 턴에서 §114의 `--to-run-id` 구현·커밋·푸시까지 마친 뒤 클러스터
+접근이 VPN 연결 문제로 끊긴 상태로 세션이 중단되었다. 이번 턴은
+사용자가 VPN을 재연결했다고 알려 재개한 것으로, 새 지시 없이 직전
+지시("pod_kill 재측정 1차 반복 블록 3건만 실행")를 이어서 수행했다.
+
+### 115.2 사전점검 중 발견·정정한 실수 2건(중단 사유 아님)
+
+- 모델 아티팩트 경로를 `anomaly-detection/v3/model_v32/artifacts/`
+  (v3.2, b 없음 - `.gitignore`에도 등록된, 실제로는 안 쓰이는 디렉터리)
+  로 잘못 짚어 해시가 기대값과 다르게 나왔다 - 즉시 실제 사용 경로인
+  `.../model_v32b/artifacts/`(양쪽 block manifest가 공통으로 가리키는
+  경로)로 재확인해 해시 일치(`2102e4f5f0d06809402f6f11c0396f0249bda386
+  4bf6eeb18c52ac626e1a9243`) 확인. `SHA256SUMS.json`의 전체 항목도
+  재계산해 불일치 0건.
+- `fixed_threshold`의 `compute_threshold_cores`를 존재하지 않는
+  `experiments/fixed_threshold_arm.py`에서 찾으려다 `ModuleNotFoundError`
+  - 실제 위치는 `anomaly-detection/fixed_threshold.py`로 정정,
+  `compute_threshold_cores(3.0) == 2.7` 확인.
+
+두 건 모두 내 사전점검 커맨드 자체의 경로 실수였고, 실제 아티팩트나
+코드에는 문제가 없었다.
+
+### 115.3 사전점검 전체 통과 (모두 이번 턴에 직접 재확인, 2026-09-24)
+
+- `git`: `HEAD == origin/master == 440d0b5`, 추적 파일 변경 0건(미추적
+  `anomaly-detection/v3/model_v32/artifacts/`, `experiments/results/`
+  만 존재 - 세션 시작 때부터 동일, 신규 아님).
+- 모델 v3.2b: 해시 일치, `SHA256SUMS.json` 불일치 0건, `threshold.json`
+  의 `threshold=-0.0742929709960305` 일치.
+- `SLO v3`: `slo_judge` 직접 import - `LATENCY_THRESHOLD=0.648`,
+  `AVAILABILITY_THRESHOLD=0.99`.
+- `fixed_threshold`: `compute_threshold_cores(3.0)==2.7`.
+- `pod_kill` 동결 설정: `git log -- experiments/pod_kill_adapter.py`의
+  최상단 커밋이 여전히 `7695a6f`(mainexp-v1 manifest 동결값과 일치,
+  변경 없음). 소스 재확인 결과 `PodChaos` kind·`get_active_pods` 기반
+  UID 고정 방식 그대로.
+- 포트포워드: `recovery-policy:8080`, `prometheus:9090` 재수립,
+  둘 다 헬스체크 정상(`{"status":"ok"}`, `Prometheus Server is
+  Healthy.`).
+- 라이브 클러스터: 두 Node 전부 `Ready`+pressure 없음. `Rollout
+  vllm-serving`이 진짜 `phase=Healthy`(activeSelector==previewSelector
+  ==currentPodHash==stableRS=="9c9dff59", pauseConditions=null) -
+  RolloutAborted 예외 아님, 있는 그대로 Healthy. 활성 pod
+  재시작 0회. Chaos CR 잔여 0건, 실험 pod 잔여 0건.
+  `/admin/experiment-run`의 `current=null`, `/admin/quiescent`의
+  `quiescent=true`.
+- Prometheus 신선도: `up{job="vllm-active"}=1`(현재 활성 pod 겨냥),
+  detector가 실제로 쓰는 4개 feature 쿼리(cpu/memory/queue/cache) 전부
+  현재 활성 pod 기준 1초 미만 age로 확인.
+- run_id 충돌: 신규 3건(`pod_kill-{native,fixed_threshold,proposed}-
+  01-mainexp-v2`)이 `official-experiment-state.json`(v1)의 run_id
+  집합과 교집합 0건, `official-experiment-state-v2.json`에서는 전체
+  15건이 이번 턴 시작 시점까지 `planned` 상태(손댄 적 없음).
+- `--plan --scenario pod_kill --to-run-id pod_kill-proposed-01-mainexp-v2`
+  로 전체 15건 순서(§109 등록값과 일치) + 이번 턴 3건 범위를 확인.
+  `--dry-run --resume`(읽기 전용이지만 실제 클러스터에 접근)으로 3건
+  전부에 대해 8개 preflight 항목이 전부 `ok=true`로 기록됨을 확인
+  (`rollout_healthy_single_revision`의 `classification`도 `"healthy"`).
+- `experiments/results/block-manifest-pod_kill-mainexp-v2.json` 작성
+  (위 사실 전부 기록, `load_ramp-mainexp-v2` manifest와 동일 패턴).
+
+### 115.4 실행 (90분 제한 내, 실제로는 약 25분 소요)
+
+시작 시각 기록 후 `--resume --scenario pod_kill --plan-id mainexp-v2
+--to-run-id pod_kill-proposed-01-mainexp-v2 --state-file
+results/official-experiment-state-v2.json`(dry-run 아님)을 백그라운드로
+실행. 3건 전부 `outcome=recovered` / `state=completed`로 중단 조건
+없이 정상 종료(`t_injection` 07:05:00Z ~ `t_recovery` 07:30:36Z, 총
+약 25분 - 90분 한도 내).
+
+| run_id | detector | detected | detection_source | decision_outcome | promotion_verified | audit_status |
+|---|---|---|---|---|---|---|
+| pod_kill-native-01-mainexp-v2 | (없음) | False | - | - | - | - |
+| pod_kill-fixed_threshold-01-mainexp-v2 | fixed_threshold | True | reactive | executed_verified | True | complete |
+| pod_kill-proposed-01-mainexp-v2 | isolation_forest | True | predictive | executed_verified | True | complete |
+
+`native`의 `detected`/`decision_outcome`/`audit_record_id` 전부 `None`
+인 것은 이번 턴에 새로 생긴 현상이 아니라 `mainexp-v1`·`load_ramp-
+mainexp-v2`의 기존 모든 native 트라이얼과 동일한, 애초에 detector가
+없는 arm의 정상 패턴임을 기존 결과 파일들과 대조해 확인했다.
+
+### 115.5 사후 검증 (매 trial 이후 실제로 확인, 신뢰만 하지 않음)
+
+- 3건 전부 postflight 8개 항목 전부 `ok=true`,
+  `rollout_healthy_single_revision.classification=="healthy"`(예외
+  경로 사용 안 됨), `cleanup_status=="ok"`.
+- 3건 전부 `results/trial-pod_kill-*-mainexp-v2.json`의 실제
+  `sha256sum`이 state에 기록된 `result_hash`와 정확히 일치.
+  (native: `f68a0c8b...`, fixed_threshold: `bfde4d79...`, proposed:
+  `e9473c9e...`)
+- detector 로그(`detector-fixed_threshold-pod_kill-fixed_threshold-01-
+  mainexp-v2-*.log`, `detector-isolation_forest-pod_kill-proposed-01-
+  mainexp-v2-*.log`) 전부 `Traceback`/`Error`/`Exception`/
+  `DataGapFailClosed`/`prolonged_data_gap_invalidated`/
+  `evaluation_skipped` 매치 0건 - 두 detector 모두 크래시·데이터
+  공백 없이 정상 종료.
+- `fixed_threshold-01`/`proposed-01`의 `audit_record_id`가 각각 발급됨
+  (`3a928bd4-...`/`0dfdd9ff-...`), `audit_status=="complete"`.
+- 최종 라이브 상태: `phase=Healthy`, 단일 revision(`84cd9b9fb7`,
+  pod_kill 3회로 pod가 교체되어 revision 해시 자체는 변경 - 정상),
+  1/1/1, pod 정확히 2개, Chaos CR 잔여 0, 실험 pod 잔여 0, `/admin/
+  quiescent`=true, `/admin/experiment-run`=null.
+
+### 115.6 보존/범위 확인
+
+- `official-experiment-state.json`(v1)은 이번 턴 명령이 전부
+  `--state-file results/official-experiment-state-v2.json`을 명시했으므로
+  애초에 열리지 않았다(존재 자체로 보존 확인, 사후 diff 불필요).
+- `official-experiment-state-v2.json`의 `load_ramp` 계열은 여전히
+  16개 항목(§113의 13번 원본 `failed` 1건 + `retry1` 포함 15건 완료 -
+  구조 변경 없음)으로 이번 턴 이전과 동일함을 확인.
+- `pod_kill` 나머지 12건은 `status=planned`로 그대로, `network_degrade`
+  ·memory auxiliary는 시작하지 않음.
+- `experiments/results/*.json`은 `.gitignore`(15-16번 줄) 대상이라
+  이번 턴에도 git으로 커밋되지 않는다(세션 시작 이래 동일한
+  `?? experiments/results/` 상태 유지) - 이 문서와 커밋되는 코드만이
+  버전관리 대상이고, 원본 결과·state·manifest는 로컬 파일 자체가
+  보존 기록이다.
+- 포트포워드 2개는 문서 작성 후 로컬에서 종료 예정.
+- 이번 턴은 여기서 정지 - 나머지 `pod_kill` 12건, `network_degrade`,
+  memory auxiliary로 자동 진행하지 않는다.
