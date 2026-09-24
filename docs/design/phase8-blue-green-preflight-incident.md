@@ -14465,3 +14465,98 @@ fallback"` 분류가 매번 유지되는지 추가 관찰이 필요하다는 뜻
 
 **반복 3~5, memory auxiliary는 시작하지 않았다.** 다음 반복은 별도
 지시에 따라 진행한다.
+
+## §125 - `network_degrade mainexp-v1` 3차 반복 실행 성공(3/3)
+
+### 125.1 사전점검 - 전부 통과 (2026-09-24)
+
+`HEAD==origin/master==3e2c038`(§124 커밋), 추적 파일 변경 0건. 기존
+공식 결과 57건(v1 27+v2 30) 전부 hash 일치, `replacements`의 `native-01`
+링크(→`retry1`, evidence 보존) 그대로. 두 Node Ready, Rollout 단일
+revision(`5d8675f6f9`, base, 1/1/1), 재시작 0, Chaos CR 0, 실험 pod 0,
+detector 프로세스 0, context null, quiescent true. 포트포워드 재기동 후
+recovery-policy·Prometheus 정상, 4개 feature 쿼리 전부 2.2초 미만
+age. `--plan --from-run-id network_degrade-proposed-03-mainexp-v1
+--to-run-id network_degrade-fixed_threshold-03-mainexp-v1`: 정확히
+`proposed-03`(37)/`native-03`(38)/`fixed_threshold-03`(39) 3건만
+미리보기됨을 확인. `--dry-run`(읽기전용, 실클러스터 접근): 3건 전부
+8개 preflight 항목 `ok=true`.
+
+### 125.2 base→tolerant 전환 - 직접 재확인 완료
+
+시작 시각 기록(14:31:52Z) 후 백그라운드 실행. 새 preview pod
+(`vllm-serving-6dbcb69d6c-*`) Ready(promote까지 포함, `phase=Healthy`)
+-> 실측 `readinessProbe.timeoutSeconds=11`/`livenessProbe.timeoutSeconds
+=11` 확인 -> 구 revision(`5d8675f6f9`) 0/0/0 scale-down 확인 - trial 1의
+injection 시작 전 완전히 끝남.
+
+### 125.3 실행 결과 - 3/3 전부 정상 완료
+
+| run_id | detector_process | detector(실제 판단) | detection_source | outcome | postflight | hash 일치 |
+|---|---|---|---|---|---|---|
+| network_degrade-proposed-03-mainexp-v1 | isolation_forest | alertmanager | reactive | recovered | 8/8 ok | O |
+| network_degrade-native-03-mainexp-v1 | (없음) | (없음) | - | recovered | 8/8 ok | O |
+| network_degrade-fixed_threshold-03-mainexp-v1 | fixed_threshold | alertmanager | reactive | recovered | 8/8 ok | O |
+
+세 trial 모두 `readiness_probe_profile="network_tolerant"`,
+`readiness_probe_timeout_sec=11.0` 실측 기록.
+
+**`proposed-03`도 `detector_process=isolation_forest`인데 실제
+`detector=alertmanager`/`detection_source=reactive`** -
+`proposed-01`(§123.6)·`proposed-02`(§124.4)에 이어 3/3 반복 모두 같은
+패턴. 지시대로 `detector_process`와 `detection_source`를 분리해 그대로
+기록하고, **n=3만으로 원인을 단정하지 않는다** - 매번 재현된다는 사실
+자체는 기록하되, 이게 "이 시나리오에서 isolation_forest가 구조적으로
+못 잡는다"는 결론과 "우연히 3번 다 마침 늦게 반응했다"는 가능성을
+구별할 만큼의 근거는 아직 아니다(반복 4~5까지 봐야 패턴인지 우연인지
+더 판단할 수 있음 - §124.4의 가설은 여전히 미확정 가설로만 남긴다).
+`collect_metrics.build_comparison()` 재확인: `detector_check=
+"reactive_fallback"`, `included_in_main_analysis=True`,
+`timing_anomaly=False`, 검증 issue 0건.
+
+**`proposed-03`은 `target_replaced=True`**(`proposed-01`/`02`는
+`False`였음) - 그냥 넘기지 않고 `collect_metrics.build_comparison()`으로
+조사: `target_change_kind="planned_promotion"`, `target_change_reason`
+에 검증된 promotion(`t_api_request`/`t_switch`) 직후 관측된 정상 교체로
+명시적으로 귀속됨, `restart_chain_observed=None`(연쇄 재시작 아님),
+`probe_isolation_held=True`, 검증 issue 0건 - **트라이얼 자신의 정상
+조치(promotion)가 만든 예상된 교체이지 이상 재시작이 아님**을 확인.
+
+### 125.4 사후 검증 (매 trial마다 실제로 확인)
+
+- 3건 전부 postflight 8개 항목 전부 `ok=true`,
+  `rollout_healthy_single_revision.classification=="healthy"`,
+  `cleanup_status=="ok"`.
+- 3건 전부 실제 `sha256sum`이 state의 `result_hash`와 일치.
+- `injection_valid=True` 3건 전부.
+- detector 로그 2건(`proposed-03`/`fixed_threshold-03`) 전부
+  `Traceback`/`Error`/`Exception`/`DataGapFailClosed`/`prolonged_data_
+  gap_invalidated`/`evaluation_skipped` 매치 0건.
+- `detection_stage`/`action_stage` 필드 모두 채워짐.
+
+### 125.5 종료 후 복원 - 직접 재확인 완료
+
+`kubectl get rollout`: `phase=Healthy`, 단일 revision(`6b5cdfdb75`,
+`activeSel==previewSel`), 잔여 preview 없음. 활성 pod 실측
+`readinessProbe.timeoutSeconds=1`/`livenessProbe.timeoutSeconds=1`
+(base 정상 복원), `restartCount=0`. `kubectl diff -f gitops/apps/
+vllm-serving/rollout.yaml` = 0(exit 0). Chaos CR 0건, `/admin/
+experiment-run`=null. `EXIT_CODE_MARKER=0`(실제 로그 마커로 재확인).
+
+**복원 완전 성공 - 확인 불가능하거나 실패한 항목 없음.**
+
+### 125.6 이번 턴 결과 요약
+
+- 유효 완료 trial: **3/3**(`proposed-03`/`native-03`/`fixed_threshold-
+  03` 전부 `recovered`/`completed`).
+- 연결 안정성: 전 과정(약 47.5분)에서 kubectl/API 연결 끊김 없음.
+- 총 소요 시간: 약 47.5분(14:31:52Z ~ 15:19:21Z) - 90분 한도 이내.
+- 최종 클러스터 상태: `Healthy`, 단일 revision(base, timeout=1/1),
+  재시작 0, Chaos CR 0, 실험 pod 0, context null, Git/live diff 0.
+- 원본 `network_degrade-native-01-mainexp-v1`(`failed`) 및 기존 57건
+  공식 결과·hash 변경 0건.
+- `network_degrade` 상태: 9건 완료(1~3차 반복) + 1건 `failed`(원본,
+  대체 연결·보존) + 6건 `planned`(반복 4~5).
+
+**반복 4~5, memory auxiliary는 시작하지 않았다.** 다음 반복은 별도
+지시에 따라 진행한다.
