@@ -965,6 +965,69 @@ def test_real_run_trial_failure_without_result_file_has_no_path_or_hash(tmp_path
     print("OK - 결과 파일이 없으면 result_path/result_hash가 채워지지 않음(파일 있는 경우와 구분됨)")
 
 
+# ---- §119: real_run_trial()이 network_degrade에 §44 동결 profile/timeout을 명시 전달하는지 ----
+
+def _cmd_from_real_run_trial(scenario, arm, tmp_path, monkeypatch):
+    """real_run_trial()이 subprocess.run에 실제로 넘기는 cmd 리스트를 캡처한다."""
+    monkeypatch.setattr(ras, "RESULTS_DIR", tmp_path)
+    mock_run = MagicMock(return_value=_fake_completed_process(0))
+    with patch.object(ras.subprocess, "run", mock_run):
+        ras.real_run_trial({"scenario": scenario, "arm": arm, "repetition": 1,
+                             "run_id": f"{scenario}-{arm}-01-test", "sequence_index": 1})
+    return mock_run.call_args.args[0]
+
+
+@pytest.mark.parametrize("arm", ["native", "fixed_threshold", "proposed"])
+def test_real_run_trial_network_degrade_passes_tolerant_profile_for_all_arms(tmp_path, monkeypatch, arm):
+    """§119(ProbeProfileMismatch 배선 누락 수정) - network_degrade의 세 arm 전부 §44
+    동결 profile/timeout을 명시로 받아야 한다(오케스트레이터가 이미 클러스터를
+    tolerant로 전환해도 러너 자신이 기본값(default, 기대 1.0초)으로 자기 검증해
+    fail-closed하던 결함)."""
+    cmd = _cmd_from_real_run_trial("network_degrade", arm, tmp_path, monkeypatch)
+    assert "--probe-profile" in cmd
+    assert cmd[cmd.index("--probe-profile") + 1] == "network_tolerant"
+    assert "--readiness-probe-timeout-sec" in cmd
+    assert cmd[cmd.index("--readiness-probe-timeout-sec") + 1] == "11.0"
+    assert "--skip-profile-verification" not in cmd, "fail-closed 검사를 우회하면 안 됨"
+
+
+@pytest.mark.parametrize("scenario", ["load_ramp", "pod_kill"])
+def test_real_run_trial_other_core_scenarios_get_no_profile_args(tmp_path, monkeypatch, scenario):
+    """§119 - load_ramp/pod_kill은 profile lifecycle이 없으므로 이 인자들을 받으면
+    안 된다(기존 기본 동작 그대로 유지 확인)."""
+    cmd = _cmd_from_real_run_trial(scenario, "native", tmp_path, monkeypatch)
+    assert "--probe-profile" not in cmd
+    assert "--readiness-probe-timeout-sec" not in cmd
+
+
+def test_real_run_trial_aux_scenario_keeps_main_experiment_flag_and_no_profile_args(tmp_path, monkeypatch):
+    """§119 - memory auxiliary 경로도 변경되면 안 된다: --main-experiment는 그대로
+    붙고, profile 인자는 여전히 없어야 한다."""
+    cmd = _cmd_from_real_run_trial(ras.AUX_SCENARIO, ras.AUX_ARM, tmp_path, monkeypatch)
+    assert "--main-experiment" in cmd
+    assert "--probe-profile" not in cmd
+    assert "--readiness-probe-timeout-sec" not in cmd
+
+
+def test_verify_probe_profile_still_fail_closes_on_mismatch(monkeypatch):
+    """§119 - real_run_trial() 배선 수정과 무관하게 run_network_degrade_trial.py
+    자신의 fail-closed 검증(_verify_probe_profile)은 그대로 남아 있어야 한다 -
+    실측과 기대가 여전히 다르면 여전히 ProbeProfileMismatch를 던진다(이번 수정이
+    이 안전장치를 약화·우회하지 않았음을 확인)."""
+    import run_network_degrade_trial as rndt
+    fake_pod = MagicMock()
+    fake_pod.spec.containers = [MagicMock()]
+    fake_pod.spec.containers[0].readiness_probe.timeout_seconds = 11.0
+    fake_pod.spec.containers[0].liveness_probe.timeout_seconds = 11.0
+    monkeypatch.setattr(rndt, "get_active_pods", lambda: [{"name": "fake-pod"}])
+    monkeypatch.setattr(rndt, "load_kube_config", lambda: None)
+    with patch("kubernetes.client.CoreV1Api") as mock_api_cls:
+        mock_api_cls.return_value.read_namespaced_pod.return_value = fake_pod
+        with pytest.raises(rndt.ProbeProfileMismatch):
+            rndt._verify_probe_profile(expected_timeout_sec=1.0)  # 실측(11) != 기대(1.0)
+    print("OK - probe profile 불일치 시 이번 수정 후에도 여전히 fail-closed")
+
+
 def _state_with_linked_replacement_and_result_file(tmp_path, original_hash_in_link=None):
     state, _ = _state_with_failed_pod_kill_proposed()
     ras.link_technical_invalid_replacement(

@@ -74,6 +74,12 @@ RUNNER_BY_SCENARIO = {
     AUX_SCENARIO: "run_memory_pressure_negative_control_pilot.py",
 }
 
+# §44(2026-09-19 사전등록 calibration) 동결값 - network_degrade의 세 arm
+# 전부 이 profile/timeout으로 실행돼야 한다(§119 - real_run_trial()이
+# 이 값을 network_degrade runner에 전달하지 않던 배선 누락 수정).
+NETWORK_TOLERANT_PROBE_PROFILE = "network_tolerant"
+NETWORK_TOLERANT_READINESS_TIMEOUT_SEC = 11.0
+
 STATUSES = ("planned", "running", "completed", "invalid", "failed", "needs_attention")
 ABORT_STATUSES = ("invalid", "failed", "needs_attention")
 
@@ -579,6 +585,13 @@ def real_run_trial(trial: dict, python_exe: str = sys.executable) -> dict:
            "--run-id", trial["run_id"], "--sequence-index", str(trial["sequence_index"])]
     if trial["scenario"] == AUX_SCENARIO:
         cmd.append("--main-experiment")
+    if trial["scenario"] == "network_degrade":
+        # §119 - apply_profile()이 클러스터를 이미 tolerant로 전환해도 이
+        # runner 자신은 --probe-profile 없이는 기본값(default, 기대
+        # timeout=1.0)으로 자기 검증해 ProbeProfileMismatch로 fail-closed
+        # 했다 - 세 arm 전부 §44 동결값을 명시로 받아야 한다.
+        cmd += ["--probe-profile", NETWORK_TOLERANT_PROBE_PROFILE,
+                "--readiness-probe-timeout-sec", str(NETWORK_TOLERANT_READINESS_TIMEOUT_SEC)]
     proc = subprocess.run(cmd, cwd=HERE)
 
     result_path = RESULTS_DIR / f"trial-{trial['run_id']}.json"
