@@ -13452,3 +13452,145 @@ native-05 → proposed-05`(`--from-run-id`/`--to-run-id`로 경계 지정).
   (`load_ramp` 15/15 - §113, `pod_kill` 15/15 - 이번 §117)가 모두
   완성되었다.** `network_degrade`·memory auxiliary는 이번 재측정
   계획(§109)에 포함되지 않았으므로 별도 지시 없이는 시작하지 않는다.
+
+## §118 - `network_degrade` 공식 블록 준비: plan/state 확정 + 반복 단위 chunking 사전 판단 (측정 전, live 미접촉)
+
+### 118.1 범위
+
+이번 턴 지시: `network_degrade` 공식 블록의 1차 반복 3건(`native-01 →
+fixed_threshold-01 → proposed-01`)만 실행 범위. 시작 전에 (1) §98/§100의
+동결된 profile lifecycle과 공식 계획 재확인, (2) 반복 단위로 끊어
+tolerant→base→tolerant를 여러 번 왕복하는 chunking이 사전 등록
+조건·분석 가능성을 해치는지 판단해 **측정 전에** 근거를 문서화, (3)
+plan-id/state-file을 임의로 새로 만들지 않고 기존 등록에 맞춰 확정 -
+이 세 가지를 이번 절에서 처리한다. 계약과 충돌하거나 판단이 불명확하면
+live 실행 없이 멈추고 보고해야 하므로, 아래 결론에 도달하기 전까지는
+`kubectl`/profile 전환 등 어떤 클러스터 변경 명령도 실행하지 않았다.
+
+### 118.2 plan-id/state-file 확정 - 기존 등록 재확인, 새로 만들지 않음
+
+`official-experiment-state.json`(plan_id=`mainexp-v1`)을 직접 읽어
+확인한 결과, `network_degrade`의 15개 슬롯이 **전부 `status=planned`**
+(단 1건도 실행된 적 없음) - `load_ramp`/`pod_kill`과 달리
+`network_degrade`는 §101 이후 어떤 세션에서도 아직 한 번도 착수되지
+않았다. §109의 재측정 지시문을 다시 확인해도 "`load_ramp`와 `pod_kill`
+전체 15건씩을 새 plan-id(`mainexp-v2`)로 재측정"이라고만 명시했을 뿐,
+`network_degrade`를 그 재측정 범위에 포함시킨 적이 없다 - 재측정이
+필요했던 이유 자체가 "안전검사 하니스 도입 **이전**에 이미 수집된
+구 데이터를 보존하면서 새 하니스로 다시 측정해야 한다"는 것이었는데,
+`network_degrade`는애초에 구 데이터가 전혀 없으므로 이 재측정 논리가
+적용될 대상이 아니다.
+
+`official-experiment-state-v2.json`에도 `network_degrade` 15개 슬롯이
+`planned`로 존재하지만(확인함), 이는 `build_matrix(plan_id)`가 시나리오
+구분 없이 항상 45+5=50 trial 전체를 결정론적으로 생성하기 때문에 생긴
+부산물일 뿐 - §109 지시문이 `mainexp-v2`를 `network_degrade`용으로
+지정한 적이 없으므로, 단지 그 안에 슬롯이 "존재"한다는 사실만으로
+`mainexp-v2`를 쓰는 것은 "임의로 새 계획을 쓰는 것"에 해당한다.
+
+**결론: `network_degrade` 공식 블록은 plan_id=`mainexp-v1`,
+state-file=`experiments/results/official-experiment-state.json`을
+쓴다** - 이것이 §98에서 최초로 동결된, 지금까지 한 번도 대체되거나
+폐기된 적 없는 원래 등록이며, 새로 만드는 것이 전혀 아니다. 이번 턴
+목표 3건의 run_id는 `--plan --scenario network_degrade --plan-id
+mainexp-v1 --state-file results/official-experiment-state.json`로 직접
+확인: `network_degrade-native-01-mainexp-v1`(sequence_index=31),
+`network_degrade-fixed_threshold-01-mainexp-v1`(32),
+`network_degrade-proposed-01-mainexp-v1`(33) - §7의 고정 반복1 순서
+(native→fixed_threshold→proposed)와 정확히 일치, 전체 매트릭스의
+`load_ramp`(1-15)/`pod_kill`(16-30) 다음 블록(31-45)이라는 위치도
+일치한다.
+
+### 118.3 §98/§100 동결 lifecycle 재확인 (요약, 원문은 위 §98-100)
+
+- §98.2: 오프라인 테스트는 "`network_degrade` 블록 시작 전/종료 후
+  정확히 한 번씩 profile 적용/복원"을 **하나의 연속된 `run_sequence()`
+  호출** 안에서 검증했다(시나리오 전환 트리거: `trial.scenario !=
+  current_scenario`일 때 이전이 `network_degrade`면 restore, 새
+  시나리오가 `network_degrade`면 apply - `run_all_scenarios.py:486-494`,
+  그리고 `finally`에서 `current_scenario=="network_degrade"`인 채
+  종료하면 무조건 restore - `:567-569`).
+- 계약서 §8.7: "`network_degrade`는 블록 시작 전 tolerant 전환, 블록
+  종료 후 base 복원 - 이 전환 구간은 실험 데이터에서 제외" - "블록"을
+  하나의 연속 실행으로 명시하지도, 여러 턴에 걸친 재개를 명시적으로
+  금지하지도 않는다.
+- §100.2-100.4: `switch_probe_profile_live()`가 promote까지 포함해
+  완전 검증됐고, **같은 profile을 반복 재적용해도 항상 동일한 해시가
+  나오는 결정론적·멱등적 동작**임이 실측으로 확인됨(base 재적용 -> 항상
+  `77545d78`, tolerant 재적용 -> 항상 `78756fcdc8`류) - "여러 번
+  왕복해도 안전하다"는 근거가 이미 라이브로 증명돼 있다.
+- `run_network_degrade_trial.py._verify_probe_profile()`은 매 trial
+  실행 직전 active pod의 실측 `timeoutSeconds`를 요청한 profile과
+  대조해 불일치 시 `ProbeProfileMismatch`로 **fail-closed**한다(라벨만
+  믿지 않음, §98.2/계약서 §5 스키마 141행) - 이건 block 이력과 무관하게
+  매 trial 자신이 독립적으로 강제하는 하드 게이트다.
+
+### 118.4 핵심 판단: 반복 단위 chunking(왕복 여러 번)이 사전 등록 조건·분석 가능성을 유지하는가
+
+**결론: 유지한다. Live 실행을 진행해도 된다.** 근거:
+
+1. **재사용하는 함수가 완전히 동일하다** - chunking을 위해 새 코드를
+   만들지 않는다. 매 턴의 시작/끝에서 호출되는 것은 §100에서 promote
+   까지 포함해 이미 완전 검증된 바로 그 `switch_probe_profile_live()`
+   이며, `run_all_scenarios.py`의 시나리오-전환 트리거 로직(§118.3)도
+   전혀 수정하지 않는다 - `--scenario network_degrade --to-run-id
+   ...`로 매트릭스를 이번 반복(3건)만 남게 슬라이싱하면, 그 트리거
+   로직이 "이 프로세스 안에서" 자동으로 시작 시 1회 적용·종료 시(`to_
+   run_id` 도달로 정상 반환하며 `finally` 통과) 1회 복원을 수행한다 -
+   이는 §109/§111/§114에서 이미 만들고 §115-117에서 `pod_kill`에
+   3턴에 걸쳐 실전 검증한 바로 그 재개 메커니즘의 자연스러운 연장이지,
+   새로운 미검증 경로가 아니다.
+2. **매 trial이 block 이력과 무관하게 자기 자신을 독립적으로
+   검증한다** - `readiness_probe_timeout_sec`은 매 trial이 실행 직전
+   active pod에서 직접 읽어 기록하는 필드다(계약서 §5, 141행). 왕복이
+   1번이든 3번이든, 기록되는 값은 "그 trial 실행 시점에 실측된 값"
+   하나뿐이고 그 값이 사전 등록된 조건(tolerant=11초)과 일치하는지는
+   `_verify_probe_profile()`이 매번 독립적으로 강제한다 - block을 몇
+   번 나눴는지는 이 검증의 정확성에 전혀 영향을 주지 않는다.
+3. **전환 구간은 애초에 trial 데이터에서 구조적으로 제외된다** - 계약서
+   §8.7이 이미 "전환 구간은 실험 데이터에서 제외"라고 정하고 있고,
+   trial의 timestamp 필드(`t_injection`/`t_slo`/`t_recovery` 등)는
+   `run_network_degrade_trial.py` 프로세스 자신이 `_verify_probe_
+   profile()` 통과 **이후**에만 기록을 시작한다 - `apply_profile()`
+   호출과 그 검증 자체는 이 프로세스 시작 이전에 이미 끝나 있으므로,
+   왕복 횟수가 늘어도 어떤 trial의 timing 필드에도 전환 시간이
+   섞여 들어갈 경로가 없다(이번 지시의 "profile 전환 시간은 trial
+   데이터에 넣지 마세요"는 이미 구조적으로 보장돼 있는 것을 재확인하는
+   요구다).
+4. **matrix·arm 순서·balance는 전혀 바뀌지 않는다** - chunking은 언제
+   실행하느냐(몇 개의 별도 프로세스로 나누느냐)만 바꿀 뿐, `build_
+   matrix()`가 고정한 run_id 순서·반복 배정·§7 균형 조건에는 손대지
+   않는다 - `pod_kill`을 3턴(3+6+6)으로 나눠 실행했을 때도 이미 같은
+   원칙으로 순서를 바꾸지 않았다.
+5. **§98.2의 "정확히 한 번씩" 테스트는 기본 경로(단일 연속 실행)를
+   검증한 것이지, 이 재개 경로를 금지한 것이 아니다** - `--from-run-id`
+   /`--to-run-id`로 이미 여러 시나리오·여러 턴에 걸쳐 실행을 나누는 것
+   자체가 §109/§111/§114에서 명시적으로 설계·테스트된 기능이고, 계약서
+   §8.7도 "블록은 반드시 하나의 프로세스여야 한다"고 제약한 적이 없다 -
+   재개 시마다 시나리오 전환 트리거가 새로 평가되는 것은 그 함수의
+   정의(`current_scenario`가 프로세스-로컬 상태)상 당연한 결과이며,
+   이것이 사전 등록을 위반한다고 볼 근거가 계약서 어디에도 없다.
+6. **유일한 실질적 비용은 왕복 횟수만큼의 추가 promote 소요 시간**
+   (trial 데이터가 아니라 이번 턴의 90분 예산에서 소비됨) - 이는
+   §100.2/100.3에서 실측된 promote 1회당 수 분 수준이므로 90분 예산
+   안에서 3건 실행+왕복 1쌍(이번 턴은 반복 1개뿐이라 왕복도 1쌍)을
+   충분히 수용할 수 있다고 판단한다.
+
+**계약과의 충돌 여부**: 계약서 §8.7 원문("블록 시작 전... 블록 종료
+후...")은 이번 턴처럼 반복 1개(3건)만 실행하고 멈추는 경우에도 그대로
+성립한다 - "블록"을 "이번에 실행하기로 한 범위"로 해석하면 시작 전
+1회 적용·종료 후(이번 턴 범위 끝) 1회 복원이라는 문언과 정확히
+일치하고, 다음 턴에 반복 2를 재개할 때 다시 한번 "그 턴의 블록"
+시작/종료가 반복되는 것도 같은 문언 해석 안에 자연스럽게 들어간다 -
+충돌로 보지 않는다. 판단이 불명확한 지점은 없었다 - 따라서 이번 턴은
+live 실행을 진행한다.
+
+### 118.5 §98.2 "정확히 한 번씩" 오프라인 테스트에 대한 영향 고지 (코드 변경 없음, 참고용 기록)
+
+이번 판단은 코드나 테스트를 전혀 바꾸지 않는다 - `test_run_all_
+scenarios.py`의 기존 "network_degrade 블록 시작 전/종료 후 정확히
+한 번씩" 테스트는 여전히 유효하며(그 테스트가 검증하는 단일-연속-실행
+기본 경로는 이번에도 그대로 참이다 - 이번 턴 자체도 그 프로세스
+하나만 보면 시작에 1회, 끝에 1회), 이번 절은 그 테스트가 검증하지
+않는 "여러 프로세스에 걸친 재개" 시나리오에 대한 사전 판단을 문서로
+추가한 것뿐이다. 코드 수정 필요 없음.
