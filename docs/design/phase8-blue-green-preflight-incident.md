@@ -14192,3 +14192,165 @@ replacement()`+`verify_and_backfill_original_hash()`가 예외 없이
 **이번 턴은 여기서 정지** - 위 절차는 제안·읽기전용 사전검증까지만
 완료했고 실제 연결·실행은 하지 않았다. 다음 live 턴에서 별도 지시에
 따라 진행한다.
+
+## §123 - `network_degrade mainexp-v1` 1차 반복 실행 성공(3/3) - `network_degrade` 시나리오 최초 성공 측정 + 재검증 배선 결함 추가 수정
+
+### 123.1 사전점검 - 전부 통과 (2026-09-24)
+
+`HEAD==origin/master==c82c566`(§122 커밋), 추적 파일 변경 0건. `official-
+experiment-state.json`(v1) 완료 21건 + `-v2.json`(v2) 완료 30건 = 51건
+전부 hash 일치. `network_degrade-native-01-mainexp-v1` 원본 재확인:
+`status="failed"`, `result_hash=None`, 변경 없음, `replacements`에
+아직 링크 없음.
+
+### 123.2 근거 파일 작성 + 대체 연결 - 성공
+
+`results/noresult-evidence-network_degrade-native-01-mainexp-v1.json`
+을 §122.4에 영구 보존된 기록(원본 로그 파일 자체가 아님을 파일 자신의
+`preflight_failure_log_source` 필드와 이 문서 양쪽에 명시)에서 그대로
+옮겨 작성했다. `--link-replacement network_degrade-native-01-mainexp-v1
+network_degrade-native-01-retry1-mainexp-v1 --noresult-evidence-file ...`
+호출 결과 **연결 성공**(§122의 읽기전용 사전검증이 예측한 그대로).
+원본 슬롯(`status=failed`, `result_hash=None`) 변경 0건, replacement에
+evidence 영구 기록됨을 확인.
+
+### 123.3 §123 - 재검증 루프가 저장된 evidence를 재사용하지 못하던 결함 발견 + 수정
+
+연결 직후 `--plan`을 호출하니 `REPLACEMENT ORIGINAL HASH VERIFICATION
+FAILED`로 즉시 거부됨 - `main()`의 재개-시 재검증 루프(§105)가 모든
+replacement에 대해 `verify_and_backfill_original_hash()`를 evidence
+없이 호출하는데, `--plan`/`--dry-run`/`--resume`엔 애초에 `--noresult-
+evidence-file`이 없어 매번 새로 받을 방법이 없었다 - §121/§122가 만든
+"애초에 결과 없음" 경로 자체는 맞았지만, 그 경로로 연결된 replacement의
+**재검증**까지는 미처 배선하지 못한 것이었다.
+
+이건 이번 턴 실행에 필요한 최소 완결 수정으로 판단해(측정 로직·SLO·
+모델·threshold·주입 설정과 무관한 순수 오케스트레이션 부기 코드,
+§121/§122와 동일한 관리 영역의 연장) 즉시 고쳤다 - 클러스터 접촉 전에
+전부 오프라인으로 처리: 재검증 루프가 `state["replacements"][id]
+["original_no_result_evidence"]`(링크 시점에 이미 구조적으로 검증해
+저장해 둔 값)를 그대로 재사용하도록 1줄 수정. 파일이 실제로 존재하는
+일반 케이스(기존 `pod_kill-proposed-01` 등)는 이 값이 첫 분기(파일
+존재 확인)에서 조기 반환되므로 전혀 안 쓰여 영향 없음.
+
+회귀 테스트 1건 추가(`--noresult-evidence-file`로 링크한 뒤 evidence
+재입력 없이 `--plan --resume`만 호출해도 저장된 evidence로 재검증
+통과하는지 subprocess 레벨 직접 확인). `KUBECONFIG=/nonexistent/
+kubeconfig` 전체 오프라인 스위트 **1070 passed, 3 skipped, 0
+failed**(§122 이후 1069에서 신규 1건). 커밋(`a7ae6a5`)·푸시 완료(fast-
+forward). 재시도한 `--plan`: `retry1`이 정확히 `native-01` 자리
+(sequence_index=31)에 오고 `fixed_threshold-01`(32)/`proposed-01`(33)
+이 그대로 뒤따름을 확인. `--dry-run`(읽기전용, 실클러스터 접근): 3건
+전부 8개 preflight 항목 `ok=true`.
+
+### 123.4 사전점검 (라이브, 2026-09-24)
+
+두 Node Ready·pressure 없음. Rollout 단일 revision(`7d4649c94f`, base,
+1/1/1), 활성 pod 재시작 0회. Chaos CR 0건, 실험 pod 0건, detector
+프로세스 0건, `/admin/experiment-run`=null, `/admin/quiescent`=true.
+포트포워드 재기동 후 recovery-policy·Prometheus 정상, 4개 feature
+쿼리 전부 1초 미만 age. 모델 v3.2b 해시 일치.
+
+### 123.5 base→tolerant 전환 - 직접 재확인 완료
+
+시작 시각 기록(12:31:18Z) 후 `--resume --scenario network_degrade
+--to-run-id network_degrade-proposed-01-mainexp-v1` 백그라운드 실행.
+§119/§100과 동일하게 독립적으로 직접 재확인: 새 preview pod
+(`vllm-serving-8d8948db9-*`) 생성 -> Ready(약 4분, 모델 로딩) ->
+promote 완료(`phase=Healthy`, `activeSel==previewSel=="8d8948db9"`) ->
+실측 `readinessProbe.timeoutSeconds=11`/`livenessProbe.timeoutSeconds
+=11` 확인 -> 구 revision(`7d4649c94f`) 0/0/0 scale-down 확인 - **trial
+1의 injection 시작 전 완전히 끝남.**
+
+### 123.6 실행 결과 - 3/3 전부 정상 완료(`network_degrade` 시나리오 사상 최초 성공)
+
+| run_id | detector_process | detector(실제 판단) | detection_source | outcome | postflight | hash 일치 |
+|---|---|---|---|---|---|---|
+| network_degrade-native-01-retry1-mainexp-v1 | (없음) | (없음) | - | recovered | 8/8 ok | O |
+| network_degrade-fixed_threshold-01-mainexp-v1 | fixed_threshold | alertmanager | reactive | recovered | 8/8 ok | O |
+| network_degrade-proposed-01-mainexp-v1 | isolation_forest | alertmanager | reactive | recovered | 8/8 ok | O |
+
+세 trial 모두 `readiness_probe_profile="network_tolerant"`,
+`readiness_probe_timeout_sec=11.0`가 결과 파일 자체에 실측 기록됨(§119
+배선 수정이 실제로 작동함을 최초로 실측 확인) - `run_network_degrade_
+trial.py` 프로세스에 넘겨진 실제 CLI 인자에도 `--probe-profile
+network_tolerant --readiness-probe-timeout-sec 11.0`이 포함됐음을
+`wmic`/PowerShell로 실행 중인 프로세스의 실제 커맨드라인을 직접
+확인했다(추정이 아님).
+
+**`proposed-01`의 `detector_process=isolation_forest`인데 `detector=
+alertmanager`/`detection_source=reactive`인 것을 그냥 넘기지 않고
+조사했다** - `collect_metrics.build_comparison()`(authoritative)로
+재확인한 결과 `detector_check="reactive_fallback"`이라는 **기존에 이미
+존재하던, 이번에 새로 만들지 않은** 정상 분류이며,
+`included_in_main_analysis=True`, `timing_anomaly=False`, 이 3건에
+대해 검증 issue 0건 - 데이터 결함이 아니다. 과학적으로도 타당한
+설명이 있다: Isolation Forest의 feature(`cpu_mean/cpu_slope/memory_
+mean/memory_slope/cache_mean/cache_slope`)에는 네트워크 지연 자체를
+직접 포착하는 항목이 없다 - 순수 네트워크 열화(`network_degrade`)는
+CPU/메모리 소비를 늘리지 않으므로, predictive 모델이 애초에 감지할
+신호가 없을 수 있고, 이 경우 reactive(alertmanager, SLO 위반 감지)
+경로가 안전망으로 작동하는 것이 설계 의도대로다. `fixed_threshold-01`
+도 같은 `reactive_fallback`로 분류돼 일관성이 있다(원래 reactive
+전용 arm이므로 당연).
+
+### 123.7 사후 검증 (매 trial마다 실제로 확인)
+
+- 3건 전부 postflight 8개 항목 전부 `ok=true`,
+  `rollout_healthy_single_revision.classification=="healthy"`,
+  `cleanup_status=="ok"`.
+- 3건 전부 `results/trial-network_degrade-*.json`의 실제 `sha256sum`이
+  state의 `result_hash`와 정확히 일치(native-01-retry1: `6783af15...`,
+  fixed_threshold-01: `e4b93023...`, proposed-01: `e3382b45...`).
+- `injection_valid=True`, `baseline_valid=True`, `probe_valid=True`,
+  `target_replaced=False` 3건 전부 - 주입 대상이 의도치 않게 바뀐 적
+  없음.
+- detector 로그 2건(`fixed_threshold-01`/`proposed-01`, native는
+  detector 없음) 전부 `Traceback`/`Error`/`Exception`/`DataGapFailClosed`
+  /`prolonged_data_gap_invalidated`/`evaluation_skipped` 매치 0건.
+- `fixed_threshold-01`/`proposed-01` 둘 다 `audit_status="complete"`,
+  `audit_record_id` 발급 확인. `detection_stage`/`action_stage` 필드
+  모두 채워짐(`stage-4-4000ms` 등 - injection stage 관측성 정상 작동).
+
+### 123.8 종료 후 복원 - 직접 재확인 완료
+
+`proposed-01` 자신의 recovery action(`decision_outcome=executed_
+verified`)이 tolerant profile 아래에서 새 revision(`5f88b9f697`)으로
+먼저 promote한 뒤(트라이얼 자체의 정상 조치), `run_sequence()`의
+`finally`가 곧이어 `restore_profile("default")`를 자동 호출해 base로
+재전환했다 - 이 순서(트라이얼 자신의 조치 -> 그 다음 profile 복원)를
+`kubectl get pods`/`rollout` 타임라인으로 직접 확인.
+
+- `kubectl get rollout`: `phase=Healthy`, `activeSel==previewSel==
+  "768fdcc4d5"`(단일 revision, 잔여 preview 없음).
+- 활성 pod(`vllm-serving-768fdcc4d5-nx6qf`) 실측
+  `readinessProbe.timeoutSeconds=1`/`livenessProbe.timeoutSeconds=1`
+  (base 정상 복원), `restartCount=0`.
+- `kubectl diff -f gitops/apps/vllm-serving/rollout.yaml` = 0(exit 0).
+- Chaos CR 0건, `/admin/experiment-run`=null.
+- 오케스트레이터 프로세스 자체의 종료 코드도 실제 로그 마커로 재확인:
+  `EXIT_CODE_MARKER=0`(작업 알림의 "exit code 0"과 이번엔 실제로 일치 -
+  `SequenceAborted` 없이 정상 종료).
+
+**복원 완전 성공 - 확인 불가능하거나 실패한 항목 없음.**
+
+### 123.9 이번 턴 결과 요약
+
+- 유효 완료 trial: **3/3**(`network_degrade-native-01-retry1-mainexp-
+  v1`/`fixed_threshold-01`/`proposed-01` 전부 `recovered`/`completed`)
+  - **`network_degrade` 시나리오의 사상 첫 성공 측정**(§101 이후
+    load_ramp/pod_kill만 완료됐었고 network_degrade는 §119까지 매번
+    즉시 중단됐었다).
+- 연결 안정성: 전 과정(약 50분)에서 kubectl/API 연결 끊김 없음,
+  클러스터 이상 없음.
+- 총 소요 시간: 약 50분(12:31:18Z ~ 13:21:28Z) - 90분 한도 이내, 새
+  trial 시작 없이 강제 종료도 없음.
+- 최종 클러스터 상태: `Healthy`, 단일 revision(base, timeout=1/1),
+  재시작 0, Chaos CR 0, 실험 pod 0, context null, Git/live diff 0.
+- 원본 `network_degrade-native-01-mainexp-v1`(`failed`) 및 기존 51건
+  (v1 21건+v2 30건) 공식 결과·hash 변경 0건 - 직접 재확인.
+- `network_degrade` 상태: 3건 완료(이번 턴) + 1건 `failed`(원본, 대체로
+  연결됨, 보존) + 12건 `planned`(반복 2~5).
+
+**반복 2~5, memory auxiliary는 시작하지 않았다.** 다음 반복은 별도
+지시에 따라 진행한다.
