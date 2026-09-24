@@ -14354,3 +14354,114 @@ verified`)이 tolerant profile 아래에서 새 revision(`5f88b9f697`)으로
 
 **반복 2~5, memory auxiliary는 시작하지 않았다.** 다음 반복은 별도
 지시에 따라 진행한다.
+
+## §124 - `network_degrade mainexp-v1` 2차 반복 실행 성공(3/3)
+
+### 124.1 사전점검 - 전부 통과 (2026-09-24)
+
+`HEAD==origin/master==924e83d`(§123 커밋), 추적 파일 변경 0건. §120/
+§121/§123 수정 커밋(`3f622a1`/`11d3290`/`a7ae6a5`) 전부 `git merge-base
+--is-ancestor`로 현재 HEAD의 조상임을 확인 - 그 위에 실제 소스코드도
+직접 grep으로 재확인(`NETWORK_TOLERANT_PROBE_PROFILE`/`NETWORK_
+TOLERANT_READINESS_TIMEOUT_SEC` 상수, `real_run_trial()`의 `--probe-
+profile`/`--readiness-probe-timeout-sec` 추가 로직, 재검증 루프의
+`stored_evidence` 재사용 로직 - 전부 현재 파일에 실존). `official-
+experiment-state.json`(v1) 완료 24건 + `-v2.json`(v2) 완료 30건 = 54건
+전부 hash 일치. `replacements`의 `network_degrade-native-01-mainexp-v1`
+링크(→`retry1`, evidence 보존) 그대로. 두 Node Ready, Rollout 단일
+revision(`768fdcc4d5`, base, 1/1/1), 재시작 0, Chaos CR 0, 실험 pod 0,
+detector 프로세스 0, context null, quiescent true. 포트포워드 재기동 후
+recovery-policy·Prometheus 정상, 4개 feature 쿼리 전부 1.5초 미만
+age, 모델 v3.2b 해시 일치.
+
+### 124.2 `--plan`/`--dry-run` - 정확한 3건 범위 확인
+
+이번 턴 범위는 `--from-run-id network_degrade-fixed_threshold-02-
+mainexp-v1`(직전 완료 trial인 `proposed-01`이 아니라 이번에 새로 실행할
+**첫** trial을 지정 - `--from-run-id`는 그 지점을 포함해서 슬라이싱하므로
+완료된 trial을 다시 넣으면 안 됨)로 지정. `--plan`: 정확히 `fixed_
+threshold-02`(34)/`proposed-02`(35)/`native-02`(36) 3건만 미리보기됨을
+확인. `--dry-run`(읽기전용, 실클러스터 접근): 3건 전부 8개 preflight
+항목 `ok=true`.
+
+### 124.3 base→tolerant 전환 - 직접 재확인 완료
+
+시작 시각 기록(13:28:02Z) 후 백그라운드 실행. §100/§119/§123과 동일하게
+독립적으로 직접 재확인: 새 preview pod(`vllm-serving-5f88b9f697-*`,
+§100.4의 결정론적 해시 재현 - §123에서 tolerant로 썼던 것과 동일한
+해시) Ready(promote까지 포함, `phase=Healthy`) -> 실측
+`readinessProbe.timeoutSeconds=11`/`livenessProbe.timeoutSeconds=11`
+확인 -> 구 revision(`768fdcc4d5`) 0/0/0 scale-down 확인 - trial 1의
+injection 시작 전 완전히 끝남. (전환 직후 새 RS `fb98c5f46`가 곧바로
+나타난 것은 `fixed_threshold-02` 자신이 promotion에 대비해 만드는
+standby preview 사전 준비 - §123.6의 `proposed-01`에서도 같은 패턴을
+확인한 정상 동작.)
+
+### 124.4 실행 결과 - 3/3 전부 정상 완료
+
+| run_id | detector_process | detector(실제 판단) | detection_source | outcome | postflight | hash 일치 |
+|---|---|---|---|---|---|---|
+| network_degrade-fixed_threshold-02-mainexp-v1 | fixed_threshold | alertmanager | reactive | recovered | 8/8 ok | O |
+| network_degrade-proposed-02-mainexp-v1 | isolation_forest | alertmanager | reactive | recovered | 8/8 ok | O |
+| network_degrade-native-02-mainexp-v1 | (없음) | (없음) | - | recovered | 8/8 ok | O |
+
+세 trial 모두 `readiness_probe_profile="network_tolerant"`,
+`readiness_probe_timeout_sec=11.0`가 결과 파일에 실측 기록됨.
+
+**`fixed_threshold-02`는 `detector_process`/`detector`/`detection_
+source`가 전부 일관됨**(`fixed_threshold`/`alertmanager`/`reactive`) -
+애초에 reactive 전용 arm이므로 구별할 격차 자체가 없다.
+
+**`proposed-02`는 `detector_process=isolation_forest`인데 실제
+`detector=alertmanager`/`detection_source=reactive`** - `proposed-01`
+(§123.6)과 동일한 패턴이 2/2로 재현됐다. 지시대로 **이 둘을 구별해
+그대로 기록**하고, 왜 isolation_forest가 이번에도 예측적으로 탐지하지
+못했는지는 **단정하지 않는다** - §123.6에서 제시했던 "network_degrade
+의 feature 공간에 지연 신호가 없을 수 있다"는 가설은 여전히 하나의
+가능한 설명일 뿐, 이 2건만으로 확정할 근거는 아니다(반복 3~5에서 같은
+패턴이 계속되는지, `collect_metrics`의 `detector_check="reactive_
+fallback"` 분류가 매번 유지되는지 추가 관찰이 필요하다는 뜻으로 남겨
+둔다). `collect_metrics.build_comparison()`으로 재확인한 결과 이번에도
+`detector_check="reactive_fallback"`, `included_in_main_analysis=True`,
+`timing_anomaly=False`, 검증 issue 0건 - 데이터 결함 아님.
+
+### 124.5 사후 검증 (매 trial마다 실제로 확인)
+
+- 3건 전부 postflight 8개 항목 전부 `ok=true`,
+  `rollout_healthy_single_revision.classification=="healthy"`,
+  `cleanup_status=="ok"`.
+- 3건 전부 실제 `sha256sum`이 state의 `result_hash`와 일치.
+- `injection_valid=True`, `target_replaced=False` 3건 전부.
+- detector 로그 2건(`fixed_threshold-02`/`proposed-02`) 전부
+  `Traceback`/`Error`/`Exception`/`DataGapFailClosed`/`prolonged_data_
+  gap_invalidated`/`evaluation_skipped` 매치 0건.
+- `detection_stage`/`action_stage` 필드 모두 채워짐(`stage-4-4000ms`).
+
+### 124.6 종료 후 복원 - 직접 재확인 완료
+
+- `kubectl get rollout`: `phase=Healthy`, 단일 revision(`activeSel==
+  previewSel`), 잔여 preview 없음.
+- 활성 pod 실측 `readinessProbe.timeoutSeconds=1`/`livenessProbe.
+  timeoutSeconds=1`(base 정상 복원), `restartCount=0`.
+- `kubectl diff -f gitops/apps/vllm-serving/rollout.yaml` = 0(exit 0).
+- Chaos CR 0건, `/admin/experiment-run`=null.
+- `EXIT_CODE_MARKER=0`(실제 로그 마커로 재확인, `SequenceAborted` 없이
+  정상 종료).
+
+**복원 완전 성공 - 확인 불가능하거나 실패한 항목 없음.**
+
+### 124.7 이번 턴 결과 요약
+
+- 유효 완료 trial: **3/3**(`fixed_threshold-02`/`proposed-02`/
+  `native-02` 전부 `recovered`/`completed`).
+- 연결 안정성: 전 과정(약 48분)에서 kubectl/API 연결 끊김 없음.
+- 총 소요 시간: 약 48분(13:28:02Z ~ 14:16:19Z) - 90분 한도 이내.
+- 최종 클러스터 상태: `Healthy`, 단일 revision(base, timeout=1/1),
+  재시작 0, Chaos CR 0, 실험 pod 0, context null, Git/live diff 0.
+- 원본 `network_degrade-native-01-mainexp-v1`(`failed`) 및 기존 54건
+  (v1 24건+v2 30건) 공식 결과·hash 변경 0건.
+- `network_degrade` 상태: 6건 완료(1~2차 반복) + 1건 `failed`(원본,
+  대체 연결·보존) + 9건 `planned`(반복 3~5).
+
+**반복 3~5, memory auxiliary는 시작하지 않았다.** 다음 반복은 별도
+지시에 따라 진행한다.
