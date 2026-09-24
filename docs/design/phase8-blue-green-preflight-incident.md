@@ -14017,3 +14017,178 @@ original_hash()`가 "파일이 있어야 하는데 없어짐(데이터 손실 �
 **반복 2~5, memory auxiliary는 애초에 시작 대상이 아니었고 이번에도
 시작하지 않았다.** `network_degrade` 공식 블록의 실제 첫 반복 실행은
 위 §121.5의 수정이 구현·테스트되고 별도 지시가 있을 때까지 보류한다.
+
+## §122 - §121 replacement-linking 결함 수정 + 실제 원본 대상 읽기전용 사전검증 (코드·테스트·문서만, live 미접촉)
+
+### 122.1 범위
+
+이번 턴은 §121에서 발견한 `verify_and_backfill_original_hash()`의
+구조적 한계를 코드로 고치고, 오프라인 테스트·문서화·커밋·푸시까지만
+진행한다 - 실제 `--link-replacement` 실행, trial 재시도, profile
+전환은 하지 않는다(전 과정에서 활성 pod `readinessProbe.timeoutSeconds`
+를 재확인한 결과 계속 `1`(base) - 클러스터 무접촉 확인).
+
+### 122.2 수정 내용
+
+`verify_and_backfill_original_hash()`에 "원본이 애초에 결과 파일을
+만든 적이 없는" 경우를 위한 별도 경로를 추가했다 - 단, **원본 slot
+자신의 `result_path`/`result_hash`가 둘 다 null이라는 사실 하나만으로는
+이 경로에 들어가지 못하게** 설계했다. 이유: `pod_kill-proposed-01-
+mainexp-v1`(§105)을 직접 재확인한 결과 이 trial도 원본 slot의
+`result_path`/`result_hash`가 둘 다 null이었지만(§105 수정 이전 `real_
+run_trial()`이 성공 시에도 이 필드를 못 채우던 시절의 결과) **실제로는
+결과 파일이 존재했다** - null/null은 "파일이 없었다"를 전혀 보장하지
+않는다는 것을 실제 데이터로 직접 확인했다.
+
+새 로직은 파일이 기본 위치에 없을 때, 아래 4가지를 **전부** 만족해야만
+"애초에 결과 없음"으로 통과시킨다:
+
+1. `link`에 이전에 기록된 `original_result_hash`가 없어야 함(있었는데
+   지금 없어졌다면 분실/변조 의심으로 기존과 동일하게 fail-closed).
+2. 원본 slot 자신의 `result_path`/`result_hash`가 서로 내적으로
+   일치해야 함(하나만 null이면 그 자체가 모순 - 거부).
+3. `results/pilot/` 등 다른 알려진 위치에도 없어야 함.
+4. 사람이 제출한 사전실행 실패 근거(`noresult_evidence`, CLI로는
+   `--noresult-evidence-file`)가 구조적 sanity check를 통과해야 함 -
+   `original_run_id` 일치, `preflight_failure_log_excerpt`가
+   `ProbeProfileMismatch`와 `_verify_probe_profile` 호출 지점을 실제로
+   포함(즉 `run_once()` 호출 이전 실패라는 근거), `preflight_failure_
+   log_source`(출처) 명시. 파일이 실제로 존재하면 이 근거와 무관하게
+   거부한다(코드가 직접 재확인, 사람 주장을 그대로 믿지 않음).
+
+네 조건을 전부 통과하면 `original_result_hash=None`으로 기록하고,
+제출된 근거 자체를 `link["original_no_result_evidence"]`에 영구
+저장한다(사후 감사 가능). **파일이 실제로 존재하는 경우는(기존 `pod_
+kill-proposed-01-mainexp-v1`의 §105 backfill 사례 포함) 기존 로직이
+그대로, 최우선으로 처리**되므로 회귀 없음 - 이 사실을 직접 재현하는
+테스트로 확인했다(122.3).
+
+기존 "기록된 원본 hash가 있는데 파일이 사라지거나 달라지면 fail-closed"
+규칙은 전혀 변경하지 않았다. `TrialResult` 스키마, 실험 조건(SLO·모델·
+threshold·주입 설정) 변경 없음. 원본 결과 파일을 만들거나 원본 실패
+기록을 덮어쓰는 동작은 이 수정에 없다(코드 diff가 순수 함수 로직
+추가·CLI 인자 1개 추가뿐임을 `git diff --stat`으로 확인).
+
+### 122.3 회귀 테스트 14건 + 오프라인 스위트 결과
+
+`test_run_all_scenarios.py`에 추가한 테스트(기존 7건은 전부 그대로
+유지, 회귀 0건 직접 확인):
+
+- 정상 hash 보유 원본 backfill - 기존 동작 유지.
+- **null/null인데 실제 파일이 존재하는 경우 - 기존 backfill 경로로
+  처리되어 성공**(`test_verify_and_backfill_original_hash_null_null_
+  but_file_exists_uses_existing_backfill_path`) - 이 시나리오가 바로
+  `pod_kill-proposed-01-mainexp-v1`의 실제 모양과 동일함을 명시적으로
+  재현해, 새 no-result 경로로 잘못 분류되지 않음을 증명.
+- 한 필드만 null인 내적 불일치 - 거부.
+- link에 기록된 hash가 있는데 파일만 없는 경우(분실/변조 의심) - 거부.
+- pilot 디렉터리에 파일이 존재하는 경우 - 거부.
+- evidence 없음 - 거부(`"근거"` 메시지).
+- evidence가 구조적으로 불충분한 5가지 경우(parametrize: `original_
+  run_id` 불일치/`excerpt` 없음/`ProbeProfileMismatch` 미포함/`_
+  verify_probe_profile` 미포함/`log_source` 없음) - 전부 거부.
+- 파일이 실제로 존재하면 evidence와 무관하게 거부(`_validate_noresult_
+  evidence()` 자신의 방어적 재확인 직접 테스트).
+- 유효한 evidence로 정상 통과 + `original_no_result_evidence` 영구
+  기록 확인.
+- **CLI `--link-replacement` 거부 시 state 파일이 원자적으로 정말
+  1바이트도 안 바뀜** - `subprocess.run()`으로 실제 CLI를 호출해 거부
+  전/후 파일 바이트를 직접 비교(`test_link_replacement_leaves_state_
+  completely_unchanged_on_rejection`) - `main()`이 `link_technical_
+  invalid_replacement()`+`verify_and_backfill_original_hash()`를
+  순서대로 호출한 뒤에만 `save_state_atomic()`을 부르는 원자성을
+  CLI 레벨에서 직접 증명.
+- CLI `--noresult-evidence-file`로 정상 완료 확인(subprocess 레벨).
+
+`test_run_all_scenarios.py` 단독 130 passed(§120 이후 116→130).
+`KUBECONFIG=/nonexistent/kubeconfig`로 `experiments/`+`anomaly-
+detection/`+`recovery-policy/` 전체: **1069 passed, 3 skipped, 0
+failed**(§120 이후 1055에서 신규 14건 증가, 회귀 0건). 커밋(`11d3290`)
+·`origin/master`에 즉시 푸시 완료(fast-forward, 충돌 없음).
+
+### 122.4 실제 `network_degrade-native-01-mainexp-v1`에 대한 읽기전용 사전검증
+
+**메모리 내에서만 수행 - 디스크에 저장하지 않음**: `official-
+experiment-state.json`을 읽어 `copy.deepcopy()`한 사본에만
+`link_technical_invalid_replacement()`+`verify_and_backfill_original_
+hash()`를 순서대로 호출해봤다. 사용한 evidence:
+
+- `original_run_id`: `network_degrade-native-01-mainexp-v1`
+- `preflight_failure_log_excerpt`: §119 조사 당시 이 세션이 직접
+  캡처했던 원본 트레이스백 **전체**(스택 프레임 포함 - `run_network_
+  degrade_trial.py:158, in <module> -> main()`, `:113, in main ->
+  _verify_probe_profile(expected_timeout)`, `:70, in _verify_probe_
+  profile -> raise ProbeProfileMismatch(...)`, 그리고 예외 메시지
+  전문) - **이 전체 텍스트를 아래에 영구 보존한다**(§119.2는 요약만
+  남겼고 원본 로그 파일 자체는 §119 조사 종료 후 정리 과정에서 삭제돼,
+  지금까지는 이 세션의 실행 기록에만 남아 있었다 - 이번 기회에 문서에
+  고정):
+
+  ```
+  Traceback (most recent call last):
+    File "D:\Desktop\졸업작품\capstone-k8s-recovery\experiments\run_network_degrade_trial.py", line 158, in <module>
+      main()
+    File "D:\Desktop\졸업작품\capstone-k8s-recovery\experiments\run_network_degrade_trial.py", line 113, in main
+      _verify_probe_profile(expected_timeout)
+    File "D:\Desktop\졸업작품\capstone-k8s-recovery\experiments\run_network_degrade_trial.py", line 70, in _verify_probe_profile
+      raise ProbeProfileMismatch(
+  ProbeProfileMismatch: readinessProbe.timeoutSeconds 실측값(11)이 요청한 profile의 기대값(1.0)과 다름 - overlay 적용/승격이 안 됐거나 잘못된 profile을 지정했을 수 있음. 먼저 gitops/overlays/vllm-serving-network-tolerant/를 적용·승격했는지 확인할 것.
+  ```
+
+- `preflight_failure_log_source`: "이 세션의 §119 조사 당시(2026-09-24)
+  직접 캡처한 원본 트레이스백 전체(백그라운드 실행 로그) - 조사 완료
+  후 정리 과정에서 원본 로그 파일 자체는 삭제됐으나 그 전체 텍스트를
+  이 evidence에 그대로 재현. 축약 요약은 본 문서 §119.2."
+
+**결과: `PRE-VERIFICATION RESULT: SUCCESS`** - `link_technical_invalid_
+replacement()`+`verify_and_backfill_original_hash()`가 예외 없이
+정상 반환, `original_result_hash=None`, `original_no_result_evidence`
+필드에 위 evidence 전체가 저장됨을 확인. **실제 디스크상
+`official-experiment-state.json`은 검증 전후 바이트 단위로 완전히
+동일함을 직접 대조해 확인**(`copy.deepcopy()`로 얻은 사본만 수정,
+`save_state_atomic()` 호출 자체를 하지 않음).
+
+이로써 **§121에서 발견한 절차적 장벽이 이번 수정으로 실제로 해소됐음을
+라이브 접촉 없이 확인**했다.
+
+### 122.5 다음 live 턴에 쓸 정확한 절차 (이번 턴에 실행하지 않음)
+
+1. **사전점검**: `HEAD==origin/master`(이번 §122 커밋 `11d3290` 포함),
+   추적 파일 변경 0건, 기존 51건 결과 hash 재검증, 두 Node Ready·
+   Rollout 단일 revision(base, timeout=1/1)·재시작 0, context·Chaos
+   CR·실험 pod·detector 잔여 0, recovery-policy·Prometheus 연결+
+   신선도, 모델 v3.2b 해시 재확인.
+2. **근거 파일 작성**: 위 122.4의 evidence 전체를
+   `results/noresult-evidence-network_degrade-native-01-mainexp-v1.json`
+   에 그대로 저장(§122.4에 영구 기록된 것과 동일 내용 - 임의로 새로
+   짓지 않음).
+3. **연결**(이번엔 실제로 저장됨):
+   ```
+   python run_all_scenarios.py --link-replacement network_degrade-native-01-mainexp-v1 \
+     network_degrade-native-01-retry1-mainexp-v1 \
+     --link-reason "real_run_trial()의 --probe-profile 배선 누락으로 injection 전 즉시 fail-closed(§119) - \
+   §120에서 배선 수정(3f622a1), §121/§122에서 결과-파일-부재 대체 연결 경로 수정(11d3290) 후 대체 연결" \
+     --noresult-evidence-file results/noresult-evidence-network_degrade-native-01-mainexp-v1.json \
+     --state-file results/official-experiment-state.json
+   ```
+   성공 시 원본 슬롯은 그대로, `replacements`에 링크·evidence가 기록되고
+   `network_degrade-native-01-retry1-mainexp-v1`이 `planned`로 추가됨.
+4. **`--plan`/`--dry-run`**: retry1이 정확히 `native-01` 자리(sequence_
+   index=31)에 오고 `fixed_threshold-01`(32)/`proposed-01`(33)이 그대로
+   뒤따르는지, 8개 preflight 항목이 전부 통과하는지 확인.
+5. **실행**: base→tolerant 전환(promote·구revision scale-down·
+   timeout=11/11·단일 revision 직접 재확인, §119/§100과 동일 방식) ->
+   `network_degrade-native-01-retry1-mainexp-v1` -> `fixed_threshold-
+   01` -> `proposed-01` 순서로 3건 -> 매 trial 뒤 8개 postflight·
+   result hash·detector 로그/data-gap·stage/대상 UID·cleanup·감사
+   연결 확인 후에만 다음 trial -> 정상 종료 또는 중단 시 tolerant→base
+   자동 복원을 직접 재확인(timeout 1/1, Git/live diff 0, 단일 revision,
+   잔여 리소스 없음).
+6. **예상 소요시간**: §120에서 제안한 값과 동일 - base→tolerant 전환
+   ~4분 + trial당 최대 11분(계약서 §5.2) × 3건 = 최대 33분 +
+   tolerant→base 복원 ~4분 = 최대 약 41분, 보수적으로 **45~55분**
+   (90분 한도 내 충분한 여유).
+
+**이번 턴은 여기서 정지** - 위 절차는 제안·읽기전용 사전검증까지만
+완료했고 실제 연결·실행은 하지 않았다. 다음 live 턴에서 별도 지시에
+따라 진행한다.
