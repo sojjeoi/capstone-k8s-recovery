@@ -12658,3 +12658,233 @@ abort된") 사후 상태를 "비정상"으로 오탐(false positive)한 것이�
 (0건 - 제안만 함), `pod_kill`/`network_degrade`/memory auxiliary 시작
 (0건, 애초에 도달 못 함), 모델·threshold·SLO 수치 변경(0건) - 전부
 준수. 포트포워드 2개는 조사 종료 후 로컬에서 정리했다.
+
+## §111 - Rollout postflight의 RolloutAborted 예외 처리 구현 + 재개 시
+cleanup_status=failed 자동 스킵 방지 (2026-09-24)
+
+§110에서 발견된 오탐(Rollout phase=Degraded가 정상적인 abort-후-잔류
+상태)을 §111에서 근본적으로 고쳤다 - 요청의 3가지 항목을 순서대로 구현.
+
+### 111.1 Rollout 검사 - RolloutAborted 예외 + 구별 기록
+
+[run_all_scenarios.py](../../experiments/run_all_scenarios.py)의
+`_check_rollout_healthy_single_revision()`을 다음과 같이 다듬었다(phase
+검사 자체는 삭제하지 않음):
+- `phase=="Healthy"` -> 기존과 동일하게 통과(`classification="healthy"`).
+- `phase=="Degraded"`이고 `conditions`에 `type=Progressing, status=False,
+  reason=RolloutAborted`가 있을 때만 예외 후보 - 그 외 Degraded 원인은
+  그대로 실패.
+- 예외 후보면 4가지 복원 증거를 전부 확인: (1) `pauseConditions` 없음,
+  (2) `activeSelector`가 존재, (3) active Service EndpointSlice에 주소
+  있음, (4) active pod 이름이 `activeSelector` 해시를 포함. 하나라도
+  실패하면 그대로 실패 처리.
+- 단일 revision 확인을 desired뿐 아니라 **current·ready까지** 강화(§108은
+  desired만 확인 - Terminating 중인 잔여 pod을 놓칠 수 있었음).
+- 통과하면 `ok=True`를 반환하되 `classification="aborted_preview_
+  rolled_back"`으로 `"healthy"`와 **구별해서** 반환한다 - `Healthy`라고
+  기록하지 않음(요청 원문 그대로).
+- `new_state_entry()`에 `preflight_checks`/`postflight_checks` 필드를
+  추가해 `real_safety_checks()`가 이미 계산하던 항목별 세부 결과
+  (classification 포함)를 이제 state에 **durable하게** 남긴다 - 예전엔
+  `cleanup_status`(ok/failed)만 남아 이 구별 자체가 사라졌었다.
+
+### 111.2 재개 로직 - 자동 스킵 방지 + hash 재검증 + adjudication
+
+`run_sequence()`에 `_completed_trial_resumable_reason()`을 신설해
+"completed니까 건너뛰어도 된다"는 판단 전에 반드시 통과해야 하는 조건을
+통일했다(메인 루프·`--from-run-id` 사전검증 둘 다 이 함수 사용):
+1. `cleanup_status != "ok"`이면, `cleanup_adjudication.verdict ==
+   "resolved_false_positive"`가 명시적으로 있어야만 건너뛴다. 없으면
+   `SequenceAborted`(자동 스킵 금지).
+2. `cleanup_status`가 무엇이든 매번 `hooks.verify_result_hash(entry)`로
+   결과 파일 hash를 재확인 - 다르면 `SequenceAborted`.
+
+신규 `adjudicate_cleanup_failure(state, run_id, verdict, reason,
+evidence)` + CLI `--adjudicate-cleanup RUN_ID VERDICT --adjudicate-reason
+... --adjudicate-evidence-file ...`:
+- `verdict="resolved_false_positive"`만 위 skip을 허용시킨다.
+- `verdict="confirmed_problem"`은 판정을 기록하되 여전히 자동으로
+  건너뛰지 않는다(재실행 방법은 완전히 별도 결정).
+- **원본 `cleanup_status`/`cleanup_reason`은 절대 덮어쓰지 않는다** -
+  `cleanup_adjudication`이라는 새 필드에만 기록(요청 원문 - "소급해서
+  cleanup_status=ok로 덮어쓰지 마세요").
+- `status != "completed"`, `cleanup_status`가 이미 `"ok"`, 알 수 없는
+  verdict는 전부 거부(fail-closed).
+
+### 111.3 회귀 테스트 26건 + 기존 5건 fixture 보완
+
+`test_run_all_scenarios.py`: Healthy 정상 경로(1) + RolloutAborted+완전
+복원 예외 경로(1, classification 확인 포함) + 다른 Degraded 원인은
+여전히 차단(1) + 예외 조건에서도 pauseConditions/endpoint/active pod
+불일치/잔여 replica 각각 차단(4) + Healthy 경로에서도 current/ready
+잔존 차단(1) + 자동 스킵 방지(1) + 명시적 adjudication으로 재개 허용
+(1) + `confirmed_problem`은 여전히 차단(1) + hash 불일치는
+cleanup_status=ok여도 차단(1) + `adjudicate_cleanup_failure()` 자체
+검증 4건(상태 아님/이미 ok/알 수 없는 verdict 거부 + 원본 필드 불변
+확인) + CLI 경로 1건. 기존 5개 테스트가 `status="completed"`를 수동
+설정하면서 `cleanup_status`를 안 채우던 fixture 문제를 함께 고쳤다(§109
+이전에는 문제 없었지만 §111의 강화된 skip 조건에서 드러남).
+
+오프라인 전체 스위트(`experiments/`+`anomaly-detection/`+
+`recovery-policy/`, 존재하지 않는 KUBECONFIG): **1042 passed, 3
+skipped**(기존과 동일한 `live_cluster` 마커 3건).
+
+### 111.4 라이브 재검증 + adjudication 적용 + `--dry-run` 확인
+
+포트포워드 재기동 후 클러스터를 읽기 전용으로 재확인 - §110과 완전히
+동일한 상태(`phase=Degraded`, `pauseConditions=None`, 다른 모든
+revision 0/0/0, active pod `vllm-serving-5c76fd4d74-9mq7z` 3시간+
+무중단, endpoint 1개, quiescent, context=null) 그대로임을 확인한 뒤,
+새 `_check_rollout_healthy_single_revision()`을 라이브로 직접 실행 -
+`{"ok": true, "classification": "aborted_preview_rolled_back"}` 확인,
+`real_safety_checks()` 8개 항목 전부 통과 확인.
+
+`--adjudicate-cleanup load_ramp-fixed_threshold-01-mainexp-v2
+resolved_false_positive`를 §110의 근본원인 조사 + 이번 라이브 재검증
+결과를 근거로([adjudication-evidence-load_ramp-fixed_threshold-01-mainexp-v2.json](../../experiments/results/adjudication-evidence-load_ramp-fixed_threshold-01-mainexp-v2.json)
+에 전체 기록) 실행 - `cleanup_status`/`cleanup_reason`은 `"failed"`
+그대로 보존됨을 재확인.
+
+`--resume --scenario load_ramp --dry-run` 실행 전, §111 코드 자체가
+아직 커밋되지 않아 `real_check_git_drift()`가 정확히 의도대로 작동해
+`SequenceAborted`(drift 감지)로 막았다 - §111 코드를 먼저 커밋·푸시한
+뒤 재실행하니 정상 통과: trial 1(completed/ok) 건너뜀, trial
+2(completed/failed+adjudication) **자동 스킵 금지 규칙을 통과해**
+건너뜀, trial 3~15는 `planned` 그대로 사전 등록 순서 유지 - 상태
+변경 없이 종료(exit 0).
+
+### 111.5 범위 제한 준수 확인 (재개 전까지)
+
+`mainexp-v1` 원본 변경(0건), `mainexp-v2`의 기존 2건 결과 변경(0건 -
+`cleanup_status`/`cleanup_reason` 그대로, `cleanup_adjudication`만
+추가), 임의 재시도(0건 - 명시적 adjudication을 거쳐서만 재개 허용),
+모델·threshold·SLO·TrialResult 스키마 변경(0건) - 전부 준수.
+
+## §112 - 재개 실행 - 10건 추가 성공(§111 검증됨), 13번째 trial에서
+네트워크 단절로 재중단 (2026-09-24)
+
+§111.4의 확인을 거쳐 남은 13건을 재개했다. **10건이 추가로 성공적으로
+완료**(§111 수정이 실전에서 정확히 작동함을 증명) 했으나, 13번째
+trial(`load_ramp-fixed_threshold-05-mainexp-v2`) 도중 **이 머신과
+클러스터 컨트롤플레인(`192.168.30.4:6443`) 사이의 네트워크 연결이
+끊겨** 트라이얼 자체와 postflight 둘 다 실패했고, 사전 등록된 중단
+조건대로 **정상적으로 재중단**됐다 - 14·15번째 trial은 시작되지
+않았다. 이번에도 재시도하지 않고 조사·보존·보고만 했다.
+
+### 112.1 결과 요약
+
+| # | run_id | status | cleanup_status | 비고 |
+|---|---|---|---|---|
+| 1 | native-01 | completed | ok | (§110에서 이미 완료) |
+| 2 | fixed_threshold-01 | completed | failed(adjudicated) | (§110/§111 - 원본 그대로, 판정으로 재개 허용) |
+| 3 | proposed-01 | completed | **ok** | 신규 성공 |
+| 4 | fixed_threshold-02 | completed | **ok** | 신규 성공 |
+| 5 | proposed-02 | completed | **ok** | 신규 성공 |
+| 6 | native-02 | completed | **ok** | 신규 성공 |
+| 7 | proposed-03 | completed | **ok** | 신규 성공 |
+| 8 | native-03 | completed | **ok** | 신규 성공 |
+| 9 | fixed_threshold-03 | completed | **ok** | 신규 성공 |
+| 10 | native-04 | completed | **ok** | 신규 성공 |
+| 11 | proposed-04 | completed | **ok** | 신규 성공 |
+| 12 | fixed_threshold-04 | completed | **ok** | 신규 성공 |
+| 13 | fixed_threshold-05 | **failed** | **failed** | **네트워크 단절 - 아래 §112.2** |
+| 14 | native-05 | planned | - | 미실행(정상 중단) |
+| 15 | proposed-05 | planned | - | 미실행(정상 중단) |
+
+**§111 수정의 실전 검증**: 3~12번 10건 모두 `cleanup_status=ok`로
+정상 완료됐다 - 이 중 최소 몇 건은 `fixed_threshold`가 감지 못한 채
+끝나 §110/§111.1과 동일한 "preview 준비 -> 미승격 -> abort ->
+phase=Degraded 잔류" 패턴을 반복했을 가능성이 높고(구체적으로 어느
+trial이 그랬는지는 `postflight_checks`의 `classification` 값으로
+사후 확인 가능 - §112.4 참고), 그때마다 새 예외 로직이 `aborted_
+preview_rolled_back`으로 정확히 분류해 정상 통과시켰다 - **§110의
+오탐이 실제로 해결됐음을 10건의 실전 재현으로 확인**.
+
+### 112.2 13번째 trial - 근본원인(네트워크 단절, 하니스 결함 아님)
+
+`load_ramp-fixed_threshold-05-mainexp-v2`의 원본 결과 파일
+(`invalid_reason`)과 `notes`를 직접 확인:
+- 관찰 구간 자체(20:36:37~약 20:48:06, detector 로그 마지막 기록)는
+  정상 - CPU 임계치 위반 없이 "정상" 판정만 연속 기록됨.
+- trial 정리 단계(약 21:07 전후)에서 **이 머신 -> 클러스터
+  컨트롤플레인(`192.168.30.4:6443`) 연결이 끊김** -
+  `recovery-policy 상태(timing) 엔드포인트 조회 실패`
+  (`ConnectionResetError 10054`), `prober.stop()` 실패(`ramp-probe-
+  0f2b2fc9` 삭제 실패, K8s API `dial tcp 192.168.30.4:6443:
+  ... unreachable network`), `injector.cleanup()` 실패(같은 K8s API
+  연결 실패)가 연쇄로 발생.
+- `run_once.py` 자신은 이 상황을 **정확히 설계대로** 처리했다 - 상태
+  조회 자체가 안 됐으므로(§102에서 정한 규칙: "확인 자체가 안 됨"과
+  "진짜 무탐지"를 구분) 결과 파일에 `outcome="invalid_run"`을 정직하게
+  기록했다. 그러나 이후 cleanup 단계의 예외가 프로세스 자체를 비정상
+  종료(`returncode=1`)시켜, `real_run_trial()`이(§105 로직 그대로)
+  결과 파일이 존재하므로 `result_path`/`result_hash`는 보존하되
+  `status="failed"`(기술적 invalid)로 분류했다 - 이건 §103의
+  `TECHNICAL_INVALID_STATUSES`에 해당해 **`--link-replacement`로 대체
+  연결이 가능한 상태**다(원한다면).
+- postflight도 같은 네트워크 단절 때문에 첫 번째 검사(`all_nodes_
+  healthy`)에서 K8s API 호출 자체가 실패해 예외로 흡수됐다
+  (`cleanup_status=failed`, `cleanup_reason`에 `MaxRetryError`
+  그대로 기록) - **postflight가 제 역할(무엇이든 확인 시도 + 실패시
+  중단)을 정확히 수행**했다.
+
+### 112.3 현재 클러스터 상태 (읽기 전용 재확인, 조치 없음)
+
+연결이 부분적으로 복구된 뒤(지금 시점 `kubectl get nodes` 정상 응답,
+ping 12ms 0% loss) 다시 확인한 결과, **진짜 잔여 상태가 남아있다**
+(§110과 달리 이번엔 오탐이 아니라 실제 미완료 정리):
+
+- **Rollout이 `phase=Paused`(`BlueGreenPause`, `startTime=2026-09-23
+  T20:40:09Z` - trial 13 구간과 일치)로 멈춰있음** - preview가
+  abort도 promote도 안 된 채 대기 중. `activeSelector=697f44dfc4`,
+  `previewSelector=6df679fd84`, 두 pod 모두 `1/1 Running,
+  restartCount=0`으로 정상 동작 중(서빙 자체는 안전 - active
+  selector가 안정 revision을 그대로 가리킴).
+- **experiment-run context가 여전히 등록된 채 남음** - `GET /admin/
+  experiment-run` -> `current.run_id="load_ramp-fixed_threshold-05-
+  mainexp-v2"`(§102/§103과 같은 종류의 orphaned context, 원인만 다름
+  - 그때는 detector 크래시, 이번엔 네트워크 단절).
+- **실험 pod 2개 잔존, 삭제 안 됨** - `ramp-inj-586da877`/`ramp-
+  probe-0f2b2fc9`(둘 다 `STATUS=Completed`, 컨테이너 자체는 끝났지만
+  pod 오브젝트가 안 지워짐).
+- Node 2개 정상, Chaos CR 0건(원래 load_ramp는 안 씀), active pod들
+  restartCount=0 - 이 부분은 문제 없음.
+- 새 `_check_rollout_healthy_single_revision()`을 이 상태에 직접
+  실행한 결과 `{"ok": false, "classification": "unhealthy",
+  "reason": "Rollout phase='Paused'(... RolloutAborted 예외 조건도
+  아님)"}` - **§111의 예외가 이 다른 상황(Paused, Degraded 아님)에는
+  적용되지 않음을 확인** - 예외가 지나치게 넓지 않다는 방증이기도 하다.
+
+**이번 턴에는 아무것도 정리하지 않았다** - 위 3가지 잔여(Rollout
+paused/context/실험 pod 2개) 전부 그대로 두고 읽기 전용 확인만 했다.
+
+### 112.4 향후 처리 제안 (구현/실행 안 함, 사용자 판단 대기)
+
+1. **정리(cleanup) 조치**(클러스터 변경 필요 - 별도 명시적 승인
+   필요): 등록된 experiment-run context를 `run_id`가 일치하는지
+   확인 후 clear, `cleanup_unpromoted_preview()`와 동일한 절차로
+   preview를 abort+rollback 확인, 잔여 실험 pod 2개 삭제. **§99/§100
+   선례와 동일하게, 이런 클러스터 상태-변경 조치는 사용자의 명시적
+   허가 없이 진행하지 않는다.**
+2. **13번째 trial 자체**: `status="failed"`(기술적 invalid)이므로
+   §103의 `link_technical_invalid_replacement()`로 새 고유 run_id에
+   연결해 재실행하는 방안을 제안 - `pod_kill-proposed-01`에 썼던
+   것과 동일한 패턴. 원본(`load_ramp-fixed_threshold-05-mainexp-v2`)
+   결과 파일·hash·상태는 그대로 보존.
+3. **나머지 2건**(`native-05`, `proposed-05`)은 위 정리+13번째 trial
+   처리가 끝난 뒤 같은 `mainexp-v2` state로 이어서 실행하면 된다 -
+   매트릭스/순서 자체는 전혀 안 바뀜.
+4. (참고, 조치는 아님) `postflight_checks`/`preflight_checks`(§111.1
+   신규 필드)에 3~12번 trial 각각의 `rollout_healthy_single_revision`
+   `classification` 값이 남아있어, 어느 trial이 실제로 `aborted_
+   preview_rolled_back` 예외를 탔는지 state 파일에서 직접 확인
+   가능하다 - 별도 분석 시 참고.
+
+### 112.5 범위 제한 준수 확인
+
+클러스터 변경(0건 - 정리 조치 전혀 안 함), `--link-replacement`(0건),
+재시도(0건), `mainexp-v1`/`mainexp-v2` 1~12번 결과·hash·state 변경
+(0건), 13번째 trial의 원본 결과·`failed` 상태 변경(0건), 14·15번째
+trial 실행(0건, 애초에 시작 안 됨), `pod_kill`/`network_degrade`
+시작(0건), 모델·threshold·SLO 수치 변경(0건) - 전부 준수. 포트포워드는
+조사 종료 후 로컬에서 정리했다.
