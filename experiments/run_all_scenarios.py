@@ -273,6 +273,27 @@ def adjudicate_cleanup_failure(state: dict, run_id: str, verdict: str, reason: s
     }
 
 
+def _preview_trial_range(trials: list, from_run_id: Optional[str] = None,
+                          to_run_id: Optional[str] = None) -> list:
+    """§114(2026-09-24) - `--plan` 미리보기 전용 순수 슬라이싱. `run_sequence()`
+    안의 `from_run_id`/`to_run_id` 슬라이싱과 정확히 같은 경계 규칙(양쪽 다
+    inclusive)을 쓰지만, `from_run_id`의 hash 재검증 같은 부작용은 전혀
+    수행하지 않는다 - `--plan`은 클러스터에 안 닿는다는 기존 계약을 그대로
+    지키면서도, "이번 실행에서 실제로 무엇이 도는지"를 정확히 보여주기
+    위함이다. 없는 run_id를 주면 `ValueError`(호출부가 CLI 오류로 승격)."""
+    if from_run_id:
+        idx = next((i for i, t in enumerate(trials) if t.run_id == from_run_id), None)
+        if idx is None:
+            raise ValueError(f"--from-run-id {from_run_id}이 매트릭스에 없음")
+        trials = trials[idx:]
+    if to_run_id:
+        idx = next((i for i, t in enumerate(trials) if t.run_id == to_run_id), None)
+        if idx is None:
+            raise ValueError(f"--to-run-id {to_run_id}이 매트릭스에 없음")
+        trials = trials[:idx + 1]
+    return trials
+
+
 def apply_replacements(trials: list, replacements: dict) -> list:
     """§103 - 실행 목록(순서 그대로)에서, 연결된 대체가 있는 원본 자리를
     정확히 같은 위치의 대체 Trial로 바꿔치기한다. 연결 안 된 trial은
@@ -392,7 +413,8 @@ def _completed_trial_resumable_reason(entry: dict, hooks: "Hooks") -> Optional[s
 
 
 def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
-                  dry_run: bool = False, from_run_id: Optional[str] = None) -> dict:
+                  dry_run: bool = False, from_run_id: Optional[str] = None,
+                  to_run_id: Optional[str] = None) -> dict:
     """§98 섹션2/6/8 - 결정론적 순서로 순차 실행. 중단 조건을 만나면
     `SequenceAborted`를 던지고 그 시점까지의 state는 이미 저장돼 있다(호출부가
     잡아서 보고만 하면 됨). dry_run=True면 클러스터에 닿는 어떤 hook도 부르지
@@ -406,7 +428,17 @@ def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
     필요한 순간이었는데 정작 건너뛰고 있었음). 네 경로 중 어느 것도 다음
     trial로 자동으로 넘어가지 않는다 - trial 자체 실패 사유는 그대로 보존되고,
     postflight까지 실패하면 두 사유가 `SequenceAborted` 메시지에 모두
-    드러난다."""
+    드러난다.
+
+    §114(2026-09-24) - `to_run_id`(신규, `from_run_id`와 대칭) - 이 run_id
+    까지만(포함) 이번 호출에서 실행하고 그 뒤는 손대지 않는다(매트릭스/state에
+    `planned`로 그대로 남음, 다음에 같은 `--state-file`로 `--resume`하면 이어서
+    실행 가능 - `--scenario` 필터가 시나리오 단위로 블록을 나누는 것과 같은
+    원리를 trial 단위로 한 번 더 적용한 것뿐). 정상적으로 그 지점까지 끝나면
+    (중단이 아니라) 함수가 그냥 정상 반환한다 - "여기까지만 실행하라"는 것과
+    "문제가 생겨 중단됐다"는 서로 다른 개념이라 `SequenceAborted`를 던지지
+    않는다(단, `to_run_id`가 매트릭스에 아예 없으면 그건 호출 자체의 실수이므로
+    `SequenceAborted`)."""
     if from_run_id:
         idx = next((i for i, t in enumerate(trials) if t.run_id == from_run_id), None)
         if idx is None:
@@ -420,6 +452,12 @@ def run_sequence(trials: list, state: dict, hooks: Hooks, state_path: Path,
             if reason:
                 raise SequenceAborted(reason)
         trials = trials[idx:]
+
+    if to_run_id:
+        idx = next((i for i, t in enumerate(trials) if t.run_id == to_run_id), None)
+        if idx is None:
+            raise SequenceAborted(f"--to-run-id {to_run_id}이 매트릭스에 없음")
+        trials = trials[:idx + 1]
 
     current_scenario = None
     try:
@@ -1097,6 +1135,10 @@ def main():
     parser.add_argument("--resume", action="store_true", help="기존 state 파일에서 이어서 실행")
     parser.add_argument("--from-run-id", default=None,
                          help="이 run_id부터 실행(그 이전은 모두 completed+hash일치여야 함, 아니면 중단)")
+    parser.add_argument("--to-run-id", default=None,
+                         help="§114 - 이 run_id까지만(포함) 이번 실행에서 진행하고 정상 종료한다(중단이 아님) - "
+                              "그 뒤는 매트릭스/state에 planned로 그대로 남아 나중에 --resume으로 이어서 실행 "
+                              "가능. --from-run-id와 대칭- 매트릭스에 없는 값이면 오류로 즉시 종료.")
     parser.add_argument("--scenario", default=None, choices=list(CORE_SCENARIOS) + [AUX_SCENARIO],
                          help="지정한 시나리오의 trial만 이번 실행에서 진행한다 - 공식 50-trial 매트릭스/state는 "
                               "그대로 공유되고 다른 시나리오 블록은 손대지 않은 채 planned로 남아, 같은 "
@@ -1196,15 +1238,25 @@ def main():
     trials_to_run = apply_replacements(trials_to_run, state.get("replacements", {}))
 
     if args.plan:
-        print(json.dumps([t.__dict__ for t in trials_to_run], indent=2, ensure_ascii=False))
-        print(f"\n총 {len(trials_to_run)} trial (core={sum(1 for t in trials_to_run if t.analysis_group == CORE_GROUP)}, "
-              f"auxiliary={sum(1 for t in trials_to_run if t.analysis_group == AUX_GROUP)})")
+        # §114 - --plan이 "이번 실행 범위"를 실제로 반영하도록 from/to-run-id를
+        # 미리보기에도 적용한다(순수 슬라이싱만 - run_sequence()의 from_run_id
+        # hash 재검증 등 부작용은 여기서 재현하지 않음, --plan은 클러스터에
+        # 안 닿는다는 기존 계약 그대로 유지).
+        preview = trials_to_run
+        try:
+            preview = _preview_trial_range(preview, args.from_run_id, args.to_run_id)
+        except ValueError as e:
+            print(f"RANGE ERROR: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps([t.__dict__ for t in preview], indent=2, ensure_ascii=False))
+        print(f"\n총 {len(preview)} trial (core={sum(1 for t in preview if t.analysis_group == CORE_GROUP)}, "
+              f"auxiliary={sum(1 for t in preview if t.analysis_group == AUX_GROUP)})")
         return
 
     save_state_atomic(state_path, state)
     try:
         run_sequence(trials_to_run, state, real_hooks(), state_path,
-                     dry_run=args.dry_run, from_run_id=args.from_run_id)
+                     dry_run=args.dry_run, from_run_id=args.from_run_id, to_run_id=args.to_run_id)
     except SequenceAborted as e:
         sync_replacement_results(state)
         save_state_atomic(state_path, state)

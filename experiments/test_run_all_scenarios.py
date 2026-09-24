@@ -637,6 +637,92 @@ def test_from_run_id_aborts_if_prior_not_completed(tmp_path):
                           from_run_id=trials[2].run_id)
 
 
+# ---- §114(2026-09-24): --to-run-id - 지정한 run_id까지만(포함) 실행하고
+# 정상 종료(중단 아님), 그 뒤는 planned로 그대로 남음 ----
+
+def test_to_run_id_stops_after_inclusive_point_without_aborting(tmp_path):
+    trials = ras.build_matrix("P")[:5]
+    state = _fresh_state(trials)
+    call_log = []
+    result = ras.run_sequence(trials, state, _make_hooks(call_log), tmp_path / "state.json",
+                               to_run_id=trials[2].run_id)
+    run_trial_calls = [c[1] for c in call_log if c[0] == "run_trial"]
+    assert run_trial_calls == [trials[0].run_id, trials[1].run_id, trials[2].run_id], (
+        "정확히 to_run_id까지(포함) 3건만 실행돼야 함")
+    assert state["trials"][trials[2].run_id]["status"] == "completed"
+    assert state["trials"][trials[3].run_id]["status"] == "planned", "to_run_id 이후는 손대지 않아야 함"
+    assert state["trials"][trials[4].run_id]["status"] == "planned"
+    assert result is state, "정상 종료(SequenceAborted 아님) - 그냥 state를 반환해야 함"
+    print("OK - to_run_id까지(포함)만 실행하고 정상 반환, 그 뒤 trial은 planned로 그대로 남음(중단 아님)")
+
+
+def test_to_run_id_raises_if_not_in_matrix(tmp_path):
+    trials = ras.build_matrix("P")[:3]
+    state = _fresh_state(trials)
+    call_log = []
+    with pytest.raises(ras.SequenceAborted, match="to-run-id"):
+        ras.run_sequence(trials, state, _make_hooks(call_log), tmp_path / "state.json",
+                          to_run_id="존재하지-않는-run-id")
+    assert call_log == [], "매트릭스에 없는 to_run_id면 아무 trial도 시작하면 안 됨"
+    print("OK - 매트릭스에 없는 --to-run-id는 즉시 SequenceAborted, 아무 trial도 실행 안 됨")
+
+
+def test_to_run_id_combined_with_from_run_id(tmp_path):
+    """§114 - 둘 다 지정하면 [from_run_id, to_run_id] 구간(양쪽 inclusive)만
+    실행한다 - from_run_id 이전 trial의 completed+hash 조건은 그대로 적용."""
+    trials = ras.build_matrix("P")[:5]
+    state = _fresh_state(trials)
+    state["trials"][trials[0].run_id]["status"] = "completed"
+    state["trials"][trials[0].run_id]["cleanup_status"] = "ok"
+    state["trials"][trials[0].run_id]["result_hash"] = "h0"
+    call_log = []
+    ras.run_sequence(trials, state, _make_hooks(call_log, verify_hash_fn=lambda e: True),
+                      tmp_path / "state.json", from_run_id=trials[1].run_id, to_run_id=trials[3].run_id)
+    run_trial_calls = [c[1] for c in call_log if c[0] == "run_trial"]
+    assert run_trial_calls == [trials[1].run_id, trials[2].run_id, trials[3].run_id]
+    assert state["trials"][trials[4].run_id]["status"] == "planned"
+    print("OK - --from-run-id와 --to-run-id를 함께 쓰면 그 구간만 실행(양쪽 inclusive)")
+
+
+def test_preview_trial_range_matches_run_sequence_slicing():
+    """§114 - --plan 미리보기(_preview_trial_range)가 run_sequence()의
+    실제 슬라이싱과 동일한 결과를 내는지 직접 대조."""
+    trials = ras.build_matrix("P")[:5]
+    preview = ras._preview_trial_range(trials, to_run_id=trials[2].run_id)
+    assert [t.run_id for t in preview] == [trials[0].run_id, trials[1].run_id, trials[2].run_id]
+
+    preview2 = ras._preview_trial_range(trials, from_run_id=trials[1].run_id, to_run_id=trials[3].run_id)
+    assert [t.run_id for t in preview2] == [trials[1].run_id, trials[2].run_id, trials[3].run_id]
+    print("OK - _preview_trial_range()가 run_sequence()와 동일한 경계 규칙(양쪽 inclusive)으로 슬라이싱함")
+
+
+def test_preview_trial_range_raises_on_unknown_to_run_id():
+    trials = ras.build_matrix("P")[:3]
+    with pytest.raises(ValueError, match="to-run-id"):
+        ras._preview_trial_range(trials, to_run_id="존재하지-않는-run-id")
+    print("OK - --plan 미리보기도 매트릭스에 없는 to_run_id를 거부(클러스터 호출 없이 즉시)")
+
+
+def test_main_cli_plan_reflects_to_run_id_scope(tmp_path):
+    """§114 - `--plan --to-run-id`가 실제로 이번 실행 범위(3건)만 출력하는지
+    CLI 경로로 직접 확인(요청 원문 - "--plan/--dry-run으로... 이번 실행
+    범위... 확인")."""
+    proc = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "run_all_scenarios.py"),
+         "--plan", "--scenario", "pod_kill", "--plan-id", "cli-to-run-test",
+         "--to-run-id", "pod_kill-proposed-01-cli-to-run-test"],
+        capture_output=True, text=True, cwd=Path(__file__).parent)
+    assert proc.returncode == 0, proc.stderr
+    data = json.loads(proc.stdout[:proc.stdout.rindex("]") + 1])
+    assert [t["run_id"] for t in data] == [
+        "pod_kill-native-01-cli-to-run-test",
+        "pod_kill-fixed_threshold-01-cli-to-run-test",
+        "pod_kill-proposed-01-cli-to-run-test",
+    ]
+    assert "총 3 trial" in proc.stdout
+    print("OK - CLI --plan --to-run-id가 정확히 첫 3건(rep1 native→fixed_threshold→proposed)만 미리보기로 보여줌")
+
+
 # ---- atomic state persistence ----
 
 def test_save_and_load_state_atomic_roundtrip(tmp_path):
