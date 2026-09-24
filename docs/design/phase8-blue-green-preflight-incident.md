@@ -13766,3 +13766,136 @@ trial 하나를 사이에 두고 처음으로 결합 실행된 순간**이었고
 구현되고 오프라인 테스트를 통과한 뒤, 별도 지시로 진행한다.
 `fixed_threshold-01`/`proposed-01`을 포함한 나머지 14건과 memory
 auxiliary는 이번 턴에 시작하지 않았다.
+
+## §120 - §119 `ProbeProfileMismatch` 배선 결함 수정 + 대체 자격 조사 (코드·테스트·문서만, live 미접촉)
+
+### 120.1 범위
+
+이번 턴은 §119에서 발견한 `real_run_trial()`의 배선 누락을 코드로
+고치고 오프라인 테스트·문서화·커밋·푸시까지만 진행한다 - 클러스터
+profile 전환이나 공식 trial 재실행은 하지 않는다(전 과정에서 활성 pod
+`readinessProbe.timeoutSeconds`를 재확인한 결과 계속 `1`(base) - 이번
+턴에 클러스터를 한 번도 건드리지 않았음을 직접 확인).
+
+### 120.2 수정 내용
+
+`experiments/run_all_scenarios.py`에 §44 사전등록 calibration 동결값을
+이름 있는 상수로 추가:
+
+```python
+NETWORK_TOLERANT_PROBE_PROFILE = "network_tolerant"
+NETWORK_TOLERANT_READINESS_TIMEOUT_SEC = 11.0
+```
+
+`real_run_trial()`이 `trial["scenario"] == "network_degrade"`일 때만
+`cmd += ["--probe-profile", NETWORK_TOLERANT_PROBE_PROFILE,
+"--readiness-probe-timeout-sec", str(NETWORK_TOLERANT_READINESS_TIMEOUT_
+SEC)]`를 추가하도록 수정 - `run_network_degrade_trial.py`가 이미
+제공하는 CLI 인자(`--probe-profile {default,network_tolerant}`,
+`--readiness-probe-timeout-sec`, 둘 다 §119에서 소스로 직접 확인한
+정확한 형식)를 그대로 재사용했다. `load_ramp`/`pod_kill`/memory
+auxiliary(`AUX_SCENARIO`) 경로의 인자 구성은 전혀 손대지 않았다.
+`TrialResult` 스키마, SLO·모델·threshold·주입 설정 변경 없음(코드
+diff가 정확히 이 두 파일의 순수 추가분(76줄)뿐임을 `git diff --stat`
+으로 확인).
+
+### 120.3 회귀 테스트 5건 추가 + 오프라인 스위트 결과
+
+`experiments/test_run_all_scenarios.py`에 실제 `subprocess.run()`
+호출 인자를 캡처해 검증하는 테스트 5건 추가:
+
+- `test_real_run_trial_network_degrade_passes_tolerant_profile_for_all_
+  arms`(native/fixed_threshold/proposed 3-parametrize) - 세 arm 전부
+  실제 cmd에 `--probe-profile network_tolerant --readiness-probe-
+  timeout-sec 11.0`이 포함되고 `--skip-profile-verification`은 없음을
+  확인.
+- `test_real_run_trial_other_core_scenarios_get_no_profile_args`
+  (load_ramp/pod_kill 2-parametrize) - 이 인자들을 전혀 받지 않음을
+  확인(기존 기본 동작 불변).
+- `test_real_run_trial_aux_scenario_keeps_main_experiment_flag_and_no_
+  profile_args` - memory auxiliary는 기존 `--main-experiment`만 유지,
+  profile 인자는 없음.
+- `test_verify_probe_profile_still_fail_closes_on_mismatch` -
+  `run_network_degrade_trial.py` 자신은 이번 수정으로 전혀 손대지
+  않았지만, 그 fail-closed 검증(`_verify_probe_profile`)이 실측/기대
+  불일치 시 여전히 `ProbeProfileMismatch`를 던지는지 직접 재확인(이번
+  수정이 안전장치를 약화·우회하지 않았음을 코드로 증명).
+
+`test_run_all_scenarios.py` 단독 116 passed(§114 이후 109→116, 신규
+5건은 parametrize로 실제 7개 테스트케이스). `KUBECONFIG=/nonexistent/
+kubeconfig`로 `experiments/`+`anomaly-detection/`+`recovery-policy/`
+전체: **1055 passed, 3 skipped, 0 failed**(§114 이후 1048에서 신규
+7건 증가, 회귀 0건). 커밋(`3f622a1`)·`origin/master`에 즉시 푸시
+완료(fast-forward, 충돌 없음).
+
+### 120.4 `--plan`/`--dry-run`으로 공식 순서 불변 확인
+
+`--plan --plan-id mainexp-v1 --state-file results/official-experiment-
+state.json`(scenario 필터 없이 전체 50건): `network_degrade`가 여전히
+정확히 15건, `sequence_index` 31~45, 첫 3건 run_id도 §119와 동일
+순서(`native-01`→`fixed_threshold-01`→`proposed-01`) - 매트릭스 구조
+불변 확인.
+
+`--dry-run --resume --scenario network_degrade --to-run-id network_
+degrade-proposed-01-mainexp-v1`(읽기전용, 실클러스터 접근)을 재실행한
+결과 **의도된 대로 즉시 중단됨**: `SEQUENCE ABORTED: network_degrade-
+native-01-mainexp-v1이 failed 상태 - 자동으로 건너뛰지 않음, 사용자
+판단 필요`. 이건 이번 수정과 무관한 별개 경로(`entry["status"] in
+ABORT_STATUSES` 검사, `real_run_trial()`보다 훨씬 앞단)이며 - `native-
+01`의 보존된 `failed` 상태가 자동 재개를 정확히 막고 있다는 뜻이다
+(설계대로 동작, 결함 아님). 이 결과 자체가 아래 120.5의 "대체 연결이
+먼저 필요하다"는 결론을 코드 경로로 직접 증명한다.
+
+### 120.5 `network_degrade-native-01-mainexp-v1` 원본 보존 확인 + 대체 자격 조사 (읽기전용, 수정 0건)
+
+**원본 보존**: `official-experiment-state.json`을 재확인 - `status=
+"failed"`, `cleanup_status="ok"`, `result_hash=None`, `result_path=
+None`, `failure_reason`은 §119 당시 그대로(러너 종료 코드 1) - 이번
+턴에 단 1바이트도 변경하지 않았다(가드 우회·수동 state 편집 0건).
+
+**대체 자격 조사**: `run_all_scenarios.TECHNICAL_INVALID_STATUSES =
+("failed",)`를 코드에서 직접 확인 - `network_degrade-native-01-
+mainexp-v1`의 현재 `status`는 정확히 `"failed"`이므로 **이 슬롯은
+기존 규칙상 `link_technical_invalid_replacement()`로 대체 연결이
+가능한 자격을 이미 갖추고 있다**(`"failed" in TECHNICAL_INVALID_
+STATUSES` == `True`, 직접 실행해 확인). 가드를 우회할 필요도, state를
+수동으로 바꿀 필요도 없다 - 기존 규칙이 이미 이 경우를 정확히
+커버한다. `state.get("replacements")`에 `network_degrade-native-01-
+mainexp-v1`에 대한 기존 연결은 아직 없음(충돌 없음, §105의 `pod_kill-
+proposed-01-mainexp-v1` 연결만 존재하며 무관).
+
+### 120.6 다음 live 턴에 쓸 명시적 대체 절차 제안 (이번 턴에 실행하지 않음)
+
+1. **대체 run_id 선정**: `network_degrade-native-01-retry1-mainexp-v1`
+   (§105의 `pod_kill-proposed-01-retry1-mainexp-v1`과 동일한 명명
+   관례 - `-retry1-` 접미사).
+2. **연결**: `python run_all_scenarios.py --link-replacement network_
+   degrade-native-01-mainexp-v1 network_degrade-native-01-retry1-
+   mainexp-v1 --link-reason "real_run_trial()의 --probe-profile 배선
+   누락으로 injection 전 즉시 fail-closed(§119) - §120에서 배선 수정,
+   원본 슬롯은 그대로 두고 대체만 연결" --state-file results/official-
+   experiment-state.json` (원본 슬롯 절대 안 건드림, §105/§113 관례와
+   동일).
+3. **사전점검**(기존 체크리스트 그대로): `HEAD==origin/master`(이번
+   §120 커밋 포함) 확인, 추적 파일 변경 0건, 모델 v3.2b/SLO v3 재확인,
+   두 Node Ready·Rollout 단일 revision(base, timeout=1/1)·재시작 0,
+   context·Chaos CR·실험 pod·detector 잔여 0, recovery-policy·
+   Prometheus 연결+신선도, 대체 run_id 충돌 0건(신규 고유값이므로
+   자명), `--plan`/`--dry-run`으로 대체가 정확히 `native-01` 자리에
+   오고 `fixed_threshold-01`/`proposed-01`이 그 뒤로 이어지는지 확인
+   (§113의 trial 13 replacement 검증과 동일 방식).
+4. **실행**: base→tolerant 전환을 §119/§100과 동일하게 직접 재확인
+   (promote·구revision scale-down·timeout=11/11·단일 revision) ->
+   `network_degrade-native-01-retry1-mainexp-v1` -> `fixed_threshold-
+   01` -> `proposed-01` 순서로 3건 -> 정상 종료 또는 중단 시
+   tolerant→base 자동 복원을 §119와 동일하게 직접 재확인.
+5. **예상 소요시간**: base→tolerant 전환 실측 약 4분(§119: preview
+   Ready 대기 ~3분+promote·scale-down ~1분) + 계약서 §5.2 network_
+   degrade 1건당 최대 11분(360초 주입+5분 여유) × 3건 = 최대 33분 +
+   tolerant→base 복원 약 4분 = **총 최대 약 41분**, 실제로는 §119에서
+   `native-01`이 즉시 실패했으므로 이번엔 injection까지 정상 진행되는
+   첫 사례라 다소 보수적으로 **45~55분**을 예상 소요시간으로 제안한다
+   (90분 한도 내 여유 충분).
+
+**이번 턴은 여기서 정지** - 위 절차는 제안일 뿐 실행하지 않았다. 다음
+live 턴에서 별도 지시에 따라 진행한다.
