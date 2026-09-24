@@ -14668,3 +14668,140 @@ experiment-run`=null. `EXIT_CODE_MARKER=0`(실제 로그 마커로 재확인).
 
 **반복 5, memory auxiliary는 시작하지 않았다.** 다음 반복은 별도
 지시에 따라 진행한다.
+
+## §127 - `network_degrade mainexp-v1` 5차(마지막) 반복 실행 성공(3/3) - 15/15 완성 + 전체 기술통계
+
+### 127.1 사전점검 - 전부 통과 (2026-09-24)
+
+`HEAD==origin/master==7da64d0`(§126 커밋), 추적 파일 변경 0건. 기존
+공식 결과 63건(v1 33+v2 30) 전부 hash 일치, `replacements`의 `native-01`
+링크(→`retry1`, evidence 보존) 그대로. 두 Node Ready, Rollout 단일
+revision(`75b6b57969`, base, 1/1/1), 재시작 0, Chaos CR 0, 실험 pod 0,
+detector 프로세스 0, context null, quiescent true. 포트포워드 재기동 후
+recovery-policy·Prometheus 정상, 4개 feature 쿼리 전부 2초 미만 age.
+`--plan --from-run-id network_degrade-fixed_threshold-05-mainexp-v1
+--to-run-id network_degrade-proposed-05-mainexp-v1`: 정확히 `fixed_
+threshold-05`(43)/`native-05`(44)/`proposed-05`(45) 3건만 미리보기됨을
+확인 - 매트릭스의 마지막 블록. `--dry-run`(읽기전용, 실클러스터 접근):
+3건 전부 8개 preflight 항목 `ok=true`.
+
+### 127.2 base→tolerant 전환 - 직접 재확인 완료
+
+시작 시각 기록(17:01:08Z) 후 백그라운드 실행. 새 preview pod 생성 →
+Ready(promote까지 포함, `phase=Healthy`) → 실측 `readinessProbe.
+timeoutSeconds=11`/`livenessProbe.timeoutSeconds=11` 확인 → 구
+revision(`75b6b57969`) 0/0/0 scale-down 확인 - trial 1의 injection
+시작 전 완전히 끝남.
+
+### 127.3 실행 결과 - 3/3 전부 정상 완료
+
+| run_id | detector_process | detector(실제 판단) | detection_source | outcome | postflight | hash 일치 |
+|---|---|---|---|---|---|---|
+| network_degrade-fixed_threshold-05-mainexp-v1 | fixed_threshold | alertmanager | reactive | recovered | 8/8 ok | O |
+| network_degrade-native-05-mainexp-v1 | (없음) | (없음) | - | recovered | 8/8 ok | O |
+| network_degrade-proposed-05-mainexp-v1 | isolation_forest | alertmanager | reactive | recovered | 8/8 ok | O |
+
+세 trial 모두 `readiness_probe_profile="network_tolerant"`,
+`readiness_probe_timeout_sec=11.0` 실측 기록. `target_replaced=False`
+3건 전부. detector 로그 2건(`fixed_threshold-05`/`proposed-05`) 전부
+`Traceback`/`Error`/`Exception`/`DataGapFailClosed`/`prolonged_data_
+gap_invalidated`/`evaluation_skipped` 매치 0건. `injection_valid=True`,
+postflight 8/8 `ok=true`, `cleanup_status=="ok"` 3건 전부.
+
+### 127.4 종료 후 복원 - 직접 재확인 완료 (잔여 Terminating pod까지 소멸 확인)
+
+`proposed-05`의 promotion으로 활성이 tolerant 새 revision으로 바뀐 뒤,
+`restore_profile("default")`가 base를 재적용하는 과정에서 구
+tolerant pod가 `Terminating` 상태로 잠시 남아 있는 것을 확인 - 이걸
+그대로 "복원 완료"로 보고하지 않고, 그 pod이 실제로 완전히 사라지는
+것까지 재확인 대기 후 최종 상태를 기록했다.
+
+- `kubectl get rollout`: `phase=Healthy`, 단일 revision(`b544bfdd5`,
+  `activeSel==previewSel`), 잔여 preview 없음.
+- 활성 pod 실측 `readinessProbe.timeoutSeconds=1`/`livenessProbe.
+  timeoutSeconds=1`(base 정상 복원), `restartCount=0`.
+- `kubectl diff -f gitops/apps/vllm-serving/rollout.yaml` = 0(exit 0).
+- Chaos CR 0건, `/admin/experiment-run`=null.
+- `EXIT_CODE_MARKER=0`(실제 로그 마커로 재확인).
+
+**복원 완전 성공 - 확인 불가능하거나 실패한 항목 없음.**
+
+### 127.5 `network_degrade mainexp-v1` 15/15 완성 - `collect_metrics.build_comparison()` 전체 기술통계
+
+`load_all_results()`+`build_comparison()`(authoritative, 재계산 없이
+그대로 사용)로 `results/`의 전체 trial-*.json을 읽어 `scenario==
+"network_degrade"` 및 run_id가 `-mainexp-v1`로 끝나는 행만 필터링한
+결과: **정확히 15건**(각 arm 정확히 5건, `native`는 `native-01-retry1`
+이 원본 `native-01`을 대체), **전부 `included_in_main_analysis=True`,
+`timing_anomaly=False`, 검증 issue 0건**.
+
+**핵심 timing 지표(n=5/arm)**:
+
+| 지표(초) | native (n=5) | fixed_threshold (n=5) | proposed (n=5) |
+|---|---|---|---|
+| recovery_sec | [380.5,391.4,394.5,384.5,392.5] median 391.4, range 380.5–394.5 | [389.6,381.5,391.6,359.7,382.6] median 382.6, range 359.7–391.6 | [375.6,374.6,291.4,200.6,393.6] median 374.6, range 200.6–393.6 |
+| total_recovery_sec | [412.4,424.1,427.0,417.4,424.2] median 424.1, range 412.4–427.0 | [422.1,415.4,424.6,392.5,415.5] median 415.5, range 392.5–424.6 | [409.6,407.6,325.2,234.2,426.5] median 407.6, range 234.2–426.5 |
+| action_delay_sec | 해당 없음(detector 없음) | [6.2,5.4,5.0,2.6,7.2] median 5.4, range 2.6–7.2 | [4.3,3.0,5.5,9.4,5.7] median 5.5, range 3.0–9.4 |
+| detection_lead_sec | 해당 없음 | [-322.4,-304.0,-319.3,-284.2,-310.3] median -310.3, **5/5 위반 후 탐지** | [-298.7,-311.7,-221.0,-100.0,-314.8] median -298.7, **5/5 위반 후 탐지** |
+
+**탐지 경로 분모 명시(`collect_metrics._check_detector_consistency()`,
+"reactive_fallback"은 오류가 아니라 계약서 §5.7이 정의한, **두
+non-native arm이 공통으로 가진** 정상 분류임을 코드 docstring으로
+직접 재확인)**:
+
+- `fixed_threshold`: `detection_source=reactive` **5/5**,
+  `detector_check=reactive_fallback` **5/5** - fixed_threshold는
+  애초에 reactive(alertmanager)만 쓰는 arm이므로 이 결과는 설계대로
+  일관된 것이지 이례적 발견이 아니다.
+- `proposed`: `detection_source` 분포 = `predictive` **1/5**
+  (`proposed-04`), `reactive` **4/5**; `detector_check` = `ok` **1/5**,
+  `reactive_fallback` **4/5**. `detector_process`는 5/5 전부
+  `isolation_forest`였지만, **실제로 그 판단을 내린 게 isolation_
+  forest 자신이었던 것은 1/5뿐**이었다.
+- **`detection_lead_sec`의 부호(위반 전/후)는 `detector_check`(어느
+  메커니즘이 판단했는가)와 별개 축이다** - `proposed-04`(§126, 유일한
+  `detector_check=ok`)조차 `detection_lead_sec=-99.96`으로 위반 **후**
+  탐지였다. 즉 이번 15건 전체에서 **non-native 10건 모두(fixed_
+  threshold 5/5 + proposed 5/5) 탐지가 SLO 위반 이후 이뤄졌다** -
+  isolation_forest가 판단 메커니즘으로 직접 작동한 경우(1/5)에도
+  "위반보다 먼저"라는 의미의 선제 탐지는 관측되지 않았다. `predictive`
+  라는 값은 탐지 메커니즘의 종류(등록된 예측 모델이 판단했다는 것)를
+  가리킬 뿐, 실제 탐지 시점이 SLO 위반보다 앞섰는지는 `detection_
+  lead_sec`을 따로 봐야 한다는 것을 이 데이터셋 자체가 보여준다.
+
+**`target_replaced` 교차검증(전체 15건 중 `True`인 2건 - `proposed-03`,
+`proposed-04`) 결과 둘 다 `target_change_kind=planned_promotion`**
+(§125.4, §126.4에서 이미 개별 확인) - 값만으로 장애·재시작으로
+해석하지 않고 promotion 시각·감사·pod 증거와 대조하라는 지시를 15건
+전체에 대해 재확인했으며, 나머지 13건은 `target_replaced=False`.
+
+**해석상 명시적 제한(지시 그대로)**: 이 표는 **n=5(arm당)이며, 통계적
+유의성이나 어느 arm이 "우월하다"는 주장을 하지 않는다.** `proposed`의
+`recovery_sec`/`total_recovery_sec` range가 native/fixed_threshold보다
+넓고(200.6~393.6초 vs 380.5~394.5초/359.7~391.6초) 중앙값이 더 낮게
+보이는 경향이 있지만, 이는 n=5의 기술통계일 뿐 인과 주장이 아니다.
+또한 `proposed`가 5번 중 4번 reactive fallback으로 판단됐다는 사실이
+"isolation_forest가 이 시나리오에서 구조적으로 못 잡는다"는 결론을
+보장하지도 않는다(§123.6/§124.4/§125.3/§126.3에서 이미 반복해서 명시한
+유보와 동일) - 이 표는 `network_degrade mainexp-v1` 자체로만 해석하고
+`load_ramp`/`pod_kill`과 절대 합산하지 않는다.
+
+### 127.6 이번 턴 결과 요약
+
+- 유효 완료 trial: **3/3**(`fixed_threshold-05`/`native-05`/`proposed-
+  05` 전부 `recovered`/`completed`) - **`network_degrade mainexp-v1`
+  15/15 전체 완성**.
+- 연결 안정성: 전 과정(약 50분)에서 kubectl/API 연결 끊김 없음.
+- 총 소요 시간: 약 50분(17:01:08Z ~ 17:50:47Z) - 90분 한도 이내.
+- 최종 클러스터 상태: `Healthy`, 단일 revision(base, timeout=1/1),
+  재시작 0, Chaos CR 0, 실험 pod 0, context null, Git/live diff 0,
+  구 tolerant pod의 `Terminating` 잔여도 완전 소멸까지 재확인.
+- 원본 `network_degrade-native-01-mainexp-v1`(`failed`) 및 기존 63건
+  공식 결과·hash 변경 0건.
+- **`network_degrade` 상태: 15건 완료 + 1건 `failed`(원본, 대체 연결·
+  보존)** - §109에서 등록한 재측정 계획의 두 핵심 시나리오(`load_ramp`
+  15/15 - §113, `pod_kill` 15/15 - §117, `network_degrade` 15/15 -
+  이번 §127)가 전부 완성되었다.
+
+**memory auxiliary로 자동 진행하지 않았다** - §109 재측정 계획에
+포함된 적이 없으므로 별도 지시 없이는 시작하지 않는다.
