@@ -12888,3 +12888,191 @@ paused/context/실험 pod 2개) 전부 그대로 두고 읽기 전용 확인만 
 trial 실행(0건, 애초에 시작 안 됨), `pod_kill`/`network_degrade`
 시작(0건), 모델·threshold·SLO 수치 변경(0건) - 전부 준수. 포트포워드는
 조사 종료 후 로컬에서 정리했다.
+
+## §113 - trial 13 잔여 정리(게이트 전부 통과) + replacement 실행 + `load_ramp`
+`mainexp-v2` 15/15 최종 완료 (2026-09-24)
+
+§112가 남긴 3가지 잔여(Rollout Paused, orphaned experiment-run context,
+실험 pod 2개)를 지시된 순서·범위 그대로 정리했다 - 매 단계 전에 상태를
+재확인하고, 하나라도 어긋나면 중단하는 원칙을 지켰다. 정리 후
+replacement trial을 연결·실행·검증했고, 남은 14·15번째 trial까지
+안전 게이트 유지한 채 진행해 **`load_ramp` `mainexp-v2` 15/15가 전부
+완료**됐다. `mainexp-v1`은 이번에도 전혀 건드리지 않았다.
+
+### 113.1 사전 확인 - 연결 안정성 + 상태 일치
+
+- **K8s API 연결 안정성**: `kubectl get nodes` 5회 연속 호출 - 전부
+  성공(rc=0), 지연시간 215~240ms로 일관됨, 오류 0건. 불안정하지 않음을
+  확인한 뒤에만 다음 단계로 진행했다.
+- **읽기 전용 상태 기록**(§112와 대조): Rollout `phase=Paused`
+  (`pauseConditions=[BlueGreenPause, startTime=2026-09-23T20:40:09Z]`),
+  `activeSelector=697f44dfc4`/`previewSelector=6df679fd84`, `vllm-active`
+  Service selector가 `697f44dfc4`를 가리키고 endpoint 1개
+  (`10.244.36.36`), 두 pod의 UID(`9a583ac6-...`/`98346a6f-...`)·
+  restartCount(둘 다 0) 기록, Node 2개 `Ready`. **§112 기록과 정확히
+  일치**함을 확인한 뒤에만 정리를 시작했다(다르면 중단하라는 지시대로
+  - 이번엔 일치해서 진행함).
+
+### 113.2 preview abort + 단일 revision 수렴 검증
+
+기존 테스트된 `blue_green_prep.cleanup_unpromoted_preview()`를 재사용 -
+`prep_info={"ready": True, "pre_prepare_active_selector": "697f44dfc4",
+"created_pod_hash": "6df679fd84"}`를 재구성해 호출(원본 trial의
+prep_info는 프로세스 종료로 유실됐으므로, §113.1에서 방금 확인한 실측
+값으로 재구성 - 함수 자체의 내부 안전장치가 `current_pod_hash`/
+`active_selector`를 다시 한번 대조하므로 fail-closed는 그대로 유지됨).
+결과: `True`(rollback 확인됨). 8초 뒤 재확인 - preview pod 완전히
+사라짐, `vllm-serving-6df679fd84` ReplicaSet `desired=0/current=0`,
+active revision(`697f44dfc4`) 1/1/1 단독 - **단일 stable revision
+수렴 확인**.
+
+### 113.3 정확히 지정된 2개 pod만 삭제
+
+삭제 전 UID 재확인(`ramp-inj-586da877`=`d5059ffd-...`, `ramp-probe-
+0f2b2fc9`=`2890a669-...` - §113.1에서 기록한 값과 일치, 다른 pod로
+바뀌지 않았음을 확인) 후 **이름을 정확히 지정해** `kubectl delete pod`
+(`--wait=true`) 2회 실행 - 둘 다 삭제 확인(`NotFound` 응답). 다른
+실험 리소스는 조회·나열 없이 전혀 건드리지 않았다.
+
+### 113.4 정리 후 재확인 - 전부 정상
+
+Rollout(`phase=Degraded`, `RolloutAborted` - §111의 `aborted_preview_
+rolled_back` 분류와 정확히 일치), Service selector/endpoint(정상),
+Node 2개(`Ready`), pod 재시작(0건, 잔여 실험 pod 0건), Chaos CR(0건) -
+전부 재확인 완료.
+
+### 113.5 context clear - run_id 일치 재확인 후에만
+
+`GET /admin/experiment-run` -> `current.run_id` 여전히
+`"load_ramp-fixed_threshold-05-mainexp-v2"`와 정확히 일치함을 재확인한
+뒤에만 `POST /admin/experiment-run/clear?run_id=load_ramp-fixed_
+threshold-05-mainexp-v2` 호출 - `{"status":"cleared"}` 응답, 이어서
+`GET /admin/experiment-run` -> `{"current":null}` 확인.
+
+**여기까지 모든 정리 단계가 실패 없이 통과** - 지시대로 이 시점까지
+아무 단계도 실패/미확인 상태가 없었으므로 계속 진행했다.
+
+### 113.6 정리 후 전체 재검증
+
+recovery-policy(`quiescent`)·Prometheus(현재 active pod
+`vllm-serving-697f44dfc4-rwcxr`의 `up`/`container_cpu_usage_seconds_total`
+표본이 1초 이내로 신선함 확인) 연결 정상. 모델 v3.2b
+artifact(`model.pkl` hash `2102e4f5f0d0...a9243`, threshold
+`-0.0742929709960305`) 재확인 - 변경 없음. `HEAD==origin/master==
+b1d7458`, 추적 파일 변경 0건. `real_safety_checks()`/`real_check_git_
+drift()`를 라이브로 직접 실행 - **8개 항목 전부 `ok:true`**(`rollout_
+healthy_single_revision`은 `classification="aborted_preview_rolled_
+back"`으로 정확히 분류), drift 없음.
+
+### 113.7 replacement 연결 + `--plan`/`--dry-run` 확인
+
+`--link-replacement load_ramp-fixed_threshold-05-mainexp-v2
+load_ramp-fixed_threshold-05-retry1-mainexp-v2`(사유에 §112/§113 조사·
+정리 내역 전부 기록) - 원본 슬롯(`status=failed`)은 전혀 안 건드림.
+`--plan`으로 확인한 결과 **정확히 13번째 자리에 replacement, 14번째
+`native-05`, 15번째 `proposed-05`**가 그대로 이어짐(순서 변경 없음).
+`--dry-run` 실행 결과 1~12번은 기존 판정대로(2번은 §111 adjudication
+경유) 건너뛰고, 13번(replacement)은 라이브 preflight를 실제로 통과,
+14·15번은 `planned` 그대로 - 상태 변경 없이 정상 종료.
+
+### 113.8 replacement 실행 + 14·15번 진행 - 15/15 전부 완료
+
+`--resume --scenario load_ramp`(dry-run 없이) 실행 - **replacement +
+14번 + 15번 전부 `status=completed`, `cleanup_status=ok`로 성공**,
+새로운 연결 장애·정리 실패·detector crash·안전 게이트 실패 0건(있었다면
+지시대로 즉시 멈췄을 것). 원본 13번 슬롯(`load_ramp-fixed_threshold-05-
+mainexp-v2`)은 `status=failed`/`cleanup_status=failed` 그대로 보존.
+
+**hash 전수 재검증**: 15개 유효 결과(원본 13번 제외, replacement 포함)
+전부 state의 `result_hash`와 실제 파일 SHA256이 일치(**불일치 0건**).
+`replacements` 링크의 `replacement_status="completed"`,
+`replacement_result_hash`도 정상 동기화 확인.
+
+### 113.9 `load_ramp mainexp-v2` 15/15 결과표 (n=5, `mainexp-v1`과
+별도 - 합산하지 않음)
+
+| # | run_id | arm | outcome | detected | action | promotion_verified | audit_status |
+|---|---|---|---|---|---|---|---|
+| 1 | native-01 | native | prevented | - | none | - | (해당없음) |
+| 2 | fixed_threshold-01 | fixed_threshold | prevented | False | none | - | not_applicable |
+| 3 | proposed-01 | proposed | prevented | **True** | promote_preview | True | complete |
+| 4 | fixed_threshold-02 | fixed_threshold | recovered | True | promote_preview | True | complete |
+| 5 | proposed-02 | proposed | recovered | True | promote_preview | True | complete |
+| 6 | native-02 | native | recovered | - | none | - | (해당없음) |
+| 7 | proposed-03 | proposed | recovered | True | promote_preview | True | complete |
+| 8 | native-03 | native | recovered | - | none | - | (해당없음) |
+| 9 | fixed_threshold-03 | fixed_threshold | recovered | False | none | - | not_applicable |
+| 10 | native-04 | native | recovered | - | none | - | (해당없음) |
+| 11 | proposed-04 | proposed | recovered | True | promote_preview | True | complete |
+| 12 | fixed_threshold-04 | fixed_threshold | recovered | False | none | - | not_applicable |
+| 13 | fixed_threshold-05-**retry1** | fixed_threshold | recovered | True | promote_preview | True | complete |
+| 14 | native-05 | native | recovered | - | none | - | (해당없음) |
+| 15 | proposed-05 | proposed | recovered | True | promote_preview | True | complete |
+
+**arm별 outcome/탐지 요약**: native 5/5 - prevented×1(§113.10 참고),
+recovered×4, 탐지 0/5(정상 - detector 없음). fixed_threshold 5/5 -
+prevented×1, recovered×4, 탐지 2/5(`ft-02`/`retry1`), promote 2/5
+전부 `promotion_verified=True`. proposed 5/5 - prevented×1,
+recovered×4, **탐지 5/5, promote 5/5, 전부 `promotion_verified=True`**
+(`unnecessary detection`/스푸리어스 promote 0건 - `timing_anomaly` 0건
+으로 인과순서 위반도 없음).
+
+**핵심 timing 지표(n, `collect_metrics.build_comparison()`의 authoritative
+`recovery_sec`/`total_recovery_sec`/`action_delay_sec`/`detection_lead_
+sec` 필드 그대로 사용 - 별도 재계산 안 함, §113.11 참고)**:
+
+| 지표(초) | native (n) | fixed_threshold (n) | proposed (n) |
+|---|---|---|---|
+| t_injection→t_slo | [246.6,183.6,328.0,296.2](4) median 271.4, range 183.6–328.0 | [32.6,246.4,306.8,241.7](4) median 244.1, range 32.6–306.8 | [31.8,376.3,140.0,267.1](4) median 203.6, range 31.8–376.3 |
+| MTTD(injection→detection) | 해당 없음 | [442.6,362.7](2) median 402.6, range 362.7–442.6 | [447.0,51.0,315.1,334.4,231.3](5) median 315.1, range 51.0–447.0 |
+| detection_lead_sec | 해당 없음 | [-410.0,-121.0](2) median -265.5 - 2/2 위반 후 탐지 | [-19.2,61.3,-194.5,35.8](4) median 8.3 - 2/4 위반 전, 2/4 위반 후(혼재) |
+| action_delay_sec(t_api_request→t_switch) | 해당 없음 | [6.7,8.0](2) | [5.5,2.3,1.9,6.4,7.8](5) |
+| recovery_sec | [248.8,321.7,168.6,194.6](4) median 221.7, range 168.6–321.7 | [41.0,259.6,193.6,258.8](4) median 226.2, range 41.0–259.6 | [114.0,135.2,1.1,235.9](4) median 124.6, range 1.1–235.9 |
+| total_recovery_sec | [495.4,505.3,496.6,490.8](4) median 496.0, range 490.8–505.3 | [73.6,505.9,500.4,500.5](4) median 500.4, range 73.6–505.9 | [145.8,511.5,141.1,503.0](4) median 324.4, range 141.1–511.5 |
+
+`timing_anomaly=False` 15/15, `included_in_main_analysis=15/15`.
+**n=5(arm당)이며, `mainexp-v1`(§101)과 마찬가지로 통계적 유의성이나
+성능 우월성을 주장하지 않는다 - 이 표는 `mainexp-v2` 자체로만 해석하고
+`mainexp-v1`과 절대 합산하지 않는다(요청 원문).**
+
+### 113.10 `native-01`(prevented) 검증 이슈 - 조사 결과 정상으로 확인
+
+`collect_metrics.build_comparison()`이 `native-01`에 대해 이슈 1건을
+자동으로 남겼다 - "arm=native인데 outcome=prevented"(2026-09-17 pod_kill
+오판정 사건 이후 추가된 기존 검증 규칙, 이번 턴에 새로 만든 규칙
+아님). **조사 결과**: `native-01`의 `slo_evaluable_at_exit=True`(probe가
+실제로 SLO 판정 가능한 데이터를 끝까지 확보했다는 `run_once.py`의 확인
+필드) - `collect_metrics.py` 자신의 문서화된 기준("본 실험의 prevented는
+`slo_evaluable_at_exit=True`가 아니면 검증 오류로 취급")을 그대로
+적용하면 **이건 검증 오류가 아니라 진짜 결과**다 - 이번 반복에서는
+load_ramp의 합성 부하가 SLO(0.648초) 위반을 실제로 한 번도 못 넘겼을
+뿐이다(`mainexp-v1`의 `native-01`은 같은 위치에서 위반이 발생해
+`recovered`가 나왔음 - §101.5의 native 계열 자체가 이미 33.3~251.4초의
+큰 편차를 보였으므로 이 정도 반복 간 변동은 이례적이지 않음).
+`included_in_main_analysis`에서 제외하지 않았다 - 이슈는 "확인이
+필요하다"는 자동 플래그였을 뿐, 확인 결과 데이터는 유효하다.
+
+### 113.11 원본 대조 (표본 검증)
+
+`load_ramp-proposed-02-mainexp-v2`의 `audit_record_id`/`idempotency_key`
+가 대응하는 `audit-log/load_ramp-proposed-02-mainexp-v2.jsonl` 원본
+커밋 내용과 정확히 일치함을 확인(recovery-policy-bot이 이번 재개
+과정에서 만든 실제 audit 커밋 - §112/§113 문서 작성 중 `git pull`로
+이미 병합됨).
+
+### 113.12 최종 클러스터 상태
+
+`phase=Healthy`, `activeSelector==previewSelector`(대기 상태, preview
+없음), 단일 revision(`9c9dff59`) 1/1/1, pod 정확히 2개(active
+vllm-serving + recovery-policy), 잔여 없음, `experiment-run
+context=null`. 포트포워드 2개는 정리 후 로컬에서 종료했다.
+
+### 113.13 범위 제한 준수 확인
+
+`mainexp-v1` 원본 변경(0건), `mainexp-v2` 1~12번 결과·hash 변경(0건),
+13번째 원본(`load_ramp-fixed_threshold-05-mainexp-v2`) 결과·`failed`
+상태 변경(0건 - `--link-replacement`만 사용, 슬롯 자체는 불변), 임의
+재시도(0건 - 전부 명시된 게이트 통과 후에만 다음 단계 진행), 지정 외
+실험 리소스 삭제(0건 - 정확히 2개 pod만), 포괄적 정리(0건), 모델·
+threshold·SLO·`TrialResult` 스키마 변경(0건), `pod_kill`/
+`network_degrade` 시작(0건) - 전부 준수.
