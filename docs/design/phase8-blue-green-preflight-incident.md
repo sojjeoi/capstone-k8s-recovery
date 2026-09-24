@@ -13594,3 +13594,175 @@ scenarios.py`의 기존 "network_degrade 블록 시작 전/종료 후 정확히
 하나만 보면 시작에 1회, 끝에 1회), 이번 절은 그 테스트가 검증하지
 않는 "여러 프로세스에 걸친 재개" 시나리오에 대한 사전 판단을 문서로
 추가한 것뿐이다. 코드 수정 필요 없음.
+
+## §119 - `network_degrade` 공식 블록 1차 시도 - `native-01`에서 즉시 중단: `real_run_trial()`의 `--probe-profile` 배선 누락 발견 (실제 하니스 결함, 클러스터 문제 아님)
+
+### 119.1 사전점검 - 전부 통과 (2026-09-24)
+
+`HEAD==origin/master==b4e7e6a`(§118 커밋), 추적 파일 변경 0건. 모델
+v3.2b 해시 일치, SLO v3(`LATENCY_THRESHOLD=0.648`) 확인.
+`network_degrade_adapter.py`(최종 커밋 `fc1c61e`)·
+`run_network_degrade_trial.py`(최종 커밋 `f516806`, §98 이후 무변경)
+git 이력으로 동결 확인. 두 Node Ready·pressure 없음. Rollout 단일
+revision(`7d4649c94f`, 1/1/1)·live probe timeout=1/1(base) 확인. Chaos
+CR 0건, 실험 pod 0건, detector 프로세스 0건, `/admin/experiment-run`=
+null, `/admin/quiescent`=true. 포트포워드 재기동 후 recovery-policy·
+Prometheus 정상, 4개 feature 쿼리 전부 현재 활성 pod 기준 2초 미만
+age. `official-experiment-state.json`(v1) 완료 21건 + `official-
+experiment-state-v2.json` 완료 30건 = 51건 전부 실제 `sha256sum`이
+state `result_hash`와 일치(불일치 0건). `--plan`/`--dry-run`(읽기전용,
+실클러스터 접근)으로 이번 턴 3건(`network_degrade-native-01/fixed_
+threshold-01/proposed-01-mainexp-v1`)만 정확히 미리보기되고 8개
+preflight 항목 전부 `ok=true` 확인, dry-run 자체는 클러스터를
+변경하지 않음(재확인: dry-run 후에도 live probe timeout=1 그대로).
+
+### 119.2 실행 - base→tolerant 전환은 완전 검증, `native-01`은 즉시 fail-closed 중단
+
+시작 시각 기록(10:19:51Z) 후 `--resume --scenario network_degrade
+--plan-id mainexp-v1 --to-run-id network_degrade-proposed-01-mainexp-v1
+--state-file results/official-experiment-state.json`(dry-run 아님)을
+백그라운드 실행.
+
+**base→tolerant 전환 - §100과 동일한 방식으로 독립적으로 직접
+재확인(지시된 순서대로, trial 진행 전)**: kustomize 렌더+apply 확인 →
+새 preview pod(`vllm-serving-8d8948db9-*`) 생성·Ready 대기(최대
+480초, 실측 약 3분) → `kubectl get rollout`으로 `activeSel==previewSel
+=="8d8948db9"`(promote 완료, phase=Healthy) 직접 확인 → 새 active pod의
+실측 `readinessProbe.timeoutSeconds=11`/`livenessProbe.timeoutSeconds
+=11` 직접 확인 → 구 revision(`7d4649c94f`) RS가 1/1/1 -> 0/0/0으로
+scale-down되고 pod가 `Terminating`되는 것까지 직접 확인 - **이 전체
+과정은 trial 1의 injection이 시작되기 전에 완전히 끝났고, 이번 턴에서
+`kubectl`로 독립적으로 재확인했다.**
+
+**`native-01`은 이 확인 직후 곧바로 실패했다** - `run_network_degrade_
+trial.py`가 실행 직후(주입 전, `t_injection` 등 어떤 timestamp도
+기록되기 전) `_verify_probe_profile()`에서 `ProbeProfileMismatch`를
+던지며 즉시 종료(exit code 1, 실행 시간 1.6초):
+
+```
+ProbeProfileMismatch: readinessProbe.timeoutSeconds 실측값(11)이 요청한
+profile의 기대값(1.0)과 다름 - overlay 적용/승격이 안 됐거나 잘못된
+profile을 지정했을 수 있음.
+```
+
+`run_sequence()`는 이 예외를 정확히 설계대로 처리했다 - `run_trial()`
+예외를 `{"status":"failed", ...}`로 흡수 -> postflight 실행(8개 항목
+전부 `ok=true`, `cleanup_status="ok"`) -> `outcome["status"]`가
+`ABORT_STATUSES`에 있으므로 `SequenceAborted` -> `finally`에서
+`current_scenario=="network_degrade"`이므로 `restore_profile("default")`
+자동 호출 - **자동 재시도·자동 다음 trial 진행 0건**(`fixed_threshold-
+01`/`proposed-01`은 여전히 `status=planned`, 손대지 않음).
+
+### 119.3 근본 원인 - `real_run_trial()`이 `network_degrade`에 필요한 CLI 인자를 전혀 안 넘긴다(실제 코드 결함)
+
+`experiments/run_all_scenarios.py`의 `real_run_trial()`을 직접 확인:
+
+```python
+cmd = [python_exe, str(runner), "--arm", trial["arm"], "--rep", str(trial["repetition"]),
+       "--run-id", trial["run_id"], "--sequence-index", str(trial["sequence_index"])]
+if trial["scenario"] == AUX_SCENARIO:
+    cmd.append("--main-experiment")
+```
+
+시나리오와 무관하게 이 4개 인자만 넘긴다 - `--probe-profile`도
+`--readiness-probe-timeout-sec`도 **어떤 시나리오에서도 전혀 넘기지
+않는다.** 한편 `run_network_degrade_trial.py`의 `--probe-profile`
+기본값은 `"default"`(기대 timeout=1.0, `DEFAULT_PROFILE_TIMEOUT_SEC`)
+이다 - `network_tolerant`를 쓰려면 반드시 `--readiness-probe-timeout-
+sec`도 명시해야 하는 필수 조합인데, `real_run_trial()`은 이 필수
+인자를 애초에 모른다.
+
+**결과**: 오케스트레이터 레벨(`apply_profile("network_tolerant")`)은
+클러스터를 실제로 tolerant로 정확히 전환했지만, 그 직후 실행되는
+trial 러너 프로세스 자신은 인자를 하나도 못 받아 **기본값(`default`,
+기대=1.0초)으로 자기 자신을 검증** - 실측(11)과 기대(1.0)가 달라
+`_verify_probe_profile()`이 정확히 설계대로 fail-closed했다. **라벨과
+실제 설정이 어긋난 채 trial이 기록되는 것을 막는다는 이 검증 함수의
+목적이 정확히 작동한 것**이지, 검증 로직 자체의 결함이 아니다 - 결함은
+오케스트레이터가 이 두 시스템(자기 자신의 profile 전환과 trial
+러너의 profile 기대값)을 연결하는 배선을 빠뜨린 것이다.
+
+**11.0초가 잘못된 값이 아님을 교차 확인**: `results/pilot/calibration-
+network-tolerant-calib-net-tolerant-20260919t142045z.json`(§44
+사전등록, `candidate_sec: 11.0`)과 `gitops/apps/vllm-serving/overlays/
+network-tolerant/`가 렌더한 실제 timeoutSeconds가 모두 11이고, 이번에
+실측한 새 active pod의 값도 11 - calibration 자체는 문제없다. 순수히
+그 값을 trial 러너에게 **전달하는 배선**이 빠진 것이다.
+
+### 119.4 이 결함이 지금까지 발견되지 않은 이유
+
+§98.2의 오프라인 테스트는 fake hooks로 "apply_profile/restore_profile이
+올바른 순서로 호출되는지"만 검증했다 - 실제 `real_run_trial()`의 CLI
+인자 구성이나 `run_network_degrade_trial.py`의 실제 실행은 전혀
+거치지 않았다. §99/§100은 `switch_probe_profile_live()`를
+**독립적으로 직접 호출**해 profile 전환 자체만 검증했다(§99.5/§100.2-
+100.4) - trial 실행과 한 번도 결합된 적이 없다. 즉 **이번이 `apply_
+profile()`(오케스트레이터)과 `real_run_trial()`(trial 러너)가 실제
+trial 하나를 사이에 두고 처음으로 결합 실행된 순간**이었고, 그 결합
+지점의 배선 누락이 바로 여기서 드러났다 - §118.4에서 "이 조합은
+아직 실측된 적 없는 지점"이라고 이미 명시적으로 짚었던 바로 그
+지점이다.
+
+### 119.5 복원 확인 - 안전한 경우에만 수행, 직접 재확인 완료(숨기지 않음)
+
+자동 `restore_profile("default")`가 성공적으로 완료된 것을 **직접
+재확인**했다(자동 실행 결과를 그대로 믿지 않음):
+
+- `kubectl get rollout`: `phase=Healthy`, `activeSel==previewSel==
+  "7d4649c94f"`(블록 시작 전과 **완전히 동일한 해시** - §100.4의
+  결정론적 재현 패턴과 일치, 임의의 다른 리비전 재활성화 없음).
+- 구 tolerant RS(`8d8948db9`)가 0/0/0으로 scale-down 완료.
+- 활성 pod(`vllm-serving-7d4649c94f-z8ldd`) 실측
+  `readinessProbe.timeoutSeconds=1`/`livenessProbe.timeoutSeconds=1`
+  (base 정상 복원), `restartCount=0`.
+- `kubectl diff -f gitops/apps/vllm-serving/rollout.yaml` = 0(exit
+  code 0, diff 없음).
+- Chaos CR 0건, 실험 pod 0건, `/admin/experiment-run`=null,
+  `/admin/quiescent`=true.
+- `network_degrade-native-01-mainexp-v1`의 `postflight_checks` 8개
+  항목도 전부 `ok=true`(오케스트레이터 자신의 사후 검사도 동일 결론).
+
+**복원은 완전히 성공했고 전부 직접 확인됨 - 확인 불가능하거나 실패한
+항목 없음.**
+
+### 119.6 이번 턴 결과 요약
+
+- 유효 완료 trial: **0/3**(`native-01`=`failed`, `fixed_threshold-01`/
+  `proposed-01`=`planned`, 미착수).
+- `network_degrade` profile 왕복(base→tolerant→base) 자체는 **완전히
+  성공**하고 독립적으로 재확인됨 - §100의 함수가 이번에도 정확히
+  같은 방식으로 작동했다. 문제는 profile 전환이 아니라 그 뒤 trial
+  러너에게 profile 정보를 전달하는 배선이었다.
+- 연결 안정성: 전 과정에서 kubectl/API 연결 끊김 없음, 클러스터
+  이상 없음 - 이번 중단은 100% 소프트웨어 배선 결함이며 인프라·
+  네트워크 문제가 아니다.
+- 총 소요 시간: 약 11분(10:19:51Z ~ 10:30:54Z), 90분 한도 크게 이내.
+- 기존 51건(v1 21건+v2 30건) 공식 결과·hash 변경 0건, `load_ramp`/
+  `pod_kill`의 mainexp-v1/v2는 이번 실행이 전혀 건드리지 않음(다른
+  scenario/state 파일 조합이므로 애초에 접촉 경로 없음).
+
+### 119.7 제안하는 수정 방향 (이번 턴에 구현하지 않음 - 코드 변경 0건)
+
+1. **(권장)** `run_all_scenarios.py`에 §44에서 사전등록된 calibration
+   값을 이름 있는 상수로 등록(예: `NETWORK_TOLERANT_READINESS_TIMEOUT_
+   SEC = 11.0  # §44 calibration`)하고, `real_run_trial()`이 `trial[
+   "scenario"] == "network_degrade"`일 때만 `cmd += ["--probe-profile",
+   "network_tolerant", "--readiness-probe-timeout-sec", str(NETWORK_
+   TOLERANT_READINESS_TIMEOUT_SEC)]`를 추가하도록 수정. 기존
+   calibration 파일을 임의 값 없이 그대로 재사용하므로 "임의값 금지"
+   원칙(README/코드 주석)에 부합.
+2. 대안: `run_network_degrade_trial.py`가 자기 자신의 기본 profile을
+   활성 pod에서 자동 감지하도록 바꾸는 방식 - 그러나 이는 "라벨과
+   실제 설정이 어긋난 채 기록되는 걸 막는다"는 `_verify_probe_profile()`
+   의 독립적 검증 취지를 약화시킬 수 있어 권장하지 않는다(라벨이
+   실제값을 그냥 따라가면 불일치를 절대 탐지할 수 없어짐).
+3. 어느 쪽이든 오프라인 회귀 테스트(예: `real_run_trial`이 구성하는
+   실제 `cmd` 리스트를 `network_degrade` trial에 대해 직접 assert)를
+   먼저 추가하고 통과시킨 뒤에만 실사용해야 한다(§107 이후 이 프로젝트
+   전체에 적용해온 "오프라인 테스트 선행" 원칙과 동일).
+
+**이번 턴은 위 수정을 구현하지 않고, 사실 확인·복원 검증·문서화까지만
+수행한 뒤 멈춘다.** `network_degrade` 공식 블록의 재시도는 위 수정이
+구현되고 오프라인 테스트를 통과한 뒤, 별도 지시로 진행한다.
+`fixed_threshold-01`/`proposed-01`을 포함한 나머지 14건과 memory
+auxiliary는 이번 턴에 시작하지 않았다.
