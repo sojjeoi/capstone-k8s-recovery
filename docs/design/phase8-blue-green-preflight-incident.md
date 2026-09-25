@@ -16400,3 +16400,38 @@ trial당 첫 신호만 조치로 이어질 수 있어 전부 `skipped_duplicate`
 **범위 확인**: 원본 core 45건·rep01·rep02 파일 전부 보존, 세 번째
 trial·자동 대체·재시도 0건, 5회/arm 자동 확대 0건 - 다음 3쌍(rep03~05)
 순서만 사전 기록하고 승인 대기.
+
+## §142 - 중복 차단 해석 보완 + rep03 실행 결과(로컬 자원 문제로 차단됨)
+
+전체 문서는 `docs/design/phase8-followup-rep03-blocked-142.md`.
+§141은 수정하지 않고 그대로 보존.
+
+**중복 차단 해석 보완**: `recovery-policy/main.py`의 `process_signal()`
+이 idempotency 검사를 preview 준비 확인(`is_paused_pre_promotion()`)·
+정책 판단(`policy.decide()`)보다 먼저 실행한다는 걸 코드로 재확인 -
+`skipped_duplicate`로 차단된 신호는 그 뒤 게이트를 아예 실행한 적이
+없으므로 "차단 안 됐으면 어떻게 됐을지"는 이 시스템 기록에 원리적으로
+존재할 수 없는 정보다. 새 실험·로깅 없이, 이미 저장된 비용 계측의
+`kubectl top pod` 이력만 재사용해 간접 근거를 하나 확인 - 지금까지의
+4개 trial(양쪽 arm) 전부에서 promotion 이후 새 preview pod가 한 번도
+관측되지 않았다(2개 pod만 등장, 두 arm 동일 패턴) - 중복 차단을
+통과했어도 `observe_only`에 그쳤을 가능성과 부합하지만 확정 아님.
+이건 두 arm이 공유하는 recovery-policy 동작이라 IF만의 결함으로
+분류하지 않음.
+
+**rep03 실행 - 첫 trial에서 차단**: fixed_threshold rep03이 524초
+지점에서 `state=invalid`(`WinError 1455`, 로컬 Windows 가상메모리
+페이징 파일 고갈)로 종료됨. 원자료로 확인 - SLO 판정(t_slo/t_recovery)
+정상, probe 끝까지 생존(`probe_valid=True`), detector 로그 끝까지
+정상 평가 지속, load_ramp 5-stage 스케줄 정상 완료 - probe·detector·
+판정기·클러스터 어느 쪽도 원인 아님. 로컬 머신 자원 문제로 결론.
+**지시대로 proposed rep03을 시작하지 않았다** - 자동 재시도·대체
+실행 없음. 클러스터는 quiescent·잔여 리소스 없음으로 정상 정리 확인
+(HarnessCorrupted 아님, TrialInvalid로 정상 처리됨).
+
+**결과**: rep03 쌍은 비교 가능한 결과를 생성하지 못함 - rep01/rep02만
+계속 유효(§141과 동일 수치, 새로 추가된 유효 반복 없음). rep04 진행
+안 함(이번 승인 범위 밖).
+
+**범위 확인**: 무효 trial의 원본(결과·cost·evidence·raw CSV·detector
+로그) 전부 보존, 삭제·덮어쓰기 없음. 모델·정책·분석 계약 수정 0건.
