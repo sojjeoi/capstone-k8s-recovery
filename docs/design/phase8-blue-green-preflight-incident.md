@@ -15451,3 +15451,162 @@ state·hash·모델·threshold·SLO 정의·판정 기준·코드 수정(전부 
 표현(사용 안 함), 성능 우월성 결론·새 통계 검정(0건) - 전부 준수.
 변경 파일은 이 문서 하나뿐임을 커밋 전 `git status`/`git diff`로
 확인한다.
+
+## §131 - §130 판정 승인·확정 + core 시나리오별 3-arm 기술통계·auxiliary 별도 요약표 (읽기전용, 결론·검정 없음)
+
+§130 조사 결과를 검토한 지시에 따라 최종 분석 처리 방침을 아래와 같이
+**확정**하고, `collect_metrics.build_comparison()`을 §129/§130과 동일한
+권위 있는 스코프(`load_ramp`/`pod_kill`=`mainexp-v2`, `network_degrade`
+=`mainexp-v1`, auxiliary=`mainexp-v1`의 `auxiliary_negative_control`)로
+재실행해 시나리오별 3-arm 기술통계와 auxiliary 요약표를 작성했다. 새
+trial(0건), 클러스터 접속(0건), 결과 JSON·state·hash·모델·threshold·
+SLO 정의·판정 기준·코드 수정(전부 0건).
+
+### 131.1 판정 확정 (§130 승인 사항 그대로 기록)
+
+1. **`load_ramp-native-01-mainexp-v2`를 core 분석에 포함한다.** 원본
+   `outcome=prevented`와 `collect_metrics.py`의 기존 검증 이슈는
+   수정·삭제하지 않는다. 이 trial을 인용하는 모든 표·서술에는
+   **"native가 장애를 예방했다"가 아니라 "무개입 상태에서 SLO 위반이
+   관측되지 않았다"**라고 주석한다(§131.2 `load_ramp`/`native` 표
+   각주에 반영).
+2. **auxiliary rep1(`memory_pressure_negative_control_v1-native-01-
+   mainexp-v1`)을 SLO·안전성 집계에 포함한다.** `cleanup_recovery_
+   check.recovered=False`는 그대로 유지(수정 0건)하고, baseline
+   ±150MiB 복귀는 **4/5 충족, 1/5(rep1) 미충족**으로 다른 지표와
+   분리해 별도 보고한다(§131.3). rep1을 복귀 PASS로 재분류하거나
+   전체 trial에서 제외하지 않는다.
+3. **rep1 working-set 상승의 최종 채택값은 965.45MiB**(코드의
+   canonical baseline, `prepare_ok.baseline_working_set_bytes` 기준)
+   이다. §128.2의 958.29MiB는 기준점이 다른(첫 `safety_tick`을
+   baseline으로 쓴) 과거 기록임을 각주로 설명한다(§131.3).
+
+**최종 분모(확정)**: 50/50 실행 완료 · core 분석 45/45 · auxiliary
+SLO·안전 집계 5/5 · auxiliary 복귀 기준 충족 4/5.
+
+### 131.2 core - 시나리오별 3-arm 기술통계 (n=5/arm, `mainexp-v2`+`mainexp-v1` 권위 있는 집합만)
+
+**공통 표기 원칙**: 각 셀은 median + range(min~max), 표본이 없는
+값(예: `prevented`인 반복의 `recovery_sec`)은 "n/a"로 명시하고
+조용히 제외·대체하지 않는다. `outcome=timeout`(right-censored)은
+core 45건 전체에서 **0건** - 별도 censoring 처리 불필요함을 확인했다
+(있었다면 폐기하지 않고 median/range와 별개로 명시했을 것). 사전
+등록되지 않은 유의성 검정(t-검정 등)이나 arm 간 우월성 단정은
+포함하지 않는다 - n=5/arm은 효과크기·경향 관찰용이며 통계적 유의성
+주장의 근거가 아니다.
+
+#### `load_ramp` (5단계 ramp, 0.025~0.40 RPS 고정 프로필)
+
+| 지표 | native | fixed_threshold | proposed |
+|---|---|---|---|
+| outcome 분포 | prevented 1, recovered 4 | prevented 1, recovered 4 | prevented 1, recovered 4 |
+| `recovery_sec` | median 221.68, range[168.58, 321.69], n=4(1건 n/a) | median 226.17, range[40.99, 259.56], n=4(1건 n/a) | median 124.57, range[1.10, 235.87], n=4(1건 n/a) |
+| `total_recovery_sec` | median 495.99, range[490.79, 505.26], n=4 | median 500.43, range[73.60, 505.93], n=4 | median 324.39, range[141.06, 511.48], n=4 |
+| `action_delay_sec` | n/a(개입 없음) | median 7.32, range[6.67, 7.98], n=2 | median 5.50, range[1.86, 7.84], n=5 |
+| `detected` | 0/5 | 2/5 | 5/5 |
+| `detection_source` | 전부 None | predictive 2, None 3 | predictive 5/5 |
+| `target_replaced` | 0/5 | 0/5 | 0/5 |
+
+**`load_ramp`/`native` 각주(§131.1-1 반영)**: `native-01`은
+`outcome=prevented`(§130.1에서 동결 `slo_judge`로 `t_slo=None` 독립
+재현) - **"native가 이 반복에서 장애를 예방했다"는 뜻이 아니라
+"무개입 상태에서 SLO 위반이 관측되지 않았다"**는 뜻이다(계약서
+§3 조건③은 시나리오 수준 14/15에서는 유지되나 이 1개 반복 단위에는
+그대로 적용되지 않음, §130.1 참고). `recovery_sec`/`total_recovery_
+sec` 통계는 이 1건을 자연스럽게 n/a로 제외한 나머지 4건 기준이다.
+
+#### `pod_kill` (즉시성 pod 강제 종료)
+
+| 지표 | native | fixed_threshold | proposed |
+|---|---|---|---|
+| outcome 분포 | recovered 5/5 | recovered 5/5 | recovered 5/5 |
+| `recovery_sec` | median 257.27, range[195.22, 328.23], n=5 | median 158.15, range[135.18, 179.21], n=5 | median 119.26, range[117.20, 157.18], n=5 |
+| `total_recovery_sec` | median 258.87, range[196.33, 329.75], n=5 | median 160.26, range[136.34, 180.71], n=5 | median 120.82, range[118.85, 158.98], n=5 |
+| `action_delay_sec` | n/a(개입 없음) | median 6.63, range[1.66, 21.25], n=5 | median 3.72, range[1.99, 10.58], n=5 |
+| `detected` | 0/5 | 5/5 | 5/5 |
+| `detection_source` | 전부 None | reactive 5/5(`detector_check=reactive_fallback`) | predictive 5/5(`detector_check=ok`) |
+| `target_replaced` | 0/5 | 0/5 | 0/5 |
+
+#### `network_degrade` (tolerant probe profile 왕복, §98-§127에서 별도 확립)
+
+| 지표 | native | fixed_threshold | proposed |
+|---|---|---|---|
+| outcome 분포 | recovered 5/5 | recovered 5/5 | recovered 5/5 |
+| `recovery_sec` | median 391.42, range[380.54, 394.51], n=5 | median 382.56, range[359.66, 391.59], n=5 | median 374.56, range[200.59, 393.57], n=5 |
+| `total_recovery_sec` | median 424.13, range[412.36, 426.99], n=5 | median 415.53, range[392.47, 424.62], n=5 | median 407.56, range[234.23, 426.53], n=5 |
+| `action_delay_sec` | n/a(개입 없음) | median 5.36, range[2.64, 7.16], n=5 | median 5.53, range[3.03, 9.39], n=5 |
+| `detected` | 0/5 | 5/5 | 5/5 |
+| `detection_source` | 전부 None | reactive 5/5(`detector_check=reactive_fallback`) | reactive 4, predictive 1(`detector_check`: reactive_fallback 4, ok 1) |
+| `target_replaced` | 0/5 | 0/5 | 2/5(`proposed-03`/`-04`, 둘 다 `target_change_kind=planned_promotion` - §126/§127에서 이미 확인) |
+
+각 시나리오의 `native` 열은 개입 자체가 없으므로 `detected`/
+`action_delay_sec`/`detection_lead_sec`가 항상 구조적으로 없음(0/5,
+n/a) - 결측이 아니라 설계상 해당 없음이다.
+
+### 131.3 auxiliary(`memory_pressure_negative_control_v1`, native 단일 arm, n=5) - core와 분리한 별도 요약표
+
+| 지표 | 값 |
+|---|---|
+| 실행/완료 | 5/5 |
+| `t_slo`(지속 SLO 위반) | 0/5(전부 None) - **SLO 집계 분모 5/5로 포함**(§131.1-2) |
+| `detected`/`action`/`target_replaced` | 0/5 / 전부 `none` / 0/5 |
+| working-set 상승(MiB) | rep1=**965.45**(§131.1-3, canonical baseline 채택값), rep2=958.06, rep3=957.66, rep4=914.13, rep5=957.66 - median 957.66, range[914.13, 965.45], n=5 - **안전성 집계 분모 5/5로 포함** |
+| Node MemAvailable 최소(GiB) | 5건 range[4.924, 4.957], 전부 4GiB PASS 바·3GiB 즉시중단 임계치 이상 |
+| restart/OOM | 5/5 불변(0)/5/5 `False` |
+| target UID | 5/5 불변(`af7274d9-3212-43ae-bda3-fd4c6a92404d`) |
+| **baseline ±150MiB 복귀**(`cleanup_recovery_check.recovered`) | **4/5 충족(rep2-5), 1/5 미충족(rep1)** - 원본 `False` 유지, 다른 지표와 합산하지 않고 이 축만 별도 표기(§131.1-2) |
+
+**rep1 각주(§131.1-3)**: working-set 상승 965.45MiB는
+`prepare_ok.baseline_working_set_bytes`(코드가 `cleanup()`에서 실제
+recovery 판정에 쓰는 canonical baseline)를 기준으로 계산한 값이다.
+**§128.2에 기록된 958.29MiB는 다른 기준점(주입 직전 마지막
+`safety_tick` 표본, `prepare_ok`보다 146.04초 뒤 - 그사이 자연
+상승분 약 7.16MiB가 이미 반영됨)을 쓴 과거 기록**이며(§130.3에서
+원본 대조로 증명), 같은 §128.2 표의 rep2~5 항목과도 다른 기준이었다
+- 이번 절부터 인용 시 965.45MiB를 쓴다.
+
+### 131.4 predictive 탐지방식 vs 실제 선제(위반 전) 탐지 - 3개 시나리오 `proposed` arm 교차표
+
+`detection_source=predictive`(Isolation Forest가 실제 판단 주체)라는
+사실과 `detection_lead_sec > 0`(탐지가 SLO 위반보다 먼저 일어남)는
+서로 다른 축이다 - 아래 표는 이 둘을 명시적으로 분리한다.
+
+| 시나리오 | `detection_source=predictive` 건수 | `detection_lead_sec` 부호(평가 가능한 건만) | 선제(양수) 탐지 |
+|---|---|---|---|
+| `load_ramp` | 5/5 | n=4(1건 `prevented`라 n/a): **양수 2건**(+61.26s, +35.80s), 음수 2건(-19.19s, -194.45s) | **2/4 - core 전체에서 유일하게 선제 탐지가 실제로 관측된 시나리오** |
+| `pod_kill` | 5/5 | n=5: 전부 음수(range[-52.65, -44.57]) | 0/5 |
+| `network_degrade` | 1/5(나머지 4/5는 `reactive`) | n=5: 전부 음수(range[-314.83, -99.96], predictive였던 `proposed-04`도 -99.96) | 0/5(predictive 1건 포함) |
+
+**해석 원칙(단정 아님)**: `pod_kill`(즉시성 장애)과 `network_degrade`
+(§126/§127에서 이미 확인)는 predictive 메커니즘이 작동해도 항상 위반
+"이후"에 탐지됐다 - 메커니즘 종류(predictive)가 탐지 시점(선제)을
+보장하지 않는다는 지난 절들의 결론과 일치한다. `load_ramp`만
+점진적 ramp 특성상 일부 반복(2/4)에서 실제 선제 탐지가 관측됐다 -
+그러나 n=4(시나리오당)이므로 이 차이가 시나리오 특성 때문인지
+반복 간 우연의 범위인지는 **이번 턴에서 단정하지 않는다**(사전
+등록된 검정 없음, 우월성 결론 없음).
+
+### 131.5 core/precursor·auxiliary 분리 및 불확실성 고지
+
+- 위 모든 core 표는 §129.1에서 확정한 권위 있는 집합(`load_ramp`/
+  `pod_kill`=`mainexp-v2`, `network_degrade`=`mainexp-v1`)만 사용했다
+  - `mainexp-v1`의 `load_ramp`/`pod_kill` 선행 자료(precursor, §109.2)
+  는 **0건 포함**(§129.5에서 실증한 오염 위험 경로를 그대로 다시
+  타지 않도록 `official-experiment-state*.json`의 `result_path`로
+  파일 목록을 직접 구성 - 디렉터리 전체 글롭 사용 안 함).
+- auxiliary(§131.3)는 core와 항상 별도 표로만 제시했고 어떤 지표도
+  합산하지 않았다.
+- **n=5/arm(core), n=5(auxiliary)는 불확실성이 큰 표본 크기다** -
+  median+range만 제시했고 평균·표준편차·신뢰구간·t-검정/유의성 검정은
+  계산하지 않았다(사전 등록된 분석 계획 없음). arm 간 "더 낫다/우월
+  하다"는 결론, 시나리오 간 비교 결론은 이번 턴에 **전혀 포함하지
+  않는다**.
+
+### 131.6 범위 확인
+
+이번 턴 금지 사항 - 클러스터 접속(0건), 새 trial·재측정·결과
+대체(0건), 결과 JSON·state·hash·SLO·모델·검증 기준·코드 수정
+(전부 0건), 사전 미등록 유의성 검정(0건), 성능 우월성 단정(0건),
+`recovered` 원본 값 변경(0건) - 전부 준수. 이번 절의 모든 수치는
+`collect_metrics.build_comparison()`(비수정)의 실제 출력값이며
+임의로 계산·가정한 값은 없다.
