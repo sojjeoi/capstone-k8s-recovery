@@ -3,9 +3,12 @@
 중복/누락 terminal, 창 밖 발신, 재위반(2episode) fixture를 전부 다룬다."""
 from datetime import datetime, timedelta, timezone
 
+import json
+
 import slo_judge as sj
+import correct_followup_138 as cf138
 from correct_137_errors import find_all_episodes
-from correct_followup_138 import build_cohort, cohort_summary, classify_unresolved, _parse_ts
+from correct_followup_138 import analyze_arm_corrected, build_cohort, cohort_summary, classify_unresolved, _parse_ts
 from followup_cost_sampler import reclassify_missed
 
 T0 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -216,6 +219,42 @@ def test_window_computation_retains_pre_injection_history():
     assert p_with["sample_count"] == p_without["sample_count"] + 2, \
         "주입 전 이력을 포함한 쪽이 정확히 2개 더 많은 표본을 window에 가져야 함"
     print("OK - rolling window 계산에 주입 전 이력이 유지됨(제외 시 표본수가 정확히 2개 차이남을 확인)")
+
+
+# ---- §143 이후 지시 §2A/§3: run_id_override가 실제로 retry 파일을 읽는지 ----
+def test_run_id_override_reads_retry_file_not_hardcoded_original():
+    """분석기가 run_id_override를 무시하고 여전히 arm/rep로 재조립한 표준
+    경로(=무효화된 원본 trial)를 읽는 상태를 허용하지 말라는 지시를 직접
+    검증한다 - 원본과 retry 파일의 recovery_sec을 서로 다르게 만들어(원본
+    999초 vs retry 15초) 어느 쪽을 읽었는지 값으로 명확히 구분한다."""
+    import tempfile
+    from pathlib import Path
+
+    original_dir = cf138.FOLLOWUP_DIR
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            cf138.FOLLOWUP_DIR = Path(d)
+            arm, rep = "fixed_threshold", 3
+            standard_run_id = f"load_ramp-{arm}-{rep:02d}-post_hoc_followup-v1"
+            retry_run_id = f"load_ramp-{arm}-{rep:02d}-retry1-post_hoc_followup-v1"
+
+            (cf138.FOLLOWUP_DIR / f"trial-{standard_run_id}.json").write_text(json.dumps({
+                "t_injection": T0.isoformat(), "t_slo": T0.isoformat(),
+                "t_recovery": (T0 + timedelta(seconds=999)).isoformat(),
+            }), encoding="utf-8")
+            (cf138.FOLLOWUP_DIR / f"trial-{retry_run_id}.json").write_text(json.dumps({
+                "t_injection": T0.isoformat(), "t_slo": T0.isoformat(),
+                "t_recovery": (T0 + timedelta(seconds=15)).isoformat(),
+            }), encoding="utf-8")
+
+            result = analyze_arm_corrected(arm, rep=rep, run_id_override=retry_run_id)
+            assert result["run_id"] == retry_run_id
+            assert result["timing"]["recovery_sec_first_episode"] == 15.0, (
+                "retry 파일(15초)이 아니라 표준 재조립 경로(=원본 999초)를 읽었다면 이 값이 999.0이 됨 - "
+                "분석기가 run_id_override를 무시하는 하드코딩 버그")
+        finally:
+            cf138.FOLLOWUP_DIR = original_dir
+    print("OK - run_id_override가 실제로 retry 파일을 읽음(원본으로 재조립되는 하드코딩 없음)")
 
 
 if __name__ == "__main__":

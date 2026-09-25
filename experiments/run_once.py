@@ -48,6 +48,7 @@ HarnessCorrupted로 던진다 - 결과 파일은 그 전에 이미 기록돼 있
 """
 import json
 import time
+import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -514,6 +515,32 @@ def _wait_for_baseline(prober: "Prober", timeout: float, interval: float) -> dic
     }
 
 
+def _write_exception_diagnostic(run_id: str, exc: BaseException, results_dir: Path) -> Optional[str]:
+    """일반(미분류) 예외의 전체 traceback을 results_dir/diagnostics/에 남긴다
+    (§143 이후 지시 §2B) - TrialResult.invalid_reason은 str(e) 한 줄만
+    남기므로, WinError 1455 사례처럼 사후에 정확한 실패 위치를 재구성할
+    수 없는 문제가 있었다. env var·요청 원문·지역변수는 기록하지 않는다
+    (traceback.format_exc() 기본 출력은 그런 값을 포함하지 않음). 이
+    로그 자체의 실패가 원래 예외 처리나 cleanup을 막으면 안 되므로 모든
+    예외를 여기서 흡수하고 실패 시 None을 반환한다(호출부는 None이면
+    그냥 넘어간다)."""
+    try:
+        diag_dir = results_dir / "diagnostics"
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        diag_path = diag_dir / f"exception-{run_id}-{ts}.log"
+        diag_path.write_text(
+            f"run_id={run_id}\n"
+            f"exception_type={type(exc).__name__}\n"
+            f"occurred_at={_now()}\n"
+            f"traceback=\n{traceback.format_exc()}\n",
+            encoding="utf-8",
+        )
+        return str(diag_path)
+    except Exception:
+        return None
+
+
 def _write_result(result: TrialResult, results_dir: Path) -> None:
     # is_pilot=True는 results_dir/pilot/ 아래 별도 경로에 쓴다 - collect_metrics.py가
     # 본 실험 집계에서 파일럿을 note 텍스트 파싱 없이 구조적으로 제외할 수
@@ -862,6 +889,9 @@ def run_once(
     except Exception as e:
         result.outcome = "invalid_run"
         result.invalid_reason = f"예외: {type(e).__name__}: {e}"
+        diag_path = _write_exception_diagnostic(run_id, e, results_dir)
+        if diag_path:
+            result.notes += f"진단 로그(전체 traceback): {diag_path} | "
     finally:
         # preview 준비 진단 정보 회수(2026-09-19 추가) - prepare()가 실패해도
         # (TrialInvalid/HarnessCorrupted) 진단 데이터는 남겨야 하므로 성공/실패

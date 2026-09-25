@@ -76,16 +76,59 @@ def main():
     parser.add_argument("--cost-sample-interval-sec", type=float, default=5.0)
     parser.add_argument("--dry-run-contract-only", action="store_true",
                          help="클러스터를 건드리지 않고 계약 해시·경로만 출력하고 종료(오프라인 점검용)")
+    parser.add_argument("--attempt-of", default=None,
+                         help="이 실행이 기술적으로 무효화된 원본 run_id의 대체 시도임을 표시(§143 이후 "
+                              "지시 §2A) - main experiment의 state-dict replacement 기능은 이 후속 "
+                              "네임스페이스에 적용되지 않으므로 별도로 최소 구현함. 지정하면 "
+                              "--attempt-suffix/--replacement-reason도 필수.")
+    parser.add_argument("--attempt-suffix", default=None,
+                         help="예: retry1 - run_id에 삽입해 원본과 구분(main experiment의 -retry1- 접미사 "
+                              "관례와 동일한 패턴)")
+    parser.add_argument("--replacement-reason", default=None, help="기술적 대체 사유(사람이 읽을 설명)")
     args = parser.parse_args()
 
     scenario = "load_ramp"
-    run_id = f"{scenario}-{args.arm}-{args.rep:02d}-{PLAN_ID}"
+    if args.attempt_of:
+        if not args.attempt_suffix or not args.replacement_reason:
+            parser.error("--attempt-of는 --attempt-suffix와 --replacement-reason을 모두 함께 지정해야 합니다")
+        run_id = f"{scenario}-{args.arm}-{args.rep:02d}-{args.attempt_suffix}-{PLAN_ID}"
+    else:
+        run_id = f"{scenario}-{args.arm}-{args.rep:02d}-{PLAN_ID}"
+
+    FOLLOWUP_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 동일 run_id의 결과가 이미 있으면 실패한다 - 덮어쓰지 않고, 접미사를
+    # 자동으로 바꿔가며 재시도하지도 않는다(지시 그대로 - 사람이 새 값을
+    # 골라야 함).
+    existing = [p for p in (
+        FOLLOWUP_RESULTS_DIR / f"contract-{run_id}.json",
+        FOLLOWUP_RESULTS_DIR / f"trial-{run_id}.json",
+        FOLLOWUP_RESULTS_DIR / f"cost-{run_id}.json",
+    ) if p.exists()]
+    if existing:
+        raise SystemExit(f"run_id({run_id})의 결과가 이미 존재함 - 덮어쓰지 않고 중단: "
+                          f"{[str(p) for p in existing]}")
+
     contract = {
         "run_id": run_id, "plan_id": PLAN_ID, "recorded_at": datetime.now(timezone.utc).isoformat(),
         "timeout_sec": args.timeout_sec, "fixed_duration_observation": True,
         "file_sha256": _contract_hashes(),
+        "contract_schema_version": "followup-retry-v1" if args.attempt_of else "followup-v1",
     }
-    FOLLOWUP_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    if args.attempt_of:
+        original_result_path = FOLLOWUP_RESULTS_DIR / f"trial-{args.attempt_of}.json"
+        if not original_result_path.exists():
+            raise SystemExit(f"--attempt-of로 지정한 원본 결과 파일이 없음: {original_result_path}")
+        contract["replacement"] = {
+            "attempt_of_run_id": args.attempt_of,
+            "replacement_reason": args.replacement_reason,
+            "original_result_path": str(original_result_path),
+            "original_result_sha256": hashlib.sha256(original_result_path.read_bytes()).hexdigest(),
+            # 분석기가 같은 논리적 rep로 취급해야 할 대상을 명시 - 원본은 이미
+            # invalid로 비교표에서 제외돼 있으므로, 이 필드만으로는 아무것도
+            # 자동 집계하지 않는다(분석기가 명시적으로 읽어야 함, 자동 대체 없음).
+            "same_logical_rep": {"scenario": scenario, "arm": args.arm, "rep": args.rep, "plan_id": PLAN_ID},
+        }
     contract_path = FOLLOWUP_RESULTS_DIR / f"contract-{run_id}.json"
     contract_path.write_text(json.dumps(contract, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"계약/코드 해시 기록: {contract_path}")

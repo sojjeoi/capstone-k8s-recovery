@@ -718,7 +718,54 @@ def test_exception_still_cleans_up_and_marks_invalid(tmp_path):
     assert "예외" in result.invalid_reason
     assert pcalls["stop"] == 1, "예외가 나도 prober.stop()은 호출돼야 함"
     assert icalls["cleanup"] == 1, "예외가 나도 injector.cleanup()은 호출돼야 함"
+
+    # §143 이후 지시 §2B - invalid_reason 한 줄과 별도로 전체 traceback이
+    # results_dir/diagnostics/에 남아야 한다(WinError 1455가 str(e))만
+    # 남기고 사후 원인 분석이 막혔던 문제의 재발 방지).
+    diag_files = sorted((tmp_path / "diagnostics").glob(f"exception-{result.run_id}-*.log"))
+    assert len(diag_files) == 1, f"진단 로그 파일이 정확히 1개 있어야 함: {diag_files}"
+    diag_text = diag_files[0].read_text(encoding="utf-8")
+    assert f"run_id={result.run_id}" in diag_text
+    assert "exception_type=RuntimeError" in diag_text
+    assert "occurred_at=" in diag_text
+    assert "raising_inject" in diag_text, "traceback에 예외 발생 지점(함수명)이 남아야 함"
+    assert "의도적으로 터뜨린 예외" in diag_text, "traceback에 원래 예외 메시지가 남아야 함"
+    assert f"진단 로그(전체 traceback): {diag_files[0]}" in result.notes
     print("OK - 예외 발생해도 정리 + invalid_run 기록:", result.invalid_reason)
+    print("OK - 전체 traceback이 별도 진단 로그에 보존됨:", diag_files[0])
+
+
+def test_exception_diagnostic_log_failure_does_not_mask_original_exception_or_block_cleanup(tmp_path):
+    """§143 이후 지시 §2B - 진단 로그 쓰기 자체가 실패해도(여기서는 diagnostics
+    자리에 파일을 미리 만들어 mkdir()이 실패하게 강제) 원래 예외 처리·
+    cleanup은 그대로 진행돼야 한다."""
+    (tmp_path / "diagnostics").write_text("이 자리에 디렉터리 대신 파일이 있음", encoding="utf-8")
+
+    def raising_inject():
+        raise RuntimeError("진단 로그 실패 시나리오용 예외")
+
+    icalls = {"cleanup": 0}
+
+    def cleanup():
+        icalls["cleanup"] += 1
+
+    injector = Injector(prepare=lambda: None, inject=raising_inject, is_started=lambda: True,
+                         is_effective=lambda: True, is_done=lambda: True, cleanup=cleanup)
+    prober, pcalls = _fake_prober()
+
+    result = run_once(
+        scenario="dry_run", arm="native", rep=4, sequence_index=4, order_seed=42,
+        injector=injector, prober=prober, timeout_sec=5, poll_interval_sec=0.1,
+        results_dir=tmp_path,
+    )
+
+    assert result.outcome == "invalid_run", result.outcome
+    assert result.state == "invalid"
+    assert "예외" in result.invalid_reason
+    assert pcalls["stop"] == 1, "진단 로그 실패와 무관하게 prober.stop()은 호출돼야 함"
+    assert icalls["cleanup"] == 1, "진단 로그 실패와 무관하게 injector.cleanup()은 호출돼야 함"
+    assert "진단 로그" not in result.notes, "진단 로그 쓰기가 실패했으면 notes에 경로를 남기지 않아야 함"
+    print("OK - 진단 로그 쓰기 실패가 원래 예외 처리·cleanup을 막지 않음")
 
 
 def test_probe_never_alive_marks_invalid(tmp_path):

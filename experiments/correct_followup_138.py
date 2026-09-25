@@ -157,8 +157,13 @@ def classify_unresolved(cohort, evidence, arm):
     return results
 
 
-def analyze_arm_corrected(arm, rep=1):
-    run_id = f"load_ramp-{arm}-{rep:02d}-post_hoc_followup-v1"
+def analyze_arm_corrected(arm, rep=1, run_id_override=None):
+    """run_id_override(§143 이후 지시 §2A - 재시도 attempt 지원): 주어지면
+    rep 번호로부터 표준 run_id를 재조립하지 않고 이 값을 그대로 쓴다 -
+    -retry1- 접미사가 붙은 대체 시도 파일을 읽으려면 필수(표준 재조립
+    로직은 접미사를 모르므로 반드시 override가 있어야 정확한 파일을
+    읽는다, 기본값 None이면 기존 동작과 100% 동일)."""
+    run_id = run_id_override or f"load_ramp-{arm}-{rep:02d}-post_hoc_followup-v1"
     trial_path = FOLLOWUP_DIR / f"trial-{run_id}.json"
     raw = json.loads(trial_path.read_text(encoding="utf-8"))
     t_injection = _parse_ts(raw["t_injection"])
