@@ -16188,3 +16188,60 @@ memory auxiliary 슬라이드는 사용자 확인 후 진행 - 임의로 시작�
 cherry-pick 없음(30건 detector 로그·26건 audit-log 전수 집계).
 불리한 결과(network_degrade 2.1%, network_degrade/proposed의 낮은
 predictive 채택률 1/5)를 그대로 보고했다.
+
+## §137 - 서비스 피해·비용 재검증 + 후속 비교 계약 (읽기전용, §136 심화)
+
+§136을 "결과가 나온 뒤 바로 결론"으로 끝내지 않고, 두 arm의 **실행
+경로 자체**를 코드로 완전히 재확인해 §136의 헤드라인 수치를 어떻게
+읽어야 하는지 재검토. 전체 8절 보고서는 별도 문서
+`docs/design/phase8-harm-cost-protocol.md`에 작성(§136은 대체하지
+않음 - 그 계산은 그대로 유효, 이 문서가 해석을 보강·정정).
+
+**이번 턴에 새로 코드로 확인한 것**: `recovery-policy/`(main.py/
+policy.py/safety.py/schemas.py/rollouts_client.py), `arm_controller.py`,
+`experiments/loadgen-runner/probe.py`, `chaos/loadgen/ramp.py`,
+`gitops/apps/vllm-serving/prometheusrule.yaml`을 전부 직접 읽고
+실행 경로를 재구성했다 - 요약이나 이전 턴의 추정에 의존하지 않았다.
+
+**정정 1건(투명성 고지)**: `analyze_effect_cost_evidence.py`의
+`audit_log_path()`가 run_id를 `scenario-arm-rep-planid`로 재조립해
+replacement trial(`load_ramp-fixed_threshold-05-retry1-...`)의
+실제 감사기록을 못 찾고 있었다 - `row["run_id"]`를 직접 쓰도록
+수정. 영향은 1건(load_ramp/fixed_threshold의 executed_verified
+1건→2건)뿐이었다.
+
+**핵심 재발견**: 반응형 fallback(Alertmanager, `up==0` 30초 조건)이
+발동 가능한지가 시나리오마다 근본적으로 다르다 - load_ramp은 pod가
+안 죽으므로 반응형이 구조적으로 불가능해 "순수 자체 메커니즘"
+비교가 되고, pod_kill·network_degrade는 양쪽 arm 모두 반응형을 쓸
+수 있어 사실상 "공유 메커니즘" 비교에 가깝다. 이걸 audit-log의
+`evidence.detector`(실제 승격을 실행시킨 신호의 출처, 30건 전수
+대조 - 불일치 0건)로 확인한 결과, **load_ramp/fixed_threshold는
+유효 4건 중 2건이 아무 탐지도 없이 자연 회복**(native와 같은 성격)
+이었음이 드러났다 - §136은 이 4건을 전부 "작동한 baseline"처럼
+다뤘으나 정확하지 않았다. 44.9%라는 수치는 "같은 방식의 속도 차이"
+보다 "개입 자체의 신뢰성 차이(proposed 5/5 vs fixed 2/4)"가 상당 부분
+설명한다.
+
+rep3/rep5(선제 전환 사례)도 재조사 결과 **같은 패턴의 쌍이 아님**을
+확인 - rep3는 ramp.py 자체 stage 경계와 무관(mid-stage)해 전환-관련
+가설이 그대로 유효하지만, rep5는 ramp의 예정된 부하 상승(stage-3→4)
+시작과 0.7초 차이로 겹쳐 경쟁 설명이 있다. 둘 다 전환 순간 in-flight
+요청은 0건(신규 발신 요청에서 발생) - aiohttp 커넥션 재사용이
+conntrack 특성상 구 pod로 계속 라우팅될 수 있다는 가설을 코드로
+확인했으나(둘 다 `TCPConnector(limit=0)` + 기본 keepalive), 이건
+가설일 뿐 확정 아님(실제 처리 pod 식별자 없음).
+
+**후속 실험 게이트 평가**: 사용자가 제시한 6개 라이브 실행 선행조건을
+전부 대조 - 계측 코드 미작성/오프라인 검증 불가/pod 식별 방법(서빙
+경로 변경 필요한 후보 A vs 순수 관측인 후보 B) 미결정으로 최소 3개
+연쇄 미충족. **이번 턴은 라이브 실행을 하지 않았다** - 차단 사유는
+결과 회피가 아니라 사전조건 미비. Stage C 계측 설계·Stage B 비교
+계약(주/보조 지표, 관측구간, `post_hoc_followup-v1` 네임스페이스)은
+동결해 문서화했고, pod 식별에 서빙 응답 경로 변경이 필요하다는 점은
+조용히 구현하지 않고 사용자 결정 대기로 명시했다.
+
+**범위 확인**: 클러스터 접속 0건, 기존 결과/모델/SLO/판정 로직 수정
+0건, 새 실험 실행 0건, 새 시나리오·재학습·유의성 검정 없음. 불리한
+결과(load_ramp/fixed_threshold의 실제 절반 무개입, network_degrade의
+사실상 무차이) 그대로 보고.

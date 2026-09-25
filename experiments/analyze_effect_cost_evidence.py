@@ -59,8 +59,13 @@ def detector_log_path(row):
     return matches[-1] if matches else None
 
 
-def audit_log_path(scenario, arm, rep, plan_id):
-    run_id = f"{scenario}-{arm}-{rep:02d}-{plan_id}"
+def audit_log_path(run_id):
+    """run_id는 반드시 row['run_id'](load_authoritative()/cell()이 이미 정확히
+    해석한 값)를 그대로 받는다 - scenario/arm/rep/plan_id로 직접 재조립하지
+    않는다. replacement trial(예: -retry1- 접미사)은 표준 패턴과 다른 run_id를
+    쓰므로, 재조립하면 실제 존재하는 파일을 못 찾고 조용히 '기록 없음'으로
+    오판한다(이번 턴에 실제로 발견한 버그 - load_ramp-fixed_threshold-05는
+    공식 run_id가 …-05-retry1-…이라 재조립값과 달랐다)."""
     p = AUDIT_DIR / f"{run_id}.jsonl"
     return p if p.exists() else None
 
@@ -110,7 +115,7 @@ def section3_evidence_availability(out_core):
         else:
             n_detector_log += 1  # native는 해당없음(개입 없음) - "확보"와 동일하게 취급하지 않고 아래에서 별도 안내
 
-        if audit_log_path(row["scenario"], row["arm"], row["rep"], PLAN_ID[row["scenario"]]):
+        if audit_log_path(row["run_id"]):
             n_audit_present += 1
 
     print(f"- 요청별 전송·완료 시각/성공/latency (probe raw csv): 확보됨 {n_probe_raw}/45"
@@ -394,7 +399,7 @@ def section6_cost_and_fp(out_core):
             rows = cell(out_core, scenario, arm)
             agg = {}
             for r in rows:
-                p = audit_log_path(scenario, arm, r["rep"], PLAN_ID[scenario])
+                p = audit_log_path(r["run_id"])
                 if not p:
                     continue
                 for oc, n in _tally_audit_log(p).items():
@@ -446,6 +451,238 @@ def section6_cost_and_fp(out_core):
     }
 
 
+# ======================================================================
+# 7. "실제 실행" 판정 귀속 재검증 - detection_source(최초 유효 탐지)와
+#    실제 executed_* 판정의 evidence.detector(실제 그 조치를 실행시킨 신호의
+#    출처)가 다를 수 있음(recovery-policy/main.py의 _record_detection() vs
+#    _record_decision() 분리 설계 - 코드 확인, 이번 지시 1절 요구사항).
+# ======================================================================
+def section7_executed_action_attribution(out_core):
+    print("\n" + "=" * 70)
+    print("§7 실제 승격을 실행시킨 신호의 detector - detection_source(최초 탐지)와 분리 재확인")
+    print("=" * 70)
+    print("근거(코드, recovery-policy/main.py): detection_source/detector는 '이 trial에서")
+    print("최초로 유효 판정된 신호'의 것으로 딱 한 번만 기록되고 이후 절대 안 바뀐다.")
+    print("반면 실제 executed_verified/unverified 판정은 나중에 도착한 다른 출처 신호가")
+    print("만들 수도 있다(예: 반응형이 먼저 관찰만 하고 나중에 예측 신호가 실제 승격).")
+    print("따라서 '실제 승격을 실행시킨 신호'는 TrialResult.detection_source가 아니라")
+    print("audit-log의 executed_* 레코드 자체의 evidence.detector로 재확인해야 한다.\n")
+
+    mismatches = []
+    results = {}
+    for scenario in SCENARIOS:
+        for arm in ("fixed_threshold", "proposed"):
+            rows = cell(out_core, scenario, arm)
+            for r in sorted(rows, key=lambda x: x["rep"]):
+                p = audit_log_path(r["run_id"])
+                executed = []
+                if p:
+                    for line in p.read_text(encoding="utf-8").splitlines():
+                        if not line.strip():
+                            continue
+                        rec = json.loads(line)
+                        if rec.get("outcome") in ("executed_verified", "executed_unverified"):
+                            executed.append(rec)
+                exec_detectors = [e.get("evidence", {}).get("detector") for e in executed]
+                raw = load_raw_trial(r["run_id"])
+                trial_detector = raw.get("detector")
+                trial_detection_source = r["detection_source"]
+                mismatch = bool(executed) and trial_detector is not None and any(
+                    d is not None and d != trial_detector for d in exec_detectors
+                )
+                if mismatch:
+                    mismatches.append(r["run_id"])
+                results[r["run_id"]] = {
+                    "n_executed_records": len(executed),
+                    "executed_outcomes": [e.get("outcome") for e in executed],
+                    "executed_evidence_detectors": exec_detectors,
+                    "trialresult_detection_source": trial_detection_source,
+                    "trialresult_detector": trial_detector,
+                    "mismatch_vs_trialresult_detector": mismatch,
+                }
+                print(f"  [{r['run_id']}] TrialResult: detection_source={trial_detection_source} detector={trial_detector}"
+                      f" | audit executed 레코드 {len(executed)}건: outcome={results[r['run_id']]['executed_outcomes']}"
+                      f" evidence.detector={exec_detectors}" + ("  <== 불일치!" if mismatch else ""))
+    print(f"\n총 {sum(1 for v in results.values() if v['n_executed_records']>0)}건에서 실제 executed 레코드 확인,"
+          f" 그중 TrialResult.detector와 실제 executed 신호의 evidence.detector가 다른 사례: {len(mismatches)}건 {mismatches}")
+    return results
+
+
+# ======================================================================
+# 8. Stage A - 서비스 피해 비교표(사용자 지정 9열)
+# ======================================================================
+def _evaluable_seconds(raw, r):
+    """'평가 가능한 시간'의 정의: probe raw 원자료의 첫~마지막 sent_at 구간
+    (probe가 실제로 표본을 보낸 구간만 - injection~run_end 전체가 아니다,
+    probe 시작 전 대기시간 등을 '평가 가능한데 위반 없음'으로 잘못 채우지
+    않기 위함)."""
+    p = probe_raw_path(r)
+    if not p.exists():
+        return None, None
+    prows = sj.load_raw(p)
+    if not prows:
+        return None, None
+    times = [datetime.fromisoformat(x["sent_at"]) if isinstance(x["sent_at"], str) else x["sent_at"] for x in prows]
+    return (max(times) - min(times)).total_seconds(), prows
+
+
+def _incomplete_at_end(prows, expected_interval_sec=1.0, tail_window_sec=30.0):
+    """관측종료 시 미완료 요청 추정(코드 확인: probe.py는 duration_sec 종료 후
+    최대 10초만 pending을 기다리고 그 반환값도 버린다 - 그 안에 안 끝난 요청은
+    행 자체가 안 써진다). 직접 관측할 수는 없으니(원천적으로 기록이 없음),
+    마지막 tail_window_sec 구간에서 expected_interval_sec 간격 대비 '있어야
+    할 시각에 없는' 표본 수를 결측 후보로 센다 - 추정치이며 확정 아님."""
+    if not prows:
+        return None
+    times = sorted(datetime.fromisoformat(x["sent_at"]) if isinstance(x["sent_at"], str) else x["sent_at"] for x in prows)
+    last = times[-1]
+    window_start = last - timedelta(seconds=tail_window_sec)
+    window_times = [t for t in times if t >= window_start]
+    if len(window_times) < 2:
+        return 0
+    expected = round((window_times[-1] - window_times[0]).total_seconds() / expected_interval_sec)
+    return max(0, expected - (len(window_times) - 1))
+
+
+def section8_stage_a_harm_table(out_core):
+    print("\n" + "=" * 70)
+    print("§8 Stage A - 서비스 피해 비교표 (9열: 지표/정의/원자료/비교가능여부/fixed/proposed/절대차이/상대차이/해석제한)")
+    print("=" * 70)
+
+    table = []
+    for scenario in SCENARIOS:
+        per_arm = {}
+        for arm in ("fixed_threshold", "proposed"):
+            rows = cell(out_core, scenario, arm)
+            recov = [r["recovery_sec"] for r in rows if r["recovery_sec"] is not None]
+            n_fail_total = n_over_total = n_req_total = 0
+            eval_sec_total = viol_sec_total = 0.0
+            incomplete_total = 0
+            n_executed_total = 0
+            stage_delays = {"det_to_dec": [], "dec_to_api": [], "api_to_switch": [], "det_to_switch": []}
+            for r in rows:
+                raw = load_raw_trial(r["run_id"])
+                eval_sec, prows = _evaluable_seconds(raw, r)
+                if prows:
+                    n_req_total += len(prows)
+                    n_fail_total += sum(1 for p in prows if not p["success"])
+                    n_over_total += sum(1 for p in prows if p["latency"] > sj.LATENCY_THRESHOLD)
+                    incomplete_total += _incomplete_at_end(prows) or 0
+                if eval_sec:
+                    eval_sec_total += eval_sec
+                if raw.get("t_slo") and raw.get("t_recovery"):
+                    viol_sec_total += (datetime.fromisoformat(raw["t_recovery"]) - datetime.fromisoformat(raw["t_slo"])).total_seconds()
+                for name, a, b in (("det_to_dec", "t_detection", "t_decision"), ("dec_to_api", "t_decision", "t_api_request"),
+                                    ("api_to_switch", "t_api_request", "t_switch"), ("det_to_switch", "t_detection", "t_switch")):
+                    ta, tb = raw.get(a), raw.get(b)
+                    if ta and tb:
+                        stage_delays[name].append((datetime.fromisoformat(tb) - datetime.fromisoformat(ta)).total_seconds())
+                p = audit_log_path(r["run_id"])
+                if p:
+                    n_executed_total += sum(1 for line in p.read_text(encoding="utf-8").splitlines() if line.strip()
+                                             and json.loads(line).get("outcome") == "executed_verified")
+            per_arm[arm] = {
+                "recovery_median": round(statistics.median(recov), 2) if recov else None,
+                "recovery_range": (round(min(recov), 2), round(max(recov), 2)) if recov else None,
+                "recovery_n": len(recov),
+                "eval_sec_total": round(eval_sec_total, 1),
+                "viol_sec_total": round(viol_sec_total, 1),
+                "viol_ratio": round(viol_sec_total / eval_sec_total, 4) if eval_sec_total else None,
+                "n_req_total": n_req_total, "n_fail_total": n_fail_total, "n_over_total": n_over_total,
+                "fail_rate": round(n_fail_total / n_req_total, 4) if n_req_total else None,
+                "over_rate": round(n_over_total / n_req_total, 4) if n_req_total else None,
+                "incomplete_total_est": incomplete_total,
+                "n_executed_total": n_executed_total,
+                "stage_delay_median": {k: (round(statistics.median(v), 2) if v else None) for k, v in stage_delays.items()},
+            }
+        ft, pr = per_arm["fixed_threshold"], per_arm["proposed"]
+        table.append({"scenario": scenario, "fixed_threshold": ft, "proposed": pr})
+
+        print(f"\n[{scenario}]")
+        print(f"  recovery_sec: fixed={ft['recovery_median']}s(n={ft['recovery_n']},{ft['recovery_range']}) "
+              f"proposed={pr['recovery_median']}s(n={pr['recovery_n']},{pr['recovery_range']}) "
+              f"| 비교가능 - 정의 동일(둘 다 t_slo~t_recovery)")
+        print(f"  평가가능시간 중 위반누적: fixed={ft['viol_sec_total']}s/{ft['eval_sec_total']}s(비율={ft['viol_ratio']}) "
+              f"proposed={pr['viol_sec_total']}s/{pr['eval_sec_total']}s(비율={pr['viol_ratio']}) "
+              f"| 비교가능 - 둘 다 probe 평가가능구간 기준")
+        print(f"  요청 실패: fixed={ft['n_fail_total']}/{ft['n_req_total']}건({ft['fail_rate']}) "
+              f"proposed={pr['n_fail_total']}/{pr['n_req_total']}건({pr['fail_rate']}) "
+              f"| 비교가능(주의: n_req_total이 arm마다 다르면 반드시 건수+비율 함께 봄)")
+        print(f"  latency threshold({sj.LATENCY_THRESHOLD}s) 초과: fixed={ft['n_over_total']}/{ft['n_req_total']}건({ft['over_rate']}) "
+              f"proposed={pr['n_over_total']}/{pr['n_req_total']}건({pr['over_rate']}) | 비교가능(동일 probe 프로필만 사용)")
+        print(f"  탐지->판단->API요청->전환 지연(중앙값,초): "
+              f"fixed={ft['stage_delay_median']} proposed={pr['stage_delay_median']} "
+              f"| 해석제한: None은 '그 경로 자체가 없었던 반복 존재'이지 0이 아님")
+        print(f"  관측종료 시 미완료 요청(추정): fixed={ft['incomplete_total_est']}건 proposed={pr['incomplete_total_est']}건 "
+              f"| 해석제한: 직접 기록 없음(코드상 pending 요청은 행 자체가 안 남음) - 마지막 30초 구간 기대표본수 대비 결측 추정치")
+        print(f"  실제 전환 횟수(executed_verified): fixed={ft['n_executed_total']}건(5개 trial 중) "
+              f"proposed={pr['n_executed_total']}건 | 해석제한: 횟수만 - '불필요'라는 판단은 별도 근거 없이 붙이지 않음")
+    return table
+
+
+# ======================================================================
+# 9. Stage B 재조사 - in-flight vs 신규요청 구분, load_ramp stage 경계 대조
+# ======================================================================
+def section9_stage_b_refined(out_core):
+    print("\n" + "=" * 70)
+    print("§9 Stage B 재조사 - rep3/rep5, in-flight/신규 요청 구분 + load_ramp stage 경계 대조")
+    print("=" * 70)
+    print("목적: '전환 후 29~32초'라는 숫자 재현이 아니라, 그 사건이 (a) 전환 자체와")
+    print("관련된 현상인지 (b) load_ramp 자체의 예정된 stage 상승과 우연히 겹친 것인지")
+    print("구분 시도. 두 경우가 서로 다른 설명일 수 있음을 미리 전제하지 않고 각각 확인.\n")
+
+    rows = [r for r in cell(out_core, "load_ramp", "proposed") if (r["detection_lead_sec"] or 0) > 0]
+    for r in rows:
+        raw = load_raw_trial(r["run_id"])
+        t_switch = datetime.fromisoformat(raw["t_switch"])
+        prows = sj.load_raw(probe_raw_path(r))
+
+        def parse(p):
+            return datetime.fromisoformat(p["sent_at"]) if isinstance(p["sent_at"], str) else p["sent_at"]
+
+        # in-flight: sent_at < t_switch < sent_at+latency (요청이 전환 순간에 이미 진행 중이었음)
+        inflight = [p for p in prows if parse(p) < t_switch < parse(p) + timedelta(seconds=p["latency"])]
+        severe_post = [p for p in prows if parse(p) >= t_switch and
+                       (not p["success"] or p["latency"] > sj.LATENCY_THRESHOLD * 2) and
+                       parse(p) <= t_switch + timedelta(seconds=90)]
+
+        print(f"\n[{r['run_id']}]")
+        print(f"  t_switch={raw['t_switch']}")
+        print(f"  전환 순간 in-flight(전환 전 SENT, 전환 후 완료)였던 요청: {len(inflight)}건"
+              + (f" - latency={[round(p['latency'],3) for p in inflight]}" if inflight else ""))
+        if severe_post:
+            print(f"  전환 후 90초 내 심각 이벤트: {len(severe_post)}건 - 전부 sent_at이 전환 '이후'(in-flight 잔류 요청이 아니라 신규 발신 요청)")
+        else:
+            print("  전환 후 90초 내 심각 이벤트 없음")
+
+        summ_path = RESULTS_DIR / f"ramp-summary-{r['run_id']}-{r['arm']}-{r['rep']}.csv"
+        if summ_path.exists():
+            with open(summ_path, encoding="utf-8") as f:
+                stages = list(csv.DictReader(f))
+            print(f"  load_ramp stage 경계:")
+            containing_stage = None
+            for s in stages:
+                s_start, s_end = datetime.fromisoformat(s["stage_start_utc"]), datetime.fromisoformat(s["stage_end_utc"])
+                marker = ""
+                if s_start <= t_switch <= s_end:
+                    marker += " <=t_switch 포함"
+                    containing_stage = s["stage"]
+                for p in severe_post:
+                    if s_start <= parse(p) <= s_end:
+                        marker += f" <=심각이벤트(+{round((parse(p)-t_switch).total_seconds(),1)}s) 포함"
+                gap_to_switch = round((s_start - t_switch).total_seconds(), 1)
+                print(f"    {s['stage']}: [{s['stage_start_utc']}, {s['stage_end_utc']}] "
+                      f"success_rate={s['success_rate']} p95={s['p95']} p99={s['p99']} "
+                      f"(시작-전환={gap_to_switch:+}s){marker}")
+            if severe_post:
+                sev_stage = next((s["stage"] for s in stages if
+                                   datetime.fromisoformat(s["stage_start_utc"]) <= parse(severe_post[0]) <= datetime.fromisoformat(s["stage_end_utc"])), None)
+                boundary_near = sev_stage is not None and containing_stage is not None and sev_stage != containing_stage
+                print(f"  => 심각 이벤트가 {'전환과 다른 stage(직후 새 stage 시작과 겹침 - ramp 자체 부하상승이 경쟁 설명일 수 있음)' if boundary_near else '전환과 같은 stage 안(경계 무관, mid-stage)'}")
+        else:
+            print("  ramp-summary 없음")
+
+
 def main():
     core_run_ids, out_core, aux_run_ids, out_aux = load_authoritative()
     assert len(core_run_ids) == 45 and len(aux_run_ids) == 5
@@ -455,8 +692,12 @@ def main():
     section4c_detection_contribution(out_core)
     r5 = section5_preemptive_switch_deepdive(out_core)
     r6 = section6_cost_and_fp(out_core)
+    r7 = section7_executed_action_attribution(out_core)
+    r8 = section8_stage_a_harm_table(out_core)
+    section9_stage_b_refined(out_core)
 
-    out = {"recovery_effect": r4a, "service_harm": r4b, "preemptive_switch_deepdive": r5, "cost_and_fp": r6}
+    out = {"recovery_effect": r4a, "service_harm": r4b, "preemptive_switch_deepdive": r5, "cost_and_fp": r6,
+           "executed_action_attribution": r7, "stage_a_harm_table": r8}
     Path("results/_effect_cost_analysis.json").write_text(json.dumps(out, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print("\n\n중간 산출물 저장: results/_effect_cost_analysis.json (분석 전용, 공식 결과 아님)")
 
