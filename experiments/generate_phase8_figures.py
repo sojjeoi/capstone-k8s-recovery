@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
-"""Phase 8 최종 결과 시각화 - §131 확정 분석 집합(core 45 + auxiliary 5)
-전용, 오프라인 재생성 스크립트(클러스터 접속 없음).
+"""Phase 8 최종 결과 시각화 - 10월 발표용 16:9 슬라이드 재디자인.
+§131 확정 분석 집합(core 45 + auxiliary 5), 수치·분모는 §131과 완전히
+동일 - 이 스크립트는 결과 JSON·state·hash·모델·SLO 정의·판정 기준·
+기존 코드(collect_metrics.py 등)를 전혀 수정하지 않는다(읽기 전용
+소비자). 클러스터 접속 없음.
 
-재현 방법: `python generate_phase8_figures.py` (experiments/ 안에서 실행,
-KUBECONFIG 불필요 - official-experiment-state*.json과 results/ 아래
-trial-*.json만 읽는다). 산출물은 docs/design/phase8-figures/ 아래
-PNG+SVG 쌍 4세트 + manifest.json(그림별 run_id 목록·필터·계산식·유효
-n·제외 사유) - 이 스크립트는 결과 JSON·state·hash·코드(collect_metrics.py
-등)를 전혀 수정하지 않는다(읽기 전용 소비자).
+재현 방법: `python generate_phase8_figures.py` (experiments/ 안에서
+실행, KUBECONFIG 불필요). 실행 시작 시 §131 문서에 기재된 수치 일부를
+하드코딩한 기준값과 자동 대조(verify_against_section_131()) - 불일치가
+있으면 AssertionError로 즉시 중단하고 그림을 생성하지 않는다.
 
-권위 있는 분석 집합(§129.1/§131 확정, 이 스크립트가 그대로 재사용):
-- core 45건: load_ramp/pod_kill=official-experiment-state-v2.json,
-  network_degrade=official-experiment-state.json. analysis_group=
-  core_fault_comparison, status=completed만. mainexp-v1의 load_ramp/
-  pod_kill 선행 자료(precursor, §109.2)는 official-experiment-state*.json
-  의 result_path로 파일 목록을 직접 구성해 원천적으로 미포함(디렉터리
-  전체 글롭 사용 안 함 - §129.5의 오염 경로를 타지 않음).
-- auxiliary 5건: official-experiment-state.json의 analysis_group=
-  auxiliary_negative_control, status=completed.
+산출물(docs/design/phase8-figures/, 전부 PNG 16:9@150dpi + SVG 벡터):
+- fig1-detection-path            : 탐지 경로 매트릭스(3x3)
+- fig2-detection-timing          : 탐지 시점(native 행 제거, 6행만)
+- fig3a/b/c-recovery-*           : 시나리오별 회복시간(독립 슬라이드 3장)
+- fig4a-aux-summary              : auxiliary 한눈에 요약(메인)
+- fig4b-aux-detail                : auxiliary 반복별 실측값(보조 표)
+- manifest.json                  : 그림별 run_id·계산식·유효 n·제외 사유
+
+디자인 기준(발표용): 슬라이드당 메시지 하나 - 방법론·긴 주의문은 짧은
+각주 한 줄로 축약(자세한 설명은 문서 §133/발표자 노트로 분리). 16:9
+(13.333x7.5in) 실크기 렌더링, 큰 폰트, 옅은 가로 기준선만(격자 최소화),
+얇은 테두리, 그림자·과도한 범례 없음. arm 색은 전 그림 공통
+(native=회색/fixed_threshold=파랑/proposed=빨강) + 도형(원/사각/삼각)
+병행. 중앙값은 굵게 강조하되 개별 n개 관측값·실제 n은 항상 함께 표시,
+축 절단·중복점 삭제 없음.
 """
 import json
 import statistics
@@ -26,11 +33,11 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import numpy as np
 
 import collect_metrics as cm
 
-# 한글 렌더링 - Windows 기본 내장 폰트, 별도 설치 불필요(재현성)
 plt.rcParams["font.family"] = "Malgun Gothic"
 plt.rcParams["axes.unicode_minus"] = False
 
@@ -40,12 +47,42 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 SCENARIOS = ["load_ramp", "pod_kill", "network_degrade"]
 ARMS = ["native", "fixed_threshold", "proposed"]
-SCENARIO_LABEL = {"load_ramp": "부하 램프", "pod_kill": "Pod 강제종료", "network_degrade": "네트워크 열화"}
+SCENARIO_LABEL = {"load_ramp": "부하 램프(load_ramp)", "pod_kill": "Pod 강제종료(pod_kill)", "network_degrade": "네트워크 열화(network_degrade)"}
 ARM_LABEL = {"native": "native", "fixed_threshold": "fixed_threshold", "proposed": "proposed"}
 ARM_MARKER = {"native": "o", "fixed_threshold": "s", "proposed": "^"}
 ARM_COLOR = {"native": "#8c8c8c", "fixed_threshold": "#4C72B0", "proposed": "#C44E52"}
 
+# 16:9 PowerPoint 위젯 표준 인치 크기(13.333 x 7.5) - "실제 PPT 크기로 렌더링"
+SLIDE_W, SLIDE_H = 13.333, 7.5
+DPI = 150
+
+TITLE_FS = 27
+FOOT_FS = 12.5
+AXIS_FS = 18
+TICK_FS = 16
+DIRECT_FS = 16
+N_FS = 16
+
 manifest = {}
+
+
+def new_slide():
+    fig = plt.figure(figsize=(SLIDE_W, SLIDE_H))
+    return fig
+
+
+def clean_ax(ax):
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    for spine in ("left", "bottom"):
+        ax.spines[spine].set_linewidth(1.0)
+        ax.spines[spine].set_color("#333333")
+    ax.tick_params(labelsize=TICK_FS, length=0)
+
+
+def footnote(fig, text):
+    """슬라이드용 짧은 각주 한 줄 - 긴 방법론 설명은 발표자 노트(§133)로 분리."""
+    fig.text(0.5, 0.015, text, ha="center", va="bottom", fontsize=FOOT_FS, color="#555555")
 
 
 def load_authoritative():
@@ -73,8 +110,8 @@ def load_authoritative():
 
     rows_core = [json.loads(Path(p).read_text(encoding="utf-8")) for p in core_paths]
     rows_aux = [json.loads(Path(p).read_text(encoding="utf-8")) for p in aux_paths]
-    out_core, issues_core = cm.build_comparison(rows_core)
-    out_aux, issues_aux = cm.build_comparison(rows_aux)
+    out_core, _ = cm.build_comparison(rows_core)
+    out_aux, _ = cm.build_comparison(rows_aux)
     return core_run_ids, out_core, aux_run_ids, out_aux
 
 
@@ -82,249 +119,304 @@ def cell(rows, scenario, arm):
     return [r for r in rows if r["scenario"] == scenario and r["arm"] == arm]
 
 
-# ---------------------------------------------------------------- Figure 1
-def fig1_outcome_detection_path(out_core):
-    fig, axes = plt.subplots(1, 3, figsize=(15, 6.6), sharey=True)
-    outcomes = ["prevented", "recovered"]  # timeout/invalid_run: 0/45 (실측 확인)
-    outcome_label = {"prevented": "prevented(SLO 위반 없음)", "recovered": "recovered(위반 후 정상화)"}
-    outcome_hatch = {"prevented": "..", "recovered": ""}
-    outcome_color = {"prevented": "#DD8452", "recovered": "#55A868"}
+# ------------------------------------------------------ §131 자동 대조
+def verify_against_section_131(out_core, out_aux):
+    """§131.2/§131.3/§131.4에 기재된 수치를 하드코딩 기준값으로 삼아
+    이번 실행의 재계산 결과와 대조한다 - 불일치 시 AssertionError로
+    즉시 중단(그림을 만들지 않음). §131 원문 자체는 이 스크립트가
+    수정하지 않는다."""
 
-    fig1_manifest = {"run_ids": {}, "formula": "outcome 값 개수(5건 중), detection_source 개수(collect_metrics.build_comparison() 출력 그대로)"}
+    def med_range(vals):
+        vals = [v for v in vals if v is not None]
+        return (round(statistics.median(vals), 2), round(min(vals), 2), round(max(vals), 2), len(vals))
 
-    for ax, scenario in zip(axes, SCENARIOS):
-        x = np.arange(len(ARMS))
-        bottoms = np.zeros(len(ARMS))
-        for oc in outcomes:
-            heights = []
-            for arm in ARMS:
-                rows = cell(out_core, scenario, arm)
-                heights.append(sum(1 for r in rows if r["outcome"] == oc))
-            ax.bar(x, heights, bottom=bottoms, color=outcome_color[oc], hatch=outcome_hatch[oc],
-                   edgecolor="black", linewidth=0.6, label=outcome_label[oc] if scenario == SCENARIOS[0] else None)
-            bottoms += np.array(heights)
+    checks = [
+        ("load_ramp/native recovery_sec", [r["recovery_sec"] for r in cell(out_core, "load_ramp", "native")], (221.68, 168.58, 321.69, 4)),
+        ("load_ramp/fixed_threshold recovery_sec", [r["recovery_sec"] for r in cell(out_core, "load_ramp", "fixed_threshold")], (226.17, 40.99, 259.56, 4)),
+        ("load_ramp/proposed recovery_sec", [r["recovery_sec"] for r in cell(out_core, "load_ramp", "proposed")], (124.57, 1.10, 235.87, 4)),
+        ("pod_kill/native recovery_sec", [r["recovery_sec"] for r in cell(out_core, "pod_kill", "native")], (257.27, 195.22, 328.23, 5)),
+        ("pod_kill/proposed detection_lead_sec", [r["detection_lead_sec"] for r in cell(out_core, "pod_kill", "proposed")], (-51.14, -52.65, -44.57, 5)),
+        ("network_degrade/fixed_threshold recovery_sec", [r["recovery_sec"] for r in cell(out_core, "network_degrade", "fixed_threshold")], (382.56, 359.66, 391.59, 5)),
+    ]
+    for name, vals, expected in checks:
+        got = med_range(vals)
+        assert got == expected, f"§131 불일치: {name} 기대={expected} 실측={got}"
 
-        for i, arm in enumerate(ARMS):
-            rows = cell(out_core, scenario, arm)
-            fig1_manifest["run_ids"][f"{scenario}/{arm}"] = [r["run_id"] for r in rows]
+    nd_proposed = cell(out_core, "network_degrade", "proposed")
+    src_counts = {}
+    for r in nd_proposed:
+        src_counts[r["detection_source"]] = src_counts.get(r["detection_source"], 0) + 1
+    assert src_counts == {"reactive": 4, "predictive": 1}, f"§131 불일치: network_degrade/proposed detection_source={src_counts}"
+    tr_counts = {}
+    for r in nd_proposed:
+        tr_counts[r["target_replaced"]] = tr_counts.get(r["target_replaced"], 0) + 1
+    assert tr_counts == {False: 3, True: 2}, f"§131 불일치: network_degrade/proposed target_replaced={tr_counts}"
+
+    lr_proposed_leads = sorted(r["detection_lead_sec"] for r in cell(out_core, "load_ramp", "proposed") if r["detection_lead_sec"] is not None)
+    expected_leads = sorted([-19.186265, 61.25934, -194.454602, 35.798788])
+    assert all(abs(a - b) < 0.01 for a, b in zip(lr_proposed_leads, expected_leads)), f"§131 불일치: load_ramp/proposed leads={lr_proposed_leads}"
+
+    aux_by_rep = {int(r["run_id"].split("-native-")[1].split("-")[0]): r for r in out_aux}
+    assert all(aux_by_rep[i]["t_slo"] is None for i in range(1, 6)), "§131 불일치: aux t_slo 5/5 None 아님"
+
+    ws_rise_expected = {1: 965.45, 2: 958.06, 3: 957.66, 4: 914.13, 5: 957.66}
+    recovered_expected = {1: False, 2: True, 3: True, 4: True, 5: True}
+
+    print("[검증] §131 수치 자동 대조 PASS - 6개 timing 셀 + detection_source/target_replaced + load_ramp/proposed lead 4값 + aux t_slo 5건 전부 일치")
+    return ws_rise_expected, recovered_expected
+
+
+# ---------------------------------------------------------------- 슬라이드1
+def fig1_detection_path(out_core):
+    fig = new_slide()
+    ax = fig.add_axes((0.18, 0.14, 0.79, 0.68))
+    ax.set_xlim(0, 3)
+    ax.set_ylim(0, 3)
+    ax.axis("off")
+
+    fig.text(0.5, 0.92, "탐지 경로(detection_source)는 시나리오·arm마다 다르다", ha="center", fontsize=TITLE_FS, fontweight="bold")
+
+    fig1_manifest = {"run_ids": {}, "formula": "detection_source(실제 판단 근거) 개수, detector_process(실행된 daemon)와는 다른 값 - build_comparison() 출력 그대로"}
+
+    col_x = {arm: i + 0.5 for i, arm in enumerate(ARMS)}
+    row_y = {scn: 2.5 - i for i, scn in enumerate(SCENARIOS)}
+
+    for arm in ARMS:
+        ax.add_patch(mpatches.Rectangle((col_x[arm] - 0.46, 2.86), 0.92, 0.22, facecolor=ARM_COLOR[arm], edgecolor="none"))
+        ax.text(col_x[arm], 2.97, ARM_LABEL[arm], ha="center", va="center", fontsize=DIRECT_FS + 1, color="white", fontweight="bold")
+
+    for scn in SCENARIOS:
+        ax.text(-0.12, row_y[scn], SCENARIO_LABEL[scn].split("(")[0], ha="right", va="center", fontsize=DIRECT_FS, fontweight="bold")
+
+    for scn in SCENARIOS:
+        for arm in ARMS:
+            rows = cell(out_core, scn, arm)
+            fig1_manifest["run_ids"][f"{scn}/{arm}"] = [r["run_id"] for r in rows]
             det_src = {}
             for r in rows:
-                key = r["detection_source"] or "탐지없음"
-                det_src[key] = det_src.get(key, 0) + 1
+                k = r["detection_source"] or "없음"
+                det_src[k] = det_src.get(k, 0) + 1
+            n_prevented = sum(1 for r in rows if r["outcome"] == "prevented")
+
+            x, y = col_x[arm], row_y[scn]
+            ax.add_patch(mpatches.Rectangle((x - 0.46, y - 0.42), 0.92, 0.84, facecolor="#F5F5F5", edgecolor="#999999", linewidth=1.0))
+
             if arm == "native":
-                label = "탐지:\n없음(0/5)"
+                main_txt, sub_txt = "탐지 없음", "(0/5, 개입 없음)"
             else:
-                parts = []
-                for k in ("predictive", "reactive", "탐지없음"):
-                    if k in det_src:
-                        kk = {"predictive": "predictive", "reactive": "reactive(fallback)", "탐지없음": "탐지없음"}[k]
-                        parts.append(f"{kk} {det_src[k]}/5")
-                label = "탐지:\n" + "\n".join(parts)
-            ax.annotate(label, xy=(i, 5.2), ha="center", va="bottom", fontsize=7.6, linespacing=1.4)
+                order = ["predictive", "reactive", "없음"]
+                parts = [f"{k} {det_src[k]}/5" for k in order if k in det_src]
+                if len(parts) == 1:
+                    main_txt, sub_txt = parts[0], ""
+                else:
+                    main_txt, sub_txt = parts[0], " · ".join(parts[1:])
+            ax.text(x, y + 0.10, main_txt, ha="center", va="center", fontsize=DIRECT_FS + 1, fontweight="bold")
+            if sub_txt:
+                ax.text(x, y - 0.20, sub_txt, ha="center", va="center", fontsize=DIRECT_FS - 3, color="#444444")
+            if n_prevented:
+                ax.text(x, y - 0.36, f"△ prevented {n_prevented}/5", ha="center", va="center", fontsize=DIRECT_FS - 4, color="#B05A00")
 
-        ax.set_xticks(x)
-        ax.set_xticklabels([ARM_LABEL[a] for a in ARMS], fontsize=10)
-        ax.set_ylim(0, 8.3)
-        ax.set_title(SCENARIO_LABEL[scenario], fontsize=12, fontweight="bold")
-        ax.set_yticks(range(0, 6))
-        ax.grid(axis="y", alpha=0.3)
-
-    axes[0].set_ylabel("trial 수 (n=5/arm)")
-    fig.suptitle("그림1. 시나리오×arm별 outcome 분포와 실제 탐지 경로 (core 45건)", fontsize=13, fontweight="bold", y=0.99)
-    fig.text(0.5, 0.905,
-              "주: 'prevented'는 arm이 능동적으로 예방했다는 뜻이 아니라 이 반복에서 t_slo(지속 SLO 위반)가 관측되지 않았다는 뜻 - "
-              "native의 prevented(load_ramp rep1)는 무개입 상태에서 위반이 없었던 경우",
-              ha="center", fontsize=8, style="italic")
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=2, fontsize=9, bbox_to_anchor=(0.5, -0.02))
-    fig.tight_layout(rect=(0, 0.05, 1, 0.87))
-    fig.savefig(OUT_DIR / "fig1-outcome-detection-path.png", dpi=200)
-    fig.savefig(OUT_DIR / "fig1-outcome-detection-path.svg")
+    footnote(fig, "탐지 경로=실제 판단 근거(detection_source) 기준, 실행된 detector_process와 다를 수 있음 · prevented=위반 없음(능동 예방 의미 아님)")
+    fig.savefig(OUT_DIR / "fig1-detection-path.png", dpi=DPI)
+    fig.savefig(OUT_DIR / "fig1-detection-path.svg")
     plt.close(fig)
     manifest["fig1"] = fig1_manifest
 
 
-# ---------------------------------------------------------------- Figure 2
+# ---------------------------------------------------------------- 슬라이드2
 def fig2_detection_timing(out_core):
-    fig, ax = plt.subplots(figsize=(11, 6.5))
+    fig = new_slide()
+    ax = fig.add_axes((0.24, 0.20, 0.68, 0.58))
+
     fig2_manifest = {
-        "formula": "detection_lead_sec = t_detection - t_slo (초, collect_metrics._seconds_between). "
-                   "None(SLO 미위반 또는 미탐지)은 점으로 표시하지 않고 행 옆 개수로 별도 표기.",
+        "formula": "detection_lead_sec = t_detection - t_slo (초). native 행은 detector 자체가 없어 항상 제외(별도 표시 없이 애초에 그리지 않음). "
+                   "None(SLO 미위반 또는 미탐지)은 점으로 표시하지 않고 행 옆 개수로 표기.",
         "cells": {},
     }
 
-    rows_ordered = [(s, a) for s in SCENARIOS for a in ARMS]
-    ylabels = [f"{SCENARIO_LABEL[s]}/{ARM_LABEL[a]}" for s, a in rows_ordered]
+    rows_ordered = [(s, a) for s in SCENARIOS for a in ["fixed_threshold", "proposed"]]
+    ylabels = [f"{SCENARIO_LABEL[s].split('(')[0]}\n{ARM_LABEL[a]}" for s, a in rows_ordered]
     y_positions = np.arange(len(rows_ordered))[::-1]
 
     all_leads = []
-    per_row_plotted = {}
+    per_row = {}
     for y, (scenario, arm) in zip(y_positions, rows_ordered):
         rows = cell(out_core, scenario, arm)
         plotted = [(r, r["detection_lead_sec"]) for r in rows if r["detection_lead_sec"] is not None]
         excluded = [r for r in rows if r["detection_lead_sec"] is None]
-        per_row_plotted[(scenario, arm)] = (y, plotted, excluded)
+        per_row[(scenario, arm)] = (y, plotted, excluded)
         all_leads.extend(v for _, v in plotted)
-        reason = "무개입(detector 없음)" if arm == "native" else "SLO 미위반 또는 미탐지"
         fig2_manifest["cells"][f"{scenario}/{arm}"] = {
             "plotted_run_ids": [r["run_id"] for r, _ in plotted],
             "excluded_run_ids": [r["run_id"] for r in excluded],
-            "excluded_reason": reason if excluded else None,
             "n_plotted": len(plotted),
         }
+    fig2_manifest["cells"]["native(전체 시나리오)"] = {"excluded_reason": "무개입 - detector 없음, 3개 시나리오 15건 전부 제외", "n_plotted": 0}
 
-    xmax = max(abs(v) for v in all_leads) * 1.15
-    ax.set_xlim(-xmax, xmax + xmax * 0.28)
-    ax.axvline(0, color="black", linewidth=1.4)
-    ax.text(0, len(rows_ordered) - 0.35, "SLO 위반 시각(t_slo)=0", ha="center", fontsize=9, fontweight="bold")
+    xmin_data, xmax_data = min(all_leads), max(all_leads)
+    span = xmax_data - xmin_data
+    xlim_lo = xmin_data - span * 0.06
+    xlim_hi = xmax_data + span * 0.55  # n-라벨을 위한 오른쪽 여백
+    ax.set_xlim(xlim_lo, xlim_hi)
+    ax.set_ylim(-0.7, len(rows_ordered) + 0.9)
+    ax.axvspan(xlim_lo, 0, color="#4C72B0", alpha=0.06, zorder=0)
+    ax.axvspan(0, xlim_hi, color="#C44E52", alpha=0.06, zorder=0)
+    ax.axvline(0, color="black", linewidth=2.4, zorder=2)
+    top_y = len(rows_ordered) + 0.55
+    ax.text(xlim_lo + (0 - xlim_lo) * 0.42, top_y, "◀ 위반 후 탐지", ha="center", va="center", fontsize=DIRECT_FS - 1, color="#2A4D80", fontweight="bold")
+    ax.text(0 + (xmax_data - 0) * 0.55, top_y, "위반 전 탐지 ▶", ha="center", va="center", fontsize=DIRECT_FS - 1, color="#8C2A30", fontweight="bold")
 
-    rng = np.random.default_rng(20260925)
-    for (scenario, arm), (y, plotted, excluded) in per_row_plotted.items():
-        jitter = rng.uniform(-0.13, 0.13, size=len(plotted))
+    rng = np.random.default_rng(20260925)  # 결정론적 jitter - 재실행해도 항상 동일
+    for (scenario, arm), (y, plotted, excluded) in per_row.items():
+        jitter = rng.uniform(-0.16, 0.16, size=len(plotted))
         for (r, v), j in zip(plotted, jitter):
             face = "#C44E52" if v > 0 else "#4C72B0"
-            ax.scatter(v, y + j, marker=ARM_MARKER[arm], s=75, facecolor=face, edgecolor="black", linewidth=0.6, zorder=3)
-        n_excl = len(excluded)
+            ax.scatter(v, y + j, marker=ARM_MARKER[arm], s=180, facecolor=face, edgecolor="black", linewidth=0.8, zorder=3)
         label = f"n={len(plotted)}/5"
-        if n_excl:
-            label += f" (미표시 {n_excl}건)"
-        ax.text(xmax + xmax * 0.03, y, label, ha="left", va="center", fontsize=7.8, color="#444444")
+        if excluded:
+            label += f" (위반없음/미탐지 {len(excluded)}건)"
+        ax.text(xmax_data + span * 0.05, y, label, ha="left", va="center", fontsize=N_FS - 2, color="#333333")
 
     ax.set_yticks(y_positions)
-    ax.set_yticklabels(ylabels, fontsize=9.5)
-    ax.set_xlabel("detection_lead_sec (초) — 왼쪽(음수)=SLO 위반 '후' 탐지, 오른쪽(양수)=위반 '전' 탐지")
-    ax.set_title("그림2. 탐지 시점 - 개별 trial (탐지·위반이 모두 관측된 trial만 표시)", fontsize=12, fontweight="bold")
-    fig.text(0.5, 0.955,
-              "주: 점의 좌우 위치는 detection_lead_sec 실측 부호로만 결정 - detection_source=predictive라는 사실만으로 '선제 탐지'로 표시하지 않음. "
-              "위반 없음/미탐지 trial은 0으로 대체하지 않고 우측에 개수로 표기.",
-              ha="center", fontsize=8, style="italic")
-    ax.grid(axis="x", alpha=0.3)
+    ax.set_yticklabels(ylabels, fontsize=TICK_FS)
+    ax.set_xlabel("detection_lead_sec (초)", fontsize=AXIS_FS)
+    clean_ax(ax)
+    ax.spines["left"].set_visible(False)
+    ax.tick_params(axis="y", length=0)
+    ax.grid(axis="x", alpha=0.25)
 
-    legend_elems = [
-        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#C44E52", markeredgecolor="black", markersize=9, label="양수(위반 전 탐지)"),
-        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#4C72B0", markeredgecolor="black", markersize=9, label="음수(위반 후 탐지)"),
-        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="gray", markeredgecolor="black", markersize=9, label="native(도형)"),
-        plt.Line2D([0], [0], marker="s", color="w", markerfacecolor="gray", markeredgecolor="black", markersize=9, label="fixed_threshold(도형)"),
-        plt.Line2D([0], [0], marker="^", color="w", markerfacecolor="gray", markeredgecolor="black", markersize=9, label="proposed(도형)"),
-    ]
-    ax.legend(handles=legend_elems, loc="lower left", fontsize=8.3, ncol=2)
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
-    fig.savefig(OUT_DIR / "fig2-detection-lead-time.png", dpi=200)
-    fig.savefig(OUT_DIR / "fig2-detection-lead-time.svg")
+    fig.text(0.5, 0.94, "위반 전(선제) 탐지는 load_ramp 일부 반복에서만 관측됨", ha="center", fontsize=TITLE_FS, fontweight="bold")
+    fig.text(0.16, 0.155, "도형  ■ fixed_threshold   ▲ proposed", ha="left", fontsize=DIRECT_FS - 2, color="#333333")
+
+    footnote(fig, "native는 detector가 없어 제외(15건) · predictive 메커니즘이어도 음수면 '위반 후 탐지'")
+    fig.savefig(OUT_DIR / "fig2-detection-timing.png", dpi=DPI)
+    fig.savefig(OUT_DIR / "fig2-detection-timing.svg")
     plt.close(fig)
     manifest["fig2"] = fig2_manifest
 
 
-# ---------------------------------------------------------------- Figure 3
-def fig3_recovery_time(out_core):
-    fig, axes = plt.subplots(1, 3, figsize=(15, 6.6), sharey=False)
-    fig3_manifest = {
-        "formula": "recovery_sec = t_recovery - t_slo (초). outcome=prevented(t_slo 없음) trial은 0이 아니라 자연 제외 - 각 median 아래 유효 n 표기.",
-        "cells": {},
-    }
+# ------------------------------------------------------------ 슬라이드3a/b/c
+def fig3_recovery_time_single(out_core, scenario, tag):
+    fig = new_slide()
+    ax = fig.add_axes((0.14, 0.24, 0.78, 0.54))
 
-    for ax, scenario in zip(axes, SCENARIOS):
-        for i, arm in enumerate(ARMS):
-            rows = cell(out_core, scenario, arm)
-            vals = [r["recovery_sec"] for r in rows if r["recovery_sec"] is not None]
-            excluded = [r["run_id"] for r in rows if r["recovery_sec"] is None]
-            fig3_manifest["cells"][f"{scenario}/{arm}"] = {
-                "run_ids_used": [r["run_id"] for r in rows if r["recovery_sec"] is not None],
-                "excluded_run_ids": excluded, "n": len(vals),
-                "median": round(statistics.median(vals), 2) if vals else None,
-            }
-            rng = np.random.default_rng(abs(hash((scenario, arm, "r3"))) % (2**32))
-            xj = i + rng.uniform(-0.12, 0.12, size=len(vals))
-            ax.scatter(xj, vals, marker=ARM_MARKER[arm], s=55, facecolor=ARM_COLOR[arm], edgecolor="black", linewidth=0.5, zorder=3, alpha=0.9)
-            if vals:
-                med = statistics.median(vals)
-                ax.plot([i - 0.22, i + 0.22], [med, med], color="black", linewidth=2.4, zorder=4)
-            ax.text(i, -0.09, f"n={len(vals)}/5", transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=8.2, color="#444444")
+    cells = {}
+    for i, arm in enumerate(ARMS):
+        rows = cell(out_core, scenario, arm)
+        vals = [r["recovery_sec"] for r in rows if r["recovery_sec"] is not None]
+        excluded = [r["run_id"] for r in rows if r["recovery_sec"] is None]
+        cells[arm] = {"run_ids_used": [r["run_id"] for r in rows if r["recovery_sec"] is not None],
+                       "excluded_run_ids": excluded, "n": len(vals),
+                       "median": round(statistics.median(vals), 2) if vals else None}
 
-        ax.set_xticks(range(len(ARMS)))
-        ax.set_xticklabels([ARM_LABEL[a] for a in ARMS], fontsize=10)
-        ax.set_title(SCENARIO_LABEL[scenario], fontsize=12, fontweight="bold")
-        ax.grid(axis="y", alpha=0.3)
-        ax.set_ylim(bottom=0)
+        rng = np.random.default_rng(abs(hash((scenario, arm, "fig3"))) % (2**32))
+        xj = i + rng.uniform(-0.14, 0.14, size=len(vals))
+        ax.scatter(xj, vals, marker=ARM_MARKER[arm], s=170, facecolor=ARM_COLOR[arm], edgecolor="black", linewidth=0.8, zorder=3, alpha=0.92)
+        if vals:
+            med = statistics.median(vals)
+            ax.plot([i - 0.26, i + 0.26], [med, med], color="black", linewidth=4.2, zorder=4, solid_capstyle="round")
+            ax.text(i + 0.32, med, f"중앙값 {med:.0f}s", va="center", ha="left", fontsize=DIRECT_FS - 2, fontweight="bold")
+        n_note = f"n={len(vals)}/5"
+        if excluded:
+            n_note += f" ({len(excluded)}건 prevented 제외)"
+        ax.text(i, -0.09, n_note, transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=N_FS - 1, color="#333333")
 
-    axes[0].set_ylabel("recovery_sec (초)")
-    fig.suptitle("그림3. 시나리오별 arm 회복시간 - 개별 trial(점)과 중앙값(굵은 선)", fontsize=13, fontweight="bold", y=0.99)
-    fig.text(0.5, 0.905,
-             "주: 'prevented'(위반 없음) trial은 회복시간 0이 아니라 분석에서 자연 제외 - 각 중앙값의 분모 n을 하단에 표기. "
-             "arm별 stage 노출은 promotion 시점에 따라 달라질 수 있어 '동일 주입량을 받았다'는 해석을 하지 않음.",
-             ha="center", fontsize=8, style="italic")
-    fig.tight_layout(rect=(0, 0.05, 1, 0.87))
-    fig.savefig(OUT_DIR / "fig3-recovery-time.png", dpi=200)
-    fig.savefig(OUT_DIR / "fig3-recovery-time.svg")
+    ax.set_xticks(range(len(ARMS)))
+    ax.set_xticklabels([ARM_LABEL[a] for a in ARMS], fontsize=AXIS_FS)
+    ax.set_ylabel("recovery_sec (초)", fontsize=AXIS_FS)
+    ax.set_ylim(bottom=0)
+    clean_ax(ax)
+    ax.grid(axis="y", alpha=0.25)
+
+    scn_kr = SCENARIO_LABEL[scenario].split("(")[0]
+    fig.text(0.5, 0.92, f"{scn_kr} - 회복시간 분포 (n≤5/arm, prevented 제외)", ha="center", fontsize=TITLE_FS, fontweight="bold")
+
+    footnote(fig, "n=5/arm 소표본, 사전 등록 검정 없음 - 우월성 판단 근거 아님 (arm별 stage 노출도 동일하지 않을 수 있음)")
+    fig.savefig(OUT_DIR / f"fig3{tag}-recovery-{scenario}.png", dpi=DPI)
+    fig.savefig(OUT_DIR / f"fig3{tag}-recovery-{scenario}.svg")
     plt.close(fig)
-    manifest["fig3"] = fig3_manifest
+    manifest[f"fig3{tag}_{scenario}"] = {"formula": "recovery_sec = t_recovery - t_slo (초)", "cells": cells}
 
 
-# ---------------------------------------------------------------- Figure 4
-def fig4_aux_summary(out_aux, aux_run_ids):
-    fig, ax = plt.subplots(figsize=(10, 5.4))
+# ---------------------------------------------------------------- 슬라이드4a
+def fig4a_aux_summary(ws_rise_expected):
+    fig = new_slide()
+    ax = fig.add_axes((0.03, 0.12, 0.94, 0.62))
+    ax.set_xlim(0, 3)
+    ax.set_ylim(0, 1)
     ax.axis("off")
 
-    # §130.3/§131.3에서 canonical baseline(prepare_ok.baseline_working_set_bytes)으로
-    # 확정된 값 그대로 재인용(재계산 아님) - rep1=965.45MiB(정정값), rep2-5는 §128.2와 동일
-    ws_rise = {1: 965.45, 2: 958.06, 3: 957.66, 4: 914.13, 5: 957.66}
-    recovered = {1: False, 2: True, 3: True, 4: True, 5: True}
+    fig.text(0.5, 0.92, "Memory Auxiliary - 무개입 상태 안전성 요약 (core와 별도 집계)", ha="center", fontsize=TITLE_FS - 1, fontweight="bold")
+
+    blocks = [
+        ("SLO 위반", "0/5", "#2E7D32", "지속 위반(t_slo) 없음"),
+        ("안전 조건", "5/5", "#2E7D32", "restart·OOM·Node·MemAvailable 전부 정상"),
+        ("baseline ±150MiB\n복귀", "4/5", "#B05A00", "1/5(rep1) 미충족 - 원본값 그대로 유지"),
+    ]
+    for i, (label, big, color, sub) in enumerate(blocks):
+        cx = 0.5 + i
+        ax.add_patch(mpatches.Rectangle((cx - 0.44, 0.08), 0.88, 0.84, facecolor="#FAFAFA", edgecolor=color, linewidth=2.4))
+        ax.text(cx, 0.72, label, ha="center", va="center", fontsize=DIRECT_FS + 2, fontweight="bold")
+        ax.text(cx, 0.42, big, ha="center", va="center", fontsize=52, fontweight="bold", color=color)
+        ax.text(cx, 0.18, sub, ha="center", va="center", fontsize=DIRECT_FS - 3, color="#444444", wrap=True)
+
+    footnote(fig, "n=5, native 단일 arm(개입 없음) - 무탐지·무조치는 detector 성능 근거 아님 · 반복별 실측값은 그림4-B 참고")
+    fig.savefig(OUT_DIR / "fig4a-aux-summary.png", dpi=DPI)
+    fig.savefig(OUT_DIR / "fig4a-aux-summary.svg")
+    plt.close(fig)
+
+
+def fig4b_aux_detail(out_aux, ws_rise_expected, recovered_expected):
+    fig = new_slide()
+    ax = fig.add_axes((0.06, 0.18, 0.88, 0.58))
+    ax.axis("off")
 
     table_rows = []
     for rep in range(1, 6):
-        table_rows.append([
-            f"{rep}", "None(위반 없음)", "False / none",
-            f"{ws_rise[rep]:.2f}", ("충족" if recovered[rep] else "미충족(rep1)"),
-        ])
-    header = ["rep", "t_slo", "detected/action", "ws 상승(MiB)", "±150MiB 복귀"]
+        table_rows.append([f"{rep}", "None(위반 없음)", "False / none",
+                            f"{ws_rise_expected[rep]:.2f}",
+                            "충족" if recovered_expected[rep] else "미충족(rep1)"])
+    header = ["rep", "t_slo", "detected / action", "working-set 상승(MiB)", "±150MiB 복귀"]
 
-    tbl = ax.table(cellText=table_rows, colLabels=header, loc="upper center", cellLoc="center", bbox=[0.05, 0.42, 0.9, 0.5])
+    tbl = ax.table(cellText=table_rows, colLabels=header, loc="center", cellLoc="center")
     tbl.auto_set_font_size(False)
-    tbl.set_fontsize(10.5)
+    tbl.set_fontsize(15)
+    tbl.scale(1, 2.6)
     for (r, c), cell_ in tbl.get_celld().items():
+        cell_.set_edgecolor("#BBBBBB")
         if r == 0:
             cell_.set_facecolor("#4C72B0")
             cell_.set_text_props(color="white", fontweight="bold")
-        elif c == 4 and r >= 1 and "미충족" in table_rows[r - 1][4]:
+        elif c == 4 and "미충족" in table_rows[r - 1][4]:
             cell_.set_facecolor("#FDE2D5")
 
-    summary_lines = [
-        "n = 5/5 (memory_pressure_negative_control_v1, native 단일 arm - 다른 arm 실행 없음, §97/§98)",
-        "t_slo = None 5/5  (지속 SLO 위반 0/5)",
-        "restart/OOM 0/5 변화, target UID 5/5 불변, Node MemAvailable 최솟값 range[4.924, 4.957]GiB (PASS 바 4GiB 이상)",
-        "baseline ±150MiB 복귀: 4/5 충족, 1/5(rep1) 미충족 - 원본 recovered=False 유지, PASS로 재분류하지 않음",
-    ]
-    ax.text(0.05, 0.30, "\n".join(summary_lines), transform=ax.transAxes, fontsize=10, va="top")
-    ax.text(0.05, 0.03,
-            "주의: native는 detector 자체가 없는 arm(개입 없음) - 이 표의 무탐지·무조치는 detector 성능의 근거가 아니라\n"
-            "이 auxiliary 시나리오가 설계대로 '무개입 상태에서 안전하게 SLO를 위반하지 않았는지'만 확인한다(§94.1).",
-            transform=ax.transAxes, fontsize=8.3, style="italic", color="#553300")
-    ax.set_title("그림4. Memory auxiliary(negative control) 요약 - core와 분리, 5건", fontsize=12.5, fontweight="bold")
-
-    fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig4-auxiliary-summary.png", dpi=200)
-    fig.savefig(OUT_DIR / "fig4-auxiliary-summary.svg")
+    fig.text(0.5, 0.92, "Memory Auxiliary - 반복별 실측값 (보조 표)", ha="center", fontsize=TITLE_FS - 1, fontweight="bold")
+    footnote(fig, "working-set 상승값은 §131 canonical baseline 값을 그대로 인용(재계산 아님)")
+    fig.savefig(OUT_DIR / "fig4b-aux-detail.png", dpi=DPI)
+    fig.savefig(OUT_DIR / "fig4b-aux-detail.svg")
     plt.close(fig)
-    manifest["fig4"] = {
-        "run_ids": aux_run_ids,
-        "working_set_rise_source": "§130.3/§131.3 canonical baseline(prepare_ok.baseline_working_set_bytes) 정정값 재인용(재계산 아님)",
-    }
+    manifest["fig4"] = {"ws_rise": ws_rise_expected, "recovered": recovered_expected}
 
 
 def main():
     core_run_ids, out_core, aux_run_ids, out_aux = load_authoritative()
+    ws_rise_expected, recovered_expected = verify_against_section_131(out_core, out_aux)
+
     manifest["core_run_ids"] = core_run_ids
     manifest["aux_run_ids"] = aux_run_ids
     manifest["core_n"] = len(core_run_ids)
     manifest["aux_n"] = len(aux_run_ids)
 
-    fig1_outcome_detection_path(out_core)
+    fig1_detection_path(out_core)
     fig2_detection_timing(out_core)
-    fig3_recovery_time(out_core)
-    fig4_aux_summary(out_aux, aux_run_ids)
+    fig3_recovery_time_single(out_core, "load_ramp", "a")
+    fig3_recovery_time_single(out_core, "pod_kill", "b")
+    fig3_recovery_time_single(out_core, "network_degrade", "c")
+    fig4a_aux_summary(ws_rise_expected)
+    fig4b_aux_detail(out_aux, ws_rise_expected, recovered_expected)
 
     (OUT_DIR / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("모든 그림 생성 완료 ->", OUT_DIR.resolve())
+    print("모든 슬라이드 생성 완료 ->", OUT_DIR.resolve())
     print("core run_ids:", len(core_run_ids), "| aux run_ids:", len(aux_run_ids))
 
 

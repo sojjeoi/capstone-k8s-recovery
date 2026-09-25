@@ -15758,3 +15758,145 @@ phase8_figures.py`(시각화 스크립트)와 `docs/design/phase8-figures/`
 state·hash·`collect_metrics.py` 등 기존 코드·이 문서 외의 기존
 파일은 전혀 건드리지 않았다. 클러스터 접속 0건, 새 trial 0건, 사전
 미등록 검정·우월성 결론 0건 - 전부 준수.
+
+## §133 - 10월 발표용 16:9 슬라이드 재디자인 (§131/§132 수치·분모 불변, 오프라인)
+
+§131/§132의 수치·분모(core 45/45, auxiliary SLO·안전 5/5, 복귀 4/5)는
+전혀 바꾸지 않고, `experiments/generate_phase8_figures.py`(§132에서
+만든 그 스크립트)만 전면 재작성해 16:9 발표 슬라이드로 재생성했다.
+클러스터 접속 0건, 결과 JSON·state·hash·모델·SLO 정의·판정 기준
+수정 0건.
+
+### 133.1 사전 와이어프레임 (구현 전 제시, 대화에서 승인 없이 바로 진행 - 지시가 이미 상세했음)
+
+| 슬라이드 | 제목 | 비고 |
+|---|---|---|
+| 1. 탐지 경로 | "탐지 경로(detection_source)는 시나리오·arm마다 다르다" | 누적 막대→3×3 매트릭스로 교체 |
+| 2. 탐지 시점 | "위반 전(선제) 탐지는 load_ramp 일부 반복에서만 관측됨" | native 3행 제거, 6행만 |
+| 3-A/B/C. 회복시간 | "[시나리오] - 회복시간 분포 (n≤5/arm, prevented 제외)" | 시나리오별 독립 슬라이드 3장(패널 통합 대신 분리 선택 - 발표 거리 가독성 우선) |
+| 4-A. Aux 요약 | "Memory Auxiliary - 무개입 상태 안전성 요약 (core와 별도 집계)" | 큰 통계 3블록 |
+| 4-B. Aux 상세 | "Memory Auxiliary - 반복별 실측값 (보조 표)" | rep1 강조, 5개 실측값 보존 |
+
+### 133.2 자동 대조 (그림 생성 전 실행, 스크립트에 내장 - `verify_against_section_131()`)
+
+`generate_phase8_figures.py` 실행 시작 시 §131 문서에 기재된 수치를
+하드코딩 기준값으로 삼아 재계산 결과와 자동 대조하고, 불일치가 있으면
+`AssertionError`로 그림 생성 자체를 막는다(그림을 만들고 나서 사람이
+눈으로 대조하는 방식이 아니라 실행 자체가 게이트). 이번 실행에서
+검증한 항목: `load_ramp`(3-arm)·`pod_kill/native`·`network_degrade/
+fixed_threshold`의 `recovery_sec` median/range/n, `pod_kill/proposed`
+`detection_lead_sec` median/range/n, `network_degrade/proposed`의
+`detection_source`(reactive 4/predictive 1)·`target_replaced`(False
+3/True 2), `load_ramp/proposed`의 개별 `detection_lead_sec` 4값
+(+61.26/+35.80/-19.19/-194.45), auxiliary 5건 `t_slo=None` - **전부
+PASS**, 실행 로그에 "§131 수치 자동 대조 PASS" 출력 확인.
+
+### 133.3 산출물 - 파일 목록 변경 (§132의 4파일 대체)
+
+기존 §132 산출물(`fig1-outcome-detection-path.*`, `fig2-detection-
+lead-time.*`, `fig3-recovery-time.*`, `fig4-auxiliary-summary.*`, 8개
+파일) **전부 삭제**하고 다음 8개(PNG+SVG, 13.333x7.5in@150dpi = 실제
+PowerPoint 16:9 크기)로 대체했다:
+
+| 파일 | 슬라이드 |
+|---|---|
+| `fig1-detection-path.{png,svg}` | 1 |
+| `fig2-detection-timing.{png,svg}` | 2 |
+| `fig3a-recovery-load_ramp.{png,svg}` | 3-A |
+| `fig3b-recovery-pod_kill.{png,svg}` | 3-B |
+| `fig3c-recovery-network_degrade.{png,svg}` | 3-C |
+| `fig4a-aux-summary.{png,svg}` | 4-A |
+| `fig4b-aux-detail.{png,svg}` | 4-B |
+| `manifest.json` | 그림별 run_id·계산식·유효 n·제외 사유(갱신) |
+
+### 133.4 디자인 기준 적용 내역
+
+- **슬라이드당 메시지 하나**: 제목 자체가 관측 사실을 서술하는
+  assertion 형태(예: "위반 전 탐지는 load_ramp 일부 반복에서만
+  관측됨") - 우월성을 암시하는 동사·비교급은 배제(그림3 3장은
+  "회복시간 분포"라는 중립 서술만 사용).
+- **실제 슬라이드 크기 렌더링**: `figsize=(13.333, 7.5)`(PowerPoint
+  16:9 표준 인치), `dpi=150` - 8개 PNG 전부 이 크기로 저장 후 Read
+  도구로 직접 열어 제목·축·범례·n·각주 겹침을 확인하고, 발견된 문제
+  (그림1 행 라벨이 캔버스 왼쪽 밖으로 잘림, 그림2 상단 3개 라벨
+  겹침·우측 40% 여백 과다, 그림3 n-라벨이 하단 각주와 겹침)를 전부
+  좌표·여백 재계산으로 수정한 뒤 재확인했다(수정 전/후 스크린샷
+  대조는 이번 턴 작업 로그 참고, 문서에는 최종본만 반영).
+- **얇은 글씨·촘촘한 격자·두꺼운 테두리·그림자·과잉 범례 제거**:
+  제목 27pt/축·눈금 16-18pt/직접 라벨 16pt, 가로 기준선만 옅게
+  (세로 격자 없음), spine은 좌·하단만 얇게, 그림자·둥근 카드 없음,
+  그림2/3은 matplotlib 기본 범례 대신 텍스트 직접 라벨로 대체(범례
+  상자 자체를 최소화).
+- **arm 색 전 그림 공통 + 도형 병행**: `native`=회색·원,
+  `fixed_threshold`=파랑·사각, `proposed`=빨강·삼각을 그림1(열 헤더
+  색)·그림2(marker 색+모양)·그림3(marker 색+모양) 전체에서 동일하게
+  적용 - 색각 이상 대비 도형·직접 텍스트 라벨 병행.
+- **중앙값 강조 + 개별값·n 유지**: 그림3에서 굵은 중앙값 선(선폭
+  4.2pt) 옆에 실제 값을 큰 글자로 병기하되, 5개(또는 유효) 개별
+  관측점을 전부 그대로 표시 - 점 삭제·축 절단 없음(y축 0부터 시작
+  유지).
+- **결정론적 지터**: 그림2/3의 점 겹침은 고정 시드(`np.random.
+  default_rng(20260925)` 등 시나리오·arm 조합 해시 기반)로 매번 동일한
+  jitter를 적용 - 재실행해도 그림이 달라지지 않는다.
+- **PNG+벡터 동시 출력**: 8개 슬라이드 전부 PNG(발표 삽입용)와
+  SVG(벡터, PPT 삽입·편집용) 쌍으로 저장.
+
+### 133.5 슬라이드별 설명 + 발표자 노트 (그림에서 뺀 방법론은 여기로 분리)
+
+각 슬라이드의 그림 내 각주는 한 줄로 압축했고, 아래 문단을 발표자
+노트(PPT 노트 슬라이드에 붙여넣기용)로 제공한다 - 그림 자체에는
+없지만 질의응답 대비용으로 필요한 설명이다.
+
+**슬라이드1(탐지 경로)** - 각주: "탐지 경로=detection_source 기준,
+detector_process와 다를 수 있음 · prevented=위반 없음(능동 예방
+의미 아님)".
+발표자 노트: 탐지 경로는 실제 판단 근거(`detection_source`)만
+표시했다 - 실행된 detector 프로세스(`detector_process`, 예:
+`proposed`는 항상 `isolation_forest`를 실행)와는 별개다. `network_
+degrade/proposed`처럼 `isolation_forest`가 실행되고도 4/5는 결과적
+으로 reactive fallback으로 판단된 경우가 있다. `prevented`가 표시된
+9칸(각 시나리오 rep1)은 이 반복에서 지속 SLO 위반이 관측되지
+않았다는 뜻이며, `native`의 `prevented`(§130.1에서 raw probe로
+독립 재검증)를 포함해 arm이 능동적으로 예방했다는 의미가 아니다.
+
+**슬라이드2(탐지 시점)** - 각주: "native는 detector가 없어 제외
+(15건) · predictive 메커니즘이어도 음수면 '위반 후 탐지'".
+발표자 노트: `detection_lead_sec = t_detection - t_slo`. 점의
+좌우 위치는 이 부호로만 정해지며 탐지 메커니즘 라벨과는 완전히
+분리된 축이다 - `network_degrade/proposed`의 유일한 `predictive`
+사례(1건)도 `-99.96초`로 음수라서 이 그림에서 왼쪽(위반 후)에
+표시된다. `load_ramp`에서만 2건(+61.26, +35.80초)이 실제로 위반
+전에 탐지됐다 - 표본이 시나리오당 4건뿐이라 이것이 시나리오
+특성인지 우연인지는 이 자료만으로 단정하지 않는다.
+
+**슬라이드3-A/B/C(회복시간)** - 각주: "n=5/arm 소표본, 사전 등록
+검정 없음 - 우월성 판단 근거 아님(arm별 stage 노출도 동일하지 않을
+수 있음)".
+발표자 노트: `recovery_sec = t_recovery - t_slo`, `prevented`
+(위반 없음) 반복은 회복시간 0이 아니라 애초에 정의되지 않아 각
+시나리오에서 arm당 정확히 1건씩 자연 제외됐다(그래서 `load_ramp`만
+n=4/5, `pod_kill`·`network_degrade`는 n=5/5). arm별로 실제 노출된
+stage·시간은 promotion이 언제 일어났는지에 따라 달라질 수 있어
+막대 높이나 중앙값 차이를 "동일한 조건에서 더 빠르다"는 의미로
+해석하면 안 된다 - 사전 등록된 유의성 검정도 없다.
+
+**슬라이드4-A/B(Memory Auxiliary)** - 각주(4-A): "n=5, native 단일
+arm(개입 없음) - 무탐지·무조치는 detector 성능 근거 아님 · 반복별
+실측값은 그림4-B 참고". 각주(4-B): "working-set 상승값은 §131
+canonical baseline 값을 그대로 인용(재계산 아님)".
+발표자 노트: 이 시나리오는 `native` 단일 arm만 실행했다(§97에서
+non-native는 preview headroom 부족으로 안전 실행 불가 확인, §98).
+"SLO 위반 0/5"·"안전 조건 5/5"는 무개입 상태에서 클러스터가
+안전했다는 뜻이지 detector가 뭔가를 잘 막았다는 뜻이 아니다(애초에
+`native`엔 detector가 없음). "복귀 4/5"의 미충족 1건(rep1)은 원본
+`recovered=False`를 그대로 유지했고(§130.4에서 이미 근거 제시 -
+±150MiB 허용오차를 벗어난 방향이 안전 위험의 반대), core 성능
+비교 그림과는 절대 합치지 않는다.
+
+### 133.6 범위 확인
+
+이번 턴 금지 사항 - 클러스터 접속(0건), 새 실험(0건), 결과 JSON·
+state·hash·모델·SLO 정의·§131 분모(0건 변경) - 전부 준수. 변경 파일은
+`experiments/generate_phase8_figures.py`(전면 재작성)와 `docs/design/
+phase8-figures/`(옛 8개 파일 삭제, 새 16개 파일+manifest.json 추가)
+뿐이다.
