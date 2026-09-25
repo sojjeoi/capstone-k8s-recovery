@@ -15610,3 +15610,151 @@ recovery 판정에 쓰는 canonical baseline)를 기준으로 계산한 값이�
 `recovered` 원본 값 변경(0건) - 전부 준수. 이번 절의 모든 수치는
 `collect_metrics.build_comparison()`(비수정)의 실제 출력값이며
 임의로 계산·가정한 값은 없다.
+
+## §132 - Phase 8 최종 결과 재현 가능한 시각화 4종 + 발표용 해석 초안 (오프라인, §131 확정 집합 그대로)
+
+클러스터 접속 0건, 새 trial·재측정·결과 대체 0건, 결과 JSON·state·
+hash·모델·SLO·`TrialResult` 스키마·기존 코드(`collect_metrics.py` 등)
+수정 0건. 이번 절에서 새로 만든 것은 시각화 전용 신규 스크립트
+[`experiments/generate_phase8_figures.py`](../../experiments/generate_phase8_figures.py)
+와 그 산출물(`docs/design/phase8-figures/`)뿐이다.
+
+### 132.1 그림 제작 전 사전 검증 (재대조 - 불일치 0건, 진행)
+
+- **run_id·hash 재대조**: core 45건(`load_ramp`/`pod_kill`=
+  `official-experiment-state-v2.json`, `network_degrade`=
+  `official-experiment-state.json`)과 auxiliary 5건 전부에 대해
+  `result_path` 파일의 실제 sha256을 다시 계산해 state의
+  `result_hash`와 대조 - **mismatch 0건**(§129/§130/§131과 동일 결과,
+  변경 없음).
+- **§131 표 수치 독립 재계산**: `collect_metrics.build_comparison()`을
+  같은 스코프로 다시 실행해 4개 값을 무작위 표본 대조했다 -
+  `load_ramp`/`native` `recovery_sec`(median 221.68, range[168.58,
+  321.69], n=4), `pod_kill`/`proposed` `detection_lead_sec`(median
+  -51.14, range[-52.65,-44.57], n=5), `network_degrade`/`proposed`의
+  `detection_source`(reactive 4, predictive 1)·`target_replaced`
+  (False 3, True 2) - **전부 §131 문서 값과 정확히 일치**. 불일치가
+  없으므로 그림 제작을 그대로 진행했다.
+
+### 132.2 산출물과 재현 방법
+
+`experiments/` 안에서 `python generate_phase8_figures.py` 실행(
+`KUBECONFIG` 불필요 - `results/official-experiment-state*.json`과
+`results/trial-*.json`만 읽는 읽기 전용 소비자). 산출물은
+`docs/design/phase8-figures/`에:
+
+| 파일 | 내용 |
+|---|---|
+| `fig1-outcome-detection-path.{png,svg}` | 그림1 |
+| `fig2-detection-lead-time.{png,svg}` | 그림2 |
+| `fig3-recovery-time.{png,svg}` | 그림3 |
+| `fig4-auxiliary-summary.{png,svg}` | 그림4 |
+| `manifest.json` | 그림별 사용 run_id 전체 목록·계산식·유효 n·제외 run_id·제외 사유(재현성 근거 원문) |
+
+공통 설계: 한글 제목·축·범례(Windows 내장 `Malgun Gothic`), **색상만
+쓰지 않고 도형(원=native/사각=fixed_threshold/삼각=proposed)·hatch
+패턴을 함께 사용**해 구분(그림1의 outcome hatch, 그림2/3의 arm별
+marker shape). PNG(발표 삽입용)와 SVG(벡터, 확대·편집용) 둘 다 생성.
+
+### 132.3 그림별 설명·재현 근거 요약
+
+**그림1(시나리오×arm outcome·탐지경로)** - core 45건, `(scenario,arm)`
+9개 셀 각각 `outcome` 개수(2종만 존재: `prevented`/`recovered` -
+`timeout`/`invalid_run`은 45건 전체에서 0건, 실측 확인)를 쌓은
+막대 + 각 막대 위에 `detection_source` 실제 분포를 별도 텍스트로
+표기(막대 색·hatch=outcome, 텍스트=탐지경로 - 두 축을 시각적으로
+분리해 혼동 방지). `load_ramp`의 세 arm 모두 rep1이 `prevented`인데,
+`fixed_threshold-01`은 `detected=False`(탐지 자체가 없었음 - native와
+같은 "무개입에 가까운" 양상)이고 `proposed-01`만 `detected=True`
+(predictive)였다는 세부는 그림 자체에는 다 담기지 않아 132.4
+해석에서 별도로 짚는다.
+
+**그림2(탐지 시점)** - `detection_lead_sec`이 **존재하는** trial만
+점으로 표시(공식: `t_detection - t_slo`, 초). 0 기준선은 "SLO 위반
+시각" 하나뿐이고, 점의 좌우 위치는 실측 부호로만 결정한다(
+`detection_source=predictive`라는 라벨은 marker 모양에만 반영하고
+좌우 위치에는 전혀 영향 없음 - 코드로 분리 구현). `native` 9개 셀
+전부와 `load_ramp/fixed_threshold`(3/5)는 탐지·위반 중 하나가 없어
+점을 찍지 않고 각 행 우측에 "미표시 N건"으로만 표기했다 - 0으로
+대체하지 않았다.
+
+**그림3(회복시간)** - `recovery_sec`(=`t_recovery - t_slo`, 초)이
+있는 trial만 점으로 표시, `outcome=prevented`인 4건(시나리오당 1건,
+`load_ramp`에만 존재)은 통계에서 자연 제외되고 각 그룹 하단에 실제
+분모(`n=4/5` 또는 `n=5/5`)를 명시했다. "동일 주입량을 받았다"는
+해석을 막기 위한 고지 문구를 그림 자체에 포함했다(promotion 발생
+여부에 따라 arm별 실제 stage 노출 시간이 달라질 수 있음, §98 이후
+반복 확인된 사실).
+
+**그림4(auxiliary 요약)** - core와 별도 그림/표로 분리. rep1의
+working-set 상승은 §130.3/§131.3에서 확정한 canonical baseline
+정정값 965.45MiB를 그대로 재인용(재계산 아님 - `manifest.json`에
+출처 명시), `cleanup_recovery_check.recovered` 원본값(`False`)을
+표에 그대로 노출하고 강조색으로만 구분했다(값 변경 없음). "native
+무탐지·무조치는 detector 성능의 근거가 아니다"라는 고지를 그림
+자체에 각주로 포함했다.
+
+### 132.4 발표용 해석 초안
+
+**관측된 사실**(수치만, §131/그림1-4에서 그대로):
+- core 45건(9개 셀×5)·auxiliary 5건 전부 §131 확정 분모 그대로 실행·
+  집계됨. `outcome`은 `prevented`/`recovered` 2종만 존재(45건 중
+  `prevented` 3건 - 세 arm 각각 `load_ramp` rep1).
+- `fixed_threshold`/`proposed`는 `pod_kill`·`network_degrade`
+  전부(10/10)에서 `detected=True`, `load_ramp`에서는 `fixed_threshold`
+  2/5·`proposed` 5/5.
+- `detection_lead_sec`이 양수(위반 전 탐지)로 관측된 사례는 core
+  전체에서 `load_ramp/proposed`의 2건(2/4 평가 가능 건)뿐이다. 나머지
+  모든 탐지(`pod_kill` 10/10, `network_degrade` 9/9 평가 가능 건)는
+  음수(위반 후)다 - `network_degrade`의 유일한 `predictive` 건
+  (`proposed-04`)도 `detection_lead_sec=-99.96`으로 **위반 후 탐지**다.
+- `load_ramp-native-01-mainexp-v2`는 raw probe 재검증(§130.1)으로
+  `t_slo=None`이 독립 재현된, 무개입 상태에서 SLO 위반이 관측되지
+  않은 유효한 trial이다(§131.1 확정 - "native가 예방했다"는 서술은
+  쓰지 않는다).
+- auxiliary 5건 전부 `t_slo=None`, working-set 상승 median 957.66MiB
+  (range[914.13, 965.45]), baseline ±150MiB 복귀 4/5(rep1 미충족,
+  원본 `False` 유지).
+
+**가능한 설명**(추정, 확정 아님 - 반증·추가 자료로 뒤집힐 수 있음):
+- `load_ramp`만 유일하게 양수 `detection_lead_sec`이 나온 것은
+  5단계에 걸친 점진적 부하 증가가 Isolation Forest에 "위반 전
+  추세"를 볼 시간을 주는 반면, `pod_kill`(즉시성)·`network_degrade`
+  (probe profile 전환 직후 급변)는 그럴 여유가 구조적으로 적기
+  때문일 수 있다.
+- `load_ramp` rep1이 세 arm 모두에서 `prevented`로 나온 것은 이
+  반복의 합성 부하가 우연히 SLO 임계치를 못 넘길 만큼 약했을
+  가능성을 시사한다(§130.1에서 원자료로 확인한 것과 같은 종류의
+  반복 간 변동).
+
+**현재 자료로 주장할 수 없는 것**:
+- **arm 간 우월성·통계적 유의성**: n=5/arm, 사전 등록된 검정 없음 -
+  어떤 arm이 "더 낫다/유의하게 빠르다"는 결론은 이 자료로 낼 수
+  없다. 임의의 합산 순위(예: 세 시나리오 평균을 내 순위를 매기는 것)
+  도 만들지 않았다.
+- **`network_degrade`의 predictive 탐지 1건이 선제 탐지였다는 것**:
+  메커니즘은 predictive였지만 시점은 위반 후(-99.96초)다 - 메커니즘
+  종류와 탐지 시점은 별개 축이다(§125-127, §131.4에서 이미 확립,
+  이번 그림2가 이를 시각적으로 재확인).
+- **`load_ramp-native-01`이 "native가 장애를 예방했다"는 것**: 이
+  trial은 무개입 상태에서 SLO 위반이 관측되지 않은 것이며, native
+  arm에는 애초에 개입 메커니즘이 없다(§131.1 확정 문구 그대로).
+- **arm별 동일 조건 비교**: promotion 발생 여부·시점에 따라 arm이
+  실제로 노출된 stage·시간이 달라질 수 있어(그림3 고지), "모든 arm이
+  같은 양의 장애를 받았다"는 전제로 회복시간을 비교할 수 없다.
+- **일반화**: 이 결과는 이 클러스터(2-node, 특정 vLLM 배포, 특정
+  fault profile)에서의 n=5/arm 관측이며, 다른 규모·부하·장애
+  강도로의 일반화는 이 자료만으로 주장하지 않는다.
+- **auxiliary를 detector 성능 근거로 쓰는 것**: `memory_pressure_
+  negative_control_v1`은 native 단일 arm이라 detector 자체가 없다 -
+  무탐지·무조치는 시나리오가 설계대로 안전했다는 근거이지 detector
+  우수성의 근거가 아니다(§131.3/그림4 고지 그대로).
+
+### 132.5 변경 범위 확인
+
+`git status`/`git diff`로 확인: 신규 파일은 `experiments/generate_
+phase8_figures.py`(시각화 스크립트)와 `docs/design/phase8-figures/`
+아래 9개 파일(그림 4종×2형식+manifest.json)뿐이고, 기존 결과 JSON·
+state·hash·`collect_metrics.py` 등 기존 코드·이 문서 외의 기존
+파일은 전혀 건드리지 않았다. 클러스터 접속 0건, 새 trial 0건, 사전
+미등록 검정·우월성 결론 0건 - 전부 준수.

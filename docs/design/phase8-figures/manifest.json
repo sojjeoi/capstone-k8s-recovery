@@ -1,0 +1,367 @@
+{
+  "core_run_ids": [
+    "load_ramp-native-01-mainexp-v2",
+    "load_ramp-fixed_threshold-01-mainexp-v2",
+    "load_ramp-proposed-01-mainexp-v2",
+    "load_ramp-fixed_threshold-02-mainexp-v2",
+    "load_ramp-proposed-02-mainexp-v2",
+    "load_ramp-native-02-mainexp-v2",
+    "load_ramp-proposed-03-mainexp-v2",
+    "load_ramp-native-03-mainexp-v2",
+    "load_ramp-fixed_threshold-03-mainexp-v2",
+    "load_ramp-native-04-mainexp-v2",
+    "load_ramp-proposed-04-mainexp-v2",
+    "load_ramp-fixed_threshold-04-mainexp-v2",
+    "load_ramp-native-05-mainexp-v2",
+    "load_ramp-proposed-05-mainexp-v2",
+    "pod_kill-native-01-mainexp-v2",
+    "pod_kill-fixed_threshold-01-mainexp-v2",
+    "pod_kill-proposed-01-mainexp-v2",
+    "pod_kill-fixed_threshold-02-mainexp-v2",
+    "pod_kill-proposed-02-mainexp-v2",
+    "pod_kill-native-02-mainexp-v2",
+    "pod_kill-proposed-03-mainexp-v2",
+    "pod_kill-native-03-mainexp-v2",
+    "pod_kill-fixed_threshold-03-mainexp-v2",
+    "pod_kill-native-04-mainexp-v2",
+    "pod_kill-proposed-04-mainexp-v2",
+    "pod_kill-fixed_threshold-04-mainexp-v2",
+    "pod_kill-fixed_threshold-05-mainexp-v2",
+    "pod_kill-native-05-mainexp-v2",
+    "pod_kill-proposed-05-mainexp-v2",
+    "load_ramp-fixed_threshold-05-retry1-mainexp-v2",
+    "network_degrade-fixed_threshold-01-mainexp-v1",
+    "network_degrade-proposed-01-mainexp-v1",
+    "network_degrade-fixed_threshold-02-mainexp-v1",
+    "network_degrade-proposed-02-mainexp-v1",
+    "network_degrade-native-02-mainexp-v1",
+    "network_degrade-proposed-03-mainexp-v1",
+    "network_degrade-native-03-mainexp-v1",
+    "network_degrade-fixed_threshold-03-mainexp-v1",
+    "network_degrade-native-04-mainexp-v1",
+    "network_degrade-proposed-04-mainexp-v1",
+    "network_degrade-fixed_threshold-04-mainexp-v1",
+    "network_degrade-fixed_threshold-05-mainexp-v1",
+    "network_degrade-native-05-mainexp-v1",
+    "network_degrade-proposed-05-mainexp-v1",
+    "network_degrade-native-01-retry1-mainexp-v1"
+  ],
+  "aux_run_ids": [
+    "memory_pressure_negative_control_v1-native-01-mainexp-v1",
+    "memory_pressure_negative_control_v1-native-02-mainexp-v1",
+    "memory_pressure_negative_control_v1-native-03-mainexp-v1",
+    "memory_pressure_negative_control_v1-native-04-mainexp-v1",
+    "memory_pressure_negative_control_v1-native-05-mainexp-v1"
+  ],
+  "core_n": 45,
+  "aux_n": 5,
+  "fig1": {
+    "run_ids": {
+      "load_ramp/native": [
+        "load_ramp-native-01-mainexp-v2",
+        "load_ramp-native-02-mainexp-v2",
+        "load_ramp-native-03-mainexp-v2",
+        "load_ramp-native-04-mainexp-v2",
+        "load_ramp-native-05-mainexp-v2"
+      ],
+      "load_ramp/fixed_threshold": [
+        "load_ramp-fixed_threshold-01-mainexp-v2",
+        "load_ramp-fixed_threshold-02-mainexp-v2",
+        "load_ramp-fixed_threshold-03-mainexp-v2",
+        "load_ramp-fixed_threshold-04-mainexp-v2",
+        "load_ramp-fixed_threshold-05-retry1-mainexp-v2"
+      ],
+      "load_ramp/proposed": [
+        "load_ramp-proposed-01-mainexp-v2",
+        "load_ramp-proposed-02-mainexp-v2",
+        "load_ramp-proposed-03-mainexp-v2",
+        "load_ramp-proposed-04-mainexp-v2",
+        "load_ramp-proposed-05-mainexp-v2"
+      ],
+      "pod_kill/native": [
+        "pod_kill-native-01-mainexp-v2",
+        "pod_kill-native-02-mainexp-v2",
+        "pod_kill-native-03-mainexp-v2",
+        "pod_kill-native-04-mainexp-v2",
+        "pod_kill-native-05-mainexp-v2"
+      ],
+      "pod_kill/fixed_threshold": [
+        "pod_kill-fixed_threshold-01-mainexp-v2",
+        "pod_kill-fixed_threshold-02-mainexp-v2",
+        "pod_kill-fixed_threshold-03-mainexp-v2",
+        "pod_kill-fixed_threshold-04-mainexp-v2",
+        "pod_kill-fixed_threshold-05-mainexp-v2"
+      ],
+      "pod_kill/proposed": [
+        "pod_kill-proposed-01-mainexp-v2",
+        "pod_kill-proposed-02-mainexp-v2",
+        "pod_kill-proposed-03-mainexp-v2",
+        "pod_kill-proposed-04-mainexp-v2",
+        "pod_kill-proposed-05-mainexp-v2"
+      ],
+      "network_degrade/native": [
+        "network_degrade-native-02-mainexp-v1",
+        "network_degrade-native-03-mainexp-v1",
+        "network_degrade-native-04-mainexp-v1",
+        "network_degrade-native-05-mainexp-v1",
+        "network_degrade-native-01-retry1-mainexp-v1"
+      ],
+      "network_degrade/fixed_threshold": [
+        "network_degrade-fixed_threshold-01-mainexp-v1",
+        "network_degrade-fixed_threshold-02-mainexp-v1",
+        "network_degrade-fixed_threshold-03-mainexp-v1",
+        "network_degrade-fixed_threshold-04-mainexp-v1",
+        "network_degrade-fixed_threshold-05-mainexp-v1"
+      ],
+      "network_degrade/proposed": [
+        "network_degrade-proposed-01-mainexp-v1",
+        "network_degrade-proposed-02-mainexp-v1",
+        "network_degrade-proposed-03-mainexp-v1",
+        "network_degrade-proposed-04-mainexp-v1",
+        "network_degrade-proposed-05-mainexp-v1"
+      ]
+    },
+    "formula": "outcome 값 개수(5건 중), detection_source 개수(collect_metrics.build_comparison() 출력 그대로)"
+  },
+  "fig2": {
+    "formula": "detection_lead_sec = t_detection - t_slo (초, collect_metrics._seconds_between). None(SLO 미위반 또는 미탐지)은 점으로 표시하지 않고 행 옆 개수로 별도 표기.",
+    "cells": {
+      "load_ramp/native": {
+        "plotted_run_ids": [],
+        "excluded_run_ids": [
+          "load_ramp-native-01-mainexp-v2",
+          "load_ramp-native-02-mainexp-v2",
+          "load_ramp-native-03-mainexp-v2",
+          "load_ramp-native-04-mainexp-v2",
+          "load_ramp-native-05-mainexp-v2"
+        ],
+        "excluded_reason": "무개입(detector 없음)",
+        "n_plotted": 0
+      },
+      "load_ramp/fixed_threshold": {
+        "plotted_run_ids": [
+          "load_ramp-fixed_threshold-02-mainexp-v2",
+          "load_ramp-fixed_threshold-05-retry1-mainexp-v2"
+        ],
+        "excluded_run_ids": [
+          "load_ramp-fixed_threshold-01-mainexp-v2",
+          "load_ramp-fixed_threshold-03-mainexp-v2",
+          "load_ramp-fixed_threshold-04-mainexp-v2"
+        ],
+        "excluded_reason": "SLO 미위반 또는 미탐지",
+        "n_plotted": 2
+      },
+      "load_ramp/proposed": {
+        "plotted_run_ids": [
+          "load_ramp-proposed-02-mainexp-v2",
+          "load_ramp-proposed-03-mainexp-v2",
+          "load_ramp-proposed-04-mainexp-v2",
+          "load_ramp-proposed-05-mainexp-v2"
+        ],
+        "excluded_run_ids": [
+          "load_ramp-proposed-01-mainexp-v2"
+        ],
+        "excluded_reason": "SLO 미위반 또는 미탐지",
+        "n_plotted": 4
+      },
+      "pod_kill/native": {
+        "plotted_run_ids": [],
+        "excluded_run_ids": [
+          "pod_kill-native-01-mainexp-v2",
+          "pod_kill-native-02-mainexp-v2",
+          "pod_kill-native-03-mainexp-v2",
+          "pod_kill-native-04-mainexp-v2",
+          "pod_kill-native-05-mainexp-v2"
+        ],
+        "excluded_reason": "무개입(detector 없음)",
+        "n_plotted": 0
+      },
+      "pod_kill/fixed_threshold": {
+        "plotted_run_ids": [
+          "pod_kill-fixed_threshold-01-mainexp-v2",
+          "pod_kill-fixed_threshold-02-mainexp-v2",
+          "pod_kill-fixed_threshold-03-mainexp-v2",
+          "pod_kill-fixed_threshold-04-mainexp-v2",
+          "pod_kill-fixed_threshold-05-mainexp-v2"
+        ],
+        "excluded_run_ids": [],
+        "excluded_reason": null,
+        "n_plotted": 5
+      },
+      "pod_kill/proposed": {
+        "plotted_run_ids": [
+          "pod_kill-proposed-01-mainexp-v2",
+          "pod_kill-proposed-02-mainexp-v2",
+          "pod_kill-proposed-03-mainexp-v2",
+          "pod_kill-proposed-04-mainexp-v2",
+          "pod_kill-proposed-05-mainexp-v2"
+        ],
+        "excluded_run_ids": [],
+        "excluded_reason": null,
+        "n_plotted": 5
+      },
+      "network_degrade/native": {
+        "plotted_run_ids": [],
+        "excluded_run_ids": [
+          "network_degrade-native-02-mainexp-v1",
+          "network_degrade-native-03-mainexp-v1",
+          "network_degrade-native-04-mainexp-v1",
+          "network_degrade-native-05-mainexp-v1",
+          "network_degrade-native-01-retry1-mainexp-v1"
+        ],
+        "excluded_reason": "무개입(detector 없음)",
+        "n_plotted": 0
+      },
+      "network_degrade/fixed_threshold": {
+        "plotted_run_ids": [
+          "network_degrade-fixed_threshold-01-mainexp-v1",
+          "network_degrade-fixed_threshold-02-mainexp-v1",
+          "network_degrade-fixed_threshold-03-mainexp-v1",
+          "network_degrade-fixed_threshold-04-mainexp-v1",
+          "network_degrade-fixed_threshold-05-mainexp-v1"
+        ],
+        "excluded_run_ids": [],
+        "excluded_reason": null,
+        "n_plotted": 5
+      },
+      "network_degrade/proposed": {
+        "plotted_run_ids": [
+          "network_degrade-proposed-01-mainexp-v1",
+          "network_degrade-proposed-02-mainexp-v1",
+          "network_degrade-proposed-03-mainexp-v1",
+          "network_degrade-proposed-04-mainexp-v1",
+          "network_degrade-proposed-05-mainexp-v1"
+        ],
+        "excluded_run_ids": [],
+        "excluded_reason": null,
+        "n_plotted": 5
+      }
+    }
+  },
+  "fig3": {
+    "formula": "recovery_sec = t_recovery - t_slo (초). outcome=prevented(t_slo 없음) trial은 0이 아니라 자연 제외 - 각 median 아래 유효 n 표기.",
+    "cells": {
+      "load_ramp/native": {
+        "run_ids_used": [
+          "load_ramp-native-02-mainexp-v2",
+          "load_ramp-native-03-mainexp-v2",
+          "load_ramp-native-04-mainexp-v2",
+          "load_ramp-native-05-mainexp-v2"
+        ],
+        "excluded_run_ids": [
+          "load_ramp-native-01-mainexp-v2"
+        ],
+        "n": 4,
+        "median": 221.68
+      },
+      "load_ramp/fixed_threshold": {
+        "run_ids_used": [
+          "load_ramp-fixed_threshold-02-mainexp-v2",
+          "load_ramp-fixed_threshold-03-mainexp-v2",
+          "load_ramp-fixed_threshold-04-mainexp-v2",
+          "load_ramp-fixed_threshold-05-retry1-mainexp-v2"
+        ],
+        "excluded_run_ids": [
+          "load_ramp-fixed_threshold-01-mainexp-v2"
+        ],
+        "n": 4,
+        "median": 226.17
+      },
+      "load_ramp/proposed": {
+        "run_ids_used": [
+          "load_ramp-proposed-02-mainexp-v2",
+          "load_ramp-proposed-03-mainexp-v2",
+          "load_ramp-proposed-04-mainexp-v2",
+          "load_ramp-proposed-05-mainexp-v2"
+        ],
+        "excluded_run_ids": [
+          "load_ramp-proposed-01-mainexp-v2"
+        ],
+        "n": 4,
+        "median": 124.57
+      },
+      "pod_kill/native": {
+        "run_ids_used": [
+          "pod_kill-native-01-mainexp-v2",
+          "pod_kill-native-02-mainexp-v2",
+          "pod_kill-native-03-mainexp-v2",
+          "pod_kill-native-04-mainexp-v2",
+          "pod_kill-native-05-mainexp-v2"
+        ],
+        "excluded_run_ids": [],
+        "n": 5,
+        "median": 257.27
+      },
+      "pod_kill/fixed_threshold": {
+        "run_ids_used": [
+          "pod_kill-fixed_threshold-01-mainexp-v2",
+          "pod_kill-fixed_threshold-02-mainexp-v2",
+          "pod_kill-fixed_threshold-03-mainexp-v2",
+          "pod_kill-fixed_threshold-04-mainexp-v2",
+          "pod_kill-fixed_threshold-05-mainexp-v2"
+        ],
+        "excluded_run_ids": [],
+        "n": 5,
+        "median": 158.15
+      },
+      "pod_kill/proposed": {
+        "run_ids_used": [
+          "pod_kill-proposed-01-mainexp-v2",
+          "pod_kill-proposed-02-mainexp-v2",
+          "pod_kill-proposed-03-mainexp-v2",
+          "pod_kill-proposed-04-mainexp-v2",
+          "pod_kill-proposed-05-mainexp-v2"
+        ],
+        "excluded_run_ids": [],
+        "n": 5,
+        "median": 119.26
+      },
+      "network_degrade/native": {
+        "run_ids_used": [
+          "network_degrade-native-02-mainexp-v1",
+          "network_degrade-native-03-mainexp-v1",
+          "network_degrade-native-04-mainexp-v1",
+          "network_degrade-native-05-mainexp-v1",
+          "network_degrade-native-01-retry1-mainexp-v1"
+        ],
+        "excluded_run_ids": [],
+        "n": 5,
+        "median": 391.42
+      },
+      "network_degrade/fixed_threshold": {
+        "run_ids_used": [
+          "network_degrade-fixed_threshold-01-mainexp-v1",
+          "network_degrade-fixed_threshold-02-mainexp-v1",
+          "network_degrade-fixed_threshold-03-mainexp-v1",
+          "network_degrade-fixed_threshold-04-mainexp-v1",
+          "network_degrade-fixed_threshold-05-mainexp-v1"
+        ],
+        "excluded_run_ids": [],
+        "n": 5,
+        "median": 382.56
+      },
+      "network_degrade/proposed": {
+        "run_ids_used": [
+          "network_degrade-proposed-01-mainexp-v1",
+          "network_degrade-proposed-02-mainexp-v1",
+          "network_degrade-proposed-03-mainexp-v1",
+          "network_degrade-proposed-04-mainexp-v1",
+          "network_degrade-proposed-05-mainexp-v1"
+        ],
+        "excluded_run_ids": [],
+        "n": 5,
+        "median": 374.56
+      }
+    }
+  },
+  "fig4": {
+    "run_ids": [
+      "memory_pressure_negative_control_v1-native-01-mainexp-v1",
+      "memory_pressure_negative_control_v1-native-02-mainexp-v1",
+      "memory_pressure_negative_control_v1-native-03-mainexp-v1",
+      "memory_pressure_negative_control_v1-native-04-mainexp-v1",
+      "memory_pressure_negative_control_v1-native-05-mainexp-v1"
+    ],
+    "working_set_rise_source": "§130.3/§131.3 canonical baseline(prepare_ok.baseline_working_set_bytes) 정정값 재인용(재계산 아님)"
+  }
+}
