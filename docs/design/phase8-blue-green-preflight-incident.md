@@ -15838,7 +15838,7 @@ PowerPoint 16:9 크기)로 대체했다:
 - **결정론적 지터**: 그림2/3의 점 겹침은 고정 시드(`np.random.
   default_rng(20260925)` 등 시나리오·arm 조합 해시 기반)로 매번 동일한
   jitter를 적용 - 재실행해도 그림이 달라지지 않는다.
-- **PNG+벡터 동시 출력**: 8개 슬라이드 전부 PNG(발표 삽입용)와
+- **PNG+벡터 동시 출력**: 7개 슬라이드 전부 PNG(발표 삽입용)와
   SVG(벡터, PPT 삽입·편집용) 쌍으로 저장.
 
 ### 133.5 슬라이드별 설명 + 발표자 노트 (그림에서 뺀 방법론은 여기로 분리)
@@ -15898,5 +15898,5 @@ non-native는 preview headroom 부족으로 안전 실행 불가 확인, §98).
 이번 턴 금지 사항 - 클러스터 접속(0건), 새 실험(0건), 결과 JSON·
 state·hash·모델·SLO 정의·§131 분모(0건 변경) - 전부 준수. 변경 파일은
 `experiments/generate_phase8_figures.py`(전면 재작성)와 `docs/design/
-phase8-figures/`(옛 8개 파일 삭제, 새 16개 파일+manifest.json 추가)
+phase8-figures/`(옛 8개 파일 삭제, 새 14개 파일+manifest.json 갱신)
 뿐이다.
