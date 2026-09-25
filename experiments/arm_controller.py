@@ -233,6 +233,10 @@ def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None,
         proc = state["proc"]
         return proc is not None and proc.poll() is None
 
+    def get_pid():
+        proc = state["proc"]
+        return proc.pid if proc is not None else None
+
     def get_crash_info() -> dict:
         proc = state["proc"]
         return {
@@ -275,7 +279,8 @@ def _subprocess_detector(cmd: list, name: str, cwd: Optional[str] = None,
         return {"already_stopped": False, "graceful": False, "exit_code": proc.returncode,
                  "stopped_at_utc": datetime.now(timezone.utc).isoformat()}
 
-    return Detector(start=start, is_alive=is_alive, stop=stop, name=name, get_crash_info=get_crash_info)
+    return Detector(start=start, is_alive=is_alive, stop=stop, name=name, get_crash_info=get_crash_info,
+                     get_pid=get_pid)
 
 
 def make_detector_for_arm(
@@ -326,7 +331,7 @@ def make_detector_for_arm(
         base.start()
 
     return Detector(start=start_with_reachability_preflight, is_alive=base.is_alive, stop=base.stop, name=base.name,
-                     get_crash_info=base.get_crash_info)
+                     get_crash_info=base.get_crash_info, get_pid=base.get_pid)
 
 
 def wrap_injector_with_preview_prep(

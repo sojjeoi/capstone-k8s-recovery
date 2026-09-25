@@ -285,6 +285,12 @@ class Detector:
     stop: Callable[[], None]
     name: str
     get_crash_info: Optional[Callable[[], dict]] = None
+    get_pid: Optional[Callable[[], Optional[int]]] = None
+    """선택 구현(후속 비용 계측 전용, 2026-09-25 추가) - 로컬 서브프로세스로
+    도는 detector(score_server.py/fixed_threshold.py)의 실제 OS PID를 반환한다
+    (start() 이후에만 유효, 그 전엔 None). 미구현(기본값 None)이면 기존과
+    동일 - run_once() 판정 로직은 이 필드를 전혀 참조하지 않는다(순수 관측용
+    부가 정보, 호출자가 원할 때만 폴링)."""
 
 
 @dataclass
@@ -624,7 +630,13 @@ def run_once(
     min_observation_sec: float = 0.0,
     readiness_probe_profile: Optional[str] = None,
     readiness_probe_timeout_sec: Optional[float] = None,
+    fixed_duration_observation: bool = False,
 ) -> TrialResult:
+    """fixed_duration_observation(기본 False - 기존 호출부 18곳 전부 이 인자를
+    안 넘기므로 동작이 100% 그대로 유지된다): True면 recovered/prevented가
+    확정돼도 OBSERVING을 조기 종료(break)하지 않고 timeout_sec 전체를 채운다
+    (후속 고정관측구간 프로토콜 전용). 아래 OBSERVING 루프의 break 조건과
+    그 직후 outcome 분류, 두 곳만 이 플래그로 분기하고 나머지 로직은 무변경."""
     results_dir = results_dir or RESULTS_DIR
     # run_id를 밖에서 넘길 수 있게 한 이유: injector/prober는 run_once() 호출
     # *전에* 이미 만들어져 있어야 하는데(인자로 받으므로), 그 어댑터들이
@@ -803,11 +815,21 @@ def run_once(
             evaluable = prober.is_slo_evaluable() if evaluable_hook_present else True
             observed_long_enough = (time.monotonic() - injection_monotonic) >= min_observation_sec
             prevented_confirmed = result.t_slo is None and evaluable and observed_long_enough
-            if result.t_injection_end is not None and (prevented_confirmed or result.t_recovery is not None):
+            if (not fixed_duration_observation and result.t_injection_end is not None
+                    and (prevented_confirmed or result.t_recovery is not None)):
                 break
             time.sleep(poll_interval_sec)
         else:
             result.outcome = "timeout"
+            if fixed_duration_observation:
+                # 조기 종료를 껐으므로 여기가 유일한 종료 경로 - 아래(830행대)
+                # "break로 왔을 때만" 분류와 같은 조건을 여기서도 적용해
+                # recovered/prevented를 정확히 구분한다(loop 마지막 iteration에서
+                # 이미 갱신된 값 기준).
+                if result.t_recovery is not None:
+                    result.outcome = "recovered"
+                elif result.t_slo is None and prevented_confirmed:
+                    result.outcome = "prevented"
 
         if result.outcome is None:
             # t_slo가 끝까지 안 찍혔으면 prevented 후보(최종 판정은

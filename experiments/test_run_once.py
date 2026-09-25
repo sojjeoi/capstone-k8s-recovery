@@ -590,6 +590,54 @@ def test_slo_violation_gates_recovery_check(tmp_path):
     print("OK - t_slo 이전엔 check_recovered() 미호출, t_slo<=t_recovery 순서 보장")
 
 
+def test_fixed_duration_observation_runs_full_window_but_classifies_correctly(tmp_path):
+    # 후속 고정관측구간 프로토콜용 회귀 테스트 - fixed_duration_observation=False
+    # (기본값, 미지정)일 때의 기존 동작은 완전히 그대로여야 하고, True일 때는
+    # recovered가 이미 확정돼도 조기 종료(break)하지 않아야 한다.
+    injector_early, _ = _fake_injector(is_done_after_calls=10)
+    prober_early, pcalls_early = _fake_prober(violates_after_calls=2, recovers_after_slo_calls=2)
+    result_early = run_once(
+        scenario="dry_run", arm="native", rep=20, sequence_index=20, order_seed=1,
+        injector=injector_early, prober=prober_early, timeout_sec=5, poll_interval_sec=0.02,
+        results_dir=tmp_path,
+    )
+    assert result_early.outcome == "recovered"
+    early_exit_calls = pcalls_early["is_alive"]  # is_alive()는 매 iteration 무조건 호출됨(t_slo 확정과 무관)
+
+    injector_fixed, _ = _fake_injector(is_done_after_calls=10)
+    prober_fixed, pcalls_fixed = _fake_prober(violates_after_calls=2, recovers_after_slo_calls=2)
+    result_fixed = run_once(
+        scenario="dry_run", arm="native", rep=21, sequence_index=21, order_seed=1,
+        injector=injector_fixed, prober=prober_fixed, timeout_sec=1.0, poll_interval_sec=0.02,
+        results_dir=tmp_path, fixed_duration_observation=True,
+    )
+    assert result_fixed.outcome == "recovered", result_fixed.outcome
+    assert result_fixed.t_slo is not None and result_fixed.t_recovery is not None
+    assert result_fixed.t_slo <= result_fixed.t_recovery
+    # 같은 조건(빠른 회복)인데 fixed_duration_observation=True 쪽이 조기종료 없이
+    # 더 오래(더 많이 poll) 도는지 확인 - 이게 핵심 회귀 방지 포인트다.
+    assert pcalls_fixed["is_alive"] > early_exit_calls, (
+        "fixed_duration_observation=True인데 조기 종료된 것처럼 poll 횟수가 적음"
+    )
+    print("OK - fixed_duration_observation=False(기본)는 조기종료 유지, "
+          "True는 recovered 확정 후에도 전체 timeout_sec을 채우고 outcome은 정확히 분류")
+
+
+def test_fixed_duration_observation_prevented_when_never_violates(tmp_path):
+    # 위반이 끝까지 없으면 fixed_duration_observation=True에서도 prevented여야
+    # 한다(반드시 recovered로 오분류되면 안 됨 - else절 재분류 로직의 회귀 테스트).
+    injector, _ = _fake_injector(is_done_after_calls=1)
+    prober, pcalls = _fake_prober(violates_after_calls=10_000)
+    result = run_once(
+        scenario="dry_run", arm="native", rep=22, sequence_index=22, order_seed=1,
+        injector=injector, prober=prober, timeout_sec=0.3, poll_interval_sec=0.02,
+        results_dir=tmp_path, fixed_duration_observation=True,
+    )
+    assert result.outcome == "prevented", result.outcome
+    assert result.t_slo is None and result.t_recovery is None
+    print("OK - fixed_duration_observation=True + 끝까지 위반 없음 -> prevented(재분류 정확)")
+
+
 def test_prevented_when_never_violates(tmp_path):
     # 1차 리뷰 지적 회귀 테스트: 끝까지 SLO 위반이 없으면 recovered가 아니라
     # prevented여야 하고, check_recovered()는 아예 호출되면 안 된다.

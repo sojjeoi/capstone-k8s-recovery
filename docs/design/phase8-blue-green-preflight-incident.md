@@ -16245,3 +16245,51 @@ conntrack 특성상 구 pod로 계속 라우팅될 수 있다는 가설을 코�
 0건, 새 실험 실행 0건, 새 시나리오·재학습·유의성 검정 없음. 불리한
 결과(load_ramp/fixed_threshold의 실제 절반 무개입, network_degrade의
 사실상 무차이) 그대로 보고.
+
+## §138 - §137 정정 + 후속 계측 구현 + 첫 라이브 비교 1쌍 실행
+
+전체 8절 보고서는 `docs/design/phase8-followup-live-execution.md`.
+§137의 계측 설계를 실제로 구현하고(§137은 설계만, 이번엔 코드+오프라인
+검증+라이브 실행까지), 동시에 §137 자체의 계산 오류도 정정했다.
+
+**§137 정정 핵심**: (1) `viol_sec_total`이 사실 recovery_sec 합계였다는
+지적을 받아들여 raw 위반시간(persistence 미적용)을 별도 계산 - 45건
+전수에서 재위반·관측종료 미회복 episode는 0건으로 재확인. (2) **신규
+발견**: `detection_source=predictive` 기록이 그 trial의 recovery_sec을
+만들었다고 가정하면 안 된다 - `load_ramp-fixed_threshold-02`는 탐지가
+회복 6분49초 뒤에 일어난 무관한 사후 사건이었다(§137은 이 trial을
+"빠른 개입 성공"으로 잘못 다뤘음). proposed의 근접-0초 outlier(rep4)도
+같은 성격임을 처음 확인 - "예측 경로가 실제로 회복을 만든" 확실한
+사례는 fixed_threshold 1건(rep5), proposed 3건(rep2/3/5)으로 좁아짐.
+(3) load_ramp 전환율은 전체 유효 trial(2/5 vs 5/5)과 SLO 위반 관측
+trial(2/4 vs 4/4) 분모를 분리해 재표기. (4) 요청 실패율은 "pooled"
+명시 + trial별 분해 추가. (5) 관측종료 미완료 요청 조사에서 발견한
+3~4배 큰 격차 3건은 데이터 손실이 아니라 (2)에서 찾은 "회복 훨씬 뒤
+재탐지"와 정확히 일치함을 확인.
+
+**계측 구현**: `probe_followup.py`(request_id 기반 sent/completed/
+timeout/unresolved 분리, 실제 로컬 서버로 5개 오프라인 테스트),
+`followup_cost_sampler.py`(로컬 detector PID psutil 샘플링 + 클러스터
+pod kubectl top, 실제 프로세스·실제 클러스터로 자체 검증), `run_once.py`
+에 `fixed_duration_observation` 파라미터 1개 추가(기본 False, 회귀
+테스트 56/56), `arm_controller.py`에 `Detector.get_pid()` 추가. 전체
+스위트 763/763 유지. 라이브 전 스모크 테스트(실제 pod+이미지로
+probe_followup.py 5초 실행)까지 마친 뒤 실행.
+
+**라이브 실행**: 6개 선행조건 전부 충족 확인 후 `load_ramp/fixed_threshold`
+→`load_ramp/proposed` 1쌍을 `post_hoc_followup-v1` 네임스페이스로 실행
+(둘 다 outcome=recovered, 정상 완료, 클러스터 정상 정리 확인). 실행
+중 계측 자체의 진짜 공백 1건을 발견 - 조기종료용으로 설계된 raw CSV
+갱신 로직이 `fixed_duration_observation=True`의 장시간 관측에서는
+멈춰버려 로컬 CSV가 불완전(904건 발신 중 97건만 반영)했다. 판정
+시점까지는 영향 없었고(정상 판정), evidence JSONL은 전량 회수돼
+있어 이를 기준으로 재계산 - fixed_threshold 실패율 0.11%/지연초과율
+7.85%, proposed 실패율 0%/지연초과율 6.86%, detector 비용은 proposed가
+CPU 약 7배(0.64s→4.47s)·메모리 약 4.2배(44.8MB→189.0MB) - 이 프로젝트
+최초의 실측 비용 수치. n=1이라 우열 판정 근거 아님, 3단계 결론 구조로만
+보고.
+
+**범위 확인**: 기존 core 45건·모델·SLO·공식 하니스 기본 동작 수정 0건,
+serving 응답 경로 변경 0건(pod 식별 여전히 보류), 결과 나쁘다고 재시도
+0건, 이번 1쌍 이후 자동 반복 확대 0건 - 발견한 계측 공백을 고치는 것을
+다음 반복의 선행 조건으로 명시하고 여기서 멈췄다.
