@@ -14805,3 +14805,199 @@ non-native arm이 공통으로 가진** 정상 분류임을 코드 docstring으�
 
 **memory auxiliary로 자동 진행하지 않았다** - §109 재측정 계획에
 포함된 적이 없으므로 별도 지시 없이는 시작하지 않는다.
+
+## §128 - `memory_pressure_negative_control_v1` auxiliary 5건(native 단일 arm) 실행 성공 - Phase 8 마지막 공식 실행 완료(core 45 + auxiliary 5 = 50/50)
+
+지시대로 §94-§98에 동결된 `1000MB×120초 direct`, `native` 단일 arm만
+사용해 mainexp-v1 state/plan에 남아있던 auxiliary 5슬롯(sequence_index
+46-50, 전부 `planned`)을 순차 실행했다. non-native arm·강도 상향·별도
+calibration·core 시나리오 재실행은 전부 0건.
+
+### 128.1 실행 전 확인 (전부 충족)
+
+- **core/replacement hash·state**: `official-experiment-state.json`(v1)
+  의 completed 36건 + `official-experiment-state-v2.json`(v2)의
+  completed 30건 전부 `result_path` 파일의 실제 sha256이 state의
+  `result_hash`와 일치(mismatch 0). `replacements`(pod_kill-proposed-
+  01, network_degrade-native-01, load_ramp-fixed_threshold-05) 3건의
+  연결 상태 그대로 확인.
+- **Git 동기화**: `HEAD==origin/master`(`a8e41d1`), working tree
+  clean(gitignored `experiments/results/`·`anomaly-detection/v3/
+  model_v32/artifacts/` 제외).
+- **Node**: `sj-control`/`sj-worker` 둘 다 `Ready`·`MemoryPressure=
+  False`.
+- **Rollout**: `phase=Healthy`, `active==preview==stable==b544bfdd5`
+  (단일 revision), 다른 RS 전부 desired/ready=0, `pauseConditions=
+  None`. base readinessProbe `timeoutSeconds=1`(base profile 확인).
+- **endpoint·pod UID·restart/OOM**: `vllm-active` endpoint(
+  `10.244.36.28:8000`)가 활성 pod `vllm-serving-b544bfdd5-dtwn9`(uid
+  `af7274d9-3212-43ae-bda3-fd4c6a92404d`)의 실제 IP와 일치, restart=0,
+  container memory limit **6Gi**.
+- **context·Chaos CR·실험 pod·observer 잔여**: `/admin/experiment-run`
+  `{"current":null}`, `podchaos/networkchaos/stresschaos` 0건, 잔여
+  detector/observer 프로세스 없음.
+- **recovery-policy/Prometheus 연결과 최신 memory 지표**: port-forward
+  (8080/9090) 재기동 후 `/healthz` 200, Prometheus `/-/ready` 200.
+  `memory_pressure_adapter.check_prometheus_health_for_injection()`(
+  §96에서 신선도 검사가 추가된 바로 그 함수)를 직접 호출해 fresh 값
+  확인: **Node MemAvailable 5.820GiB**, **target pod working set
+  3.514GiB**, `healthy=True`.
+- **동결된 headroom 게이트**: `MIN_NODE_AVAILABLE_WITH_PROJECTED_
+  STRESS_BYTES`(4GiB)·`MIN_NODE_AVAILABLE_BYTES`(3GiB, 즉시중단) 둘 다
+  코드 상수를 직접 읽어 재확인. 1000MB stress 투영치 `5.820-0.977=
+  4.843GiB` ≥ 4GiB로 **PASS**(native는 preview가 없어 §97.3의 co-
+  resident headroom 문제 자체가 발생하지 않음 - 그래도 지시대로 실제
+  값을 직접 확인).
+- **`--plan`/`--dry-run` 스코프 확인**: `--scenario memory_pressure_
+  negative_control_v1`으로 `--plan` 실행 결과 정확히 5 trial(전부
+  `analysis_group=auxiliary_negative_control`, `core=0`) 확인.
+  `--dry-run`(클러스터 호출 0건) 실행 후 state 재확인 - 5건 전부
+  `planned` 그대로, core completed count(36) 불변 - core 45건과
+  analysis group이 완전히 분리됨을 실행 전에 기계적으로 확인했다.
+
+### 128.2 5건 결과표 (전부 `native`, sequence_index 46-50)
+
+| rep | run_id | t_injection | working set 상승 | MemAvailable 최소 | restart/OOM | target UID | `cleanup_recovery_check.recovered` | postflight 8/8 | hash |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | `...-native-01-mainexp-v1` | 00:00:06Z | 958.29MiB | 4.952GiB | 0/False(불변) | `af7274d9-...`(불변) | **False**(§128.3 참고) | ok | 일치 |
+| 2 | `...-native-02-mainexp-v1` | 00:09:54Z | 958.06MiB | 4.924GiB | 0/False | `af7274d9-...` | True | ok | 일치 |
+| 3 | `...-native-03-mainexp-v1` | 00:19:35Z | 957.66MiB | 4.937GiB | 0/False | `af7274d9-...` | True | ok | 일치 |
+| 4 | `...-native-04-mainexp-v1` | 00:29:25Z | 914.13MiB | 4.957GiB | 0/False | `af7274d9-...` | True | ok | 일치 |
+| 5 | `...-native-05-mainexp-v1` | 00:39:15Z | 957.66MiB | 4.945GiB | 0/False | `af7274d9-...` | True | ok | 일치 |
+
+5건 전부 `injection_valid=True`, `AllInjected=True`(안전 로그
+전체 확인), `outcome=prevented`/`state=completed`, `t_slo=None`,
+`detected=False`, `detector=None`, `action=none`, `target_replaced=
+False`, Node `Ready`·`MemoryPressure=False` 전 구간 유지. working set
+상승 5건 전부 §94.5 기준(≥800MiB) 충족, target working set 최대치도
+5건 전부 **4.46GiB 미만**으로 5GiB 상한에 크게 못 미침. Node
+MemAvailable은 5건 전부 최소값도 **4.92GiB 이상**으로 PASS
+바(4GiB)·즉시중단 임계치(3GiB) 모두에 여유 확보.
+
+반복 간 간격은 §94.2 동결값(**최소 300초 cooldown + baseline 복귀
+확인**)을 그대로 적용했다 - `run_all_scenarios.py`가 trial 사이에
+이 대기를 자동으로 넣지 않으므로(§94.3의 `run_round()`처럼 한 세션
+안에서 3회를 도는 구조가 아니라 매 trial을 별도 subprocess로 실행하는
+구조), 각 trial의 `t_injection_end` 이후 정확히 300초가 지날 때까지
+polling으로 대기한 뒤에만 다음 trial의 라이브 headroom 재확인(§128.1과
+동일 함수 재호출)·Chaos CR/Rollout/context 재확인을 거쳐 다음 trial을
+시작했다 - 5건 모두 이 절차를 거쳤다.
+
+### 128.3 rep 1의 `cleanup_recovery_check.recovered=False` - 판단 근거(중단 아님)
+
+rep 1 종료 후 안전 로그의 `cleanup_recovery_check` 이벤트가
+`recovered=False`를 기록했다: `baseline_working_set_bytes=
+3773026304`(3.514GiB) vs `final_working_set_bytes=3533176832`
+(3.290GiB), 허용오차 `tolerance_bytes=157286400`(150MiB)을 **약
+229MiB 초과**. 이것이 §94.6의 즉시 중단 조건에 해당하는지, 그대로
+다음 반복으로 진행해도 되는지를 그 자리에서 다음 근거로 판단했다:
+
+1. **방향이 반대다**: `final`이 `baseline`보다 **낮다**(누출·잔류
+   상승이 아니라 오히려 하락). §94.6이 나열한 13개 즉시중단 조건
+   (`t_slo` 발생, MemAvailable 3GiB 미만, working set 5GiB 초과,
+   restart 증가, OOMKilled, Node NotReady·pressure, target
+   replacement, metric completeness 실패, CR 삭제·소멸 실패, cleanup
+   실패, port-forward 장애) 중 어느 것도 "허용오차보다 더 많이
+   내려간 경우"를 규정하지 않는다 - working set 하락은 안전 위험의
+   반대 방향이다.
+2. **라이브 재확인으로 즉시 교차검증**: rep 1 종료 3분 뒤
+   `check_prometheus_health_for_injection()`을 다시 호출해 실측 -
+   working set **3.291GiB**로 `cleanup_recovery_check`의
+   `final_working_set_bytes`(3.290GiB)와 사실상 동일 - 일시적
+   변동이 아니라 안정된 값이었다.
+3. **오케스트레이터 자체의 8개 postflight 게이트는 전부 `ok=true`**
+   (`rollout_healthy_single_revision`/`quiescent`/`no_leftover_
+   chaos_crs`/`no_leftover_experiment_pods` 포함) - `cleanup_status=
+   ok`. 이 하락 신호는 `run_all_scenarios.py`의 abort 로직에 배선된
+   게이트가 아니라 `memory_pressure_adapter`의 스크립트 자체 로그
+   이벤트다.
+4. **rep 2 이후 재현되지 않음**: rep 2의 `prepare_ok` baseline이
+   정확히 rep 1의 이 낮아진 값(3.290GiB)에서 다시 시작했고, rep
+   2-5는 전부 `recovered=True`(최종값이 각 반복 자체 baseline과
+   150MiB 이내로 일치) - 5건에 걸친 baseline 값 자체가 3.25~3.51GiB
+   사이에서 자연스럽게 오르내렸다(stress 유무와 무관한 vLLM serving
+   pod 자체의 working set 노이즈로 판단, cgroup 계정 특성상 흔한
+   현상).
+
+**판정**: §94.6 즉시중단 조건에 해당하지 않고, 안전 위험 방향도
+아니며, 오케스트레이터 게이트·라이브 재확인 모두 정상이므로 **중단하지
+않고 다음 반복으로 진행**했다. 코드(허용오차 판정 로직)는 이번 턴
+범위 밖이라 수정하지 않았다 - `recovered` 필드의 양방향 민감도는
+사실로만 여기 기록한다.
+
+### 128.4 집계 (5건, `native` 단일 arm - **recovery 성능 비교 데이터 아님**)
+
+- `AllInjected` 5/5, `injection_valid` 5/5.
+- working set 상승: 914~958MiB(중앙값 958MiB) - 5/5 ≥800MiB 기준
+  충족, §95/§97.2 실측(957~958MiB)과 정확히 같은 범위.
+- Node MemAvailable 최솟값: 4.92~4.96GiB(5/5) - PASS 바(4GiB)·
+  즉시중단(3GiB) 모두에 여유.
+- target working set 최대치: 4.18~4.46GiB(5/5, 5GiB 상한 대비 여유).
+- `t_slo`: **5/5 `None`**(sustained SLO 위반 없음, §94.1의 검증
+  목적과 일치).
+- `detected`/`detector`/`action`: **5/5 False/None/none** - detector
+  신호·조치 전부 없음.
+- `target_replaced`: 5/5 `False`.
+- restartCount: 5/5 처음부터 끝까지 **0**(불변). OOMKilled: 5/5
+  `False`.
+- target pod UID: 5건 전부 `af7274d9-3212-43ae-bda3-fd4c6a92404d`로
+  동일(교체 없음).
+- audit 신호: 5/5 없음(`audit_record_id=None`) - `git fetch` 재확인
+  결과 이번 5건으로 인한 신규 upstream 커밋 0건(native는 detector가
+  없어 promotion·판단 자체가 발생하지 않으므로 예상된 결과).
+
+**명시**: `native`의 무탐지·무조치는 이 시나리오의 **기대되는 결과**이지
+(§94.1 "sustained SLO 위반은 발생하지 않아야 한다"의 목적 달성),
+detector 성능의 증거가 아니다 - 애초에 `native` arm에는 detector
+자체가 없다(§94.2 `detector: 없음`). fixed_threshold/proposed에서
+이 profile이 불필요한 탐지·조치를 유발하는지는 §97에서 이미 클러스터
+용량 한계(co-resident preview headroom 부족)로 안전 실행이 불가함이
+확인되어 **본 실험에서 native 전용으로 구조적으로 제한**된 상태이고
+(§98), 이번 절에서도 그 결정을 재검토하거나 non-native를 시도하지
+않았다.
+
+### 128.5 core 45건과 auxiliary 5건 분리 검증
+
+- **auxiliary 5건**(§128.2): 전부 `analysis_group=auxiliary_negative_
+  control`, `status=completed`, `result_hash` 일치, `cleanup_status=
+  ok`, postflight 8/8 `ok=true`.
+- **core 45건**(권위 있는 집합 - `load_ramp`/`pod_kill`은
+  `mainexp-v2`, `network_degrade`는 `mainexp-v1`, §109/§113/§117/
+  §127에서 이미 확정): 이번 턴 실행 전후로 v1 completed 36건·v2
+  completed 30건의 파일 hash가 state의 `result_hash`와 전부 일치,
+  값 변경 0건 - auxiliary 실행이 core 결과에 어떤 영향도 주지
+  않았음을 직접 확인했다.
+- `official-experiment-state.json`(v1)의 `memory_pressure_negative_
+  control_v1` 블록만 5/5 `planned`→`completed`로 전환됐고, 같은
+  파일의 `pod_kill`(6 completed+1 failed+1 invalid+8 planned, §109
+  이후 `mainexp-v2`로 이관되어 v1 쪽은 의도적으로 미재개 상태 -
+  기존에 이미 문서화된 상태, 이번 턴에서 손대지 않음)·`load_ramp`
+  (15 completed)·`network_degrade`(15 completed+1 failed)는 전혀
+  변경되지 않았다.
+- **Phase 8 전체 50-trial 매트릭스 현황**: core 45(권위 있는 집합
+  기준 45/45 완료) + auxiliary 5(5/5 완료) = **50/50 완료**.
+
+### 128.6 소요 시간·연결 안정성·최종 클러스터 상태
+
+- 첫 trial `t_injection`(00:00:06Z)부터 마지막 trial 종료 후 최종
+  검증까지 약 **43분**(00:00:06Z~00:43Z경) - preflight 조사 시간을
+  포함해도 이번 턴 총 소요는 90분 한도 이내.
+- 연결 안정성: kubectl/API, recovery-policy(8080)·Prometheus(9090)
+  port-forward 전 구간 끊김 없음.
+- 최종 클러스터 상태: Node 2개 `Ready`·`MemoryPressure=False`,
+  Rollout `Healthy`·단일 revision(`b544bfdd5`, base readinessProbe
+  timeout=1), 다른 RS desired=0, pod UID·restart(0) 불변, endpoint
+  정상 매칭, Chaos CR 0건, `kubectl diff -f rollout.yaml`=0,
+  `/admin/experiment-run` null, recovery-policy `/healthz` 200 -
+  native arm은 애초에 preview·profile 전환을 전혀 만들지 않으므로
+  "복원"이 아니라 시작부터 끝까지 변경 없음을 확인한 것에 가깝다.
+- Git: 이번 5건으로 인한 신규 audit-log 커밋 0건(§128.4) -
+  `git fetch` 결과 `HEAD==origin/master` 그대로 유지, 병합 불필요.
+
+### 128.7 범위 확인
+
+이번 턴 금지 사항 - non-native arm(0건), 강도 상향(0건), 별도
+calibration(0건), core 시나리오 재실행(0건), 전체 통계 분석·우월성
+결론(시작 안 함 - §128.4/128.5는 이번 5건 자체의 기술 통계·분리
+확인일 뿐, `collect_metrics.py` 기반 arm 간 비교나 결론은 다음 지시를
+기다린다) - 전부 준수.
