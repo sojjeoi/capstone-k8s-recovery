@@ -15215,3 +15215,239 @@ curl 등 실클러스터 호출 없음), 결과 JSON 수정(0건), state 수정(
 (0건), 성능 우월성 결론·새 통계 검정(0건) - 전부 준수. 산출물은
 적격성 표(129.1-129.3, 129.6)·예외 목록(129.2, 129.5)·분석 분모
 (129.6)·남은 판단 사항(129.7)뿐이다.
+
+## §130 - §129 보류 판단 2건 + 문서 수치 차이 1건 재조사 - 원자료 기반 결론 (읽기전용)
+
+지시대로 새 trial(0건), 클러스터 접속(0건 - kubectl/curl 등 실클러스터
+호출 없음), 결과 JSON·state·hash·모델·threshold·SLO 정의·판정
+기준·코드 수정(0건). `slo_judge.py`/`run_once.py`/
+`memory_pressure_adapter.py`/`collect_metrics.py`/계약서는 전부
+읽기만 했다.
+
+### 130.1 `load_ramp-native-01-mainexp-v2` - 동결된 `slo_judge` 원자료 재적용
+
+**state/hash 확인(선행)**: `official-experiment-state-v2.json`에서
+`status=completed`, `analysis_group=core_fault_comparison`,
+`sequence_index=1`, `cleanup_status=ok`, `result_path` 파일의
+sha256이 `result_hash`와 일치 - §129.1에서 이미 확인한 것과 동일,
+변경 없음.
+
+**원시 자료 확인**: 이 run_id의 원시 파일 3종이 모두 존재함을
+확인했다 - `results/probe-load_ramp-native-01-mainexp-v2-native-1-
+raw.csv`(520개 개별 요청, `probe.py`의 SLO 전용 probe 원본 로그),
+`results/ramp-summary-load_ramp-native-01-mainexp-v2-native-1.csv`
+(5단계 ramp 자체의 처리량 요약), `results/trial-load_ramp-native-01-
+mainexp-v2.json`(집계 결과).
+
+**함정 주의(투명 기록)**: `ramp-summary-*.csv`의 stage별 p95는
+**2.415~2.915초**로 SLO 임계치(0.648초)를 훨씬 넘는 것처럼 보여
+처음엔 위반을 의심했다. 그러나 `slo_judge.py` 자신의 주석(25-27행)이
+명시적으로 경고한다 - `ramp.py` 자체 원시 로그는 **`max_tokens=10`**
+프로필이고, `slo_judge`의 0.648초 임계치는 **`probe.py`의
+`max_tokens=1`** 프로필에만 적용 가능하다("ramp.py 자체 원시 로그
+(max_tokens=10)에 이 상수를 적용하면 안 된다"). 즉 `ramp-summary.csv`
+의 높은 p95는 SLO 판정과 무관한 별개 측정 도구의 값이다 - 이 함정에
+빠지지 않도록 `probe-*-raw.csv`(SLO 판정용 원본)만 사용했다.
+
+**동결된 `slo_judge` 재적용 결과** (코드 변경 없이 그대로 실행):
+```
+rows = slo_judge.load_raw('probe-load_ramp-native-01-mainexp-v2-native-1-raw.csv')
+points = slo_judge.evaluate(rows)
+slo_judge.find_t_slo(points)  ->  None
+```
+- 총 520개 표본, 관측 구간 2026-09-23T17:01:37Z ~ 17:10:16Z(약
+  8분39초).
+- `LATENCY_THRESHOLD=0.648s`(=2×`L_BASELINE` 0.324s, §3 동결),
+  `LATENCY_PERSIST_SEC=30`, `AVAILABILITY_THRESHOLD=0.99`,
+  `WINDOW_SEC=60`, `MIN_SAMPLES_FOR_RELIABLE_P95=20` - 전부 코드
+  상수 그대로, 변경 없음.
+- raw latency 평균 0.303초, 최댓값 1.049초(단일 최댓값). 520개
+  포인트 중 **11개**만 순간적으로 `latency_violating` 또는
+  `availability_violating`이었고, 그중 어느 것도 **30초 연속** 조건을
+  만족하지 못해 `find_t_slo()`가 `None`을 반환했다(스트릭이 매번
+  중간에 끊김).
+- 501/520 지점이 `latency_evaluable=True`(60초 롤링 윈도우에 20개
+  이상 표본) - 판정 불능(표본 부족) 구간이 아니라 실제로 "위반이
+  없다"고 판정할 만큼 표본이 충분했다.
+
+**`slo_evaluable_at_exit=True`가 보장하는 것과 보장하지 않는 것**:
+- **보장한다**: `run_once.py`가 종료 시점에 `Prober.is_slo_evaluable()`
+  훅을 실제로 평가했고 그 값이 `True`였다는 것 - 즉 "관측 창이 신뢰할
+  만한 표본으로 채워졌다"는 사실만 보증한다(운영적으로는 위 재적용
+  결과의 501/520 evaluable 지점과 일치).
+- **보장하지 않는다**: 주입된 장애가 SLO를 위반시킬 만큼 강했다는
+  것, 또는 이 반복의 `outcome=prevented`가 계약서 §3 3조건 중
+  3번째("같은 시나리오 native 반복들에서 SLO 위반이 재현됨")를 이
+  반복 단독으로 만족시킨다는 것. `run_once.py` 812-826행 자체 주석이
+  이를 명시한다: "t_slo가 끝까지 안 찍혔으면 prevented 후보(최종
+  판정은 `collect_metrics.py`가 같은 시나리오 native 반복과
+  교차검증해서 확정 - 계약서 §3의 3조건 중 하나는 여기서 알 수
+  없음)". 즉 `run_once.py`의 `outcome="prevented"` 대입(820행)은
+  **arm과 무관하게 기계적**이다 - "t_slo가 None이고 evaluable하고
+  최소 관측시간을 채웠다"는 조건만 본다(816-820행).
+
+**`p95_peak`/`availability_min`이 `None`인 이유(코드 확인, 이 trial만의
+특이사항 아님)**: `run_once.py`의 `TrialResult` 데이터클래스(460-461행)
+에 필드는 존재하지만, `run_once.py`·`run_load_ramp_trial.py` 어디에도
+이 두 필드를 **대입하는 코드가 없다**(`grep`으로 전체 재확인). 실제로
+이 두 필드를 채우는 유일한 코드는 `explore_memory_pressure_intensity.py`
+(memory_pressure 강도탐색·calibration 전용 별도 도구)의 scoped-SLO
+dict뿐이다. 다른 core trial 4건(`load_ramp-native-02`, `load_ramp-
+fixed_threshold-01`(`outcome=prevented`, non-native), `network_degrade-
+proposed-04`, `pod_kill-fixed_threshold-01`)을 표본 확인한 결과
+**전부 `p95_peak=None`/`availability_min=None`**이었다 - arm·outcome과
+무관하게 core 시나리오 trial 전체에서 구조적으로 채워지지 않는
+필드임을 확인했다. **이 null만으로 장애나 정상을 추정하지 않는다** -
+지시대로 이 필드는 이 trial의 판정에 어떤 정보도 주지 않는다(진단
+가치 0, §129.2에서 이 null을 추가 의심 근거로 든 것은 이번 조사로
+근거가 없었음이 확인됨).
+
+**충돌 명시**:
+1. **계약서 §3(41-55행) 원문**: `prevented`는 "① probe 정상, ②
+   injection_valid, ③ 같은 시나리오 native 반복들에서 SLO 위반이
+   재현됨(=이 시나리오가 무개입 시 진짜로 SLO를 위반할 만큼 강하다는
+   게 경험적으로 확인됨)"을 **모두** 만족해야 하고, 이어서 "`native`
+   자체는 개입이 없으므로 `prevented`가 나올 수 없다(`recovered`
+   또는 `timeout`만 가능)"고 **조건 없이** 명시한다.
+2. **`collect_metrics.py`의 `_check_prevented_validity()`**: 이
+   계약서 문구를 그대로 코드화해 `arm=native AND outcome=prevented`
+   를 **무조건**(`pilot 여부와 무관하게 항상 이상`) 이슈로 남긴다 -
+   조건 ③(같은 시나리오 native 반복에서 위반이 재현되는가)을 실제로
+   교차검증하는 로직은 없다.
+3. **§113.10(이 trial이 처음 완료된 시점의 기존 조사)**: 이미 같은
+   이슈를 조사해 "검증 오류가 아니라 진짜 결과"로 판정했고
+   (`mainexp-v1`의 `native-01`은 같은 위치에서 위반이 발생해
+   `recovered`가 나온 것과 대조, §101.5의 native 반복 간 큰 편차
+   33.3~251.4초를 근거로 제시), `included_in_main_analysis`에서
+   제외하지 않았다.
+4. **§129(이번 감사 전 턴)**: `p95_peak`/`availability_min` null을
+   추가 근거로 들어 이 건을 다시 "판단 필요"로 재상정했다 - **§113.10을
+   교차 확인하지 않은 이번 세션 자체의 조사 공백**이었음을 투명하게
+   인정한다(재작업이지 새로운 결함 발견이 아니었다).
+
+**원자료로 정당화되는 제안**: 위 4개 출처 중 §113.10과 이번 절의
+독립 재현(원본 raw CSV에 동결된 `slo_judge`를 그대로 적용해 `t_slo=
+None`을 재현)이 서로 다른 방법으로 같은 결론에 도달했다 - **이
+trial의 `outcome=prevented`는 데이터 오류나 라벨링 결함이 아니라,
+이 반복에서 고정 5단계 ramp(0.025~0.40 RPS)가 SLO를 실제로 한 번도
+넘기지 못한 결과다.** core 45건 중 native arm 15건의 14/15(93%)는
+위반이 재현되어 계약서 §3 조건③의 "경험적으로 확인됨"이 시나리오
+수준에서는 유지되지만, 개별 반복 단위로 100% 보장되는 것은 아님을
+이 1건이 보여준다. **최종 분석 포함을 제안**하며(원본 결과·state는
+그대로), 계약서 §3 54행의 "native는 prevented가 나올 수 없다"는
+조건③을 "시나리오 전체"가 아니라 "개별 반복"에 적용할 때만 이
+1건과 충돌한다는 점을 정확한 쟁점으로 남긴다 - 문구를 수정할지는
+이번 턴 범위 밖이라 제안만 하고 결정하지 않는다. 최종 수용 여부는
+사용자 확인 사항이다.
+
+### 130.2 `memory_pressure_negative_control_v1` rep1의 `recovered=False` - 4개 규칙 재구분 + 추가 근거
+
+§129.4의 4개 규칙 구분(§94.5 PASS 체크리스트/§94.6 즉시중단/adapter
+비차단 cleanup/§98·계약서 §8 공식 집계 정의)은 그대로 유지한다 -
+"중단 사유가 아님"과 "PASS 조건을 전부 충족함"을 동일시하지
+않는다. 원본 `recovered=False`는 이번에도 수정하지 않았다.
+
+**이번 절에서 추가로 확인한 근거**:
+
+1. **§94.5의 자체 선례(사용 가능한 원칙)**: §94.5 자신이 이미 P95에
+   대해 "Point P95가 순간적으로 threshold를 넘어도 30초 연속
+   (sustained) 판정이 없으면(=t_slo 미발생) 기록만 하고 이 반복은
+   PASS할 수 있다"는 원칙을 명시한다 - "숫자 기준을 한 번 벗어나도
+   그 자체로 안전 결과에 실질적 영향(sustained 위반)이 없으면
+   기록으로 남기고 PASS를 막지 않는다"는 이 프로젝트 고유의 기존
+   원칙과 rep1의 상황(150MiB 허용오차를 벗어났지만 방향이 안전
+   위험의 반대이고, 뒤이은 반복에서 재현되지 않음)은 같은 종류의
+   판단 구조를 공유한다 - 단, `_wait_for_working_set_recovery()`는
+   최대 30초간 반복 재시도 후 판정하므로(순간 1회 표본이 아님)
+   P95의 "순간적" 사례와 완전히 동일하지는 않다는 차이도 함께
+   명시한다.
+2. **idle 상태 자체의 자연 변동폭(직접 관측, 신규)**: rep1의
+   주입 전 baseline(`prepare_ok.baseline_working_set_bytes`,
+   23:57:17Z) = 3.5139GiB, rep2의 주입 전 baseline(`prepare_ok`,
+   00:09:54Z 부근, 완전한 cooldown·cleanup 이후 측정) = 3.2905GiB -
+   **두 trial 사이에 stress가 전혀 없었던 약 12분 동안만으로도
+   working set이 약 223MiB 자연 변동**했다. 이는 rep1의 cleanup 후
+   최종값이 baseline보다 약 229MiB 낮게 나온 것과 크기가 같은
+   자릿수이며, 방향도 이 pod의 유휴 상태 자체가 시점마다 자연스럽게
+   오르내림을 직접 데이터로 뒷받침한다(stress 메커니즘과 무관한
+   변동이라는 §128.3의 판단을 원자료로 재확인).
+
+**SLO·안전성 집계 포함 가능 여부(근거 있는 제안)**:
+- **SLO 축(`t_slo`)**: 5/5 포함을 제안한다 - `cleanup_recovery_check`
+  는 `t_slo`/latency probe와 **완전히 별개의 파이프라인**(Prometheus
+  기반 Node/pod 메모리 지표 vs latency probe)이며, `recovered`
+  필드가 `t_slo` 계산에 관여하는 코드 경로는 존재하지 않는다(코드
+  확인). rep1도 `t_slo=None`이며 이 값 자체에는 의문의 여지가 없다.
+- **안전성 축(restart/OOM/Node 상태/MemAvailable/working-set 상승)**:
+  5/5 포함을 제안한다 - rep1도 이 5개 지표 전부 독립적으로 정상
+  확인됨(§129.3 표 그대로, restart 0/OOM False/Node Ready/MemAvailable
+  4.95GiB/상승 965.45MiB - 130.3 정정값 반영).
+- **cleanup/baseline-복귀 축만 별도 보고를 제안**: "baseline ±150MiB
+  복귀 = **4/5**(rep1만 미충족, 미충족 방향은 안전 위험의 반대)"를
+  다른 7개 지표와 **혼합하지 않고 그 자체로 명시**한다 - "cleanup:
+  5/5 정상"으로 뭉뚱그리지도, rep1을 조용히 n=4로 빼지도 않는다.
+- **이 축에서 rep1을 최종 PASS로 셀지 여부는 기존 규칙만으로 확정할
+  수 없다**(§129.4의 4개 규칙이 서로 다른 답을 준다는 결론은 이번
+  조사로도 바뀌지 않았다) - **사용자 결정 사항으로 유지**한다.
+
+### 130.3 working-set 상승값 차이(958.29 vs 965.45 MiB) - 원본 대조로 증명, 오기 아님
+
+같은 rep1 안전 로그(`memory-pressure-safety-memory_pressure_
+negative_control_v1-native-01-mainexp-v1.jsonl`)에서 두 값 모두
+재현했다 - **단순 오기가 아니라 서로 다른 "baseline" 기준점을 쓴
+두 계산식**이었음을 정확히 증명한다:
+
+| | 기준 이벤트 | 시각 | working_set_bytes | 계산 |
+|---|---|---|---|---|
+| 피크(공통) | `safety_tick` | 2026-09-25T00:00:06.850267+00:00 | 4785373184 (4.4567GiB) | - |
+| **정의 A**(§128.2 rep1 원 수치) | **첫 `safety_tick`**(주입 전 마지막 폴링) | 2026-09-24T23:59:43.258782+00:00 | 3780530176 (3.520893GiB) | 피크−A = **958.29 MiB** |
+| **정의 B**(§129.3, §128.2의 rep2-5) | **`prepare_ok.baseline_working_set_bytes`** | 2026-09-24T23:57:17.218710+00:00 | 3773026304 (3.513905GiB) | 피크−B = **965.45 MiB** |
+
+`prepare_ok`와 첫 `safety_tick` 사이에 **146.04초**의 간격이 있고,
+그 사이에 이미 working set이 약 7.16MiB(3773026304→3780530176)
+자연 상승했다 - 정의 A는 이 148초 만큼 "늦은" 시점을 baseline으로
+써서 상승폭을 그만큼 과소평가한다.
+
+**증명(어느 값이 맞는가)**: `memory_pressure_adapter.py`의 `cleanup()`
+함수 자신이 recovery 판정에 쓰는 코드상 유일한 "baseline" 값은
+`baseline_working_set["v"]`이며, 이는 `prepare_ok` 시점에 설정된
+값(정의 B와 동일한 소스)이다 - **정의 B가 코드 자신의 baseline
+정의와 일치**한다. 또한 §128.2의 rep2~5 수치(958.06/957.66/914.13/
+957.66)는 전부 각 반복의 `prepare_ok.baseline_working_set_bytes`
+로 재계산해도 **정확히 동일**했다(§129.3에서 이미 확인) - 즉 §128.2
+의 표 안에서도 **rep1만 다른 계산식을 썼다는 불일치**였다. rep1은
+§128 작성 이전, trial 1 완료 직후 가장 먼저 수행한 즉석 확인에서
+"첫 safety_tick"을 baseline 대용으로 쓴 결과가 그대로 표에 남은
+것이다.
+
+**결론**: **965.45 MiB(정의 B)가 correct/consistent 값이다.**
+958.29 MiB(§128.2의 rep1 항목)는 데이터 손상이 아니라 §128 작성
+당시의 계산식 불일치(같은 표의 다른 행과도, 코드의 baseline 정의와도
+다른 기준점 사용)였다 - §128.2 원문은 수정하지 않고(작성 당시
+기록 보존), 이 절을 정정 근거로 남긴다. 향후 이 표를 인용할 때는
+965.45 MiB를 쓴다.
+
+### 130.4 최신화된 분석 분모 (결론·우월성 판단 없음)
+
+| 항목 | 값 |
+|---|---|
+| Phase 8 전체 실행 | **50/50 완료**(불변) |
+| core 분석 적격 건수 | **45/45** - `load_ramp-native-01-mainexp-v2`는 이번 절의 원자료 재현(동결 `slo_judge`로 `t_slo=None` 독립 재확인)에 근거해 포함을 제안(최종 수용은 사용자 확인) |
+| auxiliary SLO 집계 분모 | **5/5**(t_slo 축, rep1 포함 - 근거 130.2) |
+| auxiliary 안전성 집계 분모(restart/OOM/Node/MemAvailable/ws상승) | **5/5**(rep1 포함 - 근거 130.2) |
+| working-set 복귀(±150MiB) 기준 충족 건수 | **4/5**(rep1만 미충족, 방향은 안전 위험의 반대 - 130.2/§128.3) |
+| 판단 대기 건수 | **1건**(aux rep1의 cleanup/baseline-복귀 축을 이 축에서 PASS로 셀지 여부만 - §129.4의 규칙 충돌이 이번 조사로도 해소되지 않음) |
+
+core의 `load_ramp-native-01-mainexp-v2`는 강한 원자료 근거로 포함을
+제안하는 상태이며(사실상 결정에 가까움), 형식상 최종 승인만 사용자
+확인 사항으로 남긴다. 이 표는 core/auxiliary를 여전히 분리 표기하며
+합산하지 않는다. 성능 우월성 결론·새 통계 검정은 포함하지 않는다.
+
+### 130.5 범위 확인
+
+이번 턴 금지 사항 - 새 trial(0건), 클러스터 접속(0건), 결과 JSON·
+state·hash·모델·threshold·SLO 정의·판정 기준·코드 수정(전부 0건),
+`recovered=False`→`True` 변경(0건), "중단 안 함=전부 PASS" 식
+표현(사용 안 함), 성능 우월성 결론·새 통계 검정(0건) - 전부 준수.
+변경 파일은 이 문서 하나뿐임을 커밋 전 `git status`/`git diff`로
+확인한다.
