@@ -15001,3 +15001,217 @@ calibration(0건), core 시나리오 재실행(0건), 전체 통계 분석·우�
 결론(시작 안 함 - §128.4/128.5는 이번 5건 자체의 기술 통계·분리
 확인일 뿐, `collect_metrics.py` 기반 arm 간 비교나 결론은 다음 지시를
 기다린다) - 전부 준수.
+
+## §129 - Phase 8 공식 50건(core 45 + auxiliary 5) 최종 분석 전 적격성 감사 - 결론 없음, 판단 필요 항목 2건 발견
+
+지시대로 이번 턴은 **감사만** 수행했다: 새 trial 0건, 클러스터 접속
+0건(kubectl/curl 등 실클러스터 호출 없음 - 전부 로컬 파일·코드
+읽기전용 분석), 결과 JSON·state·동결값 수정 0건, 판정 기준 사후
+변경 0건. `collect_metrics.py`/`memory_pressure_adapter.py`/
+`run_all_scenarios.py`는 전부 읽기만 했다(수정 0건).
+
+### 129.1 core 45건 대조 - 권위 있는 집합 구성과 무결성
+
+**권위 있는 집합 정의**(§109.2/§113/§117/§127에서 이미 확정, 이번
+절에서 재확인만 함): `load_ramp`/`pod_kill`은 `official-experiment-
+state-v2.json`(`mainexp-v2`), `network_degrade`는 `official-
+experiment-state.json`(`mainexp-v1`)의 `analysis_group=
+core_fault_comparison`·`status=completed` 행만.
+
+- **개수**: 정확히 **45건**(중복 0, 시나리오×arm 9개 셀 모두 정확히
+  5반복, 셀 누락 0).
+- **hash**: 45건 전부 `result_path` 파일의 sha256이 state의
+  `result_hash`와 일치(mismatch 0).
+- **`is_pilot`**: 45건 전부 `False`(pilot 혼입 0).
+- **대체(replacement) 연결**: 45건에 실제로 관련된 것은 **2건뿐** -
+  `load_ramp-fixed_threshold-05-mainexp-v2`→`...-retry1-mainexp-v2`,
+  `network_degrade-native-01-mainexp-v1`→`...-retry1-mainexp-v1`
+  (둘 다 `replacement_status=completed`). 원본 두 건은 각각
+  `status=failed`로 보존되며 45건에서 제외 확인.
+  - `load_ramp-fixed_threshold-05-mainexp-v2`(원본)는 실제로
+    `results/trial-*.json` 파일이 존재하고 `outcome=invalid_run`/
+    `state=invalid`(API 연결 끊김으로 인한 조기 종료, §112/§113 기존
+    기록과 일치) - `_classify_exclusion()`이 `outcome==invalid_run`
+    규칙으로 자동 제외함을 코드로 직접 확인. `network_degrade-
+    native-01-mainexp-v1`(원본)은 `result_path=None`(파일 자체가
+    생성된 적 없음, §122.4/§123 기존 기록과 일치) - 애초에
+    `load_all_results()`의 글롭 대상이 될 수 없음.
+  - `pod_kill-proposed-01-mainexp-v1`→`...-retry1-mainexp-v1` 대체는
+    **45건과 무관**하다 - `pod_kill`의 권위 있는 원본은 `mainexp-v2`
+    전체이므로, 이 대체쌍은 §109.2가 "선행 자료"로 명시적으로
+    분리한 `mainexp-v1` pod_kill 블록(6 valid+2 중단) 내부의 대체일
+    뿐이다. 이 대체쌍을 45건에 섞으면 안 된다는 점을 명시한다.
+- **precursor/pilot 혼입 확인**: `mainexp-v1`의 원본 `load_ramp`
+  15건(§101, `is_pilot=False`)과 `pod_kill` 6 valid+2 중단(§102-105)
+  은 §109.2에서 이미 "선행 자료"(자동 안전검사가 없던 시점의 하니스로
+  실행됨)로 명시적으로 분리·보존됐고, 이번 45건 구성에 **0건**
+  포함됨을 직접 확인했다(아래 129.6에서 이 분리가 코드 차원에서도
+  왜 필요한지 경험적으로 증명).
+
+### 129.2 core 45건 - `build_comparison()` 재검증 (schema/timing/audit/분류)
+
+45건만 정확히 스코프해 `collect_metrics.build_comparison()`을
+재실행한 결과 **이슈 1건**:
+
+| run_id | 필드 | 내용 |
+|---|---|---|
+| `load_ramp-native-01-mainexp-v2` | `outcome` | `arm=native`인데 `outcome=prevented` - 계약서 §3(`_check_prevented_validity()`)상 native는 `prevented`가 나올 수 없음 |
+
+**원자료 추가 대조**(검증 코드가 자동으로 안 하는 부분, 직접 확인):
+이 trial의 `p95_peak`와 `availability_min`이 **둘 다 `None`**이다 -
+같은 `load_ramp`/`native`의 나머지 4개 반복(rep 2~5, `mainexp-v1`/
+`v2` 전부)은 예외 없이 `outcome=recovered`이고, core 45건 중
+`native` arm 15건(`load_ramp`/`pod_kill`/`network_degrade` 각 5) 중
+**이 1건만** `outcome=prevented`·`slo_evaluable_at_exit=True`다 -
+자기 자신을 제외한 14/15 native core trial과 값이 다르다. 중복/
+누락/timing 순서 위반/audit 정합성 이슈는 45건 전부에서 **0건**.
+
+**판단 필요(§129.7-1)**: 이 1건이 (a) 해당 반복에서 부하가 실제로
+SLO를 전혀 위협하지 않을 만큼 가벼웠던 정당한 경계 사례인지, (b)
+runner의 `outcome` 라벨링 결함인지는 이번 턴 범위(원자료 재확인만,
+재실행·재판정 금지) 밖이라 **판정하지 않는다** - 원본 결과·state는
+수정하지 않았다.
+
+### 129.3 auxiliary 5건 - core와 분리한 SLO·working set·안전·cleanup 표
+
+| rep | run_id | hash | postflight 8/8 | `cleanup_status` | `t_slo` | ws 상승(MiB) | ws 최대(GiB) | MemAvail 최소(GiB) | restart/OOM | target UID 불변 | `cleanup_recovery_check.recovered` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | `...-native-01-mainexp-v1` | 일치 | 8/8 | ok | None | 965.45 | 4.457 | 4.952 | 0/False | Y | **False** |
+| 2 | `...-native-02-mainexp-v1` | 일치 | 8/8 | ok | None | 958.06 | 4.226 | 4.924 | 0/False | Y | True |
+| 3 | `...-native-03-mainexp-v1` | 일치 | 8/8 | ok | None | 957.66 | 4.226 | 4.937 | 0/False | Y | True |
+| 4 | `...-native-04-mainexp-v1` | 일치 | 8/8 | ok | None | 914.13 | 4.183 | 4.957 | 0/False | Y | True |
+| 5 | `...-native-05-mainexp-v1` | 일치 | 8/8 | ok | None | 957.66 | 4.183 | 4.945 | 0/False | Y | True |
+
+(§128에서 기록한 값과 별개로 이번 감사에서 원본 result JSON·safety-log
+JSONL을 처음부터 다시 읽어 재계산한 값 - 재계산 결과 전부 일치, 값
+변경 0건.) 5/5 `hash_ok`, 5/5 postflight 8/8, 5/5 `t_slo=None`(지속
+SLO 위반 없음), 5/5 restart/OOM 불변, 5/5 target UID 불변, 5/5 working
+set 상승 ≥800MiB, 5/5 Node MemAvailable 최소값 ≥4GiB. rep1만
+`recovered=False`(원본 그대로 표시, 아래 129.4에서 4개 규칙으로
+구분 적용).
+
+`build_comparison()`을 aux 5건에만 스코프해 재실행한 결과도 이슈
+**5건** - 전부 129.2와 동일한 `arm=native/outcome=prevented`
+규칙(`_check_prevented_validity()`)이며, 이 규칙은 core 3개
+fault-scenario를 염두에 두고 작성된 것으로 보인다(§97.2가 이미
+`pilot-memory-negative-native-01`에 대해 `outcome=prevented`를
+"clean PASS"로 명시적으로 기록한 것과 동일 패턴 - 이 scenario는
+§94.1부터 `native`의 `outcome=prevented`가 정상적으로 기대되는
+값이었다). 이 5건은 `included_in_main_analysis`에 영향을 주지
+않는다(`_classify_exclusion()`은 이 이슈를 배제 사유로 쓰지 않음,
+129.6 참고) - 코드를 수정하지 않았으므로 이슈로만 남긴다.
+
+### 129.4 auxiliary rep1의 `recovered=False` - 4개 규칙을 구분 적용 (결론 미확정)
+
+"중단 사유가 아님"과 "모든 PASS 조건을 충족함"을 같은 뜻으로 쓰지
+않기 위해, 서로 다른 4개 규칙을 각각 독립적으로 적용한다:
+
+1. **§94.5 PASS 체크리스트(13항목, 원래는 §94-95의 "3회 재현성
+   검증→동결" 판정용)**: 항목 12("cleanup 후 working set이 기존
+   검증 규칙의 baseline 허용 범위로 복귀")를 rep1에 문자 그대로
+   적용하면 **불충족**(`recovered=False`, tolerance 150MiB 대비 약
+   229MiB 초과 - 129.3의 raw 수치 그대로). 나머지 12항목은 rep1도
+   전부 충족. rep 2-5는 13항목 전부 충족.
+2. **§94.6 즉시중단 조건(13항목)**: rep1을 포함한 5건 전부 **0/13
+   해당** - `recovered=False`는 이 13개 조건 어디에도 나열되어
+   있지 않다(가장 가까운 "cleanup 실패"는 CR 삭제·소멸 실패를
+   가리키며, `_wait_for_working_set_recovery()`와는 다른 코드
+   경로 - 129.5 참고).
+3. **adapter의 비차단 cleanup 규칙(코드로 확인, `memory_pressure_
+   adapter.py` `cleanup()`)**: CR 삭제 확인(실패 시 `RuntimeError`
+   - 이것이 §94.6/§98의 실제 "cleanup 실패" 중단 경로)이 끝난
+   **뒤에만** `_wait_for_working_set_recovery()`를 호출하고,
+   반환값(`recovered`, `final_ws`)은 안전 로그에 **기록만** 한다 -
+   `raise`하지 않고, `cleanup_status`/`outcome`/`state`/제어흐름
+   어디에도 반영하지 않는다. 코드 레벨에서 이 필드는 순수 진단
+   정보다.
+4. **§98/계약서 §8의 공식 auxiliary 분석 정의**: 계약서 §8은
+   `auxiliary_negative_control`의 지표로 "지속적 SLO 위반 여부·
+   working-set 상승·MemAvailable·restart/OOM/Node 상태·불필요 탐지·
+   불필요 조치·cleanup·자원 오버헤드"를 나열하지만, §94.5의 13항목
+   체크리스트를 5회 본실험 반복에도 그대로 재적용하라고 명시적으로
+   재천명하지 않는다 - §94.5는 문언상 "3회 재현성 검증" 절(§94.8
+   제목)의 판정 규칙이었다. `collect_metrics._classify_exclusion()`
+   (실제 `included_in_main_analysis`를 결정하는 유일한 함수)은
+   `PREFLIGHT-EXCLUDED`/`is_pilot`/`outcome==invalid_run` 3가지만
+   보고, `cleanup_recovery_check.recovered`는 **전혀 알지 못한다**
+   - rep1은 이 함수 기준으로 `included=True`가 된다.
+
+**결론(판단 필요, §129.7-2)**: 위 4개 규칙이 서로 다른 답을 준다 -
+①은 rep1을 불합격시키고, ②③④는 rep1을 배제하지 않는다. 기존
+규칙만으로는 "rep1을 최종 auxiliary 분석에 포함할지, working-set
+복귀만 별도 축으로 각주 처리할지, 제외하고 n=4로 볼지"가 확정되지
+않는다 - 임의로 정하지 않고 사용자 판단 사항으로 남긴다.
+
+### 129.5 검증 코드가 놓치는 모순 - 원자료 대조로 확인 (naive 실행 시 오염 위험 실증)
+
+`collect_metrics.load_all_results()`는 `results_dir.glob("trial-*.
+json")`로 **plan_id/scenario 구분 없이** 디렉터리 전체를 읽는다 -
+`build_comparison()`도 `(scenario, arm, rep)` 키로만 그룹화할 뿐
+plan_id를 전혀 보지 않는다. 이번 감사에서 사전 필터링 없이 `results/`
+전체(pilot 하위 폴더 포함, 총 100개 `trial-*.json`)를 그대로
+`load_all_results()`+`build_comparison()`에 넣어 **경험적으로
+실증**했다:
+
+- `included_in_main_analysis=True`로 계산된 행이 **71건**(기대값
+  50건보다 **21건 많음**). 이 21건은 전부 `mainexp-v1`의 `load_ramp`
+  선행 자료 15건 + `pod_kill` 선행 자료 6건(129.1의 "선행 자료"와
+  정확히 일치) - 새로운 파일이 섞인 게 아니라 **이미 알려진 선행
+  자료 집합 그대로**임을 정확히 재확인했다.
+- 코드 자체의 중복 탐지(`seen_keys`)가 **20건**의 "중복 2건" issue를
+  실제로 발생시켰다(`load_ramp` 15셀 + `pod_kill` 5셀 - 나머지
+  1건 차이는 `pod_kill-proposed-01-mainexp-v2`가 선행 자료 쪽
+  `...-retry1-mainexp-v1`과 짝지어 중복으로 잡힌 경우). 즉 **코드
+  자체의 안전장치는 정상 작동**한다 - 그러나 이 안전장치는 "둘 중
+  어느 쪽이 권위 있는 결과인지"는 전혀 알지 못하고 단지 "같은 셀에
+  2건 있다"고만 알려준다. plan_id로 사전 필터링하지 않고 이 함수를
+  그대로 쓰면, 중복 경고를 읽고도 잘못된 쪽(또는 둘 다)을 분석에
+  포함시키는 실수를 코드가 막아주지 않는다.
+- `network_degrade`는 `mainexp-v2` 대응 파일이 아예 없으므로 이
+  오염 경로가 구조적으로 발생하지 않는다(18건 중 3건은 순수
+  `pilot-` 파일, 전부 `is_pilot=True`로 정상 제외 확인).
+- 이번 §129.1-129.3의 core 45/aux 5 집계는 처음부터 `official-
+  experiment-state*.json`의 `result_path`만으로 파일 목록을 직접
+  구성해 `build_comparison()`에 넣었다(디렉터리 전체 글롭을 쓰지
+  않음) - 따라서 이 오염은 이번 절의 45/5 집계에는 영향을 주지
+  않았지만, **향후 누구든 `collect_metrics.py`를 `results/`
+  디렉터리에 직접 돌리면 재현되는 구조적 위험**이므로 명시적으로
+  기록한다(코드 수정은 이번 턴 범위 밖이므로 하지 않음).
+
+### 129.6 분석 분모 정리 (결론·우월성 판단 없음)
+
+| 집합 | 실행 완료 | 구조적으로 확인된 유효 건수 | 판단 대기 |
+|---|---|---|---|
+| core (9 셀 × 5반복) | **45/45** | 44/45(스키마 이슈 1건 제외 시) | `load_ramp-native-01-mainexp-v2` 1건(§129.7-1) |
+| auxiliary(native × 5반복) | **5/5** | 4/5(rep1 제외 시) 또는 5/5(rep1 포함 시, 규칙 해석에 따라 다름) | rep1 포함 여부(§129.7-2) |
+| **50건 합계** | **50/50** | **48/50 무조건 유효, 2건은 아래 판단 필요** | - |
+
+core와 auxiliary는 §8/§98에 따라 항상 별도 통계로 취급하며 이 표를
+합산 표기하는 것은 두 집합을 하나의 분모로 섞으라는 뜻이 아니다 -
+50은 "전체 실행 진행 상황"의 합계일 뿐이다.
+
+### 129.7 남은 판단 사항 (이번 턴에 결정하지 않음)
+
+1. **`load_ramp-native-01-mainexp-v2`의 `outcome=prevented`**(§129.2)
+   - core 45건 중 유일하게 native arm 관례(recovered)와 다르고
+     `p95_peak`/`availability_min`이 둘 다 `None`. 최종 분석에
+     그대로 포함, 각주 처리, 또는 별도 조사 후 결정 중 선택 필요.
+2. **auxiliary rep1의 `cleanup_recovery_check.recovered=False`
+   포함 여부**(§129.4) - §94.5 문언상 불합격, §94.6·adapter 코드·
+   §98/계약서 §8상 배제 근거 없음. n=5 그대로 쓸지, working-set
+   복귀를 별도 pass/fail 축으로 분리 보고할지, n=4로 뺄지 결정
+   필요.
+3. **(참고, 결정 불필요)** `_check_prevented_validity()`의 "native는
+   prevented 불가" 규칙이 `memory_pressure_negative_control_v1`
+   시나리오의 기존 관례(§94-97부터 native=prevented가 정상)와
+   맞지 않는다 - 코드 수정 여부는 이번 감사 범위 밖이라 제안만
+   남긴다.
+
+### 129.8 범위 확인
+
+이번 턴 금지 사항 - 새 trial 실행(0건), 클러스터 접속(0건 - kubectl/
+curl 등 실클러스터 호출 없음), 결과 JSON 수정(0건), state 수정(0건),
+동결값(§94.5/§94.6/§98/계약서 §8) 수정(0건), 판정 기준 사후 변경
+(0건), 성능 우월성 결론·새 통계 검정(0건) - 전부 준수. 산출물은
+적격성 표(129.1-129.3, 129.6)·예외 목록(129.2, 129.5)·분석 분모
+(129.6)·남은 판단 사항(129.7)뿐이다.
