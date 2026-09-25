@@ -15900,3 +15900,117 @@ state·hash·모델·SLO 정의·§131 분모(0건 변경) - 전부 준수. 변�
 `experiments/generate_phase8_figures.py`(전면 재작성)와 `docs/design/
 phase8-figures/`(옛 8개 파일 삭제, 새 14개 파일+manifest.json 갱신)
 뿐이다.
+
+## §134 - 슬라이드 3건 UI 수정 + `load_ramp`/Isolation Forest 근접-0초 회복시간 원자료 재대조
+
+피드백 3건을 `experiments/generate_phase8_figures.py`에 반영하고,
+회복시간 그림의 근접-0초 값 1건을 원자료로 재대조했다. §131 수치·
+분모·결과 JSON·state·hash는 전혀 변경하지 않았다(그림 레이아웃·
+용어만 수정).
+
+### 134.1 수정 1 - 그림1 열 제목 잘림 (필수 수정)
+
+**원인**: 열 헤더 배경 사각형을 `y=2.86~3.08`에 그렸는데 축
+범위(`ax.set_ylim(0, 3)`)가 `3.0`까지만 허용해 상단이 그대로
+잘렸다. **수정**: `ylim`을 `(0, 3.42)`로 넓히고 헤더 밴드를
+`y=3.06~3.34`(축 안쪽)로 재배치 - 재생성 후 "무개입/고정 임계치/
+Isolation Forest" 세 헤더가 전부 온전히 보임을 직접 확인했다(수정
+전/후 스크린샷 비교, 이번 턴 작업 로그).
+
+### 134.2 수정 2 - 화면 중심의 코드 용어를 평이한 한글로 교체
+
+`ARM_LABEL`을 `native/fixed_threshold/proposed`(코드 값)에서
+**무개입/고정 임계치/Isolation Forest**(발표용 표시값)로 바꾸고,
+정확한 코드 값은 `ARM_CODE_LABEL`로 분리해 `manifest.json`
+(`display_label_to_code`)에만 남겼다. 화면 중심에 남아있던 다른
+필드명·값도 교체했다:
+
+| 위치 | 이전(코드 용어) | 이후(발표용) |
+|---|---|---|
+| 그림1 셀 텍스트 | `predictive`/`reactive`/`없음` | 예측 탐지/반응형 탐지/탐지 없음 |
+| 그림1 각주 | `prevented N/5` | `SLO 위반 없음 N/5` |
+| 그림2 x축 | `detection_lead_sec (초)` | `SLO 위반 시각 대비 탐지 시점(초)` |
+| 그림2 범례 | `fixed_threshold`/`proposed` | 고정 임계치/Isolation Forest |
+| 그림3 y축 | `recovery_sec (초)` | `회복시간(초)` |
+| 그림3 x축 | `native`/`fixed_threshold`/`proposed` | 무개입/고정 임계치/Isolation Forest |
+| 그림3 n-라벨 | `prevented 제외` | `SLO 위반 없음 제외` |
+| 그림4-B 표 | `t_slo`/`detected / action`/`None(위반 없음)`/`False / none` | SLO 위반/탐지·조치/위반 없음/없음·없음 |
+
+정확한 필드명(`detection_source`, `detector_process`,
+`recovery_sec = t_recovery - t_slo` 등)은 화면에서 빼고 그림 각주
+한 줄 또는 §134.4 발표자 노트로만 남겼다 - 예: 그림1 각주는 이제
+"무개입=native · 고정 임계치=fixed_threshold · Isolation
+Forest=proposed(예측 모델)" 형태로 발표 라벨과 코드 값을 한 줄로만
+연결한다.
+
+### 134.3 수정 3 - 그림4 중복 제거 + Q&A 부록 명시
+
+그림4-A(요약 카드)는 그대로 메인으로 유지하고, 그림4-B의 제목을
+**"메모리 압박 보조실험 - 반복별 실측값 (Q&A 부록, 메인 미사용)"**
+으로 명시해 메인 발표 슬라이드가 아님을 제목 자체에 못박았다.
+4-A 각주도 "반복별 실측값은 Q&A 부록(4-B) 참고"로 갱신해 두
+슬라이드의 역할 분리를 분명히 했다.
+
+### 134.4 회복시간 그림 - 제목 변경 + `load_ramp`/proposed 근접-0초 값 재대조
+
+**제목**: "[시나리오] - 회복시간 분포 (n≤5/arm, prevented 제외)"를
+**"[시나리오] - 관측된 회복시간 중앙값 (반복 5회, 우열 판정 아님)"**
+으로 교체(3장 전부) - "우열 판정 아님"을 제목 자체에 명시해 읽는
+방식을 고정했다. 각 arm의 유효 n은 기존처럼 그래프 하단에 그대로
+유지.
+
+**`load_ramp`/Isolation Forest의 0초에 가까운 점 재대조** -
+`load_ramp-proposed-04-mainexp-v2`(`recovery_sec≈1.10초`)의 원본
+타임스탬프 체인을 결과 JSON에서 직접 확인:
+
+| 필드 | 시각(UTC) |
+|---|---|
+| `t_slo` | 20:12:10.547702 |
+| `t_recovery` | 20:12:11.643737 (t_slo+**1.10초**) |
+| `t_detection` | 20:15:25.002304 (t_slo+**194.45초**, 원자료 그대로) |
+| `t_switch`(실제 promotion) | 20:15:31.414891 |
+
+원본 probe raw CSV(`probe-load_ramp-proposed-04-mainexp-v2-
+proposed-4-raw.csv`)에서 `t_slo` 전후 구간의 개별 요청 latency를
+확인한 결과, 20:11:55~20:12:19 사이 전 표본이 0.15~0.54초로 SLO
+임계치(0.648초)보다 낮고 전부 `success=True`다 - 즉 개별 요청
+수준에서는 뚜렷한 스파이크가 보이지 않는다. `slo_judge.
+find_t_recovery()`의 정의(§6, `slo_judge.py` 171-190행)를 코드로
+직접 확인한 결과, 이 함수는 **회복 스트릭이 시작된 시점**을
+반환하고("30초 연속 정상 유지 확인 후 그 시작점으로 소급") 스트릭이
+확정되는 시점을 반환하지 않는다 - 즉 위반이 롤링 P95 계산상 한
+두 표본만의 짧은 초과였다면, 그 다음 표본부터 30초 이상 정상이
+유지되는 한 `t_recovery`는 위반 직후로 소급 기록될 수 있다.
+
+**결론(오류 아님, 원자료로 확인)**: `recovery_sec≈1.10초`는 "SLO
+확률 지표가 매우 짧게(사실상 1~2개 표본) 초과했다가 곧바로
+안정됐다"는 뜻이며, **이 자기 회복은 Isolation Forest의 판단·
+promotion과 무관하게 일어났다** - 실제 탐지(`t_detection`)와
+promotion(`t_switch`)은 이 SLO 이슈가 이미 해소된 지 3분 14초
+후에 별도로 발생했다(아마 그 뒤에 발생한 다른 이상 신호에 대한
+반응으로 추정되나, 이 절에서 확정하지 않는다). `collect_metrics.
+py`의 기존 검증 로직에는 `t_recovery`↔`t_detection` 순서를
+검사하는 규칙이 애초에 없다(`CAUSAL_CHAIN`에 `t_recovery` 자체가
+빠져 있음, 코드로 확인) - 이 값이 기존에 어떤 검증도 통과 못 할
+이유가 없었던 이유이기도 하다. 데이터·판정 기준은 수정하지
+않았다.
+
+### 134.5 발표자 노트 추가분 (그림3, §133.5 보강)
+
+**그림3-A(부하 램프) 추가 노트**: `Isolation Forest` 열의 회복시간이
+매우 짧은 반복 1건(`load_ramp-proposed-04`, ≈1.1초)이 있다 - 이는
+탐지·조치가 빨라서가 아니라, SLO 판정 자체가 롤링 P95 계산상
+한두 표본만의 매우 짧은 초과였고 곧바로 자연 회복됐기 때문이다.
+같은 반복의 실제 탐지·promotion은 이 SLO 이슈가 이미 끝난 뒤
+3분 14초 후에 별도로 일어났다 - `recovery_sec`(SLO 확률 회복
+정의)과 탐지·조치 시각은 서로 다른 축이라는 점을 질문 시 이
+근거로 설명한다.
+
+### 134.6 범위 확인
+
+이번 턴 금지 사항 - 클러스터 접속(0건), 새 trial(0건), 결과 JSON·
+state·hash·모델·SLO 정의·§131 분모(0건 변경), `slo_judge.py`/
+`collect_metrics.py` 등 기존 코드 수정(0건 - 읽기만 함) - 전부
+준수. 변경 파일은 `experiments/generate_phase8_figures.py`와
+`docs/design/phase8-figures/`의 기존 14개 파일 내용 갱신(파일명
+변경 없음)뿐이다.

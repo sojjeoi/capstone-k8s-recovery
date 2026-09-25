@@ -55,6 +55,11 @@
   ],
   "core_n": 45,
   "aux_n": 5,
+  "display_label_to_code": {
+    "무개입": "native",
+    "고정 임계치": "fixed_threshold",
+    "Isolation Forest": "proposed"
+  },
   "fig1": {
     "run_ids": {
       "load_ramp/native": [

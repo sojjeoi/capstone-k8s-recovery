@@ -48,9 +48,14 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 SCENARIOS = ["load_ramp", "pod_kill", "network_degrade"]
 ARMS = ["native", "fixed_threshold", "proposed"]
 SCENARIO_LABEL = {"load_ramp": "부하 램프(load_ramp)", "pod_kill": "Pod 강제종료(pod_kill)", "network_degrade": "네트워크 열화(network_degrade)"}
-ARM_LABEL = {"native": "native", "fixed_threshold": "fixed_threshold", "proposed": "proposed"}
+# 발표 화면에는 평이한 한글 용어만 노출한다(native/fixed_threshold/proposed
+# 같은 코드 값은 각주·발표자 노트로만 이동, §133 피드백 반영) - ARM_CODE_LABEL
+# 은 발표자 노트·매니페스트 등 "정확한 필드명이 필요한 곳"에서만 쓴다.
+ARM_LABEL = {"native": "무개입", "fixed_threshold": "고정 임계치", "proposed": "Isolation Forest"}
+ARM_CODE_LABEL = {"native": "native", "fixed_threshold": "fixed_threshold", "proposed": "proposed"}
 ARM_MARKER = {"native": "o", "fixed_threshold": "s", "proposed": "^"}
 ARM_COLOR = {"native": "#8c8c8c", "fixed_threshold": "#4C72B0", "proposed": "#C44E52"}
+DETSRC_LABEL = {"predictive": "예측 탐지", "reactive": "반응형 탐지", "없음": "탐지 없음", None: "탐지 없음"}
 
 # 16:9 PowerPoint 위젯 표준 인치 크기(13.333 x 7.5) - "실제 PPT 크기로 렌더링"
 SLIDE_W, SLIDE_H = 13.333, 7.5
@@ -169,21 +174,22 @@ def verify_against_section_131(out_core, out_aux):
 # ---------------------------------------------------------------- 슬라이드1
 def fig1_detection_path(out_core):
     fig = new_slide()
-    ax = fig.add_axes((0.18, 0.14, 0.79, 0.68))
+    ax = fig.add_axes((0.18, 0.12, 0.79, 0.66))
     ax.set_xlim(0, 3)
-    ax.set_ylim(0, 3)
+    ax.set_ylim(0, 3.42)  # 3.0이면 열 헤더 밴드가 잘림(§133 피드백) - 헤더용 여백 확보
     ax.axis("off")
 
-    fig.text(0.5, 0.92, "탐지 경로(detection_source)는 시나리오·arm마다 다르다", ha="center", fontsize=TITLE_FS, fontweight="bold")
+    fig.text(0.5, 0.94, "탐지 경로는 시나리오와 대응 방식마다 다르다", ha="center", fontsize=TITLE_FS, fontweight="bold")
 
     fig1_manifest = {"run_ids": {}, "formula": "detection_source(실제 판단 근거) 개수, detector_process(실행된 daemon)와는 다른 값 - build_comparison() 출력 그대로"}
 
     col_x = {arm: i + 0.5 for i, arm in enumerate(ARMS)}
     row_y = {scn: 2.5 - i for i, scn in enumerate(SCENARIOS)}
 
+    header_y0, header_h = 3.06, 0.28
     for arm in ARMS:
-        ax.add_patch(mpatches.Rectangle((col_x[arm] - 0.46, 2.86), 0.92, 0.22, facecolor=ARM_COLOR[arm], edgecolor="none"))
-        ax.text(col_x[arm], 2.97, ARM_LABEL[arm], ha="center", va="center", fontsize=DIRECT_FS + 1, color="white", fontweight="bold")
+        ax.add_patch(mpatches.Rectangle((col_x[arm] - 0.46, header_y0), 0.92, header_h, facecolor=ARM_COLOR[arm], edgecolor="none"))
+        ax.text(col_x[arm], header_y0 + header_h / 2, ARM_LABEL[arm], ha="center", va="center", fontsize=DIRECT_FS + 1, color="white", fontweight="bold")
 
     for scn in SCENARIOS:
         ax.text(-0.12, row_y[scn], SCENARIO_LABEL[scn].split("(")[0], ha="right", va="center", fontsize=DIRECT_FS, fontweight="bold")
@@ -205,7 +211,7 @@ def fig1_detection_path(out_core):
                 main_txt, sub_txt = "탐지 없음", "(0/5, 개입 없음)"
             else:
                 order = ["predictive", "reactive", "없음"]
-                parts = [f"{k} {det_src[k]}/5" for k in order if k in det_src]
+                parts = [f"{DETSRC_LABEL[k]} {det_src[k]}/5" for k in order if k in det_src]
                 if len(parts) == 1:
                     main_txt, sub_txt = parts[0], ""
                 else:
@@ -214,9 +220,9 @@ def fig1_detection_path(out_core):
             if sub_txt:
                 ax.text(x, y - 0.20, sub_txt, ha="center", va="center", fontsize=DIRECT_FS - 3, color="#444444")
             if n_prevented:
-                ax.text(x, y - 0.36, f"△ prevented {n_prevented}/5", ha="center", va="center", fontsize=DIRECT_FS - 4, color="#B05A00")
+                ax.text(x, y - 0.36, f"△ SLO 위반 없음 {n_prevented}/5", ha="center", va="center", fontsize=DIRECT_FS - 4, color="#B05A00")
 
-    footnote(fig, "탐지 경로=실제 판단 근거(detection_source) 기준, 실행된 detector_process와 다를 수 있음 · prevented=위반 없음(능동 예방 의미 아님)")
+    footnote(fig, "무개입=native · 고정 임계치=fixed_threshold · Isolation Forest=proposed(예측 모델) · 위반 없음=능동 예방 의미 아님")
     fig.savefig(OUT_DIR / "fig1-detection-path.png", dpi=DPI)
     fig.savefig(OUT_DIR / "fig1-detection-path.svg")
     plt.close(fig)
@@ -226,7 +232,7 @@ def fig1_detection_path(out_core):
 # ---------------------------------------------------------------- 슬라이드2
 def fig2_detection_timing(out_core):
     fig = new_slide()
-    ax = fig.add_axes((0.24, 0.20, 0.68, 0.58))
+    ax = fig.add_axes((0.24, 0.26, 0.68, 0.52))
 
     fig2_manifest = {
         "formula": "detection_lead_sec = t_detection - t_slo (초). native 행은 detector 자체가 없어 항상 제외(별도 표시 없이 애초에 그리지 않음). "
@@ -279,16 +285,16 @@ def fig2_detection_timing(out_core):
 
     ax.set_yticks(y_positions)
     ax.set_yticklabels(ylabels, fontsize=TICK_FS)
-    ax.set_xlabel("detection_lead_sec (초)", fontsize=AXIS_FS)
+    ax.set_xlabel("SLO 위반 시각 대비 탐지 시점(초)", fontsize=AXIS_FS)
     clean_ax(ax)
     ax.spines["left"].set_visible(False)
     ax.tick_params(axis="y", length=0)
     ax.grid(axis="x", alpha=0.25)
 
-    fig.text(0.5, 0.94, "위반 전(선제) 탐지는 load_ramp 일부 반복에서만 관측됨", ha="center", fontsize=TITLE_FS, fontweight="bold")
-    fig.text(0.16, 0.155, "도형  ■ fixed_threshold   ▲ proposed", ha="left", fontsize=DIRECT_FS - 2, color="#333333")
+    fig.text(0.5, 0.94, "위반 전(선제) 탐지는 부하 램프 일부 반복에서만 관측됨", ha="center", fontsize=TITLE_FS, fontweight="bold")
+    fig.text(0.16, 0.11, f"도형  ■ {ARM_LABEL['fixed_threshold']}   ▲ {ARM_LABEL['proposed']}", ha="left", fontsize=DIRECT_FS - 2, color="#333333")
 
-    footnote(fig, "native는 detector가 없어 제외(15건) · predictive 메커니즘이어도 음수면 '위반 후 탐지'")
+    footnote(fig, "무개입(native)은 대응 자체가 없어 제외(15건) · 예측 탐지라도 음수면 위반 후 탐지")
     fig.savefig(OUT_DIR / "fig2-detection-timing.png", dpi=DPI)
     fig.savefig(OUT_DIR / "fig2-detection-timing.svg")
     plt.close(fig)
@@ -318,20 +324,20 @@ def fig3_recovery_time_single(out_core, scenario, tag):
             ax.text(i + 0.32, med, f"중앙값 {med:.0f}s", va="center", ha="left", fontsize=DIRECT_FS - 2, fontweight="bold")
         n_note = f"n={len(vals)}/5"
         if excluded:
-            n_note += f" ({len(excluded)}건 prevented 제외)"
+            n_note += f" ({len(excluded)}건 SLO 위반 없음 제외)"
         ax.text(i, -0.09, n_note, transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=N_FS - 1, color="#333333")
 
     ax.set_xticks(range(len(ARMS)))
     ax.set_xticklabels([ARM_LABEL[a] for a in ARMS], fontsize=AXIS_FS)
-    ax.set_ylabel("recovery_sec (초)", fontsize=AXIS_FS)
+    ax.set_ylabel("회복시간(초)", fontsize=AXIS_FS)
     ax.set_ylim(bottom=0)
     clean_ax(ax)
     ax.grid(axis="y", alpha=0.25)
 
     scn_kr = SCENARIO_LABEL[scenario].split("(")[0]
-    fig.text(0.5, 0.92, f"{scn_kr} - 회복시간 분포 (n≤5/arm, prevented 제외)", ha="center", fontsize=TITLE_FS, fontweight="bold")
+    fig.text(0.5, 0.92, f"{scn_kr} - 관측된 회복시간 중앙값 (반복 5회, 우열 판정 아님)", ha="center", fontsize=TITLE_FS - 1, fontweight="bold")
 
-    footnote(fig, "n=5/arm 소표본, 사전 등록 검정 없음 - 우월성 판단 근거 아님 (arm별 stage 노출도 동일하지 않을 수 있음)")
+    footnote(fig, "n=5(그룹당) 소표본, 사전 등록 검정 없음 - 우월성 판단 근거 아님(그룹별 노출 시간도 동일하지 않을 수 있음)")
     fig.savefig(OUT_DIR / f"fig3{tag}-recovery-{scenario}.png", dpi=DPI)
     fig.savefig(OUT_DIR / f"fig3{tag}-recovery-{scenario}.svg")
     plt.close(fig)
@@ -346,12 +352,12 @@ def fig4a_aux_summary(ws_rise_expected):
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    fig.text(0.5, 0.92, "Memory Auxiliary - 무개입 상태 안전성 요약 (core와 별도 집계)", ha="center", fontsize=TITLE_FS - 1, fontweight="bold")
+    fig.text(0.5, 0.92, "메모리 압박 보조실험 - 무개입 상태 안전성 요약 (핵심 비교와 별도 집계)", ha="center", fontsize=TITLE_FS - 1, fontweight="bold")
 
     blocks = [
-        ("SLO 위반", "0/5", "#2E7D32", "지속 위반(t_slo) 없음"),
-        ("안전 조건", "5/5", "#2E7D32", "restart·OOM·Node·MemAvailable 전부 정상"),
-        ("baseline ±150MiB\n복귀", "4/5", "#B05A00", "1/5(rep1) 미충족 - 원본값 그대로 유지"),
+        ("SLO 위반", "0/5", "#2E7D32", "지속적인 위반 없음"),
+        ("안전 조건", "5/5", "#2E7D32", "재시작·메모리 부족·노드 상태 전부 정상"),
+        ("메모리 사용량\n복귀", "4/5", "#B05A00", "1/5(반복1) 미충족 - 원본값 그대로 유지"),
     ]
     for i, (label, big, color, sub) in enumerate(blocks):
         cx = 0.5 + i
@@ -360,7 +366,7 @@ def fig4a_aux_summary(ws_rise_expected):
         ax.text(cx, 0.42, big, ha="center", va="center", fontsize=52, fontweight="bold", color=color)
         ax.text(cx, 0.18, sub, ha="center", va="center", fontsize=DIRECT_FS - 3, color="#444444", wrap=True)
 
-    footnote(fig, "n=5, native 단일 arm(개입 없음) - 무탐지·무조치는 detector 성능 근거 아님 · 반복별 실측값은 그림4-B 참고")
+    footnote(fig, "n=5, 무개입(native) 단일 방식 - 무탐지·무조치는 탐지 성능의 근거 아님 · 반복별 실측값은 Q&A 부록(4-B) 참고")
     fig.savefig(OUT_DIR / "fig4a-aux-summary.png", dpi=DPI)
     fig.savefig(OUT_DIR / "fig4a-aux-summary.svg")
     plt.close(fig)
@@ -373,10 +379,10 @@ def fig4b_aux_detail(out_aux, ws_rise_expected, recovered_expected):
 
     table_rows = []
     for rep in range(1, 6):
-        table_rows.append([f"{rep}", "None(위반 없음)", "False / none",
+        table_rows.append([f"{rep}", "위반 없음", "없음 / 없음",
                             f"{ws_rise_expected[rep]:.2f}",
-                            "충족" if recovered_expected[rep] else "미충족(rep1)"])
-    header = ["rep", "t_slo", "detected / action", "working-set 상승(MiB)", "±150MiB 복귀"]
+                            "충족" if recovered_expected[rep] else "미충족(반복1)"])
+    header = ["반복", "SLO 위반", "탐지 / 조치", "메모리 상승(MiB)", "±150MiB 복귀"]
 
     tbl = ax.table(cellText=table_rows, colLabels=header, loc="center", cellLoc="center")
     tbl.auto_set_font_size(False)
@@ -390,8 +396,8 @@ def fig4b_aux_detail(out_aux, ws_rise_expected, recovered_expected):
         elif c == 4 and "미충족" in table_rows[r - 1][4]:
             cell_.set_facecolor("#FDE2D5")
 
-    fig.text(0.5, 0.92, "Memory Auxiliary - 반복별 실측값 (보조 표)", ha="center", fontsize=TITLE_FS - 1, fontweight="bold")
-    footnote(fig, "working-set 상승값은 §131 canonical baseline 값을 그대로 인용(재계산 아님)")
+    fig.text(0.5, 0.92, "메모리 압박 보조실험 - 반복별 실측값 (Q&A 부록, 메인 미사용)", ha="center", fontsize=TITLE_FS - 1, fontweight="bold")
+    footnote(fig, "메모리 상승값은 §131에서 확정한 기준값을 그대로 인용(재계산 아님)")
     fig.savefig(OUT_DIR / "fig4b-aux-detail.png", dpi=DPI)
     fig.savefig(OUT_DIR / "fig4b-aux-detail.svg")
     plt.close(fig)
@@ -406,6 +412,7 @@ def main():
     manifest["aux_run_ids"] = aux_run_ids
     manifest["core_n"] = len(core_run_ids)
     manifest["aux_n"] = len(aux_run_ids)
+    manifest["display_label_to_code"] = {ARM_LABEL[a]: ARM_CODE_LABEL[a] for a in ARMS}  # 발표 라벨->코드 arm 값 대응(§133 피드백)
 
     fig1_detection_path(out_core)
     fig2_detection_timing(out_core)
