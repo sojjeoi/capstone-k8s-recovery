@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cobalt-slides",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8791", "--directory", "docs/design/phase8-figures/cobalt"],
+      "port": 8791
+    }
+  ]
+}

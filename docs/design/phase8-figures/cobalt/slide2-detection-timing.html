@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>탐지 시점</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@700&family=Noto+Sans+KR:wght@400;500;700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F0EBDE; --ink:#1F2BE0; --ink-faint:rgba(31,43,224,0.18); --ink-soft:#5560E5;
+  --edge:80px; --pad-top:120px; --pad-bottom:96px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:#000;}
+.deck-viewport{position:fixed;inset:0;overflow:hidden;background:#000;}
+.deck-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;background:var(--paper);}
+.slide{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;background:var(--paper);
+  font-family:"Noto Sans KR",sans-serif; color:var(--ink);}
+img,video,canvas,svg{max-width:100%;max-height:100%;}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition-duration:.01ms!important;}}
+
+.hairline-top, .hairline-bottom{position:absolute;left:var(--edge);right:var(--edge);height:1.5px;background:var(--ink);}
+.hairline-top{top:56px;}
+.hairline-bottom{bottom:44px;}
+.pagenum{position:absolute;right:var(--edge);bottom:64px;font-family:"DM Mono",monospace;font-size:15px;color:var(--ink);letter-spacing:.06em;}
+.navhint{position:absolute;left:var(--edge);bottom:64px;font-family:"DM Mono",monospace;font-size:13px;color:var(--ink);letter-spacing:.08em;opacity:.45;}
+
+.frame{position:absolute;left:var(--edge);right:var(--edge);top:var(--pad-top);bottom:var(--pad-bottom);}
+
+.topbar{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:1.5px solid var(--ink);padding-bottom:22px;height:96px;}
+.topbar h1{font-family:"Noto Serif KR",serif;font-weight:700;font-size:52px;line-height:1.15;margin:0;letter-spacing:-0.01em;max-width:1440px;}
+.labtag{font-family:"DM Mono",monospace;font-size:15px;letter-spacing:.05em;white-space:nowrap;padding-left:24px;padding-top:10px;}
+.content-area{position:absolute;left:0;right:0;top:168px;}
+
+.footnote{position:absolute;left:0;right:0;bottom:0;font-family:"Noto Sans KR",sans-serif;font-weight:400;font-size:17px;line-height:1.5;color:var(--ink);opacity:.82;}
+
+.deck-stage{transform-origin:0 0;}
+</style>
+</head>
+<body>
+<div class="deck-viewport">
+  <div class="deck-stage">
+    <div class="slide active">
+      
+<div class="frame">
+  <div class="topbar">
+    <h1>선제 탐지는 부하 램프 일부에서만 관측됨</h1>
+    <div class="labtag">n=45 중 탐지·위반 평가 가능 subset · §131</div>
+  </div>
+  
+    <div class="content-area">
+    <div style="position:relative; margin-left:380px; margin-right:320px; height:660px;">
+      <svg width="1060" height="540" viewBox="0 0 1060 540" style="position:absolute; left:0; top:0; overflow:visible;">
+        <text x="675.4" y="12" font-family="Noto Sans KR" font-weight="700" font-size="19" fill="#1F2BE0" text-anchor="middle">◀ 위반 후 탐지</text><text x="970.0" y="12" font-family="Noto Sans KR" font-weight="700" font-size="19" fill="#1F2BE0" text-anchor="middle">위반 전 탐지 ▶</text>
+        <line x1="825.4" y1="0" x2="825.4" y2="540" stroke="#1F2BE0" stroke-width="2.5"/><rect x="60.5" y="47.8" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><rect x="593.3" y="40.2" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><line x1="0" y1="106.7" x2="1060" y2="106.7" stroke="rgba(31,43,224,0.18)" stroke-width="1"/><polygon points="790.0,139.4 780.0,158.4 800.0,158.4" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="938.4,136.4 928.4,155.4 948.4,155.4" fill="#F0EBDE" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="466.9,156.0 456.9,175.0 476.9,175.0" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="891.4,150.3 881.4,169.3 901.4,169.3" fill="#F0EBDE" stroke="#1F2BE0" stroke-width="2.2"/><line x1="0" y1="193.3" x2="1060" y2="193.3" stroke="rgba(31,43,224,0.18)" stroke-width="1"/><rect x="681.6" y="232.0" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><rect x="676.3" y="230.2" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><rect x="668.6" y="223.6" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><rect x="689.3" y="245.1" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><rect x="636.0" y="218.7" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><line x1="0" y1="280.0" x2="1060" y2="280.0" stroke="rgba(31,43,224,0.18)" stroke-width="1"/><polygon points="743.3,293.6 733.3,312.6 753.3,312.6" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="731.1,325.3 721.1,344.3 741.1,344.3" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="731.0,306.4 721.0,325.4 741.0,325.4" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="728.4,316.6 718.4,335.6 738.4,335.6" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="738.1,319.1 728.1,338.1 748.1,338.1" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><line x1="0" y1="366.7" x2="1060" y2="366.7" stroke="rgba(31,43,224,0.18)" stroke-width="1"/><rect x="222.1" y="390.5" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><rect x="255.9" y="404.2" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><rect x="227.8" y="382.1" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><rect x="292.4" y="415.2" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><rect x="244.3" y="401.1" width="18" height="18" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><line x1="0" y1="453.3" x2="1060" y2="453.3" stroke="rgba(31,43,224,0.18)" stroke-width="1"/><polygon points="274.7,495.5 264.7,514.5 284.7,514.5" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="250.7,482.5 240.7,501.5 260.7,501.5" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="418.0,474.3 408.0,493.3 428.0,493.3" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="641.1,475.4 631.1,494.4 651.1,494.4" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/><polygon points="245.0,503.6 235.0,522.6 255.0,522.6" fill="#1F2BE0" stroke="#1F2BE0" stroke-width="2.2"/>
+        <line x1="88.0" y1="540" x2="88.0" y2="550" stroke="#1F2BE0" stroke-width="1.5"/><text x="88.0" y="574" font-family="DM Mono" font-size="15" fill="#1F2BE0" text-anchor="middle">-400</text><line x1="272.3" y1="540" x2="272.3" y2="550" stroke="#1F2BE0" stroke-width="1.5"/><text x="272.3" y="574" font-family="DM Mono" font-size="15" fill="#1F2BE0" text-anchor="middle">-300</text><line x1="456.7" y1="540" x2="456.7" y2="550" stroke="#1F2BE0" stroke-width="1.5"/><text x="456.7" y="574" font-family="DM Mono" font-size="15" fill="#1F2BE0" text-anchor="middle">-200</text><line x1="641.1" y1="540" x2="641.1" y2="550" stroke="#1F2BE0" stroke-width="1.5"/><text x="641.1" y="574" font-family="DM Mono" font-size="15" fill="#1F2BE0" text-anchor="middle">-100</text><line x1="825.4" y1="540" x2="825.4" y2="550" stroke="#1F2BE0" stroke-width="1.5"/><text x="825.4" y="574" font-family="DM Mono" font-size="15" fill="#1F2BE0" text-anchor="middle">+0</text><line x1="1009.8" y1="540" x2="1009.8" y2="550" stroke="#1F2BE0" stroke-width="1.5"/><text x="1009.8" y="574" font-family="DM Mono" font-size="15" fill="#1F2BE0" text-anchor="middle">+100</text>
+      </svg>
+      
+        <div style="position:absolute; left:-380px; top:45.3px; width:360px; height:36px;
+                    display:flex; align-items:center; justify-content:flex-end; text-align:right;
+                    font-family:'Noto Sans KR',sans-serif; font-weight:500; font-size:20px;">부하 램프 · 고정 임계치</div>
+        <div style="position:absolute; left:-380px; top:132.0px; width:360px; height:36px;
+                    display:flex; align-items:center; justify-content:flex-end; text-align:right;
+                    font-family:'Noto Sans KR',sans-serif; font-weight:500; font-size:20px;">부하 램프 · Isolation Forest</div>
+        <div style="position:absolute; left:-380px; top:218.7px; width:360px; height:36px;
+                    display:flex; align-items:center; justify-content:flex-end; text-align:right;
+                    font-family:'Noto Sans KR',sans-serif; font-weight:500; font-size:20px;">Pod 강제종료 · 고정 임계치</div>
+        <div style="position:absolute; left:-380px; top:305.3px; width:360px; height:36px;
+                    display:flex; align-items:center; justify-content:flex-end; text-align:right;
+                    font-family:'Noto Sans KR',sans-serif; font-weight:500; font-size:20px;">Pod 강제종료 · Isolation Forest</div>
+        <div style="position:absolute; left:-380px; top:392.0px; width:360px; height:36px;
+                    display:flex; align-items:center; justify-content:flex-end; text-align:right;
+                    font-family:'Noto Sans KR',sans-serif; font-weight:500; font-size:20px;">네트워크 열화 · 고정 임계치</div>
+        <div style="position:absolute; left:-380px; top:478.7px; width:360px; height:36px;
+                    display:flex; align-items:center; justify-content:flex-end; text-align:right;
+                    font-family:'Noto Sans KR',sans-serif; font-weight:500; font-size:20px;">네트워크 열화 · Isolation Forest</div>
+      
+        <div style="position:absolute; left:1084px; top:49.3px; width:296px; height:28px;
+                    font-family:'DM Mono',monospace; font-size:15px; opacity:.8;">n=2/5 · 위반없음/미탐지 3건</div>
+        <div style="position:absolute; left:1084px; top:136.0px; width:296px; height:28px;
+                    font-family:'DM Mono',monospace; font-size:15px; opacity:.8;">n=4/5 · 위반없음/미탐지 1건</div>
+        <div style="position:absolute; left:1084px; top:222.7px; width:296px; height:28px;
+                    font-family:'DM Mono',monospace; font-size:15px; opacity:.8;">n=5/5</div>
+        <div style="position:absolute; left:1084px; top:309.3px; width:296px; height:28px;
+                    font-family:'DM Mono',monospace; font-size:15px; opacity:.8;">n=5/5</div>
+        <div style="position:absolute; left:1084px; top:396.0px; width:296px; height:28px;
+                    font-family:'DM Mono',monospace; font-size:15px; opacity:.8;">n=5/5</div>
+        <div style="position:absolute; left:1084px; top:482.7px; width:296px; height:28px;
+                    font-family:'DM Mono',monospace; font-size:15px; opacity:.8;">n=5/5</div>
+      <div style="position:absolute; left:0; top:576px; width:1060px; text-align:center;
+                  font-family:'Noto Sans KR',sans-serif; font-weight:400; font-size:18px;">
+        SLO 위반 시각 대비 탐지 시점(초)
+      </div>
+      <div style="position:absolute; left:0; top:608px; width:1060px; display:flex; justify-content:center; gap:28px;
+                  font-family:'Noto Sans KR',sans-serif; font-size:14px;">
+        <span>■ 고정 임계치</span><span>▲ Isolation Forest</span>
+        <span style="opacity:.6;">(채움=위반 후, 빈 도형=위반 전)</span>
+      </div>
+    </div>
+    </div>
+    
+  <div class="footnote">무개입(native)은 대응 자체가 없어 제외(15건) · 예측 탐지라도 음수면 위반 후 탐지 · 위반 없음/미탐지는 0으로 표기하지 않고 건수로 별도 표기</div>
+</div>
+<div class="hairline-top"></div>
+<div class="hairline-bottom"></div>
+<div class="pagenum">02</div>
+<div class="navhint">PHASE 8 RESULTS — DRAFT</div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// 고정 1920x1080 스테이지를 실제 브라우저 창 크기에 맞춰 균일 스케일(html-template.md 표준 패턴)
+(function(){
+  var stage = document.querySelector('.deck-stage');
+  function scale(){
+    var factor = Math.min(window.innerWidth/1920, window.innerHeight/1080);
+    var x = (window.innerWidth - 1920*factor)/2;
+    var y = (window.innerHeight - 1080*factor)/2;
+    stage.style.transform = 'translate('+x+'px,'+y+'px) scale('+factor+')';
+  }
+  scale();
+  window.addEventListener('resize', scale);
+})();
+</script>
+
+</body>
+</html>

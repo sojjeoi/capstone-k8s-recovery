@@ -16014,3 +16014,132 @@ state·hash·모델·SLO 정의·§131 분모(0건 변경), `slo_judge.py`/
 준수. 변경 파일은 `experiments/generate_phase8_figures.py`와
 `docs/design/phase8-figures/`의 기존 14개 파일 내용 갱신(파일명
 변경 없음)뿐이다.
+
+## §135 - Cobalt Grid 스타일 16:9 결과 슬라이드 시안 2장 (탐지경로/탐지시점, 검토 대기)
+
+지시대로 이번 턴은 시안 2장(①시나리오×방식 탐지경로, ②탐지시점)만
+제작하고 시각 검수까지 진행한 뒤 커밋·푸시하고 멈춘다. 회복시간·
+memory auxiliary 슬라이드는 사용자 확인 후 진행 - 이번 턴에는
+시작하지 않았다.
+
+### 135.1 디자인 소스 - frontend-slides 스킬 내장 Cobalt Grid 그대로 사용
+
+사용자가 링크한 GitHub 리포(`beautiful-html-templates/cobalt-grid`)를
+원격에서 새로 읽지 않고, `frontend-slides` 스킬에 이미 번들된
+`bold-template-pack/templates/cobalt-grid/design.md`(동일 계열
+디자인 시스템 원본 문서)를 그대로 읽어 색상·타이포·간격 수치를
+가져왔다 - 팔레트(`paper #F0EBDE`, `ink #1F2BE0`, `ink-faint
+rgba(31,43,224,.18)`), 1.5px/1px 헤어라인 구조, topbar 룰 패턴,
+edge/pad 치수(vw/vh 단위를 1920×1080 고정 캔버스 픽셀로 환산)를
+새로 만들지 않고 그대로 재사용했다.
+
+**의도적 이탈 2건(둘 다 사용자 명시 지시, design.md 자체는 "불가"라고
+규정한 것)**:
+1. **그래프-용지 배경 격자 생략**: design.md는 이 격자가 "모든
+   슬라이드에 항상 있어야 하며 끌 수 없다"고 명시하지만, 지시("데이터
+   영역 뒤에는 격자를 깔지 마세요")에 따라 이번 2장 모두 격자를
+   전부 뺐다 - 헤어라인·topbar 룰 등 나머지 구조는 유지.
+2. **엄격한 2색(크림+코발트) 안에서 arm 3종 구분**: design.md는 "제2의
+   색을 추가하면 안 된다"고 명시한다. `native/fixed_threshold/
+   proposed` 3종과 탐지 시점의 위반 전/후 2종을 색이 아니라 **도형
+   (원/사각/삼각)과 텍스트 라벨**로만 구분했고, 위반 전/후는 코발트
+   자체의 **채움 상태**(가득 채움=위반 후, 속이 빈 도형=위반 전)로
+   구분했다 - 새 색상을 추가하지 않았다(지시: "색뿐 아니라 도형·
+   텍스트로도 구분").
+
+**한글 서체**: design.md의 CJK 절은 Newsreader의 중국어 대응으로
+Noto Serif SC를 제안하지만, 지시("표지용 거대한 영문 세리프를
+한국어 결과 슬라이드에 그대로 적용하지 마세요")에 따라 제목만
+큰 **Noto Serif KR**(굵게)을 쓰고, 축·표 셀·본문은 전부 **Noto
+Sans KR**(발표장 가독성 우선)으로 통일했다 - Newsreader 자체는
+이번 2장에서 아예 쓰지 않았다.
+
+### 135.2 데이터 파이프라인 - 새 계산 로직 없음, 자동 대조 내장
+
+신규 스크립트 [`experiments/generate_cobalt_slides.py`](../../experiments/generate_cobalt_slides.py)
+는 `generate_phase8_figures.py`(§132-134에서 이미 검증된 스크립트)의
+`load_authoritative()`/`verify_against_section_131()`/`cell()`/
+`SCENARIOS`/`ARMS`/`SCENARIO_LABEL`/`ARM_LABEL`을 그대로 import해서
+쓴다 - §131 core 45건/auxiliary 5건 로딩과 검증 로직을 다시 만들지
+않았다. 실행 시작 시 `verify_against_section_131()`이 자동 실행되어
+§131 문서 수치와 대조하고, **PASS** 확인 후에만 HTML을 생성한다
+(불일치 시 `AssertionError`로 중단 - 이번 실행은 PASS).
+
+### 135.3 실제 렌더링 검증 - 발견·수정한 레이아웃 버그 3건
+
+`file://` 정적 스냅샷은 스테이지 스케일링 JS가 실행되지 않아
+검증이 불가능함을 확인하고, `.claude/launch.json`에 로컬 dev
+server(`python -m http.server`)를 등록해 실제 브라우저 렌더링으로
+전환했다(클러스터 접속 아님 - 순수 로컬 정적 파일 서빙). "실제
+16:9 전체 화면에서 잘리거나 겹치지 않는지 직접 확인"을 스크린샷
+육안 확인에만 의존하지 않고, `getBoundingClientRect()` 기반 JS로
+스테이지 경계 대비 모든 텍스트 요소의 좌/우/하단 여백을 정밀
+측정해 3건의 실제 버그를 발견·수정했다:
+
+1. **그림1 3열 그리드가 프레임 우측 밖으로 넘침**: 행 라벨용
+   260px 거터를 그리드 폭 계산(1760px)에서 빼지 않아 그리드
+   전체가 260px만큼 우측으로 밀려났었다 - 열 폭을 `(1760-260)/3`
+   으로 정정.
+2. **그림2 차트+우측 n-표기 영역이 프레임 밖으로 크게 넘침**: 좌우
+   거터(360/440px)를 뺀 나머지 공간(960px)이 아니라 하드코딩된
+   1400px를 차트 폭으로 써서 심하게 초과했었다 - `FRAME_W(1760)
+   -LEFT_GUTTER-RIGHT_GUTTER`로 차트 폭을 파생시키도록 정정.
+3. **그림2 하단 범례가 하단 헤어라인과 겹침(약 5px)**: 범례를
+   담는 wrapper의 선언된 높이(700px)보다 실제 콘텐츠가 더 아래
+   (716px)에 배치돼 있었다 - 자간 재계산 + 콘텐츠 영역을 topbar
+   실제 높이와 무관한 고정 오프셋(`top:168px`, `.content-area`)
+   으로 분리해 제목이 1~2줄이어도 항상 안전하게 만들었다.
+
+**추가로 제목 줄바꿈 문제도 발견**: 그림2 제목이 원래 문구("위반
+전(선제) 탐지는 부하 램프 일부 반복에서만 관측됨")로는 2줄로
+줄바꿈되며 상단 lab-tag와 시각적으로 붐볐다 - "선제 탐지는 부하
+램프 일부에서만 관측됨"으로 축약해 한 줄에 들어가도록 했다(의미
+변경 없음 - "선제"는 여전히 시점(부호) 결과를 가리키는 형용사일
+뿐, predictive 메커니즘을 선제로 단정하는 표현이 아님).
+
+수정 후 두 슬라이드 모두 `overflow_right`/`underflow_left`가
+정확히 `-80px`(=edge 인셋과 정확히 일치, 초과 0)로 재확인됐다.
+
+### 135.4 산출물
+
+`docs/design/phase8-figures/cobalt/`:
+
+| 파일 | 내용 |
+|---|---|
+| `slide1-detection-path.html` | 편집 가능한 생성 소스(그림1) |
+| `slide2-detection-timing.html` | 편집 가능한 생성 소스(그림2) |
+| `slide1-detection-path.png` / `slide2-detection-timing.png` | 실제 1920×1080 고해상도 PNG(Playwright `page.screenshot()`, 브라우저 패널의 압축 스크린샷이 아님) |
+| `slide1-detection-path.pdf` / `slide2-detection-timing.pdf` | 진짜 벡터 PDF(Playwright `page.pdf()` 직접 호출 - 스크린샷을 이미지로 끼워넣는 방식이 아니라 텍스트·SVG 경로가 그대로 벡터로 보존됨) |
+| `manifest.json` | 그림별 셀/포인트에 쓰인 원본 run_id 전체 목록 |
+
+재현: `python experiments/generate_cobalt_slides.py`(HTML 재생성) →
+`.claude/launch.json`의 `cobalt-slides` dev server로 열람 → 필요
+시 Playwright(`npm install playwright && npx playwright install
+chromium`)로 PNG/PDF 재추출.
+
+### 135.5 사실성 요구 재확인 (체크리스트)
+
+- core 45건(`load_ramp`/`pod_kill`=`mainexp-v2`, `network_degrade`=
+  `mainexp-v1`)만 사용, precursor·pilot 혼입 0건(§129.1과 동일
+  `load_authoritative()` 재사용이므로 구조적으로 보장).
+- `detector_process`와 `detection_source`를 각주에서 명시적으로
+  구분("탐지 경로는 detection_source 기준, detector_process와
+  다를 수 있음").
+- predictive 방식과 위반 전(선제) 탐지를 별도 축으로 유지 - 그림2의
+  좌우 위치는 `detection_lead_sec` 부호로만 결정, 도형(방식)과
+  채움상태(시점)를 독립적으로 인코딩.
+- 탐지 없음/SLO 위반 없음은 0초로 그리지 않고 건수로 별도 표기
+  (그림1의 "탐지 없음 0/5", 그림2의 "위반없음/미탐지 N건").
+- `load_ramp-native-01`을 "예방"으로 서술하지 않음 - 그림1 각주에
+  "SLO 위반 없음=능동 예방 의미 아님"을 명시.
+- §131 수치 자동 대조 PASS(135.2) - 불일치 없어 진행.
+
+### 135.6 범위 확인
+
+이번 턴 금지 사항 - 클러스터 접속(0건 - 로컬 dev server만 사용),
+새 실험(0건), 결과 JSON·state·hash·모델·SLO·스키마 수정(0건) -
+전부 준수. 신규 파일: `experiments/generate_cobalt_slides.py`,
+`.claude/launch.json`, `docs/design/phase8-figures/cobalt/`(9개
+파일). 기존 §131-134 산출물·문서는 전혀 건드리지 않았다. 회복시간·
+memory auxiliary 슬라이드는 사용자 확인 후 진행 - 임의로 시작하지
+않았다.

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>탐지 경로</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@700&family=Noto+Sans+KR:wght@400;500;700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F0EBDE; --ink:#1F2BE0; --ink-faint:rgba(31,43,224,0.18); --ink-soft:#5560E5;
+  --edge:80px; --pad-top:120px; --pad-bottom:96px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:#000;}
+.deck-viewport{position:fixed;inset:0;overflow:hidden;background:#000;}
+.deck-stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;background:var(--paper);}
+.slide{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;background:var(--paper);
+  font-family:"Noto Sans KR",sans-serif; color:var(--ink);}
+img,video,canvas,svg{max-width:100%;max-height:100%;}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition-duration:.01ms!important;}}
+
+.hairline-top, .hairline-bottom{position:absolute;left:var(--edge);right:var(--edge);height:1.5px;background:var(--ink);}
+.hairline-top{top:56px;}
+.hairline-bottom{bottom:44px;}
+.pagenum{position:absolute;right:var(--edge);bottom:64px;font-family:"DM Mono",monospace;font-size:15px;color:var(--ink);letter-spacing:.06em;}
+.navhint{position:absolute;left:var(--edge);bottom:64px;font-family:"DM Mono",monospace;font-size:13px;color:var(--ink);letter-spacing:.08em;opacity:.45;}
+
+.frame{position:absolute;left:var(--edge);right:var(--edge);top:var(--pad-top);bottom:var(--pad-bottom);}
+
+.topbar{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:1.5px solid var(--ink);padding-bottom:22px;height:96px;}
+.topbar h1{font-family:"Noto Serif KR",serif;font-weight:700;font-size:52px;line-height:1.15;margin:0;letter-spacing:-0.01em;max-width:1440px;}
+.labtag{font-family:"DM Mono",monospace;font-size:15px;letter-spacing:.05em;white-space:nowrap;padding-left:24px;padding-top:10px;}
+.content-area{position:absolute;left:0;right:0;top:168px;}
+
+.footnote{position:absolute;left:0;right:0;bottom:0;font-family:"Noto Sans KR",sans-serif;font-weight:400;font-size:17px;line-height:1.5;color:var(--ink);opacity:.82;}
+
+.deck-stage{transform-origin:0 0;}
+</style>
+</head>
+<body>
+<div class="deck-viewport">
+  <div class="deck-stage">
+    <div class="slide active">
+      
+<div class="frame">
+  <div class="topbar">
+    <h1>탐지 경로는 시나리오와 대응 방식마다 다르다</h1>
+    <div class="labtag">PHASE 8 · CORE n=45 · §131</div>
+  </div>
+  
+    <div class="content-area">
+      <div style="position:relative; margin-left:260px; height:690px;">
+        
+        <div style="position:absolute; left:0.0px; top:0; width:500.0px; height:64px;
+                    display:flex; align-items:center; gap:14px; border-bottom:1.5px solid var(--ink);">
+          <span style="font-size:26px;">●</span>
+          <span style="font-family:'Noto Sans KR',sans-serif; font-weight:700; font-size:26px;">무개입</span>
+        </div>
+        <div style="position:absolute; left:500.0px; top:0; width:500.0px; height:64px;
+                    display:flex; align-items:center; gap:14px; border-bottom:1.5px solid var(--ink);">
+          <span style="font-size:26px;">■</span>
+          <span style="font-family:'Noto Sans KR',sans-serif; font-weight:700; font-size:26px;">고정 임계치</span>
+        </div>
+        <div style="position:absolute; left:1000.0px; top:0; width:500.0px; height:64px;
+                    display:flex; align-items:center; gap:14px; border-bottom:1.5px solid var(--ink);">
+          <span style="font-size:26px;">▲</span>
+          <span style="font-family:'Noto Sans KR',sans-serif; font-weight:700; font-size:26px;">Isolation Forest</span>
+        </div>
+        
+        <div style="position:absolute; left:-260px; top:64.0px; width:240px; height:208.7px;
+                    display:flex; align-items:center; justify-content:flex-end; text-align:right;
+                    font-family:'Noto Sans KR',sans-serif; font-weight:700; font-size:24px; padding-right:20px;">
+          부하 램프
+        </div>
+            <div style="position:absolute; left:0.0px; top:64.0px; width:500.0px; height:208.7px;
+                        border-right:1px solid var(--ink-faint); border-bottom:1px solid var(--ink-faint); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:900; font-size:34px;">탐지 없음</div>
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:400; font-size:18px; margin-top:10px; opacity:.7;">0/5 · 개입 없음</div>
+              <div style="font-family:'DM Mono',monospace; font-size:16px; margin-top:14px; opacity:.75;">△ SLO 위반 없음 1/5</div>
+            </div>
+            <div style="position:absolute; left:500.0px; top:64.0px; width:500.0px; height:208.7px;
+                        border-right:1px solid var(--ink-faint); border-bottom:1px solid var(--ink-faint); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:900; font-size:34px;">예측 탐지 2/5</div>
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:400; font-size:18px; margin-top:10px; opacity:.7;">탐지 없음 3/5</div>
+              <div style="font-family:'DM Mono',monospace; font-size:16px; margin-top:14px; opacity:.75;">△ SLO 위반 없음 1/5</div>
+            </div>
+            <div style="position:absolute; left:1000.0px; top:64.0px; width:500.0px; height:208.7px;
+                         border-bottom:1px solid var(--ink-faint); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:900; font-size:34px;">예측 탐지 5/5</div>
+              
+              <div style="font-family:'DM Mono',monospace; font-size:16px; margin-top:14px; opacity:.75;">△ SLO 위반 없음 1/5</div>
+            </div>
+        <div style="position:absolute; left:-260px; top:272.7px; width:240px; height:208.7px;
+                    display:flex; align-items:center; justify-content:flex-end; text-align:right;
+                    font-family:'Noto Sans KR',sans-serif; font-weight:700; font-size:24px; padding-right:20px;">
+          Pod 강제종료
+        </div>
+            <div style="position:absolute; left:0.0px; top:272.7px; width:500.0px; height:208.7px;
+                        border-right:1px solid var(--ink-faint); border-bottom:1px solid var(--ink-faint); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:900; font-size:34px;">탐지 없음</div>
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:400; font-size:18px; margin-top:10px; opacity:.7;">0/5 · 개입 없음</div>
+              
+            </div>
+            <div style="position:absolute; left:500.0px; top:272.7px; width:500.0px; height:208.7px;
+                        border-right:1px solid var(--ink-faint); border-bottom:1px solid var(--ink-faint); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:900; font-size:34px;">반응형 탐지 5/5</div>
+              
+              
+            </div>
+            <div style="position:absolute; left:1000.0px; top:272.7px; width:500.0px; height:208.7px;
+                         border-bottom:1px solid var(--ink-faint); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:900; font-size:34px;">예측 탐지 5/5</div>
+              
+              
+            </div>
+        <div style="position:absolute; left:-260px; top:481.3px; width:240px; height:208.7px;
+                    display:flex; align-items:center; justify-content:flex-end; text-align:right;
+                    font-family:'Noto Sans KR',sans-serif; font-weight:700; font-size:24px; padding-right:20px;">
+          네트워크 열화
+        </div>
+            <div style="position:absolute; left:0.0px; top:481.3px; width:500.0px; height:208.7px;
+                        border-right:1px solid var(--ink-faint);  display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:900; font-size:34px;">탐지 없음</div>
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:400; font-size:18px; margin-top:10px; opacity:.7;">0/5 · 개입 없음</div>
+              
+            </div>
+            <div style="position:absolute; left:500.0px; top:481.3px; width:500.0px; height:208.7px;
+                        border-right:1px solid var(--ink-faint);  display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:900; font-size:34px;">반응형 탐지 5/5</div>
+              
+              
+            </div>
+            <div style="position:absolute; left:1000.0px; top:481.3px; width:500.0px; height:208.7px;
+                          display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:900; font-size:34px;">예측 탐지 1/5</div>
+              <div style="font-family:'Noto Sans KR',sans-serif; font-weight:400; font-size:18px; margin-top:10px; opacity:.7;">반응형 탐지 4/5</div>
+              
+            </div>
+      </div>
+    </div>
+    
+  <div class="footnote">무개입=native · 고정 임계치=fixed_threshold · Isolation Forest=proposed(예측 모델) · SLO 위반 없음=능동 예방 의미 아님 · 탐지 경로는 detection_source 기준(detector_process와 다를 수 있음)</div>
+</div>
+<div class="hairline-top"></div>
+<div class="hairline-bottom"></div>
+<div class="pagenum">01</div>
+<div class="navhint">PHASE 8 RESULTS — DRAFT</div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// 고정 1920x1080 스테이지를 실제 브라우저 창 크기에 맞춰 균일 스케일(html-template.md 표준 패턴)
+(function(){
+  var stage = document.querySelector('.deck-stage');
+  function scale(){
+    var factor = Math.min(window.innerWidth/1920, window.innerHeight/1080);
+    var x = (window.innerWidth - 1920*factor)/2;
+    var y = (window.innerHeight - 1080*factor)/2;
+    stage.style.transform = 'translate('+x+'px,'+y+'px) scale('+factor+')';
+  }
+  scale();
+  window.addEventListener('resize', scale);
+})();
+</script>
+
+</body>
+</html>
