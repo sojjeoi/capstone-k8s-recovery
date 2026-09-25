@@ -36,6 +36,7 @@ def make_load_ramp_prober_followup(config_path: str, run_id: str, scenario: str,
     config_name = Path(config_path).name
     raw_remote = "/probe-raw.csv"
     evidence_remote = "/probe-evidence.jsonl"
+    stop_file_remote = "/probe.stopfile"
     local_raw = RESULTS_DIR / f"probe-{run_id}-{arm}-{rep}-raw.csv"
     evidence_out_dir.mkdir(parents=True, exist_ok=True)
     local_evidence = evidence_out_dir / f"probe-{run_id}-{arm}-{rep}-evidence.jsonl"
@@ -58,6 +59,7 @@ def make_load_ramp_prober_followup(config_path: str, run_id: str, scenario: str,
         inner = (f"PYTHONUNBUFFERED=1 python /probe_followup.py --config /{config_name} "
                  f"--run-id {run_id} --scenario {scenario} --arm {arm} --rep {rep} "
                  f"--out {raw_remote} --evidence-out {evidence_remote} --duration-sec {probe_duration} "
+                 f"--stop-file {stop_file_remote} "
                  f"> /probe.log 2>&1; echo $? > /probe.exit")
         cmd = f"nohup sh -c '{inner}' < /dev/null > /probe-wrapper.log 2>&1 &"
         _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "sh", "-c", cmd], check=True)
@@ -121,23 +123,61 @@ def make_load_ramp_prober_followup(config_path: str, run_id: str, scenario: str,
         return t_rec.isoformat() if t_rec else None
 
     def stop():
-        # 종료 전에 evidence JSONL을 먼저 회수한다(pod 삭제되면 사라짐) - 실패해도
-        # pod 정리 자체는 계속한다(관측 데이터 회수 실패가 클러스터 정리를 막으면
-        # 안 됨), 대신 실패 사실은 예외로 알린다(조용히 삼키지 않음).
-        fetch_err = None
+        """§138 이후 지시 §3에서 발견한 경합 수정 - 이전엔 evidence만 즉시
+        회수하고 바로 pkill+삭제해서, probe_followup.py가 자기 grace(60초)
+        드레인을 끝내기 전에 강제 종료될 수 있었다(실측: proposed 1건
+        unresolved가 진짜 timeout인지 이 경합 때문인지 구분 불가했음).
+        이제 순서를 보장한다: 발신 중단 신호(stop-file) -> 진행 중 요청의
+        제한된 drain 대기(최대 DRAIN_WAIT_TIMEOUT_SEC, is_alive()로 확인) ->
+        raw CSV·evidence 둘 다 최종본 회수 -> pkill(안전망, 이미 끝났으면
+        무해)+pod 삭제. drain이 시간 내 안 끝나도 회수·정리는 계속하되,
+        그 사실을 숨기지 않고 결과에 명시한다."""
+        try:
+            _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "touch", stop_file_remote])
+        except Exception:
+            pass  # stop-file을 못 만들어도 아래 bounded wait가 자연 시간초과로 이어짐
+
+        DRAIN_WAIT_TIMEOUT_SEC = 90.0
+        DRAIN_POLL_SEC = 3.0
+        drained = False
+        waited = 0.0
+        while waited < DRAIN_WAIT_TIMEOUT_SEC:
+            if not is_alive():  # /probe.exit 존재 = probe_followup.py가 자기 drain을 끝내고 정상 종료함
+                drained = True
+                break
+            time.sleep(DRAIN_POLL_SEC)
+            waited += DRAIN_POLL_SEC
+
+        fetch_errs = []
+        try:
+            r = _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "cat", raw_remote])
+            if r.returncode == 0:
+                local_raw.write_text(r.stdout, encoding="utf-8")
+            else:
+                fetch_errs.append(f"raw CSV: {r.stderr}")
+        except Exception as e:
+            fetch_errs.append(f"raw CSV: {e}")
         try:
             r = _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "cat", evidence_remote])
             if r.returncode == 0:
                 local_evidence.write_text(r.stdout, encoding="utf-8")
             else:
-                fetch_err = r.stderr
+                fetch_errs.append(f"evidence JSONL: {r.stderr}")
         except Exception as e:
-            fetch_err = str(e)
+            fetch_errs.append(f"evidence JSONL: {e}")
+
         _run(["kubectl", "exec", "-n", NAMESPACE, pod_name, "--", "sh", "-c", "pkill -f probe_followup.py || true"])
         _delete_pod(pod_name)
-        if fetch_err:
-            raise RuntimeError(f"evidence JSONL 회수 실패({pod_name}): {fetch_err} - "
-                                f"pod는 정리됐으나 이 trial의 요청 evidence가 없다(별도 확인 필요)")
+
+        if not drained:
+            raise RuntimeError(
+                f"probe_followup.py가 {DRAIN_WAIT_TIMEOUT_SEC}초 안에 자체 drain을 끝내지 못해 강제 종료함"
+                f"({pod_name}) - 회수된 raw CSV/evidence의 마지막 몇 건은 강제종료로 인한 것일 수 있어"
+                f"'grace 만료로 인한 정상 unresolved'와 구분할 수 없다(완결성 실패, 숨기지 않고 보고)"
+            )
+        if fetch_errs:
+            raise RuntimeError(f"파일 회수 실패({pod_name}): {'; '.join(fetch_errs)} - "
+                                f"pod는 정리됐으나 이 trial의 원자료 일부가 없다(별도 확인 필요)")
 
     return Prober(start=start, is_alive=is_alive, check_slo_violation=check_slo_violation,
                   check_recovered=check_recovered, stop=stop,

@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import csv
 import json
+import os
 import sys
 import time
 import uuid
@@ -99,7 +100,16 @@ async def _fire_and_log(session, url, payload, csv_writer, csv_f, evidence_write
     csv_f.flush()
 
 
-async def main(config_path, run_id, scenario, arm, rep, out_path, evidence_out_path, duration_sec):
+async def main(config_path, run_id, scenario, arm, rep, out_path, evidence_out_path, duration_sec,
+                stop_file_path=None):
+    """stop_file_path(선택, 기본 None - 미지정 시 기존과 100% 동일 동작):
+    호출자(load_ramp_followup_adapter.py)가 관측을 끝내고 싶을 때 이 경로에
+    파일을 만들면, 다음 발신 시각 확인 시점(최대 약 1초 이내)에 감지해 새
+    요청 발신을 즉시 멈추고 그 아래의 동일한 grace-drain 절차로 넘어간다
+    (score_server.py의 --stop-file과 같은 패턴 재사용 - 새로 만들지 않음).
+    이게 없으면(원래 설계) run_once()가 관측을 끝내는 순간 호출자가 pod를
+    강제 종료해, 아직 진행 중이던 요청이 grace 없이 그대로 끊길 위험이 있다
+    (실측으로 발견 - §138 이후 지시 §3)."""
     config = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
     target = config["target"]
     payload = {"model": target["model"], "prompt": target["prompt"], "max_tokens": target["max_tokens"]}
@@ -118,16 +128,22 @@ async def main(config_path, run_id, scenario, arm, rep, out_path, evidence_out_p
     start_time = time.monotonic()
     next_fire = start_time
     tasks = []
+    stop_reason = "duration_elapsed"
     try:
         async with aiohttp.ClientSession(connector=connector) as session:
             while time.monotonic() - start_time < duration_sec:
                 now = time.monotonic()
                 if now >= next_fire:
+                    if stop_file_path is not None and os.path.exists(stop_file_path):
+                        stop_reason = "stop_file"
+                        break
                     tasks.append(asyncio.create_task(
                         _fire_and_log(session, target["url"], payload, writer, out_f, evidence_write, tag, seen_ids)))
                     next_fire += interval
                 else:
                     await asyncio.sleep(min(0.01, next_fire - now))
+            evidence_write({"event": "send_stopped", "reason": stop_reason,
+                            "elapsed_sec": round(time.monotonic() - start_time, 3), **tag})
             if tasks:
                 done, pending = await asyncio.wait(tasks, timeout=GRACE_SEC)
                 for t in pending:
@@ -140,7 +156,7 @@ async def main(config_path, run_id, scenario, arm, rep, out_path, evidence_out_p
     finally:
         out_f.close()
         evidence_f.close()
-    print(f"probe_followup 종료: {out_path} (evidence: {evidence_out_path})")
+    print(f"probe_followup 종료({stop_reason}): {out_path} (evidence: {evidence_out_path})")
 
 
 if __name__ == "__main__":
@@ -153,6 +169,9 @@ if __name__ == "__main__":
     parser.add_argument("--out", required=True)
     parser.add_argument("--evidence-out", required=True)
     parser.add_argument("--duration-sec", type=float, required=True)
+    parser.add_argument("--stop-file", default=None,
+                         help="지정하면 이 파일이 생기는 즉시(최대 약 1초 지연) 새 요청 발신을 멈추고 "
+                              "grace-drain으로 넘어간다. 기본값 None이면 기존과 동일 동작.")
     args = parser.parse_args()
     asyncio.run(main(args.config, args.run_id, args.scenario, args.arm, args.rep,
-                      args.out, args.evidence_out, args.duration_sec))
+                      args.out, args.evidence_out, args.duration_sec, stop_file_path=args.stop_file))

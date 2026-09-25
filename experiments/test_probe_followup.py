@@ -159,6 +159,48 @@ async def test_unresolved_after_grace_is_flagged_not_faked(tmp_path, local_serve
         await runner.cleanup()
 
 
+@pytest.mark.asyncio
+async def test_stop_file_halts_new_sends_but_drains_in_flight(tmp_path, local_server):
+    """§138 이후 지시 §3 - stop-file을 만들면 (a) 새 요청 발신은 즉시(~1초
+    이내) 멈추고 (b) 이미 발신된 요청은 정상적으로 drain(대기+기록)돼야
+    한다 - stop() 쪽이 프로세스를 강제로 죽이지 않고 이 자연 종료를 기다릴
+    수 있어야 §3의 경합이 실제로 해소된다."""
+    app, port = local_server
+    runner = await _run_server(app, port)
+    try:
+        config = _write_config(tmp_path, f"http://127.0.0.1:{port}/ok")
+        out_csv = tmp_path / "raw.csv"
+        out_evidence = tmp_path / "evidence.jsonl"
+        stop_file = tmp_path / "probe.stopfile"
+
+        async def _touch_stop_file_soon():
+            await asyncio.sleep(1.2)  # 요청 1~2건은 나간 뒤에 중단 신호
+            stop_file.write_text("stop")
+
+        await asyncio.gather(
+            probe_followup.main(config, "test-run", "unit", "arm", 1, str(out_csv), str(out_evidence),
+                                 duration_sec=10.0, stop_file_path=str(stop_file)),
+            _touch_stop_file_soon(),
+        )
+
+        events = _load_evidence(out_evidence)
+        sent_events = [e for e in events if e["event"] == "sent"]
+        send_stopped = [e for e in events if e["event"] == "send_stopped"]
+        assert send_stopped and send_stopped[0]["reason"] == "stop_file", "stop-file로 중단됐음이 명시돼야 함"
+        # duration_sec=10인데 stop-file이 ~1.2초에 생겼으므로, 그 근처에서 멈춰야 한다
+        # (10초 전체를 다 채우면 stop-file이 무시된 것 - 버그).
+        assert send_stopped[0]["elapsed_sec"] < 5.0, \
+            f"stop-file 신호를 못 받고 계속 발신함(elapsed={send_stopped[0]['elapsed_sec']}s, duration_sec=10.0)"
+        assert 1 <= len(sent_events) <= 4, f"stop-file 근처에서 발신이 멈춰야 하는데 {len(sent_events)}건 발신됨"
+        completed_ids = {e["request_id"] for e in events if e["event"] == "completed"}
+        sent_ids = {e["request_id"] for e in sent_events}
+        assert sent_ids == completed_ids, "이미 발신된 요청은 stop-file 이후에도 정상 drain(완료 기록)돼야 함"
+        print(f"OK - stop-file로 {send_stopped[0]['elapsed_sec']}s만에 발신 중단, "
+              f"이미 발신된 {len(sent_ids)}건은 전부 정상 drain됨")
+    finally:
+        await runner.cleanup()
+
+
 def test_duplicate_request_id_is_detected():
     # 네트워크 없이 순수 로직만 - seen_ids 가드가 실제로 예외를 던지는지 확인.
     # _fire_and_log는 코루틴이라 asyncio로 직접 두 번 호출하되, 두 번째 호출

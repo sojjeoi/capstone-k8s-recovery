@@ -56,14 +56,24 @@ def raw_violating_seconds(points):
     return {"raw_violating_sec": round(viol_sec, 1), "eval_sec": round(eval_sec, 1), "n_points": len(pts)}
 
 
-def find_all_episodes(points):
+def find_all_episodes(points, initial_not_before=None):
     """slo_judge.find_t_slo()/find_t_recovery()를 그대로, 반복 재사용한다 -
     새 판정 로직 없음. 각 episode의 t_recovery를 다음 탐색의 not_before로
     넘겨 재위반(같은 trial 안의 두 번째 이상 위반)이 있는지 확인한다.
     관측 종료까지 미회복이면(t_recovery=None) 그 episode를 '열린 상태'로
-    표시하고 탐색을 멈춘다(그 뒤 구간은 판정 불가)."""
+    표시하고 탐색을 멈춘다(그 뒤 구간은 판정 불가).
+
+    initial_not_before(선택, 기본 None - 기존 호출부 전부 이 인자를 안 넘기므로
+    동작 무변경): 첫 episode 탐색의 streak-시작 자격 하한을 지정한다(원본
+    run_once() 판정의 find_t_slo(points, not_before=t_injection)과 정확히
+    같은 방식 - 재위반 이후 탐색은 여전히 그 episode의 t_recovery를 하한으로
+    쓴다). points 자체(=rolling window 계산에 쓰이는 원자료)는 이 인자로
+    잘라내지 않는다 - 주입 전 이력이 초기 60초 window 계산에 남아있어야
+    원본과 동일한 판정이 나온다(§138 이후 지시 §4 - 이 구분을 처음엔 놓쳐서
+    cohort를 주입 시각으로 통째로 잘라 points에 넣었다가 원본 t_slo/t_recovery와
+    몇 분씩 어긋나는 걸 실측으로 발견하고 고쳤다)."""
     episodes = []
-    not_before = None
+    not_before = initial_not_before
     guard = 0
     while guard < 20:  # 무한루프 방지용 상한 - 실제로 이만큼 재위반할 리 없음
         guard += 1

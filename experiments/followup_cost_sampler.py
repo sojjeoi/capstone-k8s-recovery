@@ -20,6 +20,19 @@ import psutil
 DEFAULT_INTERVAL_SEC = 5.0
 
 
+def reclassify_missed(samples: list, missed: list) -> dict:
+    """samples/missed(각자 {'t': iso문자열, ...} 리스트)만 있으면 라이브
+    샘플러 없이도 재분류할 수 있게 분리한 순수 함수(§138 이후 지시 §5) -
+    LocalProcessSampler.summary()와 저장된 cost-*.json 재분석(correct_
+    followup_138.py) 둘 다 이 함수 하나를 공유한다(로직 중복 없음)."""
+    if not samples or not missed:
+        return {"genuine_missed": list(missed), "trailing_after_exit": []}
+    last_success_t = samples[-1]["t"]
+    genuine = [m for m in missed if m["t"] <= last_success_t]
+    trailing = [m for m in missed if m["t"] > last_success_t]
+    return {"genuine_missed": genuine, "trailing_after_exit": trailing}
+
+
 class LocalProcessSampler:
     """detector 로컬 서브프로세스(PID)의 CPU 누적 사용시간·메모리를 고정
     주기로 표본화한다. 자식 프로세스도 포함한다(자식 유무는 detector
@@ -91,19 +104,34 @@ class LocalProcessSampler:
             self._thread.join(timeout=self.interval_sec + 2)
 
     def summary(self) -> dict:
+        """§138 이후 지시 §5 - '수집 실패(missed)'와 '프로세스가 정상 종료된
+        뒤 더 이상 존재하지 않아 당연히 못 읽은 tick'을 구분한다. 이전엔
+        stop() 전까지 계속 폴링하다 보니, detector가 이미 정상 종료된 뒤의
+        tick들도 전부 missed로 잡혀 '수집 실패율'이 부풀려질 수 있었다 -
+        self.missed 중 self.samples의 마지막 성공 시각 '이후'에 연속으로
+        이어지는 꼬리는 process_exited_normally로 재분류하고, 성공 표본
+        사이사이에 낀 것만 진짜 mid-run 수집 실패(missed)로 남긴다."""
+        reclassified = reclassify_missed(self.samples, self.missed)
+        genuine_missed, trailing_after_exit = reclassified["genuine_missed"], reclassified["trailing_after_exit"]
+
         if not self.samples:
-            return {"n_samples": 0, "n_missed": len(self.missed),
+            return {"n_samples": 0, "n_missed": len(genuine_missed),
+                    "n_trailing_after_exit": len(trailing_after_exit),
                     "not_yet_started_ticks": self.not_yet_started_ticks,
                     "note": "표본 없음 - 전부 미확인이거나 프로세스가 관측 기간 내내 시작되지 않음"}
         rss_vals = [s["rss_bytes"] for s in self.samples]
         cpu_vals = [s["cpu_cumulative_sec"] for s in self.samples]
         return {
             "last_known_pid": self._current_pid(), "started_at": self._started_at, "interval_sec": self.interval_sec,
-            "n_samples": len(self.samples), "n_missed": len(self.missed),
+            "n_samples": len(self.samples),
+            "n_missed": len(genuine_missed),  # 성공 표본 사이사이의 진짜 mid-run 수집 실패만
+            "n_trailing_after_exit": len(trailing_after_exit),  # 마지막 성공 표본 이후 - 프로세스 정상 종료로 추정, 수집 실패 아님
             "not_yet_started_ticks": self.not_yet_started_ticks,
+            "first_sample_at": self.samples[0]["t"], "last_sample_at": self.samples[-1]["t"],
             "cpu_cumulative_sec_first": cpu_vals[0], "cpu_cumulative_sec_last": cpu_vals[-1],
             "cpu_used_sec_over_window": round(cpu_vals[-1] - cpu_vals[0], 3),
             "rss_bytes_mean": round(sum(rss_vals) / len(rss_vals)), "rss_bytes_max": max(rss_vals),
+            "rss_n_samples_in_mean": len(rss_vals),
             "include_children": self.include_children,
         }
 
