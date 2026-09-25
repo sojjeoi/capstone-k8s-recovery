@@ -16143,3 +16143,48 @@ chromium`)로 PNG/PDF 재추출.
 파일). 기존 §131-134 산출물·문서는 전혀 건드리지 않았다. 회복시간·
 memory auxiliary 슬라이드는 사용자 확인 후 진행 - 임의로 시작하지
 않았다.
+
+## §136 - 효과·비용·적용조건 분석 (읽기전용, 신규 분리 문서)
+
+시각화를 넘어 "고정 임계치 대신 Isolation Forest를 썼을 때 실제
+서비스 피해가 얼마나 줄고 추가 비용을 감수할 가치가 있는가"에
+답하는 근거 분석. 전체 8절 보고서는 별도 문서
+`docs/design/phase8-effect-cost-analysis.md`에 작성했다(이 일지와
+분리 - "원본과 분리된 분석 코드·문서"라는 이번 요청 취지에 맞춤).
+여기서는 실행 요약만 남긴다.
+
+**재현 스크립트**: `experiments/analyze_effect_cost_evidence.py`
+(신규, 읽기 전용) - 기존 `generate_phase8_figures.load_authoritative()`/
+`cell()`, `slo_judge.evaluate()`/`load_raw()`, `collect_metrics`를
+그대로 재사용하고 새 판정 로직을 추가하지 않았다. 클러스터 미접속,
+결과 JSON·state·hash·모델·threshold·SLO 정의 전부 미변경. 산출물
+`results/_effect_cost_analysis.json`은 `.gitignore` 대상(분석
+전용, 공식 결과 아님).
+
+**핵심 발견 요약**(전문·근거·한계는 분석 문서 참조):
+- `recovery_sec` 중앙값 기준 fixed_threshold→proposed 개선: load_ramp
+  101.6s(44.9%), pod_kill 38.89s(24.6%), network_degrade 8.0s(2.1%) -
+  세 값 모두 n=5/arm 기술통계, 유의성 검정 없음.
+  network_degrade의 미미한 개선은 배포 모델(model_v32b)의 피처
+  6종에 네트워크/지연 관련 피처가 없다는 구조적 원인과 정합.
+- load_ramp/proposed의 선제탐지(`detection_lead_sec>0`) 2건(rep3/5)을
+  전환 전후 90초 창 원자료로 재대조 - 두 건 모두 전환 전 창엔 "심각"
+  (실패 또는 threshold 2배 초과) 이벤트가 없고 전환 후 29~32초 지점에
+  처음 나타남(rep3: 30.143s 실패, rep5: 5.932s) - "판정 지연이 과거
+  잔류값 때문"이라는 설명을 반증하는 근거. 단, 어느 pod로 라우팅됐는지는
+  probe 원자료로 확정 불가 - 그대로 유보.
+- detector 로그 30건 전수 집계로 신호발행 규칙 확인
+  (`CONSECUTIVE_THRESHOLD=3`, `COOLDOWN_SEC=60`, `score_server.py`
+  공용) - pod_kill/network_degrade에서 fixed_threshold는 단 한 번도
+  "이상" 판정을 내지 않음(0/45 평가, CPU 임계치가 두 고장 유형엔
+  반응하지 않음). audit-log 26건 전수에서 오승격·중복승격 의심
+  기록 없음. 자원(CPU/메모리) 비용은 여전히 0/45 미측정.
+- 추가 실험은 "필요" 1건(전환 후 29~32초 구간 재현성 확인, post-hoc
+  follow-up, 계측만 추가, 판정 로직 불변)과 "선택" 1건(자원 사용량
+  계측 추가)만 설계했고 이번 턴 실행은 없음 - 새 시나리오·재학습·
+  유의성 검정 추가는 전부 범위 밖으로 명시.
+
+**범위 확인**: 클러스터 접속 0건, 기존 결과/모델/SLO 수정 0건,
+cherry-pick 없음(30건 detector 로그·26건 audit-log 전수 집계).
+불리한 결과(network_degrade 2.1%, network_degrade/proposed의 낮은
+predictive 채택률 1/5)를 그대로 보고했다.
