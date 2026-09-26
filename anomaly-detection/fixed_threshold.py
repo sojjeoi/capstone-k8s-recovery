@@ -38,7 +38,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-from features import FEATURE_NAMES, extract_features
+from features import FEATURE_NAMES, extract_features, extract_features_with_provenance
 from score_server import (
     COOLDOWN_SEC,
     CONSECUTIVE_THRESHOLD,
@@ -74,13 +74,26 @@ def evaluate_verbose() -> dict:
     score_server.py의 evaluate_v32b()/_evaluate_v32b_verbose() 쌍과 동일한
     패턴 - 판정 로직은 건드리지 않고 evidence 로깅에 필요한 원시값만
     추가로 노출한다. Prometheus 쿼리는 이 함수에서 한 번만 한다(evaluate()
-    가 이 함수를 감싸므로 중복 쿼리 없음)."""
+    가 이 함수를 감싸므로 중복 쿼리 없음).
+
+    §163 - extract_features() 대신 extract_features_with_provenance()를
+    쓴다("features" 값은 100% 동일함이 test_features.py로 확인됨) - 쿼리
+    요청·응답 시각과 지표별 원본 표본 신선도(상한/하한 또는 no_samples)
+    를 추가로 노출한다. "range 쿼리가 요청한 구간"(window_start/end_utc)
+    을 "Prometheus가 실제로 갖고 있던 원본 표본의 시각"과 같다고 단정
+    하지 않는다 - 후자는 per_metric_provenance에 별도로 담는다."""
     end = datetime.now(timezone.utc)
     start = end - timedelta(seconds=WINDOW_SEC)
-    feats = extract_features(start, end)
+    provenance = extract_features_with_provenance(start, end)
+    feats = provenance["features"]
+    feature_computed_at = datetime.now(timezone.utc)
     return {
         "window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(),
         "raw_feature_vector": feats, "cpu_mean": feats[CPU_MEAN_INDEX],
+        "query_sent_at_utc": provenance["query_sent_at_utc"],
+        "query_received_at_utc": provenance["query_received_at_utc"],
+        "per_metric_provenance": provenance["per_metric_provenance"],
+        "feature_computed_at_utc": feature_computed_at.isoformat(),
     }
 
 
@@ -146,6 +159,15 @@ def main(cpu_limit_cores: float, once: bool = False, experiment_run_id: str = No
                     "correlation_id": correlation_id,
                     "window_start_utc": verbose["window_start_utc"],
                     "window_end_utc": verbose["window_end_utc"],
+                    # §163 - 쿼리 요청/응답 시각과 feature 계산 완료 시각을 구분해
+                    # 기록한다. 이 넷(window_*, query_*, feature_computed_at)은
+                    # 전부 "요청/처리 시각"이지 "원본 표본이 실제로 언제 참이
+                    # 됐는가"가 아니다 - 후자는 per_metric_provenance에서
+                    # 상한/하한(또는 no_samples)으로만 표현한다(단정 금지).
+                    "query_sent_at_utc": verbose["query_sent_at_utc"],
+                    "query_received_at_utc": verbose["query_received_at_utc"],
+                    "feature_computed_at_utc": verbose["feature_computed_at_utc"],
+                    "per_metric_provenance": verbose["per_metric_provenance"],
                     "raw_feature_vector": verbose["raw_feature_vector"],
                     "cpu_mean": cpu_mean, "threshold_cores": threshold_cores,
                     "is_anomalous": is_anomalous, "consecutive_anomalous": consecutive_anomalous,

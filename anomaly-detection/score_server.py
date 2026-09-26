@@ -38,7 +38,9 @@ V3_DIR = Path(__file__).parent / "v3"
 sys.path.insert(0, str(V3_DIR))
 sys.path.insert(0, str(V3_DIR / "model_v31"))
 
-from features import _query_range  # noqa: E402 (anomaly-detection/features.py, 같은 디렉터리)
+from features import (  # noqa: E402 (anomaly-detection/features.py, 같은 디렉터리)
+    METRICS, _query_range, _query_range_with_timestamps, _raw_sample_staleness,
+)
 from build_dataset import extract_window_strict  # noqa: E402 (v3/build_dataset.py, 변경 없음)
 from feature_selection import apply_feature_schema  # noqa: E402 (model_v31, 변경 없음)
 from integrity import verify_sha256sums  # noqa: E402 (model_v31, 변경 없음)
@@ -218,12 +220,32 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
     §88(2026-09-21) - evidence 로깅에 raw/ordered/scaled feature vector가
     필요해져 중간값을 전부 담은 dict를 반환하도록 분리했다(판정 로직
     자체는 전혀 바꾸지 않음 - `evaluate_v32b()`가 이 함수를 감싸 기존과
-    동일하게 `score` float만 반환)."""
+    동일하게 `score` float만 반환).
+
+    §163 - query_range_fn이 **기본값(_query_range)일 때만** 원본 표본
+    (timestamp, value) 쌍을 부가로 캡처한다 - 추가 Prometheus 요청을
+    새로 보내지 않고, feature 계산에 이미 쓰는 바로 그 호출 결과를
+    재사용한다(별도 재조회 방식은 fake Prometheus를 쓰는 결정론적
+    테스트의 요청-횟수 기반 cycle 카운팅을 깨뜨리는 게 실측으로
+    확인돼 폐기했다 - `test_score_server_data_gap_subprocess.py`).
+    커스텀 query_range_fn을 주입하는 기존 테스트(다수)는 이 캡처 경로를
+    타지 않아 완전히 그대로 동작한다 - 그 경우 반환 dict의
+    `per_metric_provenance`는 빈 dict다."""
     end = now_fn()
     start = end - timedelta(seconds=WINDOW_SEC)
 
+    captured_pairs = {}
+    if query_range_fn is _query_range:
+        def _capturing_query_range_fn(promql, s, e, step="15s"):
+            pairs = _query_range_with_timestamps(promql, s, e, step)
+            captured_pairs[promql] = pairs
+            return [v for _ts, v in pairs]
+        effective_query_range_fn = _capturing_query_range_fn
+    else:
+        effective_query_range_fn = query_range_fn
+
     def bounded_query_range_fn(promql, s, e):
-        return query_range_with_bounded_retry(promql, s, e, query_range_fn=query_range_fn)
+        return query_range_with_bounded_retry(promql, s, e, query_range_fn=effective_query_range_fn)
 
     # feats가 None인 경우는 extract_window_strict()가 "쿼리는 정상 응답했지만
     # 표본이 0개"일 때만 반환한다 - bounded_query_range_fn이 연결 실패로
@@ -259,11 +281,21 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
     x6 = apply_feature_schema(feats, schema)
     x_scaled = scaler.transform([x6])
     score = float(model.decision_function(x_scaled)[0])
+    query_received_at = now_fn()
+    # §163 - window_start/end_utc(요청한 구간)를 "원본 표본이 실제로 언제
+    # 참이 됐는가"와 같다고 단정하지 않는다 - 후자는 여기서만 상한/하한
+    # (또는 no_samples, 캡처가 아예 없었으면 빈 dict)으로 표현한다.
+    per_metric_provenance = {
+        metric_name: _raw_sample_staleness(captured_pairs.get(promql, []), query_received_at)
+        for metric_name, promql in METRICS.items()
+    } if captured_pairs else {}
     return {
         "window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(),
         "raw_feature_vector": feats, "ordered_feature_vector": x6,
         "scaled_feature_vector": [float(v) for v in x_scaled[0]],
         "score": score, "freshness_by_metric": freshness_by_metric,
+        "feature_computed_at_utc": query_received_at.isoformat(),
+        "per_metric_provenance": per_metric_provenance,
     }
 
 
@@ -564,6 +596,15 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
                     "evaluation_seq": evaluation_seq, "correlation_id": correlation_id,
                     "artifact_hashes": artifacts["artifact_hashes"],
                     "window_start_utc": verbose["window_start_utc"], "window_end_utc": verbose["window_end_utc"],
+                    # §163 - feature_computed_at_utc/per_metric_provenance는
+                    # _evaluate_v32b_verbose()가 이미 계산에 쓴 바로 그 쿼리
+                    # 결과에서 뽑은 값이다(추가 재조회 없음, 위 함수 docstring
+                    # 참고). window_start/end_utc(요청 구간)를 "원본 표본이
+                    # 실제로 언제 참이 됐는가"와 같다고 단정하지 않는다 - 그건
+                    # per_metric_provenance 안의 상한/하한(또는 커스텀
+                    # query_range_fn 테스트에서는 빈 dict)으로만 표현한다.
+                    "feature_computed_at_utc": verbose.get("feature_computed_at_utc"),
+                    "per_metric_provenance": verbose.get("per_metric_provenance", {}),
                     "raw_feature_vector": verbose["raw_feature_vector"],
                     "ordered_feature_vector": verbose["ordered_feature_vector"],
                     "scaled_feature_vector": verbose["scaled_feature_vector"],

@@ -173,6 +173,51 @@ def _load_real_artifacts():
     return ss.load_and_verify_artifacts(V32B_ARTIFACTS_DIR, "v3.2b")
 
 
+def test_default_query_range_fn_captures_provenance_with_no_extra_http_calls():
+    # §163 - 기본 query_range_fn(=_query_range)일 때만 provenance가
+    # 캡처되고, 그 캡처가 **추가 HTTP 요청 없이**(요청 횟수가 커스텀
+    # query_range_fn 주입 시와 동일하게 지표당 정확히 1회) 이뤄지는지
+    # 확인한다. 최초 시도(별도 재조회)가 정확히 이 요청-횟수 증가로
+    # test_score_server_data_gap_subprocess.py를 깨뜨렸던 회귀를 막는
+    # 테스트 - 그 실패가 이 설계 변경의 직접적인 계기였다.
+    a = _load_real_artifacts()
+    call_count = {"n": 0}
+
+    class _FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            call_count["n"] += 1
+            now = __import__("time").time()
+            values = [[now - (4 - i) * 15, "1.0"] for i in range(5)]
+            return {"data": {"result": [{"metric": {}, "values": values}]}}
+
+    with patch("features.requests.get", return_value=_FakeResp()):
+        verbose = ss._evaluate_v32b_verbose(a["model"], a["scaler"], a["schema"],
+                                             freshness_check_fn=_always_fresh)
+
+    assert call_count["n"] == 4, f"query_range 호출이 지표(4개)당 1회가 아님 - 재조회로 두 배가 됐을 위험: {call_count['n']}"
+    assert set(verbose["per_metric_provenance"].keys()) == {"cpu", "memory", "queue", "cache"}
+    for prov in verbose["per_metric_provenance"].values():
+        assert prov["raw_sample_status"] == "ok"
+    print("OK - 기본 query_range_fn 경로에서 provenance가 캡처되고 HTTP 요청은 지표당 정확히 1회(추가 재조회 없음)")
+
+
+def test_custom_query_range_fn_still_yields_empty_provenance_unchanged_feats():
+    # §163 - 기존 다수 테스트가 쓰는 "커스텀 query_range_fn 주입" 경로는
+    # provenance 캡처를 아예 안 타야 한다(값만 있는 기존 계약 그대로) -
+    # feats/score는 이 캡처 유무와 무관하게 100% 동일해야 한다.
+    a = _load_real_artifacts()
+    verbose = ss._evaluate_v32b_verbose(
+        a["model"], a["scaler"], a["schema"],
+        query_range_fn=_constant_query_range_fn(NORMAL_VALUES),
+        freshness_check_fn=_always_fresh)
+    assert verbose["per_metric_provenance"] == {}, \
+        "커스텀 query_range_fn인데 provenance가 채워짐(캡처 조건 오판)"
+    print("OK - 커스텀 query_range_fn 경로는 provenance 캡처를 안 타고 빈 dict만 남김(기존 계약 100% 유지)")
+
+
 def test_missing_metric_fails_closed_no_score():
     a = _load_real_artifacts()
     try:
@@ -789,11 +834,17 @@ class _apply_all:
         return False
 
 
-def _run_main_n_cycles(evidence_path, n, *, post_side_effect=None, stop_file_path=None):
+def _run_main_n_cycles(evidence_path, n, *, post_side_effect=None, stop_file_path=None,
+                        evaluate_side_effect=_anomalous_verbose):
     """§92 - main()을 once=False로 n cycle만 돌리고 멈추게 하는 테스트
     헬퍼(sleep은 무력화, n번째 cycle 뒤 StopIteration으로 빠져나옴). 판정
     로직(advance_streak)은 전혀 건드리지 않고 IO 계층(_evaluate_v32b_verbose/
-    post_to_recovery_policy/time.sleep)만 가짜로 대체한다."""
+    post_to_recovery_policy/time.sleep)만 가짜로 대체한다.
+
+    §163 - evaluate_side_effect(선택, 기본값 _anomalous_verbose로 기존 호출부
+    전부 100% 동일 동작)를 추가했다 - window_start/end_utc가 실제 ISO 시각인
+    fake verbose가 필요한 provenance 재조회 테스트가 이 값을 오버라이드해서
+    쓴다."""
     calls = {"n": 0}
 
     def fake_sleep(_):
@@ -801,7 +852,7 @@ def _run_main_n_cycles(evidence_path, n, *, post_side_effect=None, stop_file_pat
         if calls["n"] >= n:
             raise StopIteration("test: n cycles reached")
 
-    patches = [patch.object(ss, "_evaluate_v32b_verbose", side_effect=_anomalous_verbose),
+    patches = [patch.object(ss, "_evaluate_v32b_verbose", side_effect=evaluate_side_effect),
                patch.object(ss.time, "sleep", side_effect=fake_sleep)]
     if post_side_effect is not None:
         patches.append(patch.object(ss, "post_to_recovery_policy", side_effect=post_side_effect))
@@ -815,6 +866,54 @@ def _run_main_n_cycles(evidence_path, n, *, post_side_effect=None, stop_file_pat
 
 def _read_jsonl(path):
     return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines()]
+
+
+# --- §163: per_metric_provenance (캡처, 재조회 없음) -------------------------
+# 최초 시도(별도 재조회)는 fake Prometheus 요청-횟수 기반 cycle 카운팅을
+# 깨뜨리는 게 test_score_server_data_gap_subprocess.py 실측으로 확인돼
+# 폐기했다 - 지금은 _evaluate_v32b_verbose()가 feature 계산에 이미 쓰는
+# 쿼리 결과에서 부가로 캡처한다(추가 HTTP 요청 0건). 아래 테스트는 그
+# 캡처 결과가 main()의 evidence 기록까지 그대로 전달되는지만 확인한다 -
+# 캡처 자체(원본 표본 시각 계산)는 test_features.py가 이미 검증했다.
+
+def _verbose_with_provenance(model, scaler, schema, **kwargs):
+    v = _anomalous_verbose(model, scaler, schema, **kwargs)
+    v["feature_computed_at_utc"] = "2026-01-01T00:01:00.010000+00:00"
+    v["per_metric_provenance"] = {m: {"raw_sample_status": "ok", "sample_lag_at_query_sec": 1.0}
+                                   for m in ("cpu_mean", "memory_mean", "cache_mean")}
+    return v
+
+
+def test_per_metric_provenance_passed_through_to_evidence_unchanged(tmp_path):
+    # §163 - _evaluate_v32b_verbose()가 캡처한 provenance가 main()의
+    # evaluation_decision에 그대로(가공 없이) 실리는지, 그리고 신호
+    # 발행 여부(would_signal)는 여전히 판정 로직(연속 3회)만 따르는지
+    # 확인한다(지시: 로깅 유무가 판정에 영향 없음).
+    evidence_path = tmp_path / "evidence.jsonl"
+    _run_main_n_cycles(evidence_path, 3, evaluate_side_effect=_verbose_with_provenance)
+    recs = _read_jsonl(evidence_path)
+    decisions = [r for r in recs if r["record_type"] == "evaluation_decision"]
+    assert len(decisions) == 3
+    for d in decisions:
+        assert d["per_metric_provenance"]["cpu_mean"]["raw_sample_status"] == "ok"
+        assert d["feature_computed_at_utc"] == "2026-01-01T00:01:00.010000+00:00"
+        assert d["would_signal"] == (d["evaluation_seq"] >= 3)  # 판정 로직 불변(연속 3회에서만 True)
+    print("OK - per_metric_provenance/feature_computed_at_utc가 evidence에 그대로 전달, 신호 판정은 불변")
+
+
+def test_per_metric_provenance_absent_is_empty_dict_not_fabricated(tmp_path):
+    # §163 - _evaluate_v32b_verbose()가 provenance를 못 만든 경우(예:
+    # 기존 다수 테스트처럼 커스텀 query_range_fn을 주입해 캡처 경로를
+    # 안 타는 경우) evidence에 빈 dict만 남아야 한다 - 가짜 시각을
+    # 지어내면 안 된다(단정 금지).
+    evidence_path = tmp_path / "evidence.jsonl"
+    _run_main_n_cycles(evidence_path, 1)  # 기본 _anomalous_verbose(§92, provenance 필드 없음)
+    recs = _read_jsonl(evidence_path)
+    decisions = [r for r in recs if r["record_type"] == "evaluation_decision"]
+    assert len(decisions) == 1
+    assert decisions[0]["per_metric_provenance"] == {}, \
+        "provenance가 없는데 빈 dict가 아닌 값이 기록됨(단정 금지 위반)"
+    print("OK - provenance 미제공 시 빈 dict만 기록됨(가짜 시각 생성 없음)")
 
 
 def test_write_ahead_decision_recorded_before_signal_http_call():

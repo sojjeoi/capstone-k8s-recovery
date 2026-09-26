@@ -22,11 +22,23 @@ import fixed_threshold
 
 SCRIPT_PATH = Path(__file__).parent / "fixed_threshold.py"
 
+_FAKE_PROVENANCE_OK = {"raw_sample_status": "ok", "last_sample_ts_utc": "2026-01-01T00:00:55+00:00",
+                       "sample_lag_at_query_sec": 5.0,
+                       "underlying_value_true_upper_bound_utc": "2026-01-01T00:00:55+00:00",
+                       "underlying_value_true_lower_bound_utc": "2026-01-01T00:00:40+00:00"}
+
 _FAKE_VERBOSE = {
     "window_start_utc": "2026-01-01T00:00:00+00:00",
     "window_end_utc": "2026-01-01T00:01:00+00:00",
     "raw_feature_vector": [0.1, 0.0, 1e9, 0.0, 0.0, 0.0, 0.0, 0.0],
     "cpu_mean": 0.1,  # 임계치(2.7코어)보다 한참 낮음 - 신호 발행 경로를 안 타게 해 테스트를 단순하게 유지
+    "query_sent_at_utc": "2026-01-01T00:01:00+00:00",
+    "query_received_at_utc": "2026-01-01T00:01:00.500000+00:00",
+    "feature_computed_at_utc": "2026-01-01T00:01:00.510000+00:00",
+    "per_metric_provenance": {
+        "cpu": _FAKE_PROVENANCE_OK, "memory": _FAKE_PROVENANCE_OK,
+        "queue": _FAKE_PROVENANCE_OK, "cache": _FAKE_PROVENANCE_OK,
+    },
 }
 
 
@@ -193,10 +205,14 @@ def test_evidence_log_window_matches_evaluate_verbose_exactly():
 
 
 def test_evaluate_verbose_window_length_matches_window_sec():
-    # extract_features()만 가짜로 대체하고(실제 evaluate_verbose() 로직은
-    # 그대로 실행) window_end-window_start가 WINDOW_SEC와 정확히 같은지
-    # 확인한다 - off-by-one류 시각 계산 오류를 잡는다.
-    with patch.object(fixed_threshold, "extract_features", return_value=[0.0] * 8):
+    # extract_features_with_provenance()만 가짜로 대체하고(실제
+    # evaluate_verbose() 로직은 그대로 실행) window_end-window_start가
+    # WINDOW_SEC와 정확히 같은지 확인한다 - off-by-one류 시각 계산
+    # 오류를 잡는다. §163부터 evaluate_verbose()가 이 함수를 호출한다
+    # (extract_features()는 이제 그 얇은 래퍼일 뿐).
+    fake_provenance = {"features": [0.0] * 8, "query_sent_at_utc": "2026-01-01T00:00:00+00:00",
+                        "query_received_at_utc": "2026-01-01T00:00:01+00:00", "per_metric_provenance": {}}
+    with patch.object(fixed_threshold, "extract_features_with_provenance", return_value=fake_provenance):
         verbose = fixed_threshold.evaluate_verbose()
     start = datetime.fromisoformat(verbose["window_start_utc"])
     end = datetime.fromisoformat(verbose["window_end_utc"])
@@ -223,13 +239,58 @@ def test_evidence_log_schema_is_fixed_and_has_no_env_or_secret_leakage():
         assert len(records) == 1
         expected_keys = {
             "record_type", "detector", "wall_clock_utc", "run_id", "evaluation_seq",
-            "correlation_id", "window_start_utc", "window_end_utc", "raw_feature_vector",
+            "correlation_id", "window_start_utc", "window_end_utc",
+            "query_sent_at_utc", "query_received_at_utc", "feature_computed_at_utc",
+            "per_metric_provenance", "raw_feature_vector",
             "cpu_mean", "threshold_cores", "is_anomalous", "consecutive_anomalous",
             "cooldown_active", "would_signal",
         }
         assert set(records[0].keys()) == expected_keys, \
             f"evidence 레코드 키가 고정 스키마와 다름(뜻밖의 필드 유입 의심): {set(records[0].keys())}"
     print("OK - 환경변수 유출 없음, 레코드 스키마가 고정 키 집합과 정확히 일치(요청 본문·자격증명 필드 없음)")
+
+
+def test_evidence_log_honestly_reports_stale_sample_not_hidden():
+    # §163 - 지연/stale 상황에서 시각 표기가 정직한지 확인(지시).
+    # 원본 표본이 실제로는 3분 전인데 evidence에 "방금"처럼 줄어들면 안 됨.
+    stale_provenance = {"raw_sample_status": "ok", "last_sample_ts_utc": "2026-01-01T00:00:00+00:00",
+                        "sample_lag_at_query_sec": 180.0,
+                        "underlying_value_true_upper_bound_utc": "2026-01-01T00:00:00+00:00",
+                        "underlying_value_true_lower_bound_utc": "2026-01-01T00:00:15+00:00"}
+    stale_verbose = {**_FAKE_VERBOSE, "per_metric_provenance": {
+        "cpu": stale_provenance, "memory": _FAKE_PROVENANCE_OK,
+        "queue": _FAKE_PROVENANCE_OK, "cache": _FAKE_PROVENANCE_OK}}
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        with patch.object(fixed_threshold, "evaluate_verbose", return_value=stale_verbose):
+            fixed_threshold.main(cpu_limit_cores=3.0, once=True, experiment_run_id="test-run",
+                                  evidence_log_path=str(evidence_path))
+        rec = _read_jsonl(evidence_path)[0]
+        assert rec["per_metric_provenance"]["cpu"]["sample_lag_at_query_sec"] == 180.0, \
+            "오래된 표본의 지연이 축소·은폐됨"
+    print("OK - 180초 지연된(stale) 원본 표본이 evidence에 축소 없이 그대로 기록됨")
+
+
+def test_evidence_log_honestly_reports_no_samples_not_fabricated_timestamp():
+    # §163 - 빈 응답(시계열 자체가 없음)에서 가짜 timestamp를 만들어내지
+    # 않고 "확인 불가"(no_samples)로 명시하는지 확인(지시).
+    no_samples_provenance = {"raw_sample_status": "no_samples", "last_sample_ts_utc": None,
+                             "sample_lag_at_query_sec": None,
+                             "underlying_value_true_upper_bound_utc": None,
+                             "underlying_value_true_lower_bound_utc": None}
+    gap_verbose = {**_FAKE_VERBOSE, "per_metric_provenance": {
+        "cpu": _FAKE_PROVENANCE_OK, "memory": _FAKE_PROVENANCE_OK,
+        "queue": no_samples_provenance, "cache": _FAKE_PROVENANCE_OK}}
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        with patch.object(fixed_threshold, "evaluate_verbose", return_value=gap_verbose):
+            fixed_threshold.main(cpu_limit_cores=3.0, once=True, experiment_run_id="test-run",
+                                  evidence_log_path=str(evidence_path))
+        rec = _read_jsonl(evidence_path)[0]
+        q = rec["per_metric_provenance"]["queue"]
+        assert q["raw_sample_status"] == "no_samples"
+        assert q["last_sample_ts_utc"] is None, "표본 없음인데 timestamp를 만들어냄(단정 금지 위반)"
+    print("OK - queue 지표 무응답이 '확인 불가'(no_samples)로 명시되고 가짜 timestamp를 안 만듦")
 
 
 def test_evidence_logging_does_not_change_signal_decision():
@@ -293,6 +354,8 @@ def main():
     test_evidence_log_window_matches_evaluate_verbose_exactly()
     test_evaluate_verbose_window_length_matches_window_sec()
     test_evidence_log_schema_is_fixed_and_has_no_env_or_secret_leakage()
+    test_evidence_log_honestly_reports_stale_sample_not_hidden()
+    test_evidence_log_honestly_reports_no_samples_not_fabricated_timestamp()
     test_evidence_logging_does_not_change_signal_decision()
     print("전체 통과")
 
