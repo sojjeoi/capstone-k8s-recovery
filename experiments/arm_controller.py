@@ -135,18 +135,22 @@ def _build_detector_command(arm: str, run_id: str, evidence_log_path: Optional[s
     같이 받는다 - fixed_threshold.py가 이 인자 없이는 즉시 fail-closed로
     종료하므로, 여기서 안 붙이면 detector가 아예 시작을 못 한다.
 
-    evidence_log_path(§90 E2E pilot, 2026-09-21 추가) - 지정되면 proposed
-    arm(score_server.py)에만 --evidence-log로 전달한다(기본값 None이면
-    아무 인자도 안 붙어 기존 호출부·본 실험 동작이 전혀 안 바뀜, 순수
-    opt-in). score_server.py의 --evidence-log는 판정 로직에 영향 없는
-    관찰 전용 append 파일이다(§88.6). fixed_threshold.py는 이 옵션 자체가
-    없으므로 arm에 상관없이 절대 붙이지 않는다."""
+    evidence_log_path(§90 E2E pilot, 2026-09-21 추가; §160부터 fixed_threshold
+    에도 적용) - 지정되면 두 arm 모두 --evidence-log로 전달한다(기본값
+    None이면 아무 인자도 안 붙어 기존 호출부·본 실험 동작이 전혀 안 바뀜,
+    순수 opt-in). 두 스크립트의 --evidence-log는 판정 로직에 영향 없는
+    관찰 전용 append 파일이다(score_server.py는 §88.6, fixed_threshold.py는
+    §160 - 같은 _write_evidence_line() 포맷 재사용). --stop-file(graceful
+    shutdown)은 fixed_threshold.py에 그 옵션 자체가 없으므로 proposed에만
+    붙인다(§160에서 로깅만 추가했고 stop-file은 이번 범위 밖)."""
     spec = _DETECTOR_SCRIPTS.get(arm)
     if spec is None:
         return None
     cmd = [sys.executable, str(ANOMALY_DETECTION_DIR / spec["script"]), "--run-id", run_id]
     if arm == "fixed_threshold":
         cmd += ["--cpu-limit-cores", str(FIXED_THRESHOLD_CPU_LIMIT_CORES)]
+        if evidence_log_path is not None:
+            cmd += ["--evidence-log", evidence_log_path]
     elif arm == "proposed":
         cmd += ["--artifacts-dir", str(PROPOSED_ARTIFACTS_DIR), "--model-version", PROPOSED_MODEL_VERSION]
         if evidence_log_path is not None:

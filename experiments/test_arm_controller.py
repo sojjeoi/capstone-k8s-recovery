@@ -111,7 +111,7 @@ def test_evidence_log_path_default_none_leaves_command_unchanged():
     print("OK - evidence_log_path 기본값(None)은 커맨드를 전혀 바꾸지 않음(opt-in)")
 
 
-def test_evidence_log_path_appended_only_for_proposed():
+def test_evidence_log_path_appended_for_proposed():
     cmd = _build_detector_command("proposed", "run-1", evidence_log_path="/tmp/evidence.jsonl")
     assert "--evidence-log" in cmd, cmd
     idx = cmd.index("--evidence-log")
@@ -119,12 +119,17 @@ def test_evidence_log_path_appended_only_for_proposed():
     print("OK - evidence_log_path 지정 시 proposed 커맨드에 --evidence-log로 정확히 전달됨")
 
 
-def test_evidence_log_path_ignored_for_fixed_threshold():
-    # fixed_threshold.py는 --evidence-log 옵션 자체가 없다 - 실수로 붙으면
-    # 즉시 argparse 오류로 detector가 시작조차 못 한다(fail-closed 회귀 방지).
+def test_evidence_log_path_appended_for_fixed_threshold_too():
+    # §160부터 fixed_threshold.py도 --evidence-log를 지원한다(v2 계측
+    # pilot - 두 arm 모두 같은 opt-in 계측을 남길 수 있어야 함). 다만
+    # --stop-file(graceful shutdown)은 fixed_threshold.py에 그 옵션
+    # 자체가 없으므로 여전히 절대 붙으면 안 된다(fail-closed 회귀 방지).
     cmd = _build_detector_command("fixed_threshold", "run-1", evidence_log_path="/tmp/evidence.jsonl")
-    assert "--evidence-log" not in cmd, cmd
-    print("OK - evidence_log_path가 지정돼도 fixed_threshold 커맨드에는 절대 안 붙음")
+    assert "--evidence-log" in cmd, cmd
+    idx = cmd.index("--evidence-log")
+    assert cmd[idx + 1] == "/tmp/evidence.jsonl", cmd
+    assert "--stop-file" not in cmd, cmd
+    print("OK - evidence_log_path 지정 시 fixed_threshold 커맨드에도 --evidence-log 전달, --stop-file은 여전히 안 붙음")
 
 
 def test_detector_script_dispatch_table_has_exactly_two_non_native_arms():
@@ -627,6 +632,6 @@ if __name__ == "__main__":
     test_prometheus_reachable_and_fresh_rejects_stale_or_missing_data()
     test_resolved_signal_url_prefers_env_override()
     test_evidence_log_path_default_none_leaves_command_unchanged()
-    test_evidence_log_path_appended_only_for_proposed()
-    test_evidence_log_path_ignored_for_fixed_threshold()
+    test_evidence_log_path_appended_for_proposed()
+    test_evidence_log_path_appended_for_fixed_threshold_too()
     print("\n모두 통과")
