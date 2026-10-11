@@ -1,9 +1,3 @@
-# 관측성 스택
+# monitoring
 
-> Status: **HISTORICAL**(초기 설명). 현재 사용 지표·수집 방식은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조.
-
-Prometheus로 K8s 지표 + vLLM 고유 지표(`/metrics`)를 수집하고 Grafana로 시각화한다.
-
-- `prometheus/vllm-scrape-config.yaml`: vLLM 서빙 파드의 `/metrics` 엔드포인트 스크랩 설정
-- `prometheus/alert-rules.yaml`: 반응형 경로(baseline 비교용) 알림 규칙
-- `grafana/dashboards/`: 대시보드 정의
+> Status: 이 폴더에는 설정 파일이 없다(초기 계획 README만 남음). 실제 관측성 설정은 `gitops/apps/vllm-serving/`의 ServiceMonitor와 `gitops/apps/monitoring/`에 있다.

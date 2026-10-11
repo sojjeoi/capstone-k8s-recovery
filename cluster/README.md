@@ -1,6 +1,3 @@
-# 클러스터 구축
+# cluster
 
-kubeadm으로 구축한 컨트롤플레인+워커 2노드 클러스터 설정 파일.
-
-- `kubeadm-config.yaml`: 클러스터 초기화 설정
-- `setup-scripts/`: 노드별 준비 스크립트(containerd 설치 등)
+> Status: 이 폴더에는 클러스터 설정 파일이 없다(초기 계획 README만 남음). 클러스터는 kubeadm 기반 control-plane 1 + worker 2 구성이다.

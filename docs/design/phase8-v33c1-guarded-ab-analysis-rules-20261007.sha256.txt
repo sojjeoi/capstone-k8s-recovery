@@ -1,0 +1,10 @@
+51886c97152d639e4a4a86a7370ac19c8a91b2f78a8fb1b10d279455985b3bbd *../../experiments/guarded_ab_analysis.py
+d5d0aad8ea0e8be2348c64fff45bfc255f357c3d8919e7fc158464f462dc8dee *../../experiments/test_guarded_ab_analysis.py
+227d2e775c24de35bfeac215cfb2f108522764c4dd71c891246f40230925cf1b *phase8-v33c1-guarded-ab-analysis-rules-20261007.md
+0130deb886ad7c0cffb182f7f1d61fde7ac7397608ec5914d2e15346acf0b330 *phase8-v33c1-guarded-ab-comparison-contract-r2-20261007.md
+53b555b8997d7330a0fd73bb49388c52c0f2640e3832ed8d2ea1cd2b2d476597 *../../experiments/run_guarded_pilot.py
+baff9fe74eb2e06de09333347dfbd11e900faa9a29c68bfc95fe37e2da9e1e12 *../../experiments/guarded_cleanup_gate.py
+33ff83de00800db01206f7738e390884987a1338537e15477c876f5245e5cd85 *../../experiments/slo_episodes.py
+a66957761e0e433e3efdf0037f0c3c0833c1542c85c756a49085aee9c3447022 *../../experiments/slo_judge.py
+4716d3ce79eaa0bcccce0b64dda4ff7f5bcd0ebb5b49fb9c69dbe116d4fb6ef9 *../../experiments/timed_switch_verdict.py
+frozen_at=2026-10-07T06:40:10Z

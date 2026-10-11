@@ -1,6 +1,6 @@
 # c1 detector - 한계와 향후 과제 (최종 정리, 2026-10-10)
 
-> Status: **OUTDATED-SUMMARY**(2026-10-10). 확장 방향 1(c3-A)은 이후 사전등록 실행 결과 PROMISING(불필요 신호 c1 14 → 1), 확장 방향 2(AI Added Value)는 NO_GO로 정리됨 → `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조.
+> Status: **HISTORICAL**(2026-10-10 작성, `docs/history/`로 이동). 확장 방향 1(c3-A)은 이후 사전등록 실행 결과 PROMISING(불필요 신호 c1 14 → 1), 확장 방향 2(AI Added Value)는 NO_GO로 정리됨 → `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조.
 
 > 공식 결과는 바꾸지 않았다. 아래 탐색 분석은 모두 공식 c1 artifact를 읽기만 했고 결과를 별도 폴더에 두었다. 기존 데이터에 대한 post-hoc feature/tuning 탐색은 종료한다. 새 독립 데이터 기반 c3-A와 조건부 c3-B는 별도 사전 설계 과제로 구분한다(실행 승인 아님).
 

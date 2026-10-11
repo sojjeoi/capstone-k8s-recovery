@@ -1,37 +1,10 @@
-# 실험
+# experiments - 실험 실행기·분석기
 
-> Status: **HISTORICAL**(초기 3-way×4종×5회 계획 - 실행하지 않음). 실제 수행한 실험(A/B·B/C/K·N1·c3-A·Axis 2)은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조.
+- 공식 실험 실행기·분석기: `run_guarded_pilot.py`(A/B), `run_guarded_bck.py`·`guarded_bck_analysis.py`(B/C/K), `run_guarded_normal_bc.py`·`guarded_normal_bc_analysis.py`(N1), `guarded_ab_analysis.py`, `slo_judge.py`·`slo_episodes.py`(SLO 판정)
+- `c3_normal_coverage/`: c3-A 사전등록 수집·학습·보정·블라인드 검증 코드(freeze manifest 포함)
+- `llm_multivariate_added_value/`: Axis 2 지표 감사(NO_GO)
+- `llm_failure_scenario_research/`: 문헌 조사·S3 KV cache 압박 계획(pilot 미실행)
+- `results/`: 공식 사전등록 문서·평가 요약 일부(원자료는 저장소 밖 보존)
+- 그 밖의 `run_*_trial.py`·어댑터: 초기·중간 단계 실험 도구(historical, 일부는 freeze manifest가 참조하므로 유지)
 
-3-way(self-healing / 고정임계치 / 제안방식) × 4종 시나리오(Pod kill / 메모리 압력 / 부하 증가 / 네트워크 열화) × 5회 반복(총 60회) 실험 자동화 및 결과 수집.
-
-- `run_all_scenarios.py`: 전체 실험 반복 실행 (예정 — 현재는 시나리오별 `run_*_trial.py`를 개별 실행: load_ramp·pod_kill 완료, network_degrade 어댑터·테스트·launcher 오프라인 완료(실클러스터 첫 실행·probe timeout calibration 대기), memory_pressure 어댑터·러너·오프라인 테스트 완료(실클러스터 첫 실행·강도 calibration 대기 - `chaos/scenario-memory-pressure-explore.yaml` 참고, 1GB 이상 탐색 전까지 500MB 최소 강도 smoke만 허용))
-- `run_calibration.py`: 무개입 대조군 실행
-- `collect_metrics.py`: 종단간 지연시간 분해, 가용성, 정확성 등 전체 평가지표 추출
-- `results/`: 실험 결과 (CSV, `.gitignore`에 의해 커밋되지 않음 — 별도 백업 필요)
-
-## 테스트
-
-기본 실행은 클러스터·서비스 없이 항상 전부 통과한다:
-
-```bash
-python -m pytest
-```
-
-`recovery-policy` 같은 실제 서비스가 떠 있어야 통과하는 테스트는
-`@pytest.mark.live_cluster`로 표시돼 있고, `conftest.py`가 기본적으로
-건너뛴다. 실행하려면 먼저 포트포워드를 열고 `RUN_LIVE_TESTS=1`로 명시적으로
-켠다:
-
-```bash
-kubectl port-forward -n vllm-serving svc/recovery-policy 8080:8080
-```
-
-```bash
-RUN_LIVE_TESTS=1 python -m pytest test_run_once.py -v
-```
-
-PowerShell에서는:
-
-```powershell
-$env:RUN_LIVE_TESTS=1; python -m pytest test_run_once.py -v
-```
+결과 요약: [../docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md](../docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md)

@@ -1,7 +1,8 @@
-# 장애 시나리오
+# chaos - 부하·압박 생성
 
-> Status: **HISTORICAL**(초기 계획). 실제 사용한 부하·압박 생성기와 결과는 루트 `README.md`와 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조.
+- `probe-config.yaml`: 사용자 품질 측정용 probe(1 RPS, max_tokens=1)
+- `loadgen/`: 부하 생성기(`ramp.py`, `v2_arrival.py`), CPU·I/O 압박 도구(`cpu_burner.py`, `io_writer.py`)
+- `v2-workload-ladder.yaml`, `iof-stage0.yaml`, `nnf-stage0.yaml`: 실현 가능성 연구(v2 workload, 디스크 I/O, noisy-neighbor) 설정
+- `scenario-*.yaml`: 초기 단계 Chaos Mesh 시나리오 정의(Pod kill·메모리 압박·네트워크 열화 등, historical)
 
-Chaos Mesh 장애 주입 3종(Pod kill / OOM / 네트워크 지연) + 무개입 대조군(calibration run) 스크립트.
-
-무개입 대조군은 개입 없이 장애를 진행시켜 "실제 장애 발생 시점"의 기준값을 측정한다 — 제안 방식의 "선행 탐지 시간" 지표 계산에 필요하다.
+공식 실험(A/B·B/C/K)의 CPU 압박은 `experiments/`의 실행기가 주입한다. 결과 요약: [../docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md](../docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md)

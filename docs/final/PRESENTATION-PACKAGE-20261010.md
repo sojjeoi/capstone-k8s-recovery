@@ -1,8 +1,8 @@
 # 교수 발표용 최종 package (2026-10-10)
 
-> Status: **OUTDATED-SUMMARY**(2026-10-10 작성, c3-A·Axis 2·문헌·S3 결과 이전). 최신 결과와 최종 후속 연구 방향은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조. 아래 E8에 후속 방향만 짧게 더함.
+> Status: **CURRENT - 발표 문구·예상 질문**(2026-10-10 작성, E8은 2026-10-11 추가). c3-A·Axis 2·문헌·S3 결과는 E8과 아래 synthesis 참조. 최신 결과와 최종 후속 연구 방향은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조. 아래 E8에 후속 방향만 짧게 더함.
 
-근거: `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(공식 결과 재확인·claim matrix), `docs/final/REPRODUCIBILITY-AUDIT-20261010.md`, `docs/demo/DEMO-RUNBOOK-20261010.md`.
+근거: `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(공식 결과 재확인·claim matrix), `docs/history/REPRODUCIBILITY-AUDIT-20261010.md`, `docs/demo/DEMO-RUNBOOK-20261010.md`.
 
 ## E1. 한 문장
 
@@ -28,7 +28,7 @@ Prometheus(컨테이너 CPU·메모리) → Isolation Forest 이상 점수(15초
 
 - 보정 CPU 임계값 대비 IF 우월성 **미검증**(B/C/K 1차 D 중앙값 0, 6쌍 중 1쌍은 IF 쪽이 더 나쁨).
 - 정상 운전에서 IF가 불필요 신호를 더 일찍 냈다(N1 6/6).
-- 무결성 감사: 계산은 정확, 그러나 학습·보정 데이터가 실제 정상 운전의 **Pod/세션별 메모리 수준과 정상 메모리 감소 동작**을 충분히 대표하지 못해 불필요 신호가 났다 → 빠른 신호를 "조기 탐지"로 해석 불가. 정상 데이터 확대·Pod-relative 메모리 두 개선 시도 모두 NOT PROMISING이라 detector 개선 연구는 종료(상세: `docs/final/C1-DETECTOR-LIMITATIONS-AND-FUTURE-WORK-20261010.md`).
+- 무결성 감사: 계산은 정확, 그러나 학습·보정 데이터가 실제 정상 운전의 **Pod/세션별 메모리 수준과 정상 메모리 감소 동작**을 충분히 대표하지 못해 불필요 신호가 났다 → 빠른 신호를 "조기 탐지"로 해석 불가. 정상 데이터 확대·Pod-relative 메모리 두 개선 시도 모두 NOT PROMISING이라 detector 개선 연구는 종료(상세: `docs/history/C1-DETECTOR-LIMITATIONS-AND-FUTURE-WORK-20261010.md`).
 - 지금 시나리오(CPU 압박)는 CPU 평균 하나로 정상과 완전히 갈린다(AUC 1.0, 탐색) → 다변량이 필요한 상황을 아직 실험으로 만들지 못했다(v2 부하·I/O·noisy-neighbor feasibility 모두 중단).
 - 표본이 작다(A/B 5쌍, B/C/K 6쌍 stage 1, N1 6 세션).
 
@@ -54,7 +54,7 @@ Prometheus(컨테이너 CPU·메모리) → Isolation Forest 이상 점수(15초
 - 그림 1개만: `experiments/results/exploratory_c1_calibration_memory_20261010/plot4-memory-baseline-by-session.png`(Memory mean baseline by session) 또는 `plot2-memory_mean-by-session.png`.
 - MAIN에서 뺄 것: Pod-relative memory 실험, 신호 99회, 분산 비, 보강 fold 표.
 
-**APPENDIX (질문 대응용)** - 근거 문서 `docs/final/C1-DETECTOR-LIMITATIONS-AND-FUTURE-WORK-20261010.md`
+**APPENDIX (질문 대응용)** - 근거 문서 `docs/history/C1-DETECTOR-LIMITATIONS-AND-FUTURE-WORK-20261010.md`
 1. c1 integrity audit: 계산 정확, F1(시작 직후 저CPU 이상) - 조기 탐지로 해석 불가
 2. calibration representativeness: CPU 범위 안 98.7 %, memory_mean 16.9 %(그림 3: 점수 분포 보정 vs N1)
 3. memory_mean session baseline: 분산의 99.5 %가 세션 사이, 세션마다 다른 preview Pod 수준과 연관

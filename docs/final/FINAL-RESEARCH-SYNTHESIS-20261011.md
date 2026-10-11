@@ -44,7 +44,7 @@
 ```
 Environment
   → Detector Validation / Selection   (환경별 정상·저하 데이터로 후보 검증 - 수동 절차부터)
-  → Active Detector                   (선택된 하나만 조치 신호, 나머지는 shadow 기록)
+  → Selected (Active) Detector        (선택된 하나만 조치 신호, 나머지는 shadow 기록)
   → Recovery Policy (guarded, 공통)
   → Argo Rollouts → Traffic Switch → Verification
 ```
@@ -69,12 +69,11 @@ Environment
 - "공식 실행 전" 상태를 가정한 frozen 테스트 2개(`test_guarded_bck_analysis`, `test_guarded_ab_analysis`의 real-folder 테스트)는 공식 실행 뒤라 실패, 그 밖에 이전부터 실패하던 `test_fixed_threshold` 2개.
 - 깨끗한 snapshot에서 commit된 코드의 import 누락 모듈은 0(2026-10-11 확인).
 
-## 7. 문서 지도·분류
+## 7. 문서 지도·분류 (canonical master 정리 후, 2026-10-11)
 
 | 분류 | 문서 |
 |---|---|
-| CURRENT | `README.md`, 이 문서, `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(A/B·B/C/K·N1 공식 증거 부분), `experiments/llm_multivariate_added_value/AXIS2-FEASIBILITY-20261011.md`, `experiments/llm_failure_scenario_research/*.md` |
-| OUTDATED-SUMMARY(상단 상태 표시) | `docs/final/PRESENTATION-PACKAGE-20261010.md`, `docs/final/C1-DETECTOR-LIMITATIONS-AND-FUTURE-WORK-20261010.md`, `docs/final/REPRODUCIBILITY-AUDIT-20261010.md` - c3-A 이전 작성, 이 문서로 보완 |
-| HISTORICAL(상단 상태 표시) | `docs/proposal.md`, 하위 폴더 README(`anomaly-detection/`, `chaos/`, `experiments/`, `recovery-policy/`, `gitops/`, `monitoring/`), 미구현 보너스(`finops/`, `operator/`, `pvc-backup/`) |
-| HISTORICAL(표시 없이 보존) | `docs/design/` 실험 계약·중간 설계 전체 - 당시 기준, README에서 historical로 안내 |
-| FROZEN-EVIDENCE(수정 금지) | freeze manifest가 해시로 참조하는 문서·코드(예: `docs/design/phase8-aiops-next-research-direction-20261009.md`, c3 사전등록·runbook, 각 `*freeze-manifest*.json`), 공식 평가 결과 JSON |
+| A. CURRENT | `README.md`, 이 문서, `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(A/B·B/C/K·N1 공식 증거), `docs/final/PRESENTATION-PACKAGE-20261010.md`(발표 문구·E8), `docs/presentation/`, `experiments/llm_multivariate_added_value/AXIS2-FEASIBILITY-20261011.md`, `experiments/llm_failure_scenario_research/*.md`, 하위 폴더 README(`anomaly-detection/`, `recovery-policy/`, `chaos/`, `gitops/`, `experiments/`) |
+| B. FROZEN / REPRODUCIBILITY(경로·내용 유지) | freeze manifest가 해시로 참조하는 문서·코드(예: `docs/design/phase8-aiops-next-research-direction-20261009.md`, `experiments/results/c3_normal_coverage_prereg_20261010/` 사전등록·runbook, 각 `docs/design/*freeze-manifest*.json`), 공식 평가 결과 JSON |
+| C. HISTORICAL BUT NECESSARY | `docs/design/` 실험 계약·중간 설계(당시 기준), `docs/history/`(초기 제안서 `PROPOSAL-2026-07.md`, 대체된 `REPRODUCIBILITY-AUDIT-20261010.md`, `C1-DETECTOR-LIMITATIONS-AND-FUTURE-WORK-20261010.md`) |
+| D. OBSOLETE / CONFUSING | `cluster/`, `monitoring/`(존재하지 않는 설정 파일을 설명하던 README), `finops/`, `operator/`, `pvc-backup/`(미구현 보너스 계획) - 삭제 후보였으나 이번 정리에서는 삭제하지 않고 README를 현재 상태 설명으로 바꿈 |

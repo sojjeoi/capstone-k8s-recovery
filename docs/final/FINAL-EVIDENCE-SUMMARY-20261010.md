@@ -122,4 +122,4 @@
 
 ## 7. 재현성·provenance 요약
 
-`docs/final/REPRODUCIBILITY-AUDIT-20261010.md` 참조.
+`docs/history/REPRODUCIBILITY-AUDIT-20261010.md` 참조.
