@@ -65,7 +65,7 @@ Environment
 
 - 원 실험 evidence(`experiments/results/*` 원자료)는 저장소 밖 보존(관례상 미커밋).
 - `model.pkl`·`scaler.pkl`은 `.gitignore` 대상 → c1 모델을 import 시점에 해시하는 테스트 모듈 3개는 깨끗한 checkout에서 수집 실패. 메타데이터(freeze·threshold·SHA256SUMS)는 커밋됨.
-- `core.autocrlf=true`(이 PC 시스템 설정): 저장소 blob은 LF, freeze 해시는 CRLF 파일 기준 → Windows·autocrlf가 아닌 checkout에서는 provenance 검사 불일치 가능.
+- 줄바꿈: freeze 해시는 원래 작업 폴더 파일 바이트(CRLF/LF 혼재) 기준, 저장소 blob은 `core.autocrlf=true`(이 PC 시스템 설정)로 LF 정규화 → 새 checkout(Windows 포함)에서는 내용이 같아도 provenance 해시 불일치 가능. 2026-10-11 snapshot worktree 확인: c3·BCK v1.2·N1 v1.1·nnf manifest 불일치 59건 전부 줄바꿈 차이(내용 동일), 원래 작업 폴더에서는 모두 일치.
 - "공식 실행 전" 상태를 가정한 frozen 테스트 2개(`test_guarded_bck_analysis`, `test_guarded_ab_analysis`의 real-folder 테스트)는 공식 실행 뒤라 실패, 그 밖에 이전부터 실패하던 `test_fixed_threshold` 2개.
 - 깨끗한 snapshot에서 commit된 코드의 import 누락 모듈은 0(2026-10-11 확인).
 

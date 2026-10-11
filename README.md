@@ -91,7 +91,7 @@ docs/design/         단계별 실험 계약·중간 설계(HISTORICAL, provenan
 - **clone만으로 모든 실험을 완전히 재현할 수는 없다**:
   - 원 실험 evidence(`experiments/results/*` 원자료)는 저장소 밖에 보존(관례상 미커밋)
   - `model.pkl`·`scaler.pkl`은 `.gitignore` 대상(메타데이터·해시만 커밋)
-  - 이 PC의 `core.autocrlf=true` 때문에 저장소에는 LF로 저장되지만 freeze 해시는 CRLF 파일 기준 → Windows가 아닌 checkout에서는 provenance 검사가 불일치할 수 있음
+  - freeze 해시는 원래 작업 폴더의 파일 바이트(CRLF/LF 혼재) 기준이고 저장소 blob은 `core.autocrlf=true`로 LF 정규화됨 → 새 checkout(Windows 포함)에서는 내용이 같아도 줄바꿈 차이로 provenance 해시가 불일치할 수 있음(2026-10-11 snapshot worktree에서 확인: 불일치 59건 전부 줄바꿈 차이)
   - 일부 frozen 테스트는 "공식 실행 전" 상태를 가정해 지금은 실패함
 - 상세: [docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md](docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md) §6
 
