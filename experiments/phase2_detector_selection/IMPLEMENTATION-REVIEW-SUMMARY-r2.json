@@ -1,0 +1,7 @@
+{
+  "freeze_revision": "r2",
+  "runtime_sink_audit": "오프라인 감사: live 경로가 쓰는 출력 폴더 중 누락은 smoke.DEMO_RESULTS_DIR 하나, CWD 의존 2건(kubectl cp relpath 다른 드라이브, 상대 --artifact-root/--profile) - prepare_runtime 드라이브 확인·main 경로 절대화로 처리",
+  "correctness": "1차 High 2 / Medium 4 / Low 4 → 재검토 High 0 / Medium 0 / Low 2(재동결 시 재개 기록 무효화, freeze 실패 시 수집 '중단'으로 보임 - 둘 다 fail-closed, runbook 기록)",
+  "ponytail": "재개 경로 = 시도 한정 함수 4개(범용 workflow 없음), runtime 준비 1개 함수. 중복: recovery_action_count·promotion_count가 같은 출처(사용자 기록 스키마가 두 항목을 요구해 유지)",
+  "codex": "사용자 지시로 사용하지 않음"
+}

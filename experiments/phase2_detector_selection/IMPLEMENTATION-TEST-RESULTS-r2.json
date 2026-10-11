@@ -1,0 +1,19 @@
+{
+  "recorded_at_utc": "2026-10-11",
+  "freeze_revision": "r2",
+  "phase2": {
+    "suite": "experiments/phase2_detector_selection",
+    "passed": 107,
+    "failed": 0,
+    "skipped": 0,
+    "note": "PHASE2_ARTIFACT_ROOT=실제 c3-A 원본 artifact(로컬 읽기)로 실행 - 100%. 미지정 시 106 passed 1 skipped(같은 코드)"
+  },
+  "existing": {
+    "canonical_baseline": "ab8d994: recovery-policy 69 passed / anomaly-detection 46 failed 1 error / experiments 107 failed 2 errors",
+    "branch_r2": "recovery-policy 69 passed / anomaly-detection·experiments 실패 집합 canonical과 동일(새 0, 사라짐 0)",
+    "known_baseline_file": "KNOWN-BASELINE-FAILURES.txt"
+  },
+  "new_regressions": [],
+  "p2n01_dry_run": "resume_check(실제 p2n01 기록, 읽기 전용) problems=[] - 재개 기록은 아직 쓰지 않음(다음 승인)",
+  "artifact_validation": "실제 c3-A 해시·series/plan·sklearn 1.9.0·threshold 일치"
+}
