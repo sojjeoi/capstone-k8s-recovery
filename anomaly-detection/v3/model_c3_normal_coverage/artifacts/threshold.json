@@ -1,0 +1,75 @@
+{
+  "threshold": -0.1948341270493127,
+  "calibration_failed": false,
+  "reason": null,
+  "decision_rule": "anomaly if decision_function(x) < threshold (strict)",
+  "rule": "model_v31/replay.calibrate_threshold, key = 세션·연속 구간",
+  "per_segment_result": {
+    "c1ca01": {
+      "n_points": 100,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.07265311445864664,
+      "score_median": 0.10782291903034152,
+      "score_max": 0.13731584886540749
+    },
+    "c1ca02": {
+      "n_points": 107,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.06427351259735925,
+      "score_median": 0.08639813222341941,
+      "score_max": 0.12392494149968425
+    },
+    "c1ca03": {
+      "n_points": 107,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.0809779052194185,
+      "score_median": 0.08067339003613816,
+      "score_max": 0.12067782219368661
+    },
+    "c1ca04": {
+      "n_points": 107,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.09991787242913286,
+      "score_median": 0.070145322518886,
+      "score_max": 0.1043309438088551
+    },
+    "c3n03#0": {
+      "n_points": 251,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.188027375564073,
+      "score_median": 0.10448328018080993,
+      "score_max": 0.12460825199944209
+    },
+    "c3n07#0": {
+      "n_points": 252,
+      "point_anomaly_count": 2,
+      "point_fpr": 0.007936507936507936,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "score_min": -0.20529260998463073,
+      "score_median": 0.0822312740920147,
+      "score_max": 0.12298324327558119
+    }
+  }
+}

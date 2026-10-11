@@ -1,0 +1,7 @@
+{
+  "feature-schema.json": "9d8ddb6eb45448361015f58c42c7189af59b649b5f52781c677b8f33a45fbc51",
+  "freeze.json": "3fa6c1696ab3dd2f0c1b1e1db8fd4398c9c7b2a5c8794a4e3e5431c828700e3c",
+  "model.pkl": "24cec78e658833dd24957ff49a8c39499403db2a7e8a0c7e752aff61ba3668cf",
+  "scaler.pkl": "7970aa165606bfca1d632af448ddbf502e1596a6fdcbb3d8eaa5393f7da1a67e",
+  "threshold.json": "47eb6ff2c9618586e788507f45b10c1bd5d78ac7a32ad3dc4d551b2abf2266dd"
+}

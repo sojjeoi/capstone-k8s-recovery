@@ -1,0 +1,105 @@
+{
+  "original_feature_names": [
+    "cpu_mean",
+    "cpu_slope",
+    "memory_mean",
+    "memory_slope",
+    "queue_mean",
+    "queue_slope",
+    "cache_mean",
+    "cache_slope"
+  ],
+  "kept_feature_names": [
+    "cpu_mean",
+    "cpu_slope",
+    "memory_mean",
+    "memory_slope"
+  ],
+  "kept_feature_indices": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "removed_features": [
+    {
+      "name": "queue_mean",
+      "reason": "zero_variance_in_train",
+      "value": 0.0
+    },
+    {
+      "name": "queue_slope",
+      "reason": "zero_variance_in_train",
+      "value": 0.0
+    },
+    {
+      "name": "cache_mean",
+      "reason": "zero_variance_in_train",
+      "value": 0.0
+    },
+    {
+      "name": "cache_slope",
+      "reason": "zero_variance_in_train",
+      "value": 0.0
+    }
+  ],
+  "train_feature_stats": {
+    "cpu_mean": {
+      "mean": 1.6164091337314064,
+      "std": 0.0499888640133549,
+      "min": 1.4270016723805505,
+      "max": 1.7020455132951369,
+      "range": 0.27504384091458633
+    },
+    "cpu_slope": {
+      "mean": -0.010376970769440804,
+      "std": 0.03707504303237175,
+      "min": -0.17276456803170345,
+      "max": 0.12556147217923516,
+      "range": 0.2983260402109386
+    },
+    "memory_mean": {
+      "mean": 7014170778.840711,
+      "std": 2471138.5218268507,
+      "min": 7010264678.4,
+      "max": 7017450700.8,
+      "range": 7186022.400000572
+    },
+    "memory_slope": {
+      "mean": -228.95250467757867,
+      "std": 42557.897297975585,
+      "min": -423116.8000008231,
+      "max": 489062.39999961137,
+      "range": 912179.2000004344
+    },
+    "queue_mean": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "range": 0.0
+    },
+    "queue_slope": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "range": 0.0
+    },
+    "cache_mean": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "range": 0.0
+    },
+    "cache_slope": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "range": 0.0
+    }
+  },
+  "n_train_rows": 619
+}
