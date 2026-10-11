@@ -1,7 +1,7 @@
 # Phase 2 Stage 1 runbook (Selection Validation)
 
 > **이 문서는 실행 승인이 아니다.** `[USER APPROVAL REQUIRED]` 명령은 클러스터 상태를 바꾸거나 workload를 만든다. 세션마다 사용자 승인 뒤에만 실행한다.
-> 기준: 설계 동결 `docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1.md` rev 5(design freeze `phase2-detector-selection-design-freeze.json`), 구현 동결 `phase2-detector-selection-implementation-freeze.json`.
+> 기준: 설계 동결 `docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md` rev 6(design freeze 교체 `phase2-detector-selection-design-freeze-rev6.json` - rev 5를 supersede), 구현 동결 `phase2-detector-selection-implementation-freeze.json`.
 > 결과를 본 뒤 임계값·artifact·규칙·세션 수를 바꾸지 않는다(prereg §17). 문서·코드 결함은 새 revision + 교체 manifest로만(§18).
 
 ## 0. 어디서 실행하나
@@ -77,6 +77,6 @@ invalid 2회 연속 · 예상 밖 저하 2회 · 정리 오류 1회 · PROFILE_S
 
 - 정상 세션은 동결 N1 실행기를 그대로 쓰므로 그 계약 파일의 `detector`·`common_evaluation` 문구는 N1 값이다. 실제 실행기는 세션 기록·evidence 시작 줄(`phase2_same_tick_v1`)로 확인한다.
 - vLLM 이미지는 노드 로컬 `vllm-cpu-env:latest`(레지스트리 없음)라 profile은 이미지 참조·pull 정책만 고정한다(내용 digest는 Rollout 스펙에서 읽을 수 없음).
-- 압박 세션의 "예상 밖 저하"(prereg §9: A/B 계약의 예상 범위를 벗어난 저하): A/B 공식 계약은 압박 세션의 저하를 별도 등급으로 나누지 않고, 계약 밖 저하(주입 무효·관찰 중단·하네스 오류·stress 미확인 등)를 모두 run_validity 무효 사유로 처리한다. 그래서 Stage 1 압박 세션의 예상 밖 저하는 `invalid`로 기록되어 "invalid 2회 연속" 규칙으로 멈춘다. `unexpected_degradation` 2회 규칙은 정상 세션 분류에서 센다(새 기준을 만들지 않음).
+- 압박 세션(prereg rev 6 §9): 별도의 저하 등급·예상 저하 범위·피해 상한·저하 횟수가 없다. 안전 중단은 그대로 적용되고, 중단·미완료 세션은 A/B 공식 run_validity(V1 등)로 `invalid`가 되어 "invalid 2회 연속" 규칙에 들어간다. 실제 latency·SLO는 원자료·보고에 그대로 남긴다. "예상 밖 저하 2회"는 정상 세션의 c3 분류(`unexpected_degradation`)만 센다.
 - 외부 artifact의 JSON 파일(feature-schema·threshold·freeze)은 원본 바이트로 해시한다(동결 SHA256SUMS가 원본 바이트 기준). 줄바꿈이 바뀐 복사본은 해시 불일치로 거부된다(fail-closed) - 원본 artifact 폴더를 그대로 지정한다.
 - 선택 분석(`selection.py`)은 Stage 1 수집이 끝났을 때만(두 종류 모두 목표 충족·시도 상한 또는 중단 규칙) 실행된다.

@@ -1048,3 +1048,14 @@ def test_stage1_counts_unkeyed_policy_decisions():
     audit = [{"event": "decision", "delivery_key": None, "outcome": "rejected_schema", "received_at": "2026-10-20T01:00:05+00:00"}]
     assert s1.policy_decisions(audit, "2026-10-20T01:00:00+00:00", "2026-10-20T01:10:00+00:00") == []
     assert len(s1.policy_decisions(audit, "2026-10-20T01:00:00+00:00", "2026-10-20T01:10:00+00:00", any_decision=True)) == 1
+
+
+def test_bound_to_rev6_replacement_freeze_and_rev5_history_preserved():
+    m = json.loads((pc.ROOT / pc.DESIGN_FREEZE).read_text(encoding="utf-8"))
+    assert pc.PREREG_DOC.endswith("-rev6.md") and m["prereg_path"] == pc.PREREG_DOC and m["prereg_sha256"] == pc.PREREG_SHA256
+    assert m["supersedes"]["manifest_path"] in pc.SUPERSEDED and m["results_seen"].startswith("none")
+    old = json.loads((pc.ROOT / pc.SUPERSEDED[1]).read_text(encoding="utf-8"))
+    assert old["prereg_sha256"] == m["supersedes"]["prereg_sha256"] == pc.text_sha256(pc.ROOT / pc.SUPERSEDED[0])
+    assert set(pc.SUPERSEDED) <= set(pc.FREEZE_REQUIRED)
+    text = (pc.ROOT / pc.PREREG_DOC).read_text(encoding="utf-8")
+    assert "A/B 계약의 예상 범위를 벗어난 저하)" not in text.split("## 19.")[0]   # 정의 없는 기준 참조 제거(변경 기록만 인용)

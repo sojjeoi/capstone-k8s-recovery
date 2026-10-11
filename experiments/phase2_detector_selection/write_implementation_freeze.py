@@ -15,10 +15,10 @@ from pathlib import Path  # noqa: E402
 
 import p2_common as pc  # noqa: E402
 
-DESIGN_FREEZE_COMMIT = "60193418f43e7d03a326450eaac5c800f37c1ad5"
+DESIGN_FREEZE_COMMIT = "4a867eb762ebc78b37f5295baa9d2a48e2973027"   # rev 6 교체 manifest 커밋(rev 5 6019341을 supersede)
 TRACKED = ["experiments/phase2_detector_selection/*.py", "experiments/phase2_detector_selection/*.md",
            "experiments/phase2_detector_selection/*.txt", "experiments/phase2_detector_selection/*.json",
-           "experiments/phase2_detector_selection/profiles/*.json", pc.PREREG_DOC, pc.DESIGN_FREEZE,
+           "experiments/phase2_detector_selection/profiles/*.json", pc.PREREG_DOC, pc.DESIGN_FREEZE, *pc.SUPERSEDED,
            "experiments/*.py", "experiments/guarded_pilot_session.ps1", "experiments/c3_normal_coverage/*.py",
            "anomaly-detection/*.py", "anomaly-detection/v3/model_v31/*.py", pc.RULE_SPEC_REL,
            "anomaly-detection/v3/model_c3_normal_coverage/artifacts/*.json", "recovery-policy/*.py",

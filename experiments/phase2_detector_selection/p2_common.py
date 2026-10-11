@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Phase 2 detector selection 공용 부품(2026-10-11) - 설계 동결 문서(수정 금지):
-docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1.md rev 5 (design freeze docs/design/phase2-detector-selection-design-freeze.json)
+docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md rev 6 (design freeze 교체 docs/design/phase2-detector-selection-design-freeze-rev6.json,
+rev 5와 그 동결 기록은 supersede된 이력 - 수정 금지)
 
 이 모듈이 정하는 것(prereg 절):
   - 후보 2개의 동결 식별·임계값·artifact 기대 해시(§5·§5.1) - profile은 이 값과 정확히 같아야 한다(다르면 PROFILE_INVALID)
@@ -28,9 +29,11 @@ for _p in (EXP, AD, AD / "v3" / "model_v31", EXP / "c3_normal_coverage", ROOT / 
         sys.path.insert(0, str(_p))
 
 PLAN_ID = "capstone-phase2-detector-selection-v1"
-PREREG_DOC = "docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1.md"
-PREREG_SHA256 = "d63679c37289a1be8305e9ae7bace265434eb373e196d7c4675c74ba28069b72"   # design freeze(LF blob 기준)
-DESIGN_FREEZE = "docs/design/phase2-detector-selection-design-freeze.json"
+PREREG_DOC = "docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md"
+PREREG_SHA256 = "a6512ff03f33fb96b1d65031ff7c03f84c26fdfd74dd833e1516336110bad7d3"   # rev 6 design freeze(LF blob 기준)
+DESIGN_FREEZE = "docs/design/phase2-detector-selection-design-freeze-rev6.json"
+# supersede된 rev 5 - 이력 증명용으로 implementation freeze에 해시만 고정(실행 기준 아님)
+SUPERSEDED = ("docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1.md", "docs/design/phase2-detector-selection-design-freeze.json")
 SELECTION_PROFILE = HERE / "profiles" / "selection-profile-cpu-vllm-qwen05b-v1.json"
 IMPLEMENTATION_FREEZE = "experiments/phase2_detector_selection/phase2-detector-selection-implementation-freeze.json"
 
@@ -81,7 +84,7 @@ FREEZE_REQUIRED = tuple(f"experiments/phase2_detector_selection/{f}" for f in (
     "p2_common.py", "p2_executor.py", "selection.py", "run_stage1.py", "run_stage2.py", "write_implementation_freeze.py",
     "test_phase2_detector_selection.py", "PHASE2-STAGE1-RUNBOOK.md", "KNOWN-BASELINE-FAILURES.txt",
     "profiles/selection-profile-cpu-vllm-qwen05b-v1.json")) + (
-    PREREG_DOC, DESIGN_FREEZE, RULE_SPEC_REL, "experiments/run_guarded_normal_bc.py", "experiments/run_guarded_bck.py",
+    PREREG_DOC, DESIGN_FREEZE, *SUPERSEDED, RULE_SPEC_REL, "experiments/run_guarded_normal_bc.py", "experiments/run_guarded_bck.py",
     "experiments/run_guarded_pilot.py", "experiments/guarded_ab_analysis.py", "experiments/guarded_normal_bc_analysis.py",
     "experiments/guarded_cleanup_gate.py", "experiments/old_policy_isolation.py", "experiments/guarded_pilot_session.ps1",
     "experiments/c3_normal_coverage/c3_common.py", "experiments/c3_normal_coverage/c3_session_validity.py",
