@@ -1,5 +1,7 @@
 # 재현성·최종 상태 audit (2026-10-10, 읽기 전용)
 
+> Status: **OUTDATED-SUMMARY**(2026-10-10). snapshot `research-snapshot-20261011` 기준 재현성 한계(pkl 미커밋, 원자료 미커밋, CRLF provenance, 공식 실행 전 상태를 가정한 frozen 테스트)는 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` §6 참조.
+
 근거 파일: `experiments/results/final_evidence_audit_20261010/` (`provenance/manifest-check-20261010.jsonl`, `provenance/c1-check-20261010.json`, `tests/TEST-SUMMARY.md`, `ab/`, `bck/`, `n1/`). 기존 해시를 다시 만들거나 덮어쓰지 않았다.
 
 ## B1. artifact / provenance

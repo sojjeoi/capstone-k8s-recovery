@@ -1,5 +1,7 @@
 # 이상 탐지 모델
 
+> Status: **HISTORICAL**(초기 설명). 현재 detector 구성(c1/c3-A IF, 보정 CPU 임계값 규칙, score server)은 루트 `README.md`와 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조.
+
 K8s 지표 + vLLM 고유 지표를 특성 벡터로 구성해 Isolation Forest(비지도 이상탐지)로 학습하고, 실시간으로 위험도를 판단한다.
 
 - `features.py`: 지표 → 특성 벡터 변환

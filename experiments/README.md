@@ -1,5 +1,7 @@
 # 실험
 
+> Status: **HISTORICAL**(초기 3-way×4종×5회 계획 - 실행하지 않음). 실제 수행한 실험(A/B·B/C/K·N1·c3-A·Axis 2)은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조.
+
 3-way(self-healing / 고정임계치 / 제안방식) × 4종 시나리오(Pod kill / 메모리 압력 / 부하 증가 / 네트워크 열화) × 5회 반복(총 60회) 실험 자동화 및 결과 수집.
 
 - `run_all_scenarios.py`: 전체 실험 반복 실행 (예정 — 현재는 시나리오별 `run_*_trial.py`를 개별 실행: load_ramp·pod_kill 완료, network_degrade 어댑터·테스트·launcher 오프라인 완료(실클러스터 첫 실행·probe timeout calibration 대기), memory_pressure 어댑터·러너·오프라인 테스트 완료(실클러스터 첫 실행·강도 calibration 대기 - `chaos/scenario-memory-pressure-explore.yaml` 참고, 1GB 이상 탐색 전까지 500MB 최소 강도 smoke만 허용))
