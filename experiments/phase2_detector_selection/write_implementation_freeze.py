@@ -16,6 +16,15 @@ from pathlib import Path  # noqa: E402
 import p2_common as pc  # noqa: E402
 
 DESIGN_FREEZE_COMMIT = "4a867eb762ebc78b37f5295baa9d2a48e2973027"   # rev 6 교체 manifest 커밋(rev 5 6019341을 supersede)
+# r2: live 하네스 실패(p2n01, 탐지기 평가 전) 뒤 runtime 폴더 준비·시도 한정 재개 경로 추가로 재동결
+SUPERSEDES = {"manifest_path": "experiments/phase2_detector_selection/phase2-detector-selection-implementation-freeze.json",
+              "commit": "f81c876cd1aeb99634e7eed6d47bdd10bde1a0a2",
+              "reason": "live harness failure before detector evaluation (smoke.DEMO_RESULTS_DIR missing in clean checkout) "
+                        "+ cleanup-error stop had no human-verified resume path",
+              "affected_attempt": "p2n01", "detector_result_observed": "none", "p2n01_remains_invalid": True,
+              "attempt_consumed": True, "frozen_selection_rule_changed": False, "thresholds_artifacts_changed": False,
+              "prereg_changed": False, "changes": ["runtime sink directory preparation (run_stage1.prepare_runtime)",
+                                                   "explicit attempt-specific cleanup/harness resume path (append-only authorization)"]}
 TRACKED = ["experiments/phase2_detector_selection/*.py", "experiments/phase2_detector_selection/*.md",
            "experiments/phase2_detector_selection/*.txt", "experiments/phase2_detector_selection/*.json",
            "experiments/phase2_detector_selection/profiles/*.json", pc.PREREG_DOC, pc.DESIGN_FREEZE, *pc.SUPERSEDED,
@@ -41,7 +50,8 @@ def build(test_results: Path, review_summary: Path, code_commit: str, root=pc.RO
     dirty = subprocess.run(["git", "status", "--porcelain", "--", *files], cwd=root, capture_output=True, text=True).stdout
     if dirty.strip():
         raise SystemExit(f"IMPLEMENTATION FREEZE 거부: 커밋되지 않은 변경 {dirty.splitlines()[:5]}")
-    return {"status": "implementation_frozen", "version": "phase2-impl-v1", "plan_id": pc.PLAN_ID,
+    return {"status": "implementation_frozen", "version": "phase2-impl-r2", "plan_id": pc.PLAN_ID,
+            "supersedes": {**SUPERSEDES, "manifest_sha256": pc.text_sha256(Path(root) / SUPERSEDES["manifest_path"])},
             "design_freeze": {"manifest_path": pc.DESIGN_FREEZE, "manifest_sha256": pc.text_sha256(Path(root) / pc.DESIGN_FREEZE),
                               "prereg_path": pc.PREREG_DOC, "prereg_sha256": pc.PREREG_SHA256, "commit": DESIGN_FREEZE_COMMIT},
             "git_commit": code_commit, "frozen_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),

@@ -1059,3 +1059,163 @@ def test_bound_to_rev6_replacement_freeze_and_rev5_history_preserved():
     assert set(pc.SUPERSEDED) <= set(pc.FREEZE_REQUIRED)
     text = (pc.ROOT / pc.PREREG_DOC).read_text(encoding="utf-8")
     assert "A/B 계약의 예상 범위를 벗어난 저하)" not in text.split("## 19.")[0]   # 정의 없는 기준 참조 제거(변경 기록만 인용)
+
+
+# ---------------- runtime 준비·정리 오류 뒤 재개(2026-10-11, p2n01 하네스 실패 대응) ----------------
+@pytest.fixture(autouse=True)
+def _runtime_dirs_in_tmp(tmp_path, monkeypatch):
+    """prepare_runtime이 저장소 안 폴더를 만들지 않도록 출력 폴더를 tmp로(모든 테스트)."""
+    import run_if_threshold_candidate_smoke as smoke
+    monkeypatch.setattr(smoke, "DEMO_RESULTS_DIR", tmp_path / "rt" / "capstone_if_threshold_candidate")
+    monkeypatch.setattr(gp, "PROBE_RESULTS_DIR", tmp_path / "rt" / "results")
+
+
+def test_r01_r02_r03_prepare_runtime_creates_missing_dirs_idempotent_without_touching_files(tmp_path, monkeypatch):
+    import run_if_threshold_candidate_smoke as smoke
+    monkeypatch.setattr(s1, "RESULTS_DIR", tmp_path / "rt" / "phase2_stage1")
+    assert not smoke.DEMO_RESULTS_DIR.exists()                         # 깨끗한 checkout처럼 부모 폴더 없음
+    s1.prepare_runtime()
+    assert smoke.DEMO_RESULTS_DIR.is_dir() and gp.PROBE_RESULTS_DIR.is_dir() and s1.RESULTS_DIR.is_dir()
+    keep = smoke.DEMO_RESULTS_DIR / "sink-stdout-old.log"
+    keep.write_text("evidence", encoding="utf-8")
+    s1.prepare_runtime()                                               # 이미 있으면 그대로
+    assert keep.read_text(encoding="utf-8") == "evidence" and sorted(smoke.DEMO_RESULTS_DIR.iterdir()) == [keep]
+
+
+def test_r04_missing_frozen_input_fails_closed_without_mkdir(tmp_path, monkeypatch):
+    import run_if_threshold_candidate_smoke as smoke
+    monkeypatch.setattr(smoke, "DEFAULT_PROBE_CONFIG", tmp_path / "no" / "probe-config.yaml")
+    with pytest.raises(SystemExit, match="동결 입력 없음"):
+        s1.prepare_runtime()
+    assert not (tmp_path / "no").exists() and not smoke.DEMO_RESULTS_DIR.exists()
+
+
+def _failed_attempt(d, run, n=1, *, scored=0, sends=0, actions=None, integrity_ok=True, canonical_ok=True,
+                    errors=("trial_cleanup_incomplete: prober=None, injector=None",
+                            "harness_error: FileNotFoundError: sink-stdout missing"),
+                    detector_started=False, iso_last=True, post_invalid=(), prober_fail=None, art_root=None):
+    """p2n01과 같은 모양: 탐지기 시작 전 하네스 실패(evidence 없음), 미승격 preview 정리·canonical 복원 정상, 정리 오류 기록."""
+    d.mkdir(parents=True, exist_ok=True)
+    rid = s1.run_id_for(run)
+    ev = d / f"c1-live-evidence-{rid}.jsonl"
+    if scored:
+        ev.write_text("".join(json.dumps({"record_type": "c1_evaluation", "evaluation_seq": i}) + "\n" for i in range(scored)),
+                      encoding="utf-8")
+    acts = {f"t{i}": {"run_id": rid, "status": "verified"} for i in range(actions or 0)}
+    ok = {"isolated": True, "reasons": []}
+    (d / f"summary-{rid}.json").write_text(json.dumps({
+        "run_id": rid, "cleanup_errors": list(errors), "evidence_counts": {"send_attempts": sends},
+        "detector_started": detector_started,
+        "trial_outcome": {"status": "harness_error", "prober_stop_failed": prober_fail, "injector_cleanup_failed": None},
+        "policy_state_after": {"mode": "record_only", "context": None, "actions": acts},
+        "canonical_end": {"ok": canonical_ok, "problems": []},
+        "preview_cleanup_gate": [{"canonical_restore": {"ok": canonical_ok}}],
+        "old_policy_isolation": {"start": ok, "checks": {"n": 3, "last": {"isolated": iso_last, "reasons": []}}, "end": ok}}),
+        encoding="utf-8")
+    (d / f"running-{rid}.json").write_text(json.dumps({"run_id": rid, "started_at": "x"}), encoding="utf-8")
+    (d / f"p2-session-{run}.json").write_text(json.dumps({
+        "run": run, "run_id": rid, "kind": s1.kind_of(run), "attempt_number": n, "status": "run", "evidence_file": ev.name,
+        "integrity": {"ok": integrity_ok, "problems": [] if integrity_ok else ["x"]}, "cleanup_errors": list(errors),
+        "postflight_invalid_reasons": list(post_invalid), "environment_profile_sha256": pc.text_sha256(pc.SELECTION_PROFILE),
+        "artifact_hashes": pc.verify_artifacts(art_root)["hashes"] if art_root else None,
+        "runner_ended_at_utc": "2026-10-11T08:58:30+00:00"}), encoding="utf-8")
+    (d / f"p2-validity-{run}.json").write_text(json.dumps({"status": "invalid", "valid": False}), encoding="utf-8")
+    return rid
+
+
+IMPL = {"manifest": "m", "manifest_sha256": "s"}
+
+
+@pytest.fixture
+def frozen_now(monkeypatch, profile):
+    """현재 implementation freeze = IMPL(테스트용), selection profile = 테스트 profile."""
+    monkeypatch.setattr(pc, "SELECTION_PROFILE", profile)
+    monkeypatch.setattr(pc, "verify_implementation_freeze", lambda *a, **k: {**IMPL, "status": "verified"})
+
+
+def _authorize(d, run, art_root):
+    impl = {"selection_profile_sha256": pc.text_sha256(pc.SELECTION_PROFILE), **IMPL}
+    return s1.authorize_cleanup_resume(d, run, authorized_by="user", review_note="harness failure reviewed",
+                                       impl=impl, artifact_root=art_root)
+
+
+def test_r05_r06_r15_unresolved_marker_blocks_until_attempt_specific_authorization(tmp_path, art_root, frozen_now):
+    d = tmp_path / "s1"
+    rid = _failed_attempt(d, "p2n01", art_root=art_root)
+    marker = d / f"running-{rid}.json"
+    before = marker.read_bytes()
+    with pytest.raises(SystemExit, match="실행 중 표시"):
+        s1.check_unresolved_stage1(d)
+    with pytest.raises(SystemExit, match="정리 오류"):
+        s1.schedule("p2n02", d)
+    c = s1.resume_check(d, "p2n01")
+    assert c["problems"] == [] and c["facts"]["detector_evaluation_started"] is False   # p2n01 모양 = 탐지기 평가 전 하네스 실패
+    a = json.loads(_authorize(d, "p2n01", art_root).read_text(encoding="utf-8"))
+    assert a["failure_classification"] == "harness_or_cleanup_before_detector_evaluation"
+    assert a["attempt_remains_invalid"] and a["attempt_consumed"] and a["detector_results_observed"] is False
+    assert a["running_marker_sha256"] == pc.sha256_bytes(marker) and marker.read_bytes() == before   # 표시는 그대로
+    s1.check_unresolved_stage1(d)
+    assert s1.schedule("p2n02", d)["attempt_number"] == 2                                      # 시도 수는 줄지 않음
+    assert s1.kind_progress(d, "normal") == {"attempts": 1, "valid": 0, "done": False}
+    with pytest.raises(FileExistsError):                                                        # append-only(덮어쓰기 불가)
+        _authorize(d, "p2n01", art_root)
+
+
+def test_r07_r08_r14_authorization_is_attempt_specific_and_bound_to_records(tmp_path, art_root, frozen_now, monkeypatch):
+    d = tmp_path / "s1"
+    _failed_attempt(d, "p2n01", art_root=art_root)
+    _authorize(d, "p2n01", art_root)
+    _failed_attempt(d, "p2n02", n=2, art_root=art_root)                                    # 다른 시도의 정리 오류는 계속 막는다
+    with pytest.raises(SystemExit, match=r"p2n02"):
+        s1.schedule("p2n03", d)
+    with pytest.raises(SystemExit):
+        s1.check_unresolved_stage1(d)
+    with pytest.raises(FileNotFoundError):                              # 기록 없는 시도 ID는 거부
+        _authorize(d, "p2n05", art_root)
+    e = tmp_path / "s2"
+    rid = _failed_attempt(e, "p2n01", art_root=art_root)
+    _authorize(e, "p2n01", art_root)
+    (e / f"running-{rid}.json").write_text("changed", encoding="utf-8")    # 기록 뒤 표시가 바뀌면 재개 기록 무효
+    with pytest.raises(SystemExit, match="정리 오류"):
+        s1.schedule("p2n02", e)
+    f = tmp_path / "s3"
+    _failed_attempt(f, "p2n01", art_root=art_root)
+    _authorize(f, "p2n01", art_root)
+    s1.schedule("p2n02", f)
+    monkeypatch.setattr(pc, "verify_implementation_freeze", lambda *a, **k: {"manifest_sha256": "other"})
+    with pytest.raises(SystemExit, match="정리 오류"):                    # 다른 implementation freeze 아래에서는 무효
+        s1.schedule("p2n02", f)
+
+
+@pytest.mark.parametrize("kw,problem", [
+    (dict(sends=1), "signal_action_or_promotion_present"),               # r09 actionable signal/action
+    (dict(actions=1), "signal_action_or_promotion_present"),             # r10 promotion
+    (dict(integrity_ok=False), "integrity_failure"),                     # r11
+    (dict(canonical_ok=False), "canonical_state_not_verified"),          # r12
+    (dict(errors=("stress_chaos_residual: ['x']",)), "cleanup_errors_not_harness_class"),
+    (dict(errors=("trial_cleanup_incomplete: prober=RuntimeError(x), injector=None",)), "harness_exception_not_approved"),
+    (dict(errors=("harness_error: HarnessCorrupted: 기존 recovery-policy 승격 경로가 열림",)), "harness_exception_not_approved"),
+    (dict(prober_fail="RuntimeError"), "prober_or_injector_cleanup_failed"),
+    (dict(detector_started=True), "detector_started_or_evaluated"),
+    (dict(scored=2), "detector_started_or_evaluated"),
+    (dict(post_invalid=("policy_audit_unreadable",)), "postflight_unverified"),
+    (dict(iso_last=False), "old_policy_isolation_not_verified"),        # 세션 중 격리 깨짐
+])
+def test_r09_r12_resume_refused(tmp_path, art_root, frozen_now, kw, problem):
+    d = tmp_path / "s1"
+    _failed_attempt(d, "p2n01", art_root=art_root, **kw)
+    assert any(p.startswith(problem) for p in s1.resume_check(d, "p2n01")["problems"])
+    with pytest.raises(SystemExit, match="재개 기록 거부"):
+        _authorize(d, "p2n01", art_root)
+    assert not (d / "p2-resume-authorization-p2n01.json").exists()
+
+
+def test_r13_resume_requires_frozen_profile_and_artifacts(tmp_path, art_root, frozen_now):
+    d = tmp_path / "s1"
+    _failed_attempt(d, "p2n01", art_root=art_root)
+    with pytest.raises(SystemExit, match="implementation freeze"):
+        s1.authorize_cleanup_resume(d, "p2n01", authorized_by="u", review_note="n", impl={"selection_profile_sha256": "0"},
+                                    artifact_root=art_root)
+    (art_root / "model.pkl").write_bytes(b"x")
+    with pytest.raises(pc.ArtifactMismatch):
+        _authorize(d, "p2n01", art_root)

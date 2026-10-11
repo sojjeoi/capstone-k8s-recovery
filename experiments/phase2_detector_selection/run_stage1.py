@@ -40,6 +40,7 @@ from run_once import HarnessCorrupted  # noqa: E402
 import c1_shadow_detector as sd  # noqa: E402
 
 MODE = gp.MODE_RO
+N1_RESULTS_DIR = rn.RESULTS_DIR      # 동결 N1 결과 폴더(patched_n1 바깥 값 - 미해결 확인용)
 RESULTS_DIR = pc.EXP / "results" / "phase2_stage1"
 EXECUTOR = pc.HERE / "p2_executor.py"
 NORMAL_RUNS = {f"p2n{i:02d}": (i, 4000 + i) for i in range(1, pc.MAX_ATTEMPTS["normal"] + 1)}
@@ -94,8 +95,10 @@ def stop_reason(d, resume_ack=None, include_closed=True):
     if done and str(done[-1].get("status", "")).startswith("refused_") and resume_ack != done[-1]["run"]:
         return (f"{done[-1]['run']} {done[-1]['status']} - 사용자 승인 뒤 --resume-after-refusal "
                 f"{done[-1]['run']}(profile·artifact·freeze 변경 없이)")
-    if any(r.get("cleanup_errors") for r in done):
-        return "중단 규칙: 정리 오류 1회 - 사용자 확인 필요"
+    blocking = [r["run"] for r in done if r.get("cleanup_errors") and not resume_authorized(d, r)]
+    if blocking:
+        return (f"중단 규칙: 정리 오류 {blocking} - 사용자 확인 필요(확인 뒤 --authorize-cleanup-resume <run>으로 "
+                "그 시도에 한정한 재개 기록을 남긴다)")
     status = [_read(d / f"p2-validity-{r['run']}.json")["status"] for r in done]
     if len(status) >= 2 and status[-1] == status[-2] == "invalid":
         return "중단 규칙: invalid 2회 연속 - 사용자 확인 필요"
@@ -155,6 +158,158 @@ def refuse(run, d, sched, status, reason, started, cause):
     pc.write_json_new(Path(d) / f"p2-validity-{run}.json",
                       {"run": run, "kind": sched["kind"], "status": f"not_run_{status}", "valid": False, "invalid_reasons": [reason]})
     raise SystemExit(f"{status.upper()} - 세션 시작 안 함(클러스터 변경 없음): {reason}")
+
+
+def prepare_runtime(results_dir=None) -> dict:
+    """재사용하는 동결 Phase 1 함수가 쓰는 runtime 출력 폴더를 만든다(git은 빈 폴더를 보존하지 않음 - 깨끗한 checkout에서도
+    동작하게). 폴더 생성만 하고 기존 파일은 건드리지 않는다. 필요한 동결 입력은 만들지 않고 없으면 fail-closed.
+    오프라인 감사(2026-10-11): 출력 폴더 = smoke.DEMO_RESULTS_DIR(sink 로그, 유일한 누락 폴더), gp.PROBE_RESULTS_DIR(probe CSV),
+    RESULTS_DIR. 입력 = probe 설정·sink 서버·Phase 2 실행기. probe 설정은 kubectl cp에 os.path.relpath로 넘겨지므로(load_ramp_adapter)
+    작업 폴더가 다른 드라이브면 실행 중에 깨진다 - 시작 전에 확인한다."""
+    out_dirs = (smoke.DEMO_RESULTS_DIR, gp.PROBE_RESULTS_DIR, Path(results_dir or RESULTS_DIR))
+    inputs = (smoke.DEFAULT_PROBE_CONFIG, smoke.MODEL_V32B_DIR / "capture_sink.py", EXECUTOR)
+    missing = [str(x) for x in inputs if not Path(x).is_file()]
+    if missing:
+        raise SystemExit(f"runtime 준비 거부: 동결 입력 없음 {missing} - 만들지 않음(fail-closed)")
+    try:
+        os.path.relpath(smoke.DEFAULT_PROBE_CONFIG)
+    except ValueError as e:
+        raise SystemExit(f"runtime 준비 거부: 작업 폴더가 저장소와 다른 드라이브({e}) - 저장소 폴더에서 실행") from e
+    for x in out_dirs:
+        Path(x).mkdir(parents=True, exist_ok=True)
+    return {"created_or_present": [str(x) for x in out_dirs]}
+
+
+# ---------------- 정리·하네스 오류 뒤 사람 확인 재개(시도 한정, append-only) ----------------
+RESUMABLE_ERRORS = ("trial_cleanup_incomplete", "harness_error")   # 그 밖의 정리 오류(잔여 자원·복원 실패 등)는 재개 불가
+# 재개를 허용하는 하네스 예외 형식(사용자 승인 범위: 탐지기 평가 전 runtime 폴더 누락). 안전 중단(HarnessCorrupted 등)은 제외.
+RESUMABLE_HARNESS_EXCEPTIONS = ("FileNotFoundError",)
+POSTFLIGHT_UNVERIFIED = ("policy_audit_unreadable", "k8s_snapshots_missing")
+
+
+def _auth_path(d, run):
+    return Path(d) / f"p2-resume-authorization-{run}.json"
+
+
+def resume_check(d, run) -> dict:
+    """정리·하네스 오류로 끝난 한 시도의 재개 조건(기록만 읽음). 위반 목록이 비어야 재개 기록을 쓸 수 있다."""
+    d = Path(d)
+    rec = _read(_session_path(d, run))
+    rid = rec["run_id"]
+    s = _read(d / f"summary-{rid}.json")
+    v = _read(d / f"p2-validity-{run}.json")
+    marker = d / f"running-{rid}.json"
+    ev = _lines(d / rec["evidence_file"])
+    acts = [a for a in ((s.get("policy_state_after") or {}).get("actions") or {}).values() if (a or {}).get("run_id") == rid]
+    gate = s.get("preview_cleanup_gate") or []
+    iso = s.get("old_policy_isolation") or {}
+    to = s.get("trial_outcome") or {}
+    harness = [str(e)[len("harness_error: "):].split(":", 1)[0] for e in (rec.get("cleanup_errors") or [])
+               if str(e).startswith("harness_error: ")]
+    facts = {"detector_evaluation_started": any(r.get("record_type") == "c1_evaluation" for r in ev),
+             "detector_started": s.get("detector_started"), "harness_exceptions": harness,
+             "prober_stop_failed": to.get("prober_stop_failed"), "injector_cleanup_failed": to.get("injector_cleanup_failed"),
+             "postflight_invalid_reasons": list(rec.get("postflight_invalid_reasons") or []),
+             "actionable_signal_count": sum(r.get("record_type") == "c1_policy_send_attempt" for r in ev)
+             + int((s.get("evidence_counts") or {}).get("send_attempts") or 0),
+             "recovery_action_count": len(acts), "promotion_count": len(acts),
+             "policy_context_after": (s.get("policy_state_after") or {}).get("context"),
+             "policy_mode_after": (s.get("policy_state_after") or {}).get("mode"),
+             "integrity": rec.get("integrity"), "canonical_end_ok": (s.get("canonical_end") or {}).get("ok"),
+             "canonical_restore_ok": all((g.get("canonical_restore") or {}).get("ok") is True for g in gate if "canonical_restore" in g),
+             "old_policy_isolated": {k: (((iso.get("checks") or {}).get("last") if k == "last" else iso.get(k)) or {}).get("isolated")
+                                     for k in ("start", "last", "end")},
+             "cleanup_errors": list(rec.get("cleanup_errors") or []), "validity_status": v.get("status")}
+    probs = []
+    if rec.get("status") != "run" or v.get("valid") is not False:
+        probs.append("not_a_terminal_invalid_attempt")
+    if not facts["cleanup_errors"] or any(not str(e).startswith(RESUMABLE_ERRORS) for e in facts["cleanup_errors"]):
+        probs.append(f"cleanup_errors_not_harness_class: {facts['cleanup_errors']}")
+    # 잔여 probe Pod 확인은 동결 실행기에서 harness_error가 있을 때만 돈다 - 승인된 예외 형식의 harness_error가 있어야 한다
+    if not harness or any(x not in RESUMABLE_HARNESS_EXCEPTIONS for x in harness):
+        probs.append(f"harness_exception_not_approved: {harness}")
+    if facts["prober_stop_failed"] or facts["injector_cleanup_failed"]:
+        probs.append("prober_or_injector_cleanup_failed")
+    if facts["detector_started"] or facts["detector_evaluation_started"]:
+        probs.append("detector_started_or_evaluated")          # 승인 범위 = 탐지기 평가 전 실패
+    if any(x in facts["postflight_invalid_reasons"] for x in POSTFLIGHT_UNVERIFIED):
+        probs.append(f"postflight_unverified: {facts['postflight_invalid_reasons']}")
+    if facts["actionable_signal_count"] or facts["recovery_action_count"] or facts["promotion_count"]:
+        probs.append("signal_action_or_promotion_present")
+    if facts["policy_context_after"] is not None or facts["policy_mode_after"] != MODE:
+        probs.append("policy_not_clean_record_only")
+    if not (rec.get("integrity") or {}).get("ok") or (d / f"p2-integrity-failure-{run}.json").exists():
+        probs.append("integrity_failure")
+    if facts["canonical_end_ok"] is not True or not facts["canonical_restore_ok"] \
+            or (gate and not any("canonical_restore" in g for g in gate)):
+        probs.append("canonical_state_not_verified")
+    if any(v is not True for k, v in facts["old_policy_isolated"].items() if not (k == "last" and v is None)):
+        probs.append(f"old_policy_isolation_not_verified: {facts['old_policy_isolated']}")
+    return {"run": run, "run_id": rid, "facts": facts, "problems": probs,
+            "session_record_sha256": pc.sha256_bytes(_session_path(d, run)),
+            "summary_sha256": pc.sha256_bytes(d / f"summary-{rid}.json"),
+            "validity_sha256": pc.sha256_bytes(d / f"p2-validity-{run}.json"),
+            "running_marker": marker.name if marker.exists() else None,
+            "running_marker_sha256": pc.sha256_bytes(marker) if marker.exists() else None}
+
+
+def authorize_cleanup_resume(d, run, *, authorized_by: str, review_note: str, impl: dict, artifact_root) -> Path:
+    """사람이 확인한 뒤에만(오프라인): 조건·현재 freeze·profile·artifact를 다시 확인하고 시도 한정 재개 기록을 새 파일로 쓴다.
+    원 시도는 무효·시도 1회로 남고, running 표시·원자료는 지우지 않는다."""
+    c = resume_check(d, run)
+    if c["problems"]:
+        raise SystemExit(f"재개 기록 거부: {c['problems']}")
+    if pc.text_sha256(pc.SELECTION_PROFILE) != impl.get("selection_profile_sha256"):
+        raise SystemExit("재개 기록 거부: selection profile이 implementation freeze와 다름")
+    pc.load_profile(pc.SELECTION_PROFILE, stage="stage1")
+    art = pc.verify_artifacts(artifact_root)
+    rec = _read(_session_path(d, run))
+    if rec.get("environment_profile_sha256") != impl.get("selection_profile_sha256") or rec.get("artifact_hashes") != art["hashes"]:
+        raise SystemExit("재개 기록 거부: 실패한 시도의 profile·artifact가 현재 동결값과 다름")
+    return pc.write_json_new(_auth_path(d, run), {
+        "record_type": "p2_resume_authorization", "run": run, "run_id": c["run_id"], "attempt_number": rec["attempt_number"],
+        "failure_classification": "harness_or_cleanup_before_detector_evaluation"
+        if not c["facts"]["detector_evaluation_started"] else "harness_or_cleanup_after_detector_start",
+        "failure_recorded_at_utc": rec.get("runner_ended_at_utc"), **c,
+        "attempt_remains_invalid": True, "attempt_consumed": True,
+        "detector_results_observed": bool(c["facts"]["detector_started"] or c["facts"]["detector_evaluation_started"]),
+        "user_authorized_resume": True, "authorized_by": authorized_by, "review_note": review_note,
+        "authorized_at_utc": datetime.now(timezone.utc).isoformat(),
+        "implementation_freeze": {"manifest": impl.get("manifest"), "manifest_sha256": impl.get("manifest_sha256")}})
+
+
+def resume_authorized(d, rec) -> bool:
+    """그 시도의 재개 기록이 있고, 기록 당시의 시도 기록·running 표시가 그대로일 때만 True(다른 시도에는 적용되지 않음)."""
+    p = _auth_path(d, rec["run"])
+    if not p.exists():
+        return False
+    a = _read(p)
+    d = Path(d)
+    marker = d / f"running-{rec['run_id']}.json"
+    summary, validity = d / f"summary-{rec['run_id']}.json", d / f"p2-validity-{rec['run']}.json"
+    try:
+        impl_sha = pc.verify_implementation_freeze()["manifest_sha256"]
+    except SystemExit:
+        return False
+    return a.get("run") == rec["run"] and a.get("user_authorized_resume") is True and not a.get("problems") \
+        and a.get("session_record_sha256") == pc.sha256_bytes(_session_path(d, rec["run"])) \
+        and a.get("running_marker_sha256") == (pc.sha256_bytes(marker) if marker.exists() else None) \
+        and a.get("summary_sha256") == (pc.sha256_bytes(summary) if summary.exists() else None) \
+        and a.get("validity_sha256") == (pc.sha256_bytes(validity) if validity.exists() else None) \
+        and (a.get("implementation_freeze") or {}).get("manifest_sha256") == impl_sha
+
+
+def check_unresolved_stage1(d) -> None:
+    """rt.check_no_unresolved_failures와 같은 규칙(running 표시·정리 오류 요약이 있으면 시작 금지) - 단 재개 기록이 있는 그 시도만
+    해소된 것으로 본다. 표시·요약 파일은 지우지 않는다."""
+    d = Path(d)
+    resolved = {r["run_id"] for r in attempts(d) if resume_authorized(d, r)}
+    for x in sorted(d.glob("running-*.json")):
+        if x.name[len("running-"):-len(".json")] not in resolved:
+            raise SystemExit(f"실행 중 표시가 남아 있음 - 수동 확인 전 실행 금지: {x.name}")
+    for x in sorted(d.glob("summary-*.json")):
+        if _read(x).get("cleanup_errors") and x.name[len("summary-"):-len(".json")] not in resolved:
+            raise SystemExit(f"이전 실행 정리 실패가 남아 있음 - 수동 확인 전 실행 금지: {x.name}")
 
 
 def phase2_preflight(snapshot_fn, profile_path, artifact_root) -> dict:
@@ -524,6 +679,7 @@ def run_session(run, *, deps, profile_path, artifact_root, impl: dict, audit_rea
         refuse(run, d, sched, "refused_profile_invalid", str(e), started, "profile")
     if pf["stale"]:
         refuse(run, d, sched, "refused_profile_stale", f"PROFILE_STALE: {pf['stale']}", started, "stale")
+    prepare_runtime(d)
     profile_sha = pf["loaded"]["sha256"]
     deps = copy.copy(deps)                      # 호출자 객체는 바꾸지 않음
     snaps_path = d / f"p2-k8s-snapshots-{run}.jsonl"
@@ -695,7 +851,20 @@ def main(argv=None) -> int:
     p.add_argument("--plan", action="store_true")
     p.add_argument("--record-validity", default=None, metavar="RUN")
     p.add_argument("--operator-intervention", default=None)
+    p.add_argument("--authorize-cleanup-resume", default=None, metavar="RUN",
+                   help="정리·하네스 오류로 끝난 그 시도에 한정한 재개 기록(오프라인, 사람 확인 뒤)")
+    p.add_argument("--authorized-by", default=None)
+    p.add_argument("--review-note", default=None)
     a = p.parse_args(argv)
+    a.profile = Path(a.profile).resolve()                      # 실행기 subprocess(cwd 다름)에 같은 경로가 가도록
+    a.artifact_root = Path(a.artifact_root).resolve() if a.artifact_root else None
+    if a.authorize_cleanup_resume:  # pragma: no cover - 파일 쓰기 진입점(오프라인)
+        if not (a.authorized_by and a.review_note and a.artifact_root):
+            raise SystemExit("--authorized-by, --review-note, --artifact-root 필요")
+        print(authorize_cleanup_resume(RESULTS_DIR, a.authorize_cleanup_resume, authorized_by=a.authorized_by,
+                                       review_note=a.review_note, impl=pc.verify_implementation_freeze(),
+                                       artifact_root=a.artifact_root))
+        return 0
     if a.plan:
         print(plan_text(RESULTS_DIR))
         return 0
@@ -719,11 +888,16 @@ def main(argv=None) -> int:
     if not token:
         raise SystemExit("GUARDED_ADMIN_TOKEN 환경변수 필요")
     deps = rn.real_deps(a.policy_url, token, a.session_file)
-    base = deps.check_unresolved
 
-    def check_unresolved():
-        base()
-        rt.check_no_unresolved_failures(RESULTS_DIR)
+    def check_unresolved():  # rn·gp real_deps와 같은 폴더 확인 + Phase 2 폴더는 재개 기록을 반영하는 같은 규칙
+        import run_guarded_bck as gb
+        import run_v1_detector_trial as v1
+        v1.check_no_unresolved_anywhere()
+        for x in gp.OTHER_RESULT_DIRS:
+            rt.check_no_unresolved_failures(gp.RESULTS_DIR.parent / x)
+        for x in (gp.RESULTS_DIR, gp.AB_RESULTS_DIR, gb.BCK_RESULTS_DIR, N1_RESULTS_DIR):
+            rt.check_no_unresolved_failures(x)
+        check_unresolved_stage1(RESULTS_DIR)
     deps.check_unresolved = check_unresolved
     r = run_session(a.run, deps=deps, profile_path=a.profile, artifact_root=a.artifact_root, impl=prov,
                     audit_reader=lambda: read_policy_audit(MODE), mode=a.mode, preflight_only=a.preflight_only,

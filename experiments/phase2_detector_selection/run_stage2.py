@@ -313,6 +313,7 @@ def main(argv=None) -> int:  # pragma: no cover - 라이브 진입점(별도 승
     def check_unresolved():
         base()
         rt.check_no_unresolved_failures(RESULTS_DIR)
+        s1.check_unresolved_stage1(s1.RESULTS_DIR)        # Stage 1 미해결 시도도 Stage 2를 막는다
     deps.check_unresolved = check_unresolved
     try:
         entry = entry_check(selection_profile_path=a.selection_profile, active_profile_path=a.active_profile,
