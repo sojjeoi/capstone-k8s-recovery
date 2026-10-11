@@ -1,0 +1,16 @@
+{
+  "status": "design_frozen",
+  "freeze_type": "DESIGN_FREEZE",
+  "prereg_path": "docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1.md",
+  "prereg_sha256": "d63679c37289a1be8305e9ae7bace265434eb373e196d7c4675c74ba28069b72",
+  "sha256_basis": "committed git blob content (LF-normalized); checkouts with core.autocrlf=true may show CRLF bytes - verify with `git show <commit>:<path> | sha256sum`",
+  "prereg_commit_sha": "a040711aa1ef7d11ee361d227aacfb0df61b262a",
+  "revision": "rev 5",
+  "branch": "followup-detector-selection",
+  "base": "ab8d994 (phase1-final-20261011 = e119ce3)",
+  "frozen_at_utc": "2026-10-11T07:19:13Z",
+  "correctness_review": "High 0 / Medium 0 / Low 0 (rev 4 review H1 M8 L8 -> 3 re-review rounds)",
+  "supersedes": null,
+  "next_required": "IMPLEMENTATION FREEZE (prereg §18-B) before any live Stage 1 session; implementation and live runs need separate user approval",
+  "change_rule": "No edits to the prereg after this freeze; defects require a new revision plus a replacement manifest with `supersedes` (prereg §18)"
+}
