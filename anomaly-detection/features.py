@@ -51,7 +51,8 @@ CONFIRMED_SCRAPE_INTERVAL_SEC = {
 }
 
 
-def _query_range_with_timestamps(promql: str, start: datetime, end: datetime, step: str = "15s") -> list:
+def _query_range_with_timestamps(promql: str, start: datetime, end: datetime, step: str = "15s",
+                                 raw_out: list = None) -> list:
     """§163 - _query_range()와 완전히 같은 쿼리·다중 시계열 합산을 하되,
     Prometheus가 실제로 돌려준 (timestamp, value) 쌍을 시각까지 보존해
     정렬된 리스트로 반환한다(timestamp를 버리지 않는 버전). _query_range()
@@ -64,6 +65,9 @@ def _query_range_with_timestamps(promql: str, start: datetime, end: datetime, st
     )
     r.raise_for_status()
     result = r.json()["data"]["result"]
+    if raw_out is not None:  # 2026-10-04 입력 계측판 - 합산 전 원래 시계열(라벨·격자값)을 그대로 복사. 계산은 불변
+        raw_out.extend({"metric": dict(sr.get("metric") or {}), "values": [list(v) for v in sr.get("values") or []]}
+                       for sr in result)
     if not result:
         return []
     # 여러 시계열(active+preview 동시 구동 등으로 pod 여러 개)이 나오면 합산.

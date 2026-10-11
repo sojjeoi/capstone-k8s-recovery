@@ -1,0 +1,64 @@
+{
+  "threshold": -0.07667538512242333,
+  "calibration_failed": false,
+  "reason": null,
+  "decision_rule": "anomaly if decision_function(x) < threshold (strict)",
+  "rule": "model_v31/replay.calibrate_threshold - 모든 보정 세션에서 경고(3연속) 0인 가장 높은 관측 점수",
+  "consecutive_threshold": 3,
+  "cooldown_sec": 60.0,
+  "eval_interval_sec": 15.0,
+  "eval_interval_note": "실제 c1 평가 간격 약 17초. 경고 0 조건은 3연속 여부로만 정해져 쿨다운·간격 값은 결과에 영향 없음",
+  "calibration_sessions": [
+    "c1ca01",
+    "c1ca02",
+    "c1ca03",
+    "c1ca04"
+  ],
+  "per_session_result": {
+    "c1ca01": {
+      "n_points": 100,
+      "point_anomaly_count": 1,
+      "point_fpr": 0.01,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 1,
+      "score_min": -0.08648881627080185,
+      "score_median": 0.055954375907520226,
+      "score_max": 0.09836363353665023
+    },
+    "c1ca02": {
+      "n_points": 107,
+      "point_anomaly_count": 0,
+      "point_fpr": 0.0,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "score_min": -0.058613416834377374,
+      "score_median": 0.06237337125604964,
+      "score_max": 0.10569875731465411
+    },
+    "c1ca03": {
+      "n_points": 107,
+      "point_anomaly_count": 7,
+      "point_fpr": 0.06542056074766354,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "score_min": -0.17509734387850628,
+      "score_median": 0.05363450773027034,
+      "score_max": 0.09642770008398932
+    },
+    "c1ca04": {
+      "n_points": 107,
+      "point_anomaly_count": 8,
+      "point_fpr": 0.07476635514018691,
+      "signal_indices": [],
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "score_min": -0.17420968338863152,
+      "score_median": 0.010420878575906178,
+      "score_max": 0.04962524629980014
+    }
+  },
+  "note": "보정 자료의 경고 수는 임계값 산정 결과이며 독립 검증 성능이 아님"
+}

@@ -1,0 +1,7 @@
+{
+  "reload_max_abs_score_diff_train": 0.0,
+  "reload_max_abs_score_diff_calibration": 0.0,
+  "feature_order_is_ordered_subset_of_FEATURE_NAMES": true,
+  "schema_fit_on_train_rows_only": "True",
+  "train_calibration_sessions_disjoint": true
+}

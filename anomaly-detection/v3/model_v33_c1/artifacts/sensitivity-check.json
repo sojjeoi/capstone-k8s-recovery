@@ -1,0 +1,75 @@
+{
+  "base_row": {
+    "cpu_mean": 1.63516411047896,
+    "cpu_slope": 0.005418555727221288,
+    "memory_mean": 7017184460.8,
+    "memory_slope": 2457.5999991116078,
+    "queue_mean": 0.0,
+    "queue_slope": 0.0,
+    "cache_mean": 0.0,
+    "cache_slope": 0.0
+  },
+  "base_rule": "cpu_mean이 학습 중앙값에 가장 가까운 실제 학습 행",
+  "points": [
+    {
+      "label": "train_min",
+      "cpu_mean": 1.4270016723805505,
+      "score": -0.03775800056611345,
+      "below_threshold": false
+    },
+    {
+      "label": "train_median",
+      "cpu_mean": 1.63516411047896,
+      "score": 0.12160918607786375,
+      "below_threshold": false
+    },
+    {
+      "label": "train_max",
+      "cpu_mean": 1.7020455132951369,
+      "score": 0.046666769316744905,
+      "below_threshold": false
+    },
+    {
+      "label": "train_max+0.1",
+      "cpu_mean": 1.802045513295137,
+      "score": 0.046666769316744905,
+      "below_threshold": false
+    },
+    {
+      "label": "2.0",
+      "cpu_mean": 2.0,
+      "score": 0.046666769316744905,
+      "below_threshold": false
+    },
+    {
+      "label": "2.5",
+      "cpu_mean": 2.5,
+      "score": 0.046666769316744905,
+      "below_threshold": false
+    },
+    {
+      "label": "3.0",
+      "cpu_mean": 3.0,
+      "score": 0.046666769316744905,
+      "below_threshold": false
+    },
+    {
+      "label": "4.0",
+      "cpu_mean": 4.0,
+      "score": 0.046666769316744905,
+      "below_threshold": false
+    },
+    {
+      "label": "6.0",
+      "cpu_mean": 6.0,
+      "score": 0.046666769316744905,
+      "below_threshold": false
+    }
+  ],
+  "threshold": -0.07667538512242333,
+  "saturated_beyond_train_max": true,
+  "score_at_train_max": 0.046666769316744905,
+  "beyond_max_scores_below_threshold": [],
+  "beyond_max_less_anomalous_than_train_max": [],
+  "note": "합성 입력 민감도 확인 - 압박 탐지 가능성을 입증하지 않으며, 임계값·특징·모델 조정에 쓰지 않음"
+}

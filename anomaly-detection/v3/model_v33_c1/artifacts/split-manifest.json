@@ -1,0 +1,143 @@
+{
+  "train_sessions": [
+    "c1tr01",
+    "c1tr02",
+    "c1tr03",
+    "c1tr04",
+    "c1tr05",
+    "c1tr06"
+  ],
+  "calibration_sessions": [
+    "c1ca01",
+    "c1ca02",
+    "c1ca03",
+    "c1ca04"
+  ],
+  "train_rows_by_session": {
+    "c1tr01": {
+      "usable_rows": 103,
+      "evaluations_total": 107,
+      "excluded": {
+        "expected_unverified": 4
+      },
+      "start_procedure": "c1-start-v1(관찰 시작 = 탐지기 기동)",
+      "usable_rows_outside_observation": 0,
+      "first_seq": 5,
+      "last_seq": 107
+    },
+    "c1tr02": {
+      "usable_rows": 102,
+      "evaluations_total": 105,
+      "excluded": {
+        "expected_unverified": 3
+      },
+      "start_procedure": "c1-start-v1(관찰 시작 = 탐지기 기동)",
+      "usable_rows_outside_observation": 0,
+      "first_seq": 4,
+      "last_seq": 105
+    },
+    "c1tr03": {
+      "usable_rows": 96,
+      "evaluations_total": 96,
+      "excluded": {},
+      "start_procedure": "c1-start-v1(관찰 시작 = 탐지기 기동)",
+      "usable_rows_outside_observation": 0,
+      "first_seq": 1,
+      "last_seq": 96
+    },
+    "c1tr04": {
+      "usable_rows": 106,
+      "evaluations_total": 110,
+      "excluded": {
+        "expected_unverified": 4
+      },
+      "start_procedure": "c1-start-v2-20261005",
+      "usable_rows_outside_observation": 1,
+      "first_seq": 5,
+      "last_seq": 110
+    },
+    "c1tr05": {
+      "usable_rows": 106,
+      "evaluations_total": 110,
+      "excluded": {
+        "expected_unverified": 4
+      },
+      "start_procedure": "c1-start-v2-20261005",
+      "usable_rows_outside_observation": 1,
+      "first_seq": 5,
+      "last_seq": 110
+    },
+    "c1tr06": {
+      "usable_rows": 106,
+      "evaluations_total": 111,
+      "excluded": {
+        "expected_unverified": 5
+      },
+      "start_procedure": "c1-start-v2-20261005",
+      "usable_rows_outside_observation": 1,
+      "first_seq": 5,
+      "last_seq": 110
+    }
+  },
+  "calibration_rows_by_session": {
+    "c1ca01": {
+      "usable_rows": 100,
+      "evaluations_total": 104,
+      "excluded": {
+        "expected_unverified": 4
+      },
+      "start_procedure": "c1-start-v1(관찰 시작 = 탐지기 기동)",
+      "usable_rows_outside_observation": 0,
+      "first_seq": 5,
+      "last_seq": 104
+    },
+    "c1ca02": {
+      "usable_rows": 107,
+      "evaluations_total": 109,
+      "excluded": {
+        "expected_unverified": 2
+      },
+      "start_procedure": "c1-start-v2-20261005",
+      "usable_rows_outside_observation": 1,
+      "first_seq": 3,
+      "last_seq": 109
+    },
+    "c1ca03": {
+      "usable_rows": 107,
+      "evaluations_total": 111,
+      "excluded": {
+        "expected_unverified": 4
+      },
+      "start_procedure": "c1-start-v2-20261005",
+      "usable_rows_outside_observation": 1,
+      "first_seq": 5,
+      "last_seq": 111
+    },
+    "c1ca04": {
+      "usable_rows": 107,
+      "evaluations_total": 111,
+      "excluded": {
+        "expected_unverified": 4
+      },
+      "start_procedure": "c1-start-v2-20261005",
+      "usable_rows_outside_observation": 1,
+      "first_seq": 5,
+      "last_seq": 111
+    }
+  },
+  "train_total_rows": 619,
+  "calibration_total_rows": 421,
+  "rows_by_start_procedure": {
+    "c1-start-v1(관찰 시작 = 탐지기 기동)": {
+      "sessions": 4,
+      "usable_rows": 401,
+      "usable_rows_outside_observation": 0
+    },
+    "c1-start-v2-20261005": {
+      "sessions": 6,
+      "usable_rows": 639,
+      "usable_rows_outside_observation": 6
+    }
+  },
+  "note": "독립 검증 자료는 이후 새 실행 ID로 수집(여기 없음). V1/V2/icd01/cpd01·기존 학습 자료 미사용"
+}

@@ -98,6 +98,14 @@ FRESHNESS_PROBE_QUERIES = {
 # 스킵이 WINDOW_SEC를 넘기면(=window 전체가 이미 공백 구간 안에 들어간
 # 상태) "잠깐 꼬리만 걸친" 상황을 넘어 질적으로 다른 상태로 본다.
 PROLONGED_DATA_GAP_CYCLES = int(WINDOW_SEC // EVAL_INTERVAL_SEC)  # 60/15 = 4
+# 2026-10-04 입력 계측판 진단 - 이 환경변수가 "1"일 때만 평가 기록의 per_metric_provenance에 합산 전 Prometheus 응답
+# 원문(시계열 라벨·격자값·요청 범위)과 기록 크기·소요 시간을 붙인다. 특징·점수·신호 판단은 바뀌지 않는다.
+RAW_QUERY_CAPTURE_ENV = "SCORE_SERVER_RAW_QUERY_CAPTURE"
+# 2026-10-04 후보 입력 병렬 기록 진단 - 이 환경변수가 "1"일 때만, 점수 계산이 끝난 뒤 같은 평가 창(start·end·step)으로
+# 후보 CPU rate[60s] → 기존 rate[30s] 재질의를 보내고, 네 지표의 timestamp() 인스턴트 질의(원시 표본 시각)를 따로 보내
+# 원문·요청/응답 시각·오류를 평가 기록 `parallel_candidate`에 붙인다. 기존 판단 입력(첫 rate[30s] 등)·특징·점수·신호
+# 판단에는 쓰지 않는다(이미 계산이 끝난 뒤 보냄). 후보 입력으로 점수를 계산하지 않는다.
+PARALLEL_CANDIDATE_ENV = "SCORE_SERVER_PARALLEL_CANDIDATE"
 # §108(2026-09-24) - PROLONGED_DATA_GAP_CYCLES에 도달하면 main()이 이 코드로
 # 스스로 종료한다(0=정상 종료·1=처리 안 된 예외와 구분되는 값) - run_once.py의
 # TrialInvalid 메시지에 detector.get_crash_info()의 exit_code로 그대로
@@ -255,13 +263,22 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
 
     captured_pairs = {}
     captured_timing = {}
+    captured_raw = {}  # 2026-10-04 입력 계측판(RAW_QUERY_CAPTURE_ENV=1일 때만) - 합산 전 응답 원문
+    raw_capture_on = os.environ.get(RAW_QUERY_CAPTURE_ENV) == "1"
     if query_range_fn is _query_range:
         def _capturing_query_range_fn(promql, s, e, step="15s"):
+            raw = [] if raw_capture_on else None
             sent = now_fn()
-            pairs = _query_range_with_timestamps(promql, s, e, step)
+            pairs = _query_range_with_timestamps(promql, s, e, step, raw_out=raw)
             received = now_fn()
             captured_pairs[promql] = pairs
             captured_timing[promql] = (sent, received)
+            if raw_capture_on:  # 재시도로 같은 지표를 다시 조회하면 마지막(실제로 계산에 쓴) 응답이 남는다
+                t0 = time.perf_counter()
+                body = {"start_utc": s.isoformat(), "end_utc": e.isoformat(), "step": step, "series": raw}
+                size = len(json.dumps(body, separators=(",", ":")))
+                captured_raw[promql] = {**body, "series_count": len(raw), "capture_bytes": size,
+                                        "capture_build_ms": round((time.perf_counter() - t0) * 1000, 3)}
             return [v for _ts, v in pairs]
         effective_query_range_fn = _capturing_query_range_fn
     else:
@@ -286,6 +303,8 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
                     "query_sent_at_utc": sent.isoformat(),
                     "query_received_at_utc": received.isoformat(),
                 }
+                if promql in captured_raw:  # 계측판에서만 붙는 필드 - 판정·특징 계산에는 쓰지 않음
+                    result[metric_name]["raw_query_capture"] = captured_raw[promql]
             else:
                 result[metric_name] = {
                     "raw_sample_status": "not_queried",
@@ -339,7 +358,7 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
     # provenance에서만(지표별 평가 격자 시각·주기 기반 참고 하한 또는
     # no_samples/not_queried로) 표현한다.
     per_metric_provenance = _build_per_metric_provenance()
-    return {
+    out = {
         "window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(),
         "raw_feature_vector": feats, "ordered_feature_vector": x6,
         "scaled_feature_vector": [float(v) for v in x_scaled[0]],
@@ -347,6 +366,40 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
         "feature_computed_at_utc": feature_computed_at.isoformat(),
         "per_metric_provenance": per_metric_provenance,
     }
+    if os.environ.get(PARALLEL_CANDIDATE_ENV) == "1":  # 진단 전용 - 위 값이 모두 확정된 뒤에만 보낸다
+        out["parallel_candidate"] = _parallel_candidate_record(start, end, now_fn)
+    return out
+
+
+def _parallel_candidate_record(start, end, now_fn) -> dict:
+    """후보 입력 병렬 기록(진단 전용). 질의마다 원문·요청/응답 시각·오류를 남기고, 실패는 예외 없이 기록만 한다
+    (실패한 후보가 정상 후보로 보이지 않도록 error와 빈 series를 그대로 남김)."""
+    from features import PROM_URL
+    candidate_cpu_promql = METRICS["cpu"].replace("[30s]", "[60s]")
+    rec = {"window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(), "step": "15s",
+           "cpu_queries": [], "freshness_queries": []}
+    for label, promql in (("candidate_rate60", candidate_cpu_promql), ("requery_rate30", METRICS["cpu"])):
+        raw, err, sent = [], None, now_fn()
+        try:
+            _query_range_with_timestamps(promql, start, end, "15s", raw_out=raw)
+        except Exception as e:  # noqa: BLE001 - 진단 기록이 탐지기를 멈추지 않게
+            err = f"{type(e).__name__}: {e}"
+        rec["cpu_queries"].append({"label": label, "promql": promql, "start_utc": start.isoformat(),
+                                   "end_utc": end.isoformat(), "step": "15s", "query_sent_at_utc": sent.isoformat(),
+                                   "query_received_at_utc": now_fn().isoformat(), "series": raw, "error": err})
+    for name, selector in FRESHNESS_PROBE_QUERIES.items():
+        body, err, sent = None, None, now_fn()
+        try:
+            r = requests.get(f"{PROM_URL}/api/v1/query", params={"query": f"timestamp({selector})"}, timeout=5.0)
+            r.raise_for_status()
+            body = r.json()
+        except Exception as e:  # noqa: BLE001
+            err = f"{type(e).__name__}: {e}"
+        rec["freshness_queries"].append({"metric": name, "promql": f"timestamp({selector})",
+                                         "query_sent_at_utc": sent.isoformat(),
+                                         "query_received_at_utc": now_fn().isoformat(), "body": body, "error": err})
+    rec["extra_query_count"] = len(rec["cpu_queries"]) + len(rec["freshness_queries"])
+    return rec
 
 
 def evaluate_v32b(model, scaler, schema, *,
@@ -659,6 +712,7 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
                     # query_range_fn 테스트에서는 빈 dict)으로만 표현한다.
                     "feature_computed_at_utc": verbose.get("feature_computed_at_utc"),
                     "per_metric_provenance": verbose.get("per_metric_provenance", {}),
+                    **({"parallel_candidate": verbose["parallel_candidate"]} if "parallel_candidate" in verbose else {}),
                     "raw_feature_vector": verbose["raw_feature_vector"],
                     "ordered_feature_vector": verbose["ordered_feature_vector"],
                     "scaled_feature_vector": verbose["scaled_feature_vector"],
