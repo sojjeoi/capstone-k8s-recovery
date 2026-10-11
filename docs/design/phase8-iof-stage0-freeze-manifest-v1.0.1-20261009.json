@@ -1,0 +1,51 @@
+{
+  "status": "frozen",
+  "version": "iof-stage0-v1.0.1",
+  "series": "capstone-iof-stage0-20261009",
+  "counted": false,
+  "frozen_at_utc": "2026-10-09T13:51:08.328209+00:00",
+  "contract": "docs/design/phase8-iof-stage0-contract-20261009.md",
+  "supersedes": {
+    "path": "docs/design/phase8-iof-stage0-freeze-manifest-v1-20261009.json",
+    "sha256": "7e43c46a4acb05088a9bac323afb4d38da67926ceaa83c54e3beda4d784d10ef"
+  },
+  "change": {
+    "files": [
+      "experiments/run_iof_stage0.py",
+      "experiments/test_iof_stage0.py"
+    ],
+    "reason": "iob90(기준선) 하네스 결함: 스트레스 단계가 없는 세션에서 probe 원자료를 로컬로 회수하지 않아(정리 때 probe pod 삭제) 관찰 구간 공식 SLO 판정 불가 → invalid. 수정: 관찰 끝 뒤 probe 증거가 관찰 끝을 덮을 때까지 회수(최대 60 s), 못 하면 aborted. 회귀 테스트 추가. 규칙·강도·판정·seed·시간 변경 없음.",
+    "approval": "user chat 2026-10-09 '작업 다시 재개해줘'(제안한 결함 수정 amendment 후 iob91부터 재개)"
+  },
+  "tests": {
+    "file": "experiments/test_iof_stage0.py",
+    "sha256": "c476ec3199ecd7758938c5581a44c73f56d4c59e48b1c9664129cf2c2984b8f5",
+    "result": "25 passed + v2wl 34 passed (2026-10-09)"
+  },
+  "files": {
+    "docs/design/phase8-iof-stage0-contract-20261009.md": "583976a88a5da8b6e753bcf484b759a8433857e8a77c00e8ffc279f979e99d2b",
+    "docs/design/phase8-aiops-next-research-direction-20261009.md": "b6b22132fa14e1e5906eb7ef05cd6b6da7183208720df44c4defb0e106c60fed",
+    "chaos/iof-stage0.yaml": "bb890b48b696b0a89d8f572f7e229c6a735908900b646f6390a5b550aa8ca49b",
+    "chaos/loadgen/io_writer.py": "948b3bfe91048a506c6319998eb9f7b0c304df9b6da195819fd745b92a0894e2",
+    "experiments/run_iof_stage0.py": "018374bd3ca8b0700c056f2f32d52a4d481c6b55223f8424cd2d5427b492d4c7",
+    "experiments/iof_stage0_analysis.py": "dbc50181ce0e3ea575bacef1fce31b44e0c3ea4c2eba6d488b4fb10e2619ab13",
+    "experiments/test_iof_stage0.py": "c476ec3199ecd7758938c5581a44c73f56d4c59e48b1c9664129cf2c2984b8f5",
+    "chaos/loadgen/v2_arrival.py": "bed343e2f71b93a3b6d863aac48e16c9500385007c0c6b889424c43fad774cad",
+    "chaos/loadgen/ramp.py": "aadab9fc7f2a5a51cfee4e666ba7872c8e8fa378389d47a0e68e501f39153a82",
+    "chaos/probe-config.yaml": "36ec46ee19a01ce348abb95b65c1b45dc6074ab43fddc07bbe2313deab777851",
+    "experiments/run_v2_workload_pilot.py": "05b15c18e858e39f0c7a6422ec3cc3579113ce365e3f9e90b3d829a72ccc7d14",
+    "experiments/v2_workload_pilot_analysis.py": "cd3fbdb56d2066e37b3bce54502bed856438f962b7b724e8224052cc9bd48f86",
+    "experiments/load_ramp_adapter.py": "148c46272652978566ff74f48e7d8e5904e3947358e4ce631a62bc5c213e1c1a",
+    "experiments/run_guarded_pilot.py": "53b555b8997d7330a0fd73bb49388c52c0f2640e3832ed8d2ea1cd2b2d476597",
+    "experiments/run_if_threshold_candidate_smoke.py": "ddc87334a82a1af698ea3cf82c34ad905981512312b0127fb190061a1ec572fc",
+    "experiments/run_cpu_demo_shadow_no_injection_trial.py": "bce82f734863edd56d97bfa6746c26c5a388e821e405d76865506284f51b92e9",
+    "experiments/guarded_cleanup_gate.py": "baff9fe74eb2e06de09333347dfbd11e900faa9a29c68bfc95fe37e2da9e1e12",
+    "experiments/slo_judge.py": "a66957761e0e433e3efdf0037f0c3c0833c1542c85c756a49085aee9c3447022",
+    "experiments/slo_episodes.py": "33ff83de00800db01206f7738e390884987a1338537e15477c876f5245e5cd85",
+    "experiments/c1_shadow_pilot_analysis.py": "577be4bc96d68ac0086ab2a4769ee9f7ca8163c0b8decf327778e4ba00717432",
+    "experiments/guarded_pilot_session.ps1": "68c9349ab27216a3ad5b5b8f63329919bdc3b7994162e3b72343d238b9ba4efe",
+    "experiments/run_once.py": "6953f4d6953b2855467408f7f93c29c85fb51ec9cad5aeaddea7047814d622af",
+    "experiments/run_timed_switch_recovery_trial.py": "ecbcbe4c0727ac1227af29c821849882a4258580ba3283c0871877a28a5b3c85",
+    "experiments/blue_green_prep.py": "0c8c56bcfb2c0664c25c53f6ee234d0c57a93d62ef709a9387223a4b5703dece"
+  }
+}

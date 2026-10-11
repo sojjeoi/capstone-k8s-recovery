@@ -1,0 +1,32 @@
+# noisy-neighbor CPU Stage 0 설정(counted=false, 2026-10-10). 계약: docs/design/phase8-nnf-stage0-contract-20261010.md
+# 결과를 보고 값을 바꾸지 않는다. 바꾸려면 amendment(새 freeze)로만.
+# 요청 workload: 동결 probe 1 RPS만(배경 L1 없음 - iof Stage 0에서 배경 겹침이 SLO 여유를 다 먹었다).
+
+stress:
+  tool: chaos/loadgen/cpu_burner.py   # busy 프로세스 N개, vLLM 밖 별도 pod, nodeName = sj-worker2
+  axis: workers                       # 유일한 강도 축. request·limit·메모리는 모든 단계·실행에서 고정
+  cpu_request: "2"                    # vLLM과 같은 CFS 가중치(cpu.shares 2048) - 같은 크기의 Burstable 이웃
+  cpu_limit: "8"                      # 노드 크기. workers ≤ 8에서는 quota가 강도를 바꾸지 않는다
+  memory_limit: 256Mi
+  applied_min_fraction: 0.4           # 부하 실제 적용 확인: 단계 중 이웃 pod CPU 중앙값 ≥ 0.4 × min(workers, 8)
+  # 개발 사다리 - 노드 8 vCPU, 기준선 사용 약 3.5 core(유휴 약 4.5 core). W2·W4 = 유휴 안, W6·W8 = 포화 근처·포화,
+  # W12 = runnable 스레드 과다(quota 8 core로 상한). 이보다 큰 값·다른 축은 넣지 않는다.
+  development_ladder:
+    - {name: W2, workers: 2}
+    - {name: W4, workers: 4}
+    - {name: W6, workers: 6}
+    - {name: W8, workers: 8}
+    - {name: W12, workers: 12}
+  confirmatory: null    # 개발 결과 뒤 amendment로 weak·strong 고정(선택 규칙은 계약 §6)
+
+single_metric_rules: null   # 개발 결과 뒤 amendment로 지표별 임계값 고정(보정 규칙은 계약 §7)
+
+timing:
+  readiness_min_sec: 120          # probe 기준선 준비 뒤 최소 대기
+  readiness_max_sec: 600          # probe 시작부터
+  pre_stress_sec: 300
+  stress_sec: 300
+  dev_recovery_sec: 120
+  confirm_tail_sec: 240
+  baseline_observation_sec: 1200
+  cpu_settle_max_sec: 300         # 정리 뒤 노드 CPU 정상화 확인 상한

@@ -1,0 +1,211 @@
+"""guarded_normal_bc_analysis - 계약 경계(3600+600)·신호 분류·세션 상태·짝 통계. 네트워크·클러스터 접속 없음."""
+import csv
+import json
+from datetime import datetime, timedelta, timezone
+
+import guarded_live_detector_runner as gr
+import guarded_normal_bc_analysis as na
+import run_guarded_normal_bc as rn
+
+T0 = datetime(2026, 10, 9, 0, 0, 0, tzinfo=timezone.utc)
+END = T0 + timedelta(seconds=4200)
+
+
+def at(sec):
+    return T0 + timedelta(seconds=sec)
+
+
+def cls(sec, *, obs_end=END, episodes=(), service=(), infra=()):
+    return na.classify_signal(at(sec), t0=T0, obs_end=obs_end, episodes=[(at(a), at(b)) for a, b in episodes],
+                              service_events=[at(x) for x in service], infra_events=[at(x) for x in infra])[0]
+
+
+def arm(signals, **kw):
+    kw.setdefault("obs_end", END)
+    kw.setdefault("episodes", [])
+    kw.setdefault("service_events", [])
+    kw.setdefault("infra_events", [])
+    return na.arm_outcome([at(s) for s in signals], T0, **kw)
+
+
+# ---------------- 사용자 지정 경계 사례 ----------------
+def test_signal_at_3599_is_followed_up_through_4199():
+    assert cls(3599) == "unnecessary"                      # 추적 끝 4199 ≤ 관찰 끝 4200
+    o = arm([3599])
+    assert o["t_safe_sec"] == 3599 and o["unnecessary_any"] and o["raw_trigger_count"] == 1
+    assert cls(3599, obs_end=at(4198)) == "indeterminate"  # 추적이 1초 모자라면 미완
+
+
+def test_signal_at_exactly_3600_is_outside_decision_window():
+    o = arm([3600])
+    assert o["raw_trigger_count"] == 0 and o["t_safe_sec"] == 3600 and not o["unnecessary_any"]
+    assert o["excluded_after_decision_window"] == 1 and o["first_raw_trigger_sec"] is None
+
+
+def test_new_signal_after_3600_excluded_from_primary_and_counts():
+    o = arm([100, 3700, 4100])
+    assert o["raw_trigger_count"] == 1 and o["excluded_after_decision_window"] == 2 and o["t_safe_sec"] == 100
+
+
+def test_incomplete_follow_up_is_indeterminate_and_does_not_stop_t_safe():
+    short = at(900)  # 세션이 900초에 끝남 - 500초 신호의 600초 추적 미완
+    assert cls(500, obs_end=short) == "indeterminate"
+    o = arm([200, 500], obs_end=short)
+    assert [x["class"] for x in o["signals"]] == ["unnecessary", "indeterminate"] and o["t_safe_sec"] == 200
+    o = arm([500], obs_end=short)
+    assert o["t_safe_sec"] == 3600 and not o["unnecessary_any"]
+
+
+def test_degradation_before_signal_and_ongoing():
+    assert cls(300, episodes=[(100, 400)]) == "during_degradation"     # 위반 진행 중
+    assert cls(500, episodes=[(100, 400)]) == "unnecessary"            # 끝난 위반 뒤 - 추적 창에 새 위반 없음
+
+
+def test_degradation_inside_follow_up_is_true_warning_candidate_not_unnecessary():
+    assert cls(1000, episodes=[(1500, 1600)]) == "true_warning_candidate"
+    assert cls(1000, episodes=[(1601, 1700)]) == "unnecessary"         # 추적 창(600초) 밖
+    o = arm([1000], episodes=[(at(1500), at(1600))])
+    assert o["t_safe_sec"] == 3600 and o["class_counts"]["true_warning_candidate"] == 1
+
+
+def test_service_event_without_official_slo_violation():
+    assert cls(1000, service=[1300]) == "true_warning_candidate"
+    assert cls(1000, service=[900]) == "unnecessary"                   # 신호 전 실패는 근거 아님
+    assert cls(1000, service=[1601]) == "unnecessary"
+
+
+def test_infra_abnormality_in_window_is_indeterminate():
+    assert cls(1000, infra=[1200]) == "indeterminate"
+    assert cls(1000, infra=[950]) == "indeterminate"                   # 입력 창(60초) 안
+    assert cls(1000, infra=[930]) == "unnecessary"
+    assert cls(1000, infra=[1200], episodes=[(1300, 1400)]) == "indeterminate"  # 인프라 이상이 있으면 귀속 불가 우선
+
+
+def test_no_signal_gives_t_safe_3600():
+    o = arm([])
+    assert o["t_safe_sec"] == 3600 and not o["unnecessary_any"] and o["raw_trigger_count"] == 0
+
+
+def test_both_arms_no_signal_gives_zero_difference():
+    s = {"run": "nb01", "arms": {"B": arm([]), "C": arm([])}}
+    st = na.paired_stats([s])
+    assert st["pairs"][0]["D_sec"] == 0 and st["tie"] == 1 and st["stage"] == "descriptive_only_n_lt_6"
+
+
+# ---------------- 통계 ----------------
+def _sess(run, b, c):
+    return {"run": run, "arms": {"B": arm(b), "C": arm(c)}}
+
+
+def test_paired_stats_direction_ties_and_planned_analysis_at_six():
+    ss = [_sess("nb01", [], [200]), _sess("nb02", [400], []), _sess("nb03", [], []),
+          _sess("nb04", [], [180]), _sess("nb05", [1000], [300]), _sess("nb06", [], [])]
+    st = na.paired_stats(ss)
+    assert [p["D_sec"] for p in st["pairs"]] == [3400, -3200, 0, 3420, 700, 0]
+    assert (st["B_longer"], st["tie"], st["C_longer"]) == (3, 2, 1)
+    assert st["stage"] == "n1_planned_analysis"
+    w = st["wilcoxon_exact"]
+    assert w["n_nonzero"] == 4 and w["zeros_dropped"] == 2 and w["p_two_sided"] >= 0.125  # m=4 → 최소 p 0.125
+    assert st["secondary_yes_no"] == {"B_only": 1, "C_only": 2, "both": 1, "neither": 2}
+    assert st["mcnemar_exact_reference"]["n_nonzero"] == 3
+    assert st["hodges_lehmann_D"] is not None
+
+
+def test_six_all_same_direction_reaches_min_p():
+    st = na.paired_stats([_sess(f"nb0{i}", [], [100 * i]) for i in range(1, 7)])
+    assert st["wilcoxon_exact"]["p_two_sided"] == 0.03125 and st["C_longer"] == 0
+
+
+# ---------------- 세션 끝까지(합성 파일) ----------------
+def _write_session(tmp, run, *, b_sig=(), c_sig=(), status="completed", fail_at=(), slow=None, warn_at=(), obs=4200,
+                   skip_at=()):
+    rid = rn.run_id_for(run)
+    probe = tmp / f"probe-{rid}.csv"
+    with open(probe, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["sent_at", "latency", "success", "status"])
+        for i in range(-30, int(obs) + 5):
+            lat = 0.28 if not (slow and slow[0] <= i <= slow[1]) else 3.0
+            w.writerow([at(i).isoformat(), lat, "False" if i in fail_at else "True", 200])
+    recs = [{"record_type": "c1_shadow_start", "run_id": rid}]
+    for k, sec in enumerate(range(0, int(obs) + 1, 17), 1):
+        sk = any(sec <= x < sec + 17 for x in skip_at)
+        rule = {a: {"condition_met": any(sec <= x < sec + 17 for x in sig), "condition_met_at_utc": at(sec).isoformat()}
+                for a, sig in (("B", b_sig), ("C", c_sig), ("K", ()))}
+        recs.append({"record_type": "c1_evaluation", "run_id": rid, "evaluation_seq": k,
+                     "eval_started_at_utc": at(sec - 2).isoformat(), "score_completed_at_utc": at(sec).isoformat(),
+                     "status": "skipped" if sk else "scored", "skip_reason": "input_incomplete" if sk else None,
+                     "score": None if sk else -0.1, "rules": rule,
+                     "pod_snapshot": {"active_selector": "aa", "preview_selector": "bb", "pods": [
+                         {"name": "vllm-serving-aa-1", "uid": "u1", "hash": "aa", "node": "sj-worker"},
+                         {"name": "vllm-serving-bb-2", "uid": "u2", "hash": "bb", "node": "sj-worker2",
+                          "vllm_started_at": at(-120).isoformat()}]}})
+    gr.live_evidence_path(tmp, rid).write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+    (tmp / f"contract-{rid}.json").write_text(json.dumps({"plan_id": rn.PLAN_ID, "contract_doc": rn.CONTRACT_DOC,
+                                                          "observation_sec": obs}), encoding="utf-8")
+    (tmp / f"pod-events-{rid}.json").write_text(json.dumps(
+        [{"type": "Warning", "reason": "Unhealthy", "last_timestamp": at(x).isoformat()} for x in warn_at]), encoding="utf-8")
+    (tmp / f"summary-{rid}.json").write_text(json.dumps({
+        "outcome_status": status, "outcome_reason": "x", "observation_started_at_utc": at(1).isoformat(),
+        "observation_ended_at_utc": at(obs + 1).isoformat(), "probe_data_gap_detected": False,
+        "probe_raw_csv": str(probe), "cleanup_errors": [], "harness_error": None,
+        "probe_image_runtime_check": {"verified": True}, "start_active_node": "sj-worker", "detector_started": True}),
+        encoding="utf-8")
+
+
+def test_end_to_end_normal_session_and_pilot_excluded(tmp_path):
+    _write_session(tmp_path, "nb01", b_sig=(1700, 3605), c_sig=(204,))
+    _write_session(tmp_path, "nb90", obs=600)
+    r = na.analyze(tmp_path)
+    assert r["attempted"] == 1 and r["status_counts"]["normal"] == 1
+    s = r["sessions"][0]
+    assert s["arms"]["B"]["t_safe_sec"] == 1700 and s["arms"]["B"]["excluded_after_decision_window"] == 1
+    assert s["arms"]["C"]["t_safe_sec"] == 204
+    assert s["nodes"]["preview_node"] == "sj-worker2" and s["preview_ready_rel_t0_sec"] == -120
+    assert r["primary"]["pairs"][0]["D_sec"] == 1496 and r["primary"]["stage"] == "descriptive_only_n_lt_6"
+    assert [x["run"] for x in r["excluded"]] == ["nb90"]
+
+
+def test_single_request_failure_follows_frozen_official_judge(tmp_path):
+    """세션 상태는 실패 건수가 아니라 동결 공식 판정(60초 창 가용성 99%)으로만 정한다. 1 RPS에서는 실패 1건이 창 가용성을
+    98.3%로 낮춰 공식 위반이 된다 - 그 결과 그대로 unexpected_degradation(새 기준을 만들지 않음). 실패는 service_event로도 남는다."""
+    _write_session(tmp_path, "nb01", b_sig=(1000,), fail_at=(1200,))
+    s = na.analyze(tmp_path)["sessions"][0]
+    assert s["status"] == "unexpected_degradation" and s["service_events"] == [1200] and s["slo"]["episodes"]
+    assert s["arms"]["B"]["signals"][0]["class"] == "true_warning_candidate" and s["arms"]["B"]["t_safe_sec"] == 3600
+
+
+def test_official_slo_violation_makes_unexpected_degradation(tmp_path):
+    _write_session(tmp_path, "nb01", b_sig=(1000,), slow=(1300, 1500))
+    r = na.analyze(tmp_path)
+    s = r["sessions"][0]
+    assert s["status"] == "unexpected_degradation" and s["slo"]["episodes"]
+    assert s["arms"]["B"]["signals"][0]["class"] == "true_warning_candidate"
+    assert r["primary"]["n_normal_sessions"] == 0 and r["attempted"] == 1
+
+
+def test_abort_without_slo_violation_is_invalid(tmp_path):
+    _write_session(tmp_path, "nb01", status="aborted")
+    s = na.analyze(tmp_path)["sessions"][0]
+    assert s["status"] == "invalid" and any("aborted_without" in x for x in s["invalid_reasons"])
+
+
+def test_warning_event_and_input_skip_make_signal_indeterminate(tmp_path):
+    _write_session(tmp_path, "nb01", b_sig=(1000,), c_sig=(2000,), warn_at=(1100,), skip_at=(2100,))
+    s = na.analyze(tmp_path)["sessions"][0]
+    assert s["arms"]["B"]["signals"][0]["class"] == "indeterminate"
+    assert s["arms"]["C"]["signals"][0]["class"] == "indeterminate"
+    assert s["arms"]["B"]["t_safe_sec"] == 3600 == s["arms"]["C"]["t_safe_sec"]
+
+
+def test_record_gap_over_30s_is_invalid(tmp_path):
+    _write_session(tmp_path, "nb01")
+    rid = rn.run_id_for("nb01")
+    p = gr.live_evidence_path(tmp_path, rid)
+    recs = [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines()]
+    recs = recs[:10] + recs[13:]  # 평가 3개 누락 → 기록 없는 공백 > 30 s
+    for i, r in enumerate(recs[1:], 1):
+        r["evaluation_seq"] = i
+    p.write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+    s = na.analyze(tmp_path)["sessions"][0]
+    assert s["status"] == "invalid" and any("max_tick_gap" in x for x in s["invalid_reasons"])

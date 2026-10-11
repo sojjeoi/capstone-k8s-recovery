@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""정상 운전 N1(B vs C 같은 tick 짝 비교) 실행기(새 파일, 2026-10-08) - 계약: docs/design/phase8-v33c1-guarded-normal-bc-n1-contract-20261008.md
+
+동결 실행기(run_guarded_pilot·run_guarded_bck)는 수정하지 않는다. 동결 부품(Deps·real_deps·check_policy·evidence_counts·
+cleanup gate D5·canonical 검사·복원·무주입 trial run_no_injection_smoke·무주입 안전 감시·old policy 격리 확인)을 import하고,
+동결 run_guarded의 no_injection·record_only 경로 순서만 옮겨 왔다. 바뀐 점:
+  - 실행 ID nbNN(공식 01-09, pilot 90), plan·결과 폴더·계약 분리, probe 반복 번호 2001-2009 / 2090
+  - 탐지기 = c1_bck_shadow_pair(공통 tick B·C·K 판정 기록, 송신 없음). 정책 context를 설정하지 않는다(신호가 없으므로)
+  - 관찰 = 공식 4200 s(판정 3600 + 추적 600, 구분은 분석기), pilot 600 s
+  - 시작·끝 canonical 검사와 미승격 preview 정리 뒤 canonical 복원(A/B r2와 같은 함수). 승격·유예 변경 경로 없음
+  - 실행 전 freeze manifest 재해시(fail-closed)"""
+import argparse
+import hashlib
+import json
+import os
+import signal
+import sys
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+import guarded_cleanup_gate as gcg
+import guarded_live_detector_runner as gr
+import run_guarded_pilot as gp
+import run_if_threshold_candidate_smoke as smoke
+import run_timed_switch_recovery_trial as rt
+from run_guarded_pilot import BASE_SCALE_DOWN_DELAY_SEC, MODE_RO, READY_TIMEOUT_SEC, Deps, check_policy, evidence_counts
+from load_ramp_adapter import IMAGE_FORCE_CLOSE, IMAGE_FORCE_CLOSE_ID
+from run_once import HarnessCorrupted
+
+import c1_bck_live_detector as bd  # noqa: E402  (gp가 anomaly-detection 경로를 잡는다)
+import c1_bck_shadow_pair as sp  # noqa: E402
+import c1_shadow_detector as sd  # noqa: E402
+
+PLAN_ID = "capstone-guarded-normal-bc-v1-20261008"
+CONTRACT_DOC = "docs/design/phase8-v33c1-guarded-normal-bc-n1-contract-20261008.md"
+RESULTS_DIR = Path(__file__).parent / "results" / "capstone_guarded_normal_bc_v1"
+SHADOW_SCRIPT = smoke.ANOMALY_DETECTION_DIR / "c1_bck_shadow_pair.py"
+KIND = "no_injection"
+DECISION_SEC, FOLLOW_UP_SEC = 3600.0, 600.0                   # 계약 §C·§B - 판정 창과 신호 뒤 추적 창
+OFFICIAL_OBSERVATION_SEC = DECISION_SEC + FOLLOW_UP_SEC       # 4200 s
+PILOT_OBSERVATION_SEC = 600.0                                 # nb90 - 경로 확인 전용(counted=false)
+PILOT, OFFICIAL = 90, range(1, 10)                            # 유효 목표 6, 최대 시도 9
+RUNS = {f"nb{n:02d}": (n, 2000 + n) for n in (*OFFICIAL, PILOT)}
+REPO_ROOT = Path(__file__).resolve().parent.parent
+FREEZE_VERSION = "n1-v1"
+FREEZE_MANIFEST = "docs/design/phase8-v33c1-guarded-normal-bc-n1-freeze-manifest-v1-20261008.json"
+PROVENANCE_REQUIRED = {"contract": CONTRACT_DOC, "runner": "experiments/run_guarded_normal_bc.py",
+                       "analyzer": "experiments/guarded_normal_bc_analysis.py",
+                       "shadow_detector": "anomaly-detection/c1_bck_shadow_pair.py",
+                       "bck_detector": "anomaly-detection/c1_bck_live_detector.py",
+                       "rule_spec": "anomaly-detection/bck_rules/rule-spec-v1.json"}
+
+
+def _sha256(p: Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def verify_provenance(manifest: Optional[str] = None, root: Optional[Path] = None) -> dict:
+    """manifest의 모든 파일을 다시 해시해 비교한다(run_guarded_bck.verify_provenance와 같은 규칙, 이 시리즈 버전·필수 항목).
+    하나라도 다르거나 형식이 틀리거나 필수 항목이 빠지거나 자기 자신을 담으면 SystemExit(클러스터 접근 전)."""
+    manifest, root = manifest or FREEZE_MANIFEST, root or REPO_ROOT
+    try:
+        raw = (root / manifest).read_bytes()
+        m = json.loads(raw)
+        files = m["files"]
+        if m.get("status") != "frozen" or m.get("version") != FREEZE_VERSION or not isinstance(files, dict):
+            raise ValueError(f"status={m.get('status')} version={m.get('version')} files={type(files).__name__}")
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise SystemExit(f"provenance fail-closed: freeze manifest 읽기·형식 오류 {manifest}: {type(e).__name__}: {e}") from e
+    missing = sorted(k for k, rel in PROVENANCE_REQUIRED.items() if rel not in files)
+    actual = {rel: _sha256(root / rel) if (root / rel).is_file() else None for rel in files}
+    bad = sorted(rel for rel, want in files.items() if actual[rel] != want)
+    if missing or bad or manifest in files:
+        raise SystemExit(f"provenance fail-closed: 필수 항목 누락 {missing}, 해시 불일치 {bad}, 자기 참조 {manifest in files}")
+    return {"freeze_version": FREEZE_VERSION, "freeze_manifest_path": manifest,
+            "freeze_manifest_sha256": hashlib.sha256(raw).hexdigest(),
+            **{f"{k}_{x}": (rel if x == "path" else actual[rel]) for k, rel in PROVENANCE_REQUIRED.items() for x in ("path", "sha256")},
+            "verified_files": actual, "verification_status": "verified",
+            "verified_at_utc": datetime.now(timezone.utc).isoformat()}
+
+
+def run_id_for(run: str) -> str:
+    return f"guarded_normal_{MODE_RO}-{run}-{PLAN_ID}"
+
+
+def observation_sec_for(run: str) -> float:
+    return PILOT_OBSERVATION_SEC if RUNS[run][0] == PILOT else OFFICIAL_OBSERVATION_SEC
+
+
+def check_schedule(run: str, results_dir: Path) -> dict:
+    """공식 nbNN은 nb(NN-1)이 시도(요약 있음)된 뒤에만. 무효·정상 조건 불성립도 시도로 센다. pilot은 순서 없음."""
+    n = RUNS[run][0]
+    prev = [f"nb{n - 1:02d}"] if n not in (1, PILOT) else []
+    missing = [r for r in prev if not (results_dir / f"summary-{run_id_for(r)}.json").exists()]
+    if missing:
+        raise SystemExit(f"{run} 거부: 순서 밖 - 먼저 시도할 실행 요약 없음 {missing}")
+    return {"session": n, "required_before": prev, "counted": n != PILOT}
+
+
+def shadow_starter(results_dir: Path, *, start_subprocess=smoke._start_subprocess, stop_subprocess=smoke._stop_subprocess):
+    """정책 URL 없음. sink_url은 무주입 trial이 넘기지만 쓰지 않는다(무시한 값을 기록)."""
+    def start(run_id, evidence_log_path=None, sink_url=None):
+        h = start_subprocess(
+            [sys.executable, "-u", str(SHADOW_SCRIPT), "--run-id", run_id,
+             "--evidence-log", str(gr.live_evidence_path(results_dir, run_id))],
+            cwd=smoke.ANOMALY_DETECTION_DIR, stdout_path=results_dir / f"c1-shadow-stdout-{run_id}.log",
+            stderr_path=results_dir / f"c1-shadow-stderr-{run_id}.log")
+        h["ignored_sink_url"] = sink_url
+
+        def stop():
+            r = stop_subprocess(h, "c1_bck_shadow_pair.py")
+            return {**r, "exit_meaning": {sp.EXIT_OK: "ok", sp.EXIT_EVIDENCE: "evidence_write_failed"}.get(
+                r.get("returncode"), "terminated_or_unknown")}
+        return smoke.DetectorHandle(is_alive=lambda: h["proc"].poll() is None, stop=stop,
+                                    label="c1_bck_shadow_pair (송신 없음)")
+    return start
+
+
+def real_deps(policy_url: str, admin_token: Optional[str], session_file) -> Deps:  # pragma: no cover - 라이브 전용 조립
+    import run_guarded_bck as gb
+    d = gp.real_deps(policy_url, admin_token, session_file)
+    base = d.check_unresolved
+
+    def check_unresolved():  # 기존 폴더 전부 + B/C/K + 이 시리즈
+        base()
+        rt.check_no_unresolved_failures(gb.BCK_RESULTS_DIR)
+        rt.check_no_unresolved_failures(RESULTS_DIR)
+    d.check_unresolved = check_unresolved
+    return d
+
+
+def run_normal(run: str, *, deps: Deps, preflight_only=False, dry_run=False,
+               results_dir: Optional[Path] = None, code_provenance: Optional[dict] = None,
+               starter=shadow_starter) -> dict:
+    if run not in RUNS:
+        raise SystemExit(f"알 수 없는 실행 ID: {run}")
+    n, rep = RUNS[run]
+    mode = MODE_RO
+    run_id = run_id_for(run)
+    results_dir = results_dir or RESULTS_DIR
+    results_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = results_dir / f"summary-{run_id}.json"
+    if summary_path.exists():
+        raise SystemExit(f"이미 결과가 있음 - 덮어쓰지 않음: {summary_path}")
+    used = gr.live_evidence_path(results_dir, run_id)
+    if used.exists():
+        raise SystemExit(f"실행 ID 재사용 금지 - 이미 실행된 ID(탐지기 원자료 있음): {used.name}")
+    schedule = check_schedule(run, results_dir)
+    deps.check_unresolved()
+    art = deps.artifacts()
+    spec = bd.load_spec()
+    obs_sec = observation_sec_for(run)
+    comparison = {"series": PLAN_ID, "session": run, "session_number": n, "counted_in_comparison": n != PILOT,
+                  "schedule": schedule, "arms_compared": ["B", "C"], "shadow_only": ["K"], "arm_order": None,
+                  "start_node_rule": "recorded_only"}
+    contract = {"run_id": run_id, "run": run, "plan_id": PLAN_ID, "contract_doc": CONTRACT_DOC, "comparison": comparison,
+                "conditions": {"probe_config": str(smoke.DEFAULT_PROBE_CONFIG),
+                               "probe_config_sha256": hashlib.sha256(smoke.DEFAULT_PROBE_CONFIG.read_bytes()).hexdigest(),
+                               "probe_image": IMAGE_FORCE_CLOSE, "probe_image_id": IMAGE_FORCE_CLOSE_ID,
+                               "detector_rule": {"consecutive": sd.CONSECUTIVE_THRESHOLD, "cooldown_sec": sd.COOLDOWN_SEC},
+                               "start_state_rule": "canonical_healthy_r2", "injection": None,
+                               "common_evaluation": "c1_bck_shadow_pair: evaluate_once 1회/tick, B·C·K 동시 판정·기록, 송신 없음",
+                               "rules": {a: {k: spec["spec"]["rules"][a][k] for k in
+                                             ("detector_id", "model_version", "anomalous_if", "threshold")} for a in bd.ARMS},
+                               "rule_spec_sha256": spec["sha256"], "if_artifact_hashes": art["hashes"],
+                               "if_threshold": art["threshold"],
+                               "windows": {"decision_sec": DECISION_SEC, "follow_up_sec": FOLLOW_UP_SEC,
+                                           "observation_sec": obs_sec, "grace_sec": 0}},
+                "kind": KIND, "mode": mode, "actuating_rule": None, "signal_send": False, "detector": sp.DETECTOR_ID,
+                "artifact_hashes": art["hashes"], "observation_sec": obs_sec, "ready_timeout_sec": READY_TIMEOUT_SEC,
+                "scale_down_delay": {"base": BASE_SCALE_DOWN_DELAY_SEC, "changed": False}, "act_approval": None,
+                "no_promotion_path": True}
+    if code_provenance is not None:
+        contract["code_provenance"] = code_provenance
+    if dry_run:
+        (results_dir / f"contract-{run_id}.json").write_text(json.dumps(contract, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"dry_run": True, "run_id": run_id}
+
+    # ---- 이하 동결 run_guarded(no_injection·record_only + canonical r2) 순서와 같은 함수 ----
+    pol = deps.policy
+    policy_check = check_policy(pol, mode, None)
+    session_start = deps.session_check()
+    ssh_ev = deps.make_ssh_evidence(results_dir / f"ssh-evidence-{run_id}")
+    run_guard_disk_fn = ssh_ev.disk_fn(deps.run_guard_nodes)
+    preflight = deps.preflight(pol, disk_check_fn=ssh_ev.disk_fn(deps.preflight_nodes))
+    try:
+        delay_before = deps.read_delay()
+    except Exception as e:  # noqa: BLE001
+        delay_before = f"read_error: {type(e).__name__}: {e}"
+    try:
+        old_policy = deps.old_policy_check()
+    except Exception as e:  # noqa: BLE001
+        old_policy = {"isolated": False, "reasons": [f"check_error: {type(e).__name__}: {e}"]}
+    reasons = list(preflight.get("reasons") or []) + policy_check["problems"] + list(session_start.get("problems") or [])
+    if old_policy.get("isolated") is not True:
+        reasons.append(f"old_recovery_policy_not_isolated: {old_policy.get('reasons')}")
+    if delay_before != BASE_SCALE_DOWN_DELAY_SEC:
+        reasons.append(f"scaleDownDelaySeconds={delay_before} != {BASE_SCALE_DOWN_DELAY_SEC}")
+    try:
+        snap = deps.canonical_snapshot()
+        cp = gcg.check_canonical(snap, delay=BASE_SCALE_DOWN_DELAY_SEC)
+    except Exception as e:  # noqa: BLE001
+        snap, cp = None, [f"snapshot_error: {type(e).__name__}: {e}"]
+    p0 = gcg.active_pod(snap or {})
+    start_pod = (p0["name"], p0["uid"]) if p0 else None
+    preflight["canonical_start"] = {"problems": cp, "start_pod": start_pod, "state": {k: (snap or {}).get(k) for k in (
+        "phase", "abort", "active", "stable", "current", "preview", "delay", "pods", "svc_selectors", "endpoints", "rs")}}
+    reasons += [f"canonical_start: {x}" for x in cp]
+    preflight.update(policy=policy_check, session=session_start, scale_down_delay_before=delay_before, old_policy=old_policy,
+                     ok=not reasons, reasons=reasons, ssh_check_evidence=ssh_ev.summary())
+    preflight_file = results_dir / (f"preflight-{run_id}-{'preflight-only' if preflight_only else 'run'}-"
+                                    f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S%fZ}.json")
+    with open(preflight_file, "x", encoding="utf-8") as fh:
+        fh.write(json.dumps(preflight, ensure_ascii=False, indent=2, default=str))
+    if reasons:
+        raise SystemExit(f"사전검사 실패 - 시작 안 함(클러스터 변경 없음): {reasons}")
+    if preflight_only:
+        return {"preflight_only": True, "run_id": run_id, "preflight": preflight, "preflight_file": preflight_file.name}
+    (results_dir / f"contract-{run_id}.json").write_text(json.dumps(contract, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    events_since = datetime.now(timezone.utc).isoformat()
+    running_marker = results_dir / f"running-{run_id}.json"
+    running_marker.write_text(json.dumps({"run_id": run_id, "started_at": events_since}), encoding="utf-8")
+    evidence_path = gr.live_evidence_path(results_dir, run_id)
+    state, cleanup_errors, probe_image_check = {}, [], {}
+    run_guard = {"mem_drop_abort_gib": 1.0, "disk_recheck_sec": 60.0}
+    outcome, trial_error, injector, canonical_end, rollout, detector = None, None, None, None, None, {"started": False}
+
+    def assess_now(prep_info=None):  # D5 - 정책 상태·탐지기 기록·실제 Rollout(승격 근거 없음이어야 정리)
+        prep_info = prep_info or gate.prep_info
+        return gcg.assess(run_id=run_id, mode=mode, policy_state_fn=pol.state, ledger_fn=deps.ledger_read,
+                          evidence_path=evidence_path, view_fn=deps.rollout_view, rollout_uid=(rollout or {}).get("uid"),
+                          old_active=(prep_info or {}).get("pre_prepare_active_selector"), prep_info=prep_info,
+                          detector_expected=detector["started"])
+    gate = gcg.PreviewCleanupGate(assess_now, deps.cleanup_unpromoted_preview,
+                                  restore_fn=lambda prep: deps.canonical_restore(prep, start_pod))
+    old_policy_checks = {"n": 0, "last": None}
+
+    def check_old_policy():
+        try:
+            r = deps.old_policy_check()
+        except Exception as e:  # noqa: BLE001
+            r = {"isolated": False, "reasons": [f"check_error: {type(e).__name__}: {e}"]}
+        old_policy_checks["n"] += 1
+        old_policy_checks["last"] = {k: r.get(k) for k in ("isolated", "reasons")}
+        if r.get("isolated") is not True:
+            raise HarnessCorrupted(f"기존 recovery-policy 승격 경로가 열림 - 중단: {r.get('reasons')}")
+
+    def _terminate(signum, _frame):
+        raise KeyboardInterrupt(f"signal {signum}")
+    old_handlers = ({getattr(signal, s): signal.signal(getattr(signal, s), _terminate)
+                     for s in ("SIGTERM", "SIGBREAK") if hasattr(signal, s)}
+                    if threading.current_thread() is threading.main_thread() else {})
+    try:
+        rollout = deps.rollout_identity()
+        injector = deps.make_injector(run_id, rep, KIND, gate.cleanup)
+        base_prepare = injector.prepare
+
+        def prepare_isolated():
+            check_old_policy()
+            base_prepare()
+        injector.prepare = prepare_isolated
+        rt.compose_prepare(injector, arm="control", expected_start_node=None, state=state, apply_override_fn=lambda: None)
+        prober = deps.make_prober(run_id, rep, KIND, READY_TIMEOUT_SEC + obs_sec)
+        base = deps.base_safety(injector, KIND)
+
+        def safety(baseline_state, prober_):
+            base(baseline_state, prober_)
+            deps.run_guard_check(run_guard, injector, state, disk_fn=run_guard_disk_fn)
+            deps.probe_image_check(probe_image_check)
+            check_old_policy()
+        start_shadow = starter(results_dir)
+
+        def detector_start(rid, path, sink_url):
+            detector["started"] = True
+            return start_shadow(rid, path, sink_url)
+        outcome = deps.trial_no_injection(
+            run_id, injector, prober, deps.pick_port(), evidence_path, results_dir / f"sink-captured-{run_id}.jsonl",
+            probe_raw_csv_path=deps.probe_csv_path(run_id, rep), observation_sec=obs_sec, check_safety_fn=safety,
+            detector_start_fn=detector_start, sleep_fn=deps.sleep_fn, monotonic_fn=deps.monotonic_fn,
+            detector_ready_timeout_sec=READY_TIMEOUT_SEC, detector_ready_fn=lambda: sd.first_scored_evaluation(evidence_path))
+    except BaseException as e:  # noqa: BLE001 - 하네스 오류·중단 신호도 요약·정리 확인을 남긴다
+        trial_error = f"{type(e).__name__}: {e}"
+        outcome = {"status": "harness_error", "reason": trial_error, "cleanup_status": "unknown"}
+    finally:
+        policy_after = None
+        try:
+            policy_after = pol.state()
+        except Exception as e:  # noqa: BLE001
+            cleanup_errors.append(f"policy_state_after_failed: {type(e).__name__}: {e}")
+        if gate.held:
+            cleanup_errors.append(f"preview_cleanup_held: reasons={gate.held['reasons']} "
+                                  f"attempt_evidence={gate.held['attempt_evidence']} remaining={gate.held['remaining']}")
+        try:
+            delay_after = deps.read_delay()
+        except Exception as e:  # noqa: BLE001
+            delay_after = f"read_error: {type(e).__name__}: {e}"
+        if delay_after != BASE_SCALE_DOWN_DELAY_SEC:
+            cleanup_errors.append(f"scale_down_delay_after={delay_after} != {BASE_SCALE_DOWN_DELAY_SEC}")
+        for k in ("unresolved", "blocked", "context"):
+            if (policy_after or {}).get(k):
+                cleanup_errors.append(f"policy_{k}_after: {policy_after[k]}")
+        try:
+            old_policy_end = deps.old_policy_check()
+        except Exception as e:  # noqa: BLE001
+            old_policy_end = {"isolated": False, "reasons": [f"check_error: {type(e).__name__}: {e}"]}
+        if old_policy_end.get("isolated") is not True:
+            cleanup_errors.append(f"old_recovery_policy_not_isolated_at_end: {old_policy_end.get('reasons')}")
+        if outcome.get("cleanup_status") != "complete":
+            cleanup_errors.append(f"trial_cleanup_incomplete: prober={outcome.get('prober_stop_failed')}, "
+                                  f"injector={outcome.get('injector_cleanup_failed')}")
+        if gate.restore_failed is not None:
+            cleanup_errors.append(f"canonical_restore_failed: {gate.restore_failed.get('problems')}")
+        canonical_end = gcg.wait_canonical(deps.canonical_snapshot, delay=BASE_SCALE_DOWN_DELAY_SEC,
+                                           sleep=deps.sleep_fn, monotonic=deps.monotonic_fn)
+        if not canonical_end["ok"]:
+            cleanup_errors.append(f"canonical_end_not_reached: {canonical_end['problems']}")
+        if trial_error:
+            cleanup_errors.append(f"harness_error: {trial_error}")
+            try:
+                left = [p["name"] for p in deps.read_probe_pods() if not p["terminating"]]
+                if left:
+                    cleanup_errors.append(f"probe_pod_residual: {left}")
+            except Exception as e:  # noqa: BLE001
+                cleanup_errors.append(f"probe_pod_check_failed: {type(e).__name__}: {e}")
+        for sig, handler in old_handlers.items():
+            signal.signal(sig, handler)
+
+    pod_events_error = None
+    try:
+        (results_dir / f"pod-events-{run_id}.json").write_text(
+            json.dumps(deps.capture_events(events_since), ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        pod_events_error = f"{type(e).__name__}: {e}"
+    session_end = deps.session_check()
+    probe_csv = deps.probe_csv_path(run_id, rep)
+    summary = {"run_id": run_id, "run": run, "kind": KIND, "mode": mode, "outcome_status": outcome.get("status"),
+               "outcome_reason": outcome.get("reason"), "invalidity_reasons": outcome.get("invalidity_reasons"),
+               "detector_readiness": outcome.get("detector_readiness") or {}, "evidence_counts": evidence_counts(evidence_path),
+               "observation_started_at_utc": outcome.get("observation_started_at_utc"),
+               "observation_ended_at_utc": outcome.get("observation_ended_at_utc"),
+               "probe_data_gap_detected": outcome.get("probe_data_gap_detected"),
+               "probe_raw_csv": str(probe_csv) if probe_csv else None, "rollout": rollout,
+               "policy_state_after": policy_after, "scale_down_delay_before": delay_before, "scale_down_delay_after": delay_after,
+               "session_start": session_start, "session_end": session_end, "pod_events_error": pod_events_error,
+               "probe_image_runtime_check": probe_image_check, "start_active_node": state.get("start_active_node"),
+               "harness_error": trial_error, "cleanup_errors": cleanup_errors,
+               "old_policy_isolation": {"start": old_policy, "checks": old_policy_checks,
+                                        "end": {k: old_policy_end.get(k) for k in ("isolated", "reasons")}},
+               "trial_outcome": outcome, "preview_cleanup_gate": gate.log, "ssh_check_evidence": ssh_ev.summary(),
+               "run_guard": {k: v for k, v in run_guard.items() if not k.startswith("_")},
+               "comparison": comparison, "preflight_file": preflight_file.name, "canonical_end": canonical_end,
+               "detector_started": detector["started"]}
+    if code_provenance is not None:
+        summary["code_provenance"] = code_provenance
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    if not cleanup_errors:
+        running_marker.unlink()
+    return summary
+
+
+def main(argv=None) -> int:  # pragma: no cover - 라이브 진입점(가짜 의존성 경로는 run_normal로 시험)
+    p = argparse.ArgumentParser(description="정상 운전 N1 세션 1회(record_only, 송신 없음). 관리자 토큰은 환경변수 GUARDED_ADMIN_TOKEN")
+    p.add_argument("--run", required=True, choices=sorted(RUNS))
+    p.add_argument("--mode", required=True, choices=[MODE_RO])  # 세션 실행기(guarded_pilot_session.ps1)가 항상 넘긴다
+    p.add_argument("--policy-url", default="http://127.0.0.1:18090")
+    p.add_argument("--session-file", default=None)
+    p.add_argument("--preflight-only", action="store_true")
+    p.add_argument("--dry-run-contract-only", action="store_true")
+    a = p.parse_args(argv)
+    prov = verify_provenance()
+    token = os.environ.get("GUARDED_ADMIN_TOKEN")
+    if not token and not a.dry_run_contract_only:
+        raise SystemExit("GUARDED_ADMIN_TOKEN 환경변수 필요")
+    s = run_normal(a.run, deps=real_deps(a.policy_url, token, a.session_file), preflight_only=a.preflight_only, dry_run=a.dry_run_contract_only, code_provenance=prov)
+    if s.get("cleanup_errors"):
+        print(f"[중단] 정리·원복·미해결 - 다음 실행은 자동 거부, 수동 확인 필요: {s['cleanup_errors']}")
+        return 2
+    print(f"결과: {s.get('outcome_status') or s}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

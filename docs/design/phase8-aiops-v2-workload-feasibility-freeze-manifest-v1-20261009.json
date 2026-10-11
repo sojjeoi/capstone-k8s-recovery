@@ -1,0 +1,28 @@
+{
+ "status": "candidate",
+ "version": "v2wl-v1",
+ "series": "capstone-v2-workload-feasibility-20261009",
+ "counted": false,
+ "created_at_utc": "2026-10-09T08:12:04.337307+00:00",
+ "note": "freeze 후보 - 사용자 검토 뒤 frozen으로 바꿔야 runner 시작(fail-closed). 자기 해시 없음. pilot은 학습·보정·검증 근거 아님.",
+ "tests": "test_v2_workload_pilot.py 14 passed (2026-10-09)",
+ "files": {
+  "docs/design/phase8-aiops-v2-workload-feasibility-contract-20261009.md": "57d4309f8b640a7a44433792e8e4852e8d9c05bcda999a509d6c7805232328e5",
+  "docs/design/phase8-aiops-v2-design-draft-20261009.md": "5b2db8b941e9ccb40c4607f8d960ca3b0bc16ebcb12d643b785d467500494fa7",
+  "chaos/v2-workload-ladder.yaml": "69f31740bfd7b4d9308c54627f01b65470c7f6de60f7d9aae33a1e9d1f9f3d63",
+  "experiments/run_v2_workload_pilot.py": "6341a39a0f67b2a45ffeff542b790e01c6795bc3a0fa0e44608793687f0fb33e",
+  "experiments/v2_workload_pilot_analysis.py": "31a1e11c92294b2680dabbe6292af4d41b8cda8eb745b7579636d041aa96fc88",
+  "experiments/test_v2_workload_pilot.py": "cbe56ba0bf4fc4433ad39315b79706ed6477ef879d4ff786b3dd6e9698e249fc",
+  "chaos/loadgen/ramp.py": "aadab9fc7f2a5a51cfee4e666ba7872c8e8fa378389d47a0e68e501f39153a82",
+  "experiments/load_ramp_adapter.py": "148c46272652978566ff74f48e7d8e5904e3947358e4ce631a62bc5c213e1c1a",
+  "experiments/run_guarded_pilot.py": "53b555b8997d7330a0fd73bb49388c52c0f2640e3832ed8d2ea1cd2b2d476597",
+  "experiments/run_if_threshold_candidate_smoke.py": "ddc87334a82a1af698ea3cf82c34ad905981512312b0127fb190061a1ec572fc",
+  "experiments/run_cpu_demo_shadow_no_injection_trial.py": "bce82f734863edd56d97bfa6746c26c5a388e821e405d76865506284f51b92e9",
+  "experiments/guarded_cleanup_gate.py": "baff9fe74eb2e06de09333347dfbd11e900faa9a29c68bfc95fe37e2da9e1e12",
+  "experiments/slo_judge.py": "a66957761e0e433e3efdf0037f0c3c0833c1542c85c756a49085aee9c3447022",
+  "experiments/slo_episodes.py": "33ff83de00800db01206f7738e390884987a1338537e15477c876f5245e5cd85",
+  "experiments/c1_shadow_pilot_analysis.py": "577be4bc96d68ac0086ab2a4769ee9f7ca8163c0b8decf327778e4ba00717432",
+  "experiments/guarded_pilot_session.ps1": "68c9349ab27216a3ad5b5b8f63329919bdc3b7994162e3b72343d238b9ba4efe",
+  "chaos/probe-config.yaml": "36ec46ee19a01ce348abb95b65c1b45dc6074ab43fddc07bbe2313deab777851"
+ }
+}

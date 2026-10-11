@@ -1,0 +1,61 @@
+{
+ "status": "frozen",
+ "version": "n1-v1.1",
+ "series": "capstone-guarded-normal-bc-v1-20261008",
+ "parent": {
+  "manifest": "docs/design/phase8-v33c1-guarded-normal-bc-n1-freeze-manifest-v1-20261008.json",
+  "sha256": "ff6950abfdc0fcc5c890883fa7480d1895675f30273d2d32978e4fcde8c8837a",
+  "version": "n1-v1"
+ },
+ "changed_from_v1": [
+  "experiments/guarded_normal_bc_analysis.py",
+  "experiments/run_guarded_normal_bc.py",
+  "experiments/test_guarded_normal_bc_analysis.py",
+  "experiments/test_run_guarded_normal_bc.py"
+ ],
+ "created_at_utc": "2026-10-08T13:43:49.798040+00:00",
+ "note": "frozen(2026-10-08 사용자 승인: Ponytail targeted review 뒤 candidate→frozen). amendment phase8-v33c1-guarded-normal-bc-n1-amendment-v1.1-20261008.md. runner는 시작 전 전체 재해시(fail-closed). 자기 해시 없음. 이후 v1.1 파일 수정 금지 - 결함은 v1.2 amendment로 분리.",
+ "files": {
+  "docs/design/phase8-v33c1-guarded-normal-bc-n1-contract-20261008.md": "77a60e86fb6454434c5368bd38acfc6d031265038aad5630a3b4931f14cd0a2f",
+  "experiments/run_guarded_normal_bc.py": "37f1688598f5c440d1ff206e44aeb693309e67d47e15829672c90b68f6a85bd4",
+  "experiments/guarded_normal_bc_analysis.py": "f14f17cd512f9670935e386e03853336b25c0ac62124ddf08bf0c4dd2be34244",
+  "anomaly-detection/c1_bck_shadow_pair.py": "72487204bde3ef4b705a365a5e3fb8b0e5fc7982d2039619431ec1c2a82f54c6",
+  "experiments/test_run_guarded_normal_bc.py": "e21afa117164e4b87b805266aa0495cab0a20a446d17f22480f8340755f06221",
+  "experiments/test_guarded_normal_bc_analysis.py": "d712de321765aee950a51d018727efd73a12ffb02c65bf3732e8b168c491ac08",
+  "anomaly-detection/test_c1_bck_shadow_pair.py": "bb5a65ea6056a59fca82cefb660e02f9a7761399f49f235bf354c4a6886168a2",
+  "anomaly-detection/c1_bck_live_detector.py": "7db774283efbd2f6c352bad81ad6d8498d3ddae3c531a3a429e4f3ea694cb33a",
+  "anomaly-detection/bck_rules/rule-spec-v1.json": "b0113f174893173cbf208d4f587b541f5f4cfa21c6a362cc535ffd5d06ce4630",
+  "anomaly-detection/c1_shadow_detector.py": "1c9b172d5b22722fb773fbb792922aa0854ed49e304a7688b41cd9d75a76b91d",
+  "anomaly-detection/v3/model_v33_c1/artifacts/model.pkl": "0aa5d4c95a32c0cb6a34f2384a824ea886acb5ef6c95e73bdcf4a71e86d1b390",
+  "anomaly-detection/v3/model_v33_c1/artifacts/scaler.pkl": "fd4a615242596a12c6da2c6d41257acf2d5af25d91e26737fb9be5df1ffda891",
+  "anomaly-detection/v3/model_v33_c1/artifacts/threshold.json": "c35121327cb03a441c9e0015d7e533444fef5ca63633861808073faf19d6b49c",
+  "experiments/run_guarded_pilot.py": "53b555b8997d7330a0fd73bb49388c52c0f2640e3832ed8d2ea1cd2b2d476597",
+  "experiments/run_guarded_bck.py": "1dd6b5fb250f5cd137fb8ea4def5f4142d09714c98ae603668ff688b6d4f5cfb",
+  "experiments/guarded_cleanup_gate.py": "baff9fe74eb2e06de09333347dfbd11e900faa9a29c68bfc95fe37e2da9e1e12",
+  "experiments/run_if_threshold_candidate_smoke.py": "ddc87334a82a1af698ea3cf82c34ad905981512312b0127fb190061a1ec572fc",
+  "experiments/guarded_pilot_session.ps1": "68c9349ab27216a3ad5b5b8f63329919bdc3b7994162e3b72343d238b9ba4efe",
+  "experiments/guarded_ab_analysis.py": "51886c97152d639e4a4a86a7370ac19c8a91b2f78a8fb1b10d279455985b3bbd",
+  "experiments/c1_shadow_pilot_analysis.py": "577be4bc96d68ac0086ab2a4769ee9f7ca8163c0b8decf327778e4ba00717432",
+  "experiments/detector_same_tick_replay.py": "b267905c3644a2a80faae7839972a300a9c46bc8eddfafb8bfb941f9a58398b9",
+  "experiments/slo_judge.py": "a66957761e0e433e3efdf0037f0c3c0833c1542c85c756a49085aee9c3447022",
+  "experiments/slo_episodes.py": "33ff83de00800db01206f7738e390884987a1338537e15477c876f5245e5cd85",
+  "docs/design/phase8-v33c1-guarded-bck-freeze-manifest-v1.2-20261008.json": "f1471560fdc39bb5a30b435b33ba32311d09e718544812da6db4f0cf84a281ac",
+  "docs/design/phase8-v33c1-guarded-normal-bc-n1-amendment-v1.1-20261008.md": "42ef2ab78870b9dfe97e76a79fe6f50da5e610fce21d3b7b26a614100786902b",
+  "experiments/test_guarded_normal_bc_analysis_v1_1.py": "18bf30b277e7528b325094535faaffb744359de31f27524dbffe44109edf2893",
+  "docs/design/n1-v1-superseded/guarded_normal_bc_analysis.py.v1": "dd510fe20cb0be40061706d4ba43140cf20ec4d83a19e490b3609d7ea3aeff0e",
+  "docs/design/n1-v1-superseded/run_guarded_normal_bc.py.v1": "6eebdf47b6b1e6b9e8860b039a76d2a50eb233f3dec6571ec7cd9b29a021c467",
+  "docs/design/n1-v1-superseded/test_guarded_normal_bc_analysis.py.v1": "d523406b911d1f89256cad4e4f089b05177f00ebe9a39e97473a27be61ddc7d9",
+  "docs/design/n1-v1-superseded/test_run_guarded_normal_bc.py.v1": "e224c080f07cf41b9bad33f8ff44810849b1226d7baee7804294b131c1efb10f",
+  "docs/design/phase8-v33c1-guarded-normal-bc-n1-freeze-manifest-v1-20261008.json": "ff6950abfdc0fcc5c890883fa7480d1895675f30273d2d32978e4fcde8c8837a"
+ },
+ "frozen_at_utc": "2026-10-08T13:54:34.582673+00:00",
+ "candidate_history": [
+  {
+   "sha256": "d9daa3bbcae2b2bbae33d4fce636be07fecc75c6c16ff1ed86daad5a65dbca17",
+   "superseded_reason": "Ponytail targeted review shrink(test helper import) - 재해시",
+   "changed_files": [
+    "experiments/test_guarded_normal_bc_analysis_v1_1.py"
+   ]
+  }
+ ]
+}

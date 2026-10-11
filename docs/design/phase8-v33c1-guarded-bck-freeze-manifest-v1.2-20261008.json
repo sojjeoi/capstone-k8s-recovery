@@ -1,0 +1,65 @@
+{
+ "status": "frozen",
+ "version": "v1.2",
+ "series": "capstone-guarded-bck-v1-20261007",
+ "frozen_at_utc": "2026-10-07T15:17:23.518247+00:00",
+ "approved_by": "user (chat 2026-10-08, P2)",
+ "supersedes": {
+  "manifest": "docs/design/phase8-v33c1-guarded-bck-freeze-manifest-v1.1-20261007.json",
+  "sha256": "ab38e273ccfa8b1623d3616f3e971bf5bf51e9fa7dd7ba95aa18eaa7b9d4f0b4",
+  "status_of_v1_1": "superseded (preserved, unmodified)",
+  "reason": "bc90 실행 직전 provenance review: 실제 run evidence만으로 v1/v1.1 구분 불가. bc90 ID 미사용·결과 폴더 없음·cluster 미접속·pressure/promotion 없음·outcome/SLO 미확인."
+ },
+ "chain": {
+  "v1": {
+   "manifest": "docs/design/phase8-v33c1-guarded-bck-freeze-manifest-20261007.json",
+   "sha256": "77164a0e157a8cf4ed5c63faf4e49cdcd4f6a09c00c8c245f7ccc9c7a1dba365"
+  },
+  "v1.1": {
+   "manifest": "docs/design/phase8-v33c1-guarded-bck-freeze-manifest-v1.1-20261007.json",
+   "sha256": "ab38e273ccfa8b1623d3616f3e971bf5bf51e9fa7dd7ba95aa18eaa7b9d4f0b4"
+  }
+ },
+ "change": {
+  "file": "experiments/run_guarded_bck.py",
+  "v1_1_sha256": "74e384f90844bf1603ed9baa3cac3426c483afc71829671b88395ca14b24470a",
+  "v1_1_byte_copy": "docs/design/bck-v1.1-superseded/run_guarded_bck.py.v1.1",
+  "summary": "verify_provenance(): manifest 전 항목 재해시·필수 6항목·형식 검증, main()에서 클러스터 접근 전 fail-closed, run contract·summary에 code_provenance 자동 기록",
+  "added_test": "experiments/test_run_guarded_bck_provenance.py"
+ },
+ "runtime_verification": "runner가 이 manifest의 files 전 항목을 실행 시 재해시해 비교(불일치면 시작 거부). manifest 자체 해시는 실행 시 계산해 code_provenance에 기록 - 코드·문서에 하드코딩하지 않음.",
+ "session_wrapper": {
+  "policy": "freeze 대상 아님 - run마다 실행 직전 execution-provenance 파일로 경로·해시 기록(v1.2 개정 §4)",
+  "reference_sha256_offline_20261008": "68c9349ab27216a3ad5b5b8f63329919bdc3b7994162e3b72343d238b9ba4efe"
+ },
+ "thresholds": {
+  "B": -0.07667538512242333,
+  "C": 1.6842544293089357,
+  "K": 2.7
+ },
+ "ponytail_v1_2": {
+  "high": 0,
+  "medium": 0,
+  "low": 1,
+  "low_disposition": "accepted/no-change: verify_provenance 반환부 컴프리헨션 가독성"
+ },
+ "post_freeze_verification": "별도 기록 docs/design/phase8-v33c1-guarded-bck-v1.2-post-freeze-verification-20261008.json (순환 방지)",
+ "files": {
+  "docs/design/phase8-v33c1-guarded-bck-contract-amendment-v1.2-20261008.md": "02d1e159022e97fbed123fc66ef631ed1321b8e2908185accd5bad3ff80229a5",
+  "docs/design/phase8-v33c1-guarded-bck-contract-amendment-v1.1-20261007.md": "f3e1c86f02bc89a1d8d6e5cd5e482557753040ec5932feb6cd74f44b6b638056",
+  "docs/design/phase8-v33c1-guarded-bck-comparison-contract-draft-20261007.md": "c363e9e66c090adef1874a15f38b41e1adc6c9a2e3d9b583497030770259841e",
+  "anomaly-detection/bck_rules/rule-spec-v1.json": "b0113f174893173cbf208d4f587b541f5f4cfa21c6a362cc535ffd5d06ce4630",
+  "anomaly-detection/c1_bck_live_detector.py": "7db774283efbd2f6c352bad81ad6d8498d3ddae3c531a3a429e4f3ea694cb33a",
+  "anomaly-detection/test_c1_bck_live_detector.py": "0a3372a9bccc876eb927fcb643091f89a72bdbb53d516737d8677f661006b32e",
+  "experiments/run_guarded_bck.py": "1dd6b5fb250f5cd137fb8ea4def5f4142d09714c98ae603668ff688b6d4f5cfb",
+  "experiments/test_run_guarded_bck.py": "c3f98abd95dbba1f0fb755214240ccfa24611582b63b5ff67d45d0660da2cef1",
+  "experiments/guarded_bck_analysis.py": "16e49f7d8e9604691167853e5272655df1e812444d3a7c98d2edb962a7f8f161",
+  "experiments/test_guarded_bck_analysis.py": "6572583549d2c1b4a344e6ec9828e8ac796ea0d449e28235107e365e784909aa",
+  "experiments/bck_fixed_threshold_calibration.py": "0242f7b9e22500332e7d6fff490422d9422e97e11349883629092b95840fc038",
+  "experiments/analysis_v1/bck-fixed-threshold-calibration-20261007.json": "4ba8cf8da2525b5ec3b7904b5b0c78580e7ecaf56f04a21956fa579836b86c74",
+  "experiments/test_run_guarded_bck_cli.py": "14609f6457e7ea36f01e833fd142fb9d30f75868ec0a7f3c27070c451b4c34f5",
+  "docs/design/bck-v1-superseded/run_guarded_bck.py.v1": "ea471e5fbe085200230e04196b524e1bc201129d77ce74f68ca0a1c5142ea9f3",
+  "experiments/test_run_guarded_bck_provenance.py": "7d32bfd6efb8b7bcac5c51adce35d1caca52aa1698ff36925f44ad93feaa1eeb",
+  "docs/design/bck-v1.1-superseded/run_guarded_bck.py.v1.1": "74e384f90844bf1603ed9baa3cac3426c483afc71829671b88395ca14b24470a"
+ }
+}

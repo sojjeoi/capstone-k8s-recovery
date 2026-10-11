@@ -1,0 +1,41 @@
+# AIOps v2 workload feasibility ladder (counted=false pilot 전용, 2026-10-09)
+# 계약: docs/design/phase8-aiops-v2-workload-feasibility-contract-20261009.md
+# 한 축만 바꾼다: 도착률(open-loop RPS). 요청 모양(prompt "Hello", max_tokens 10)·모델은
+# 기존 동결 load_ramp 설정(chaos/scenario-load-ramp.yaml, 2026-09-18 lab-cpu3-warm-v1/SLO v3)과 같다.
+# 근거: 그 설정에서 0.025·0.05 RPS 3/3 SLO 준수, 0.20 RPS SLO 경계, 0.30·0.40 RPS 3/3 위반(각 90 s).
+# 이 ladder는 검증된 준수 구간과 경계 사이를 나눈다(0.10·0.15 추가). 0.30 이상은 넣지 않는다.
+# 각 단계 300 s(15 s 수집 20점 - c1 60 s 창 5점 기준 창 4개 이상). 결과를 보고 단계·값을 바꾸지 않는다.
+# r2(2026-10-09, freeze 후보 v2): 발사 시각만 jittered_grid_v1(chaos/loadgen/v2_arrival.py)로 - 고정 간격이 15 s scrape와
+# 위상 고정되는 문제 제거. 평균 RPS·요청 모양 불변. seed는 실행 ID에 묶어 실행 전 고정(결과를 보고 바꾸지 않음, 재시도도 같은 ID면 같은 seed).
+# 단계 seed = run_seed * 10 + 단계 번호(1..5).
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+arrival:
+  rule: jittered_grid_v1
+  seeds:
+    v2wl90: 2026100990
+    v2wl91: 2026100991
+    v2wl92: 2026100992
+  max_send_lag_sec: 1.0        # 계획 대비 실제 발사 지연 허용 상한(요청마다)
+  achieved_rps_tolerance: "sent == planned(=ceil(rps*duration)); |sent/duration - rps| <= 1/duration"
+
+stages:
+  - name: L1-0.025rps
+    rps: 0.025
+    duration_sec: 300
+  - name: L2-0.05rps
+    rps: 0.05
+    duration_sec: 300
+  - name: L3-0.10rps
+    rps: 0.10
+    duration_sec: 300
+  - name: L4-0.15rps
+    rps: 0.15
+    duration_sec: 300
+  - name: L5-0.20rps
+    rps: 0.20
+    duration_sec: 300
