@@ -1,0 +1,41 @@
+{
+ "recorded_at_utc": "2026-10-07T15:26:21.247871+00:00",
+ "freeze_version": "v1.2",
+ "freeze_manifest": "docs/design/phase8-v33c1-guarded-bck-freeze-manifest-v1.2-20261008.json",
+ "freeze_manifest_sha256": "f1471560fdc39bb5a30b435b33ba32311d09e718544812da6db4f0cf84a281ac",
+ "runtime_verify_provenance": "verified",
+ "thresholds": {
+  "B": -0.07667538512242333,
+  "C": 1.6842544293089357,
+  "K": 2.7
+ },
+ "tests_post_freeze": {
+  "test_c1_bck_live_detector.py": "22 passed",
+  "experiments B/C/K (runner 23 + v1.1 CLI 15 + v1.2 provenance 27 incl. real-manifest check + analyzer 34)": "99 passed, 0 skipped",
+  "experiments full": "2142 passed, 1 failed, 3 skipped",
+  "anomaly-detection full": "421 passed, 4 xfailed",
+  "recovery-policy full": "279 passed"
+ },
+ "known_failure": "test_guarded_ab_analysis.py::test_real_folder_dry_run_excludes_rehearsals_and_has_no_official_pairs - 기존 frozen A/B 테스트 1건은 ab01 이전의 공식 pair 0개 가정을 갖고 있어 현재 실제 결과 폴더에서는 실패한다. B/C/K 변경으로 인한 회귀가 아니며 frozen 파일이므로 수정하지 않았다.",
+ "ssh_timeout_test": "test_ssh_check_evidence.py::test_timeout_with_partial_output_fails_and_preserves_partial - v1.1 검증 때 전체 suite 1회 실패·단독 3/3 통과, 이번 전체 실행에서는 통과. timing-sensitive/flaky 가능성, 원인 미확정.",
+ "preserved_unchanged": {
+  "docs/design/phase8-v33c1-guarded-bck-freeze-manifest-20261007.json": true,
+  "docs/design/phase8-v33c1-guarded-bck-freeze-manifest-v1.1-20261007.json": true,
+  "docs/design/phase8-v33c1-guarded-bck-comparison-contract-draft-20261007.md": true,
+  "docs/design/bck-v1-superseded/run_guarded_bck.py.v1": true,
+  "docs/design/bck-v1.1-superseded/run_guarded_bck.py.v1.1": true,
+  "experiments/guarded_ab_analysis.py": true,
+  "docs/design/phase8-v33c1-guarded-ab-analysis-rules-20261007.md": true,
+  "docs/design/phase8-v33c1-guarded-ab-comparison-contract-r2-20261007.md": true,
+  "docs/design/phase8-v33c1-guarded-ab-comparison-contract-20261007.md": true,
+  "experiments/run_guarded_pilot.py": true,
+  "experiments/guarded_cleanup_gate.py": true,
+  "experiments/test_guarded_ab_analysis.py": true,
+  "experiments/results/capstone_guarded_ab_v1/ab05-20261007/analysis-official-ab01-ab05-20261007T130127Z.json": true,
+  "anomaly-detection/v3/model_v33_c1/artifacts/model.pkl": true,
+  "anomaly-detection/v3/model_v33_c1/artifacts/scaler.pkl": true,
+  "anomaly-detection/v3/model_v33_c1/artifacts/threshold.json": true
+ },
+ "bck_results_dir_exists": false,
+ "live_actions": "없음 (cluster 미접속, bc90 미실행)"
+}

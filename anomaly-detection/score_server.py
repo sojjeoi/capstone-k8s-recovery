@@ -39,7 +39,8 @@ sys.path.insert(0, str(V3_DIR))
 sys.path.insert(0, str(V3_DIR / "model_v31"))
 
 from features import (  # noqa: E402 (anomaly-detection/features.py, 같은 디렉터리)
-    METRICS, _query_range, _query_range_with_timestamps, _raw_sample_staleness,
+    CONFIRMED_SCRAPE_INTERVAL_SEC, METRICS, _query_range, _query_range_with_timestamps,
+    _raw_sample_staleness,
 )
 from build_dataset import extract_window_strict  # noqa: E402 (v3/build_dataset.py, 변경 없음)
 from feature_selection import apply_feature_schema  # noqa: E402 (model_v31, 변경 없음)
@@ -97,6 +98,14 @@ FRESHNESS_PROBE_QUERIES = {
 # 스킵이 WINDOW_SEC를 넘기면(=window 전체가 이미 공백 구간 안에 들어간
 # 상태) "잠깐 꼬리만 걸친" 상황을 넘어 질적으로 다른 상태로 본다.
 PROLONGED_DATA_GAP_CYCLES = int(WINDOW_SEC // EVAL_INTERVAL_SEC)  # 60/15 = 4
+# 2026-10-04 입력 계측판 진단 - 이 환경변수가 "1"일 때만 평가 기록의 per_metric_provenance에 합산 전 Prometheus 응답
+# 원문(시계열 라벨·격자값·요청 범위)과 기록 크기·소요 시간을 붙인다. 특징·점수·신호 판단은 바뀌지 않는다.
+RAW_QUERY_CAPTURE_ENV = "SCORE_SERVER_RAW_QUERY_CAPTURE"
+# 2026-10-04 후보 입력 병렬 기록 진단 - 이 환경변수가 "1"일 때만, 점수 계산이 끝난 뒤 같은 평가 창(start·end·step)으로
+# 후보 CPU rate[60s] → 기존 rate[30s] 재질의를 보내고, 네 지표의 timestamp() 인스턴트 질의(원시 표본 시각)를 따로 보내
+# 원문·요청/응답 시각·오류를 평가 기록 `parallel_candidate`에 붙인다. 기존 판단 입력(첫 rate[30s] 등)·특징·점수·신호
+# 판단에는 쓰지 않는다(이미 계산이 끝난 뒤 보냄). 후보 입력으로 점수를 계산하지 않는다.
+PARALLEL_CANDIDATE_ENV = "SCORE_SERVER_PARALLEL_CANDIDATE"
 # §108(2026-09-24) - PROLONGED_DATA_GAP_CYCLES에 도달하면 main()이 이 코드로
 # 스스로 종료한다(0=정상 종료·1=처리 안 된 예외와 구분되는 값) - run_once.py의
 # TrialInvalid 메시지에 detector.get_crash_info()의 exit_code로 그대로
@@ -200,7 +209,19 @@ class DataGapFailClosed(RuntimeError):
     **절대 이 타입으로 감싸지 않는다** - 그런 경우는 "데이터 공백"이
     아니라 "관측 인프라·하니스 자체의 고장"이므로 스킵하지 않고 trial이
     명시적으로 중단돼야 한다(§107.2 근본 문제 조사에서 발견된 것과 같은
-    종류의 실수를 반복하지 않기 위한 명시적 경계)."""
+    종류의 실수를 반복하지 않기 위한 명시적 경계).
+
+    §164 - 선택적으로 partial_provenance(dict)를 받는다: fail-closed
+    시점까지 캡처된 지표별 쿼리 timing/신선도(불완전할 수 있음 -
+    extract_window_strict()가 METRICS dict 순서대로 첫 gap에서
+    short-circuit하므로 뒤쪽 지표는 아예 조회 자체를 안 할 수 있음).
+    main()이 "evaluation_skipped" evidence record에 그대로 실어
+    "무엇을 확인했고 무엇을 못 했는지"를 정직하게 남긴다. 기본값
+    {}는 이 인자를 안 주는 기존 raise 호출부·테스트와 100% 호환."""
+
+    def __init__(self, message: str, *, partial_provenance: dict = None):
+        super().__init__(message)
+        self.partial_provenance = partial_provenance or {}
 
 
 def _evaluate_v32b_verbose(model, scaler, schema, *,
@@ -222,23 +243,42 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
     자체는 전혀 바꾸지 않음 - `evaluate_v32b()`가 이 함수를 감싸 기존과
     동일하게 `score` float만 반환).
 
-    §163 - query_range_fn이 **기본값(_query_range)일 때만** 원본 표본
-    (timestamp, value) 쌍을 부가로 캡처한다 - 추가 Prometheus 요청을
-    새로 보내지 않고, feature 계산에 이미 쓰는 바로 그 호출 결과를
-    재사용한다(별도 재조회 방식은 fake Prometheus를 쓰는 결정론적
-    테스트의 요청-횟수 기반 cycle 카운팅을 깨뜨리는 게 실측으로
-    확인돼 폐기했다 - `test_score_server_data_gap_subprocess.py`).
-    커스텀 query_range_fn을 주입하는 기존 테스트(다수)는 이 캡처 경로를
-    타지 않아 완전히 그대로 동작한다 - 그 경우 반환 dict의
-    `per_metric_provenance`는 빈 dict다."""
+    §163/§164 - query_range_fn이 **기본값(_query_range)일 때만** 원본
+    표본(timestamp, value) 쌍과 지표별 쿼리 요청/응답 시각을 부가로
+    캡처한다 - 추가 Prometheus 요청을 새로 보내지 않고, feature 계산에
+    이미 쓰는 바로 그 호출 결과를 재사용한다(별도 재조회 방식은 fake
+    Prometheus를 쓰는 결정론적 테스트의 요청-횟수 기반 cycle 카운팅을
+    깨뜨리는 게 실측으로 확인돼 폐기했다 - `test_score_server_data_gap_
+    subprocess.py`). 커스텀 query_range_fn을 주입하는 기존 테스트(다수)는
+    이 캡처 경로를 타지 않아 완전히 그대로 동작한다 - 그 경우 반환
+    dict의 `per_metric_provenance`는 빈 dict다.
+
+    §164 - fail-closed(`DataGapFailClosed`)로 이 cycle을 스킵하는
+    경우에도, 그 시점까지 캡처된 지표별 provenance를 예외에 실어
+    보낸다(`extract_window_strict()`가 METRICS dict 순서대로 첫 gap에서
+    short-circuit하므로 뒤쪽 지표는 "not_queried"로 표시될 수 있음) -
+    "무엇을 확인했고 무엇을 확인 못 했는지"를 실패한 tick에서도 남긴다."""
     end = now_fn()
     start = end - timedelta(seconds=WINDOW_SEC)
 
     captured_pairs = {}
+    captured_timing = {}
+    captured_raw = {}  # 2026-10-04 입력 계측판(RAW_QUERY_CAPTURE_ENV=1일 때만) - 합산 전 응답 원문
+    raw_capture_on = os.environ.get(RAW_QUERY_CAPTURE_ENV) == "1"
     if query_range_fn is _query_range:
         def _capturing_query_range_fn(promql, s, e, step="15s"):
-            pairs = _query_range_with_timestamps(promql, s, e, step)
+            raw = [] if raw_capture_on else None
+            sent = now_fn()
+            pairs = _query_range_with_timestamps(promql, s, e, step, raw_out=raw)
+            received = now_fn()
             captured_pairs[promql] = pairs
+            captured_timing[promql] = (sent, received)
+            if raw_capture_on:  # 재시도로 같은 지표를 다시 조회하면 마지막(실제로 계산에 쓴) 응답이 남는다
+                t0 = time.perf_counter()
+                body = {"start_utc": s.isoformat(), "end_utc": e.isoformat(), "step": step, "series": raw}
+                size = len(json.dumps(body, separators=(",", ":")))
+                captured_raw[promql] = {**body, "series_count": len(raw), "capture_bytes": size,
+                                        "capture_build_ms": round((time.perf_counter() - t0) * 1000, 3)}
             return [v for _ts, v in pairs]
         effective_query_range_fn = _capturing_query_range_fn
     else:
@@ -246,6 +286,34 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
 
     def bounded_query_range_fn(promql, s, e):
         return query_range_with_bounded_retry(promql, s, e, query_range_fn=effective_query_range_fn)
+
+    def _build_per_metric_provenance():
+        # §164 - 성공 경로·fail-closed 경로 양쪽에서 쓴다. 캡처된
+        # 지표는 신선도+요청/응답 시각을, short-circuit으로 조회 전에
+        # 멈춘 지표는 "not_queried"를 명시한다(조용히 생략하지 않음).
+        if not captured_pairs:
+            return {}
+        result = {}
+        for metric_name, promql in METRICS.items():
+            if promql in captured_pairs:
+                sent, received = captured_timing[promql]
+                result[metric_name] = {
+                    **_raw_sample_staleness(captured_pairs[promql], received,
+                                             CONFIRMED_SCRAPE_INTERVAL_SEC[metric_name]),
+                    "query_sent_at_utc": sent.isoformat(),
+                    "query_received_at_utc": received.isoformat(),
+                }
+                if promql in captured_raw:  # 계측판에서만 붙는 필드 - 판정·특징 계산에는 쓰지 않음
+                    result[metric_name]["raw_query_capture"] = captured_raw[promql]
+            else:
+                result[metric_name] = {
+                    "raw_sample_status": "not_queried",
+                    "eval_grid_ts_utc": None, "sample_lag_at_query_sec": None,
+                    "scrape_interval_used_sec": CONFIRMED_SCRAPE_INTERVAL_SEC[metric_name],
+                    "interval_based_lower_bound_utc": None,
+                    "query_sent_at_utc": None, "query_received_at_utc": None,
+                }
+        return result
 
     # feats가 None인 경우는 extract_window_strict()가 "쿼리는 정상 응답했지만
     # 표본이 0개"일 때만 반환한다 - bounded_query_range_fn이 연결 실패로
@@ -255,9 +323,11 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
     # 감싼다.
     feats, reason = extract_window_strict(start, end, bounded_query_range_fn)
     if feats is None:
-        raise DataGapFailClosed(f"fail-closed: feature 결측 - {reason}")
+        raise DataGapFailClosed(f"fail-closed: feature 결측 - {reason}",
+                                 partial_provenance=_build_per_metric_provenance())
     if any(v is None or math.isnan(v) or math.isinf(v) for v in feats):
-        raise DataGapFailClosed(f"fail-closed: feature에 NaN/Inf 포함: {feats}")
+        raise DataGapFailClosed(f"fail-closed: feature에 NaN/Inf 포함: {feats}",
+                                 partial_provenance=_build_per_metric_provenance())
 
     # §107/§108 - 4개 feature 원천을 개별 확인(위 FRESHNESS_PROBE_QUERIES
     # 주석 참고). reason_kind로 "진짜 데이터 공백"(no_samples/stale)과
@@ -272,7 +342,8 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
             reason_kind = freshness.get("reason_kind")
             if reason_kind in ("no_samples", "stale"):
                 raise DataGapFailClosed(
-                    f"fail-closed: metric stale - {metric_name}({probe_promql}): {freshness.get('reason')}")
+                    f"fail-closed: metric stale - {metric_name}({probe_promql}): {freshness.get('reason')}",
+                    partial_provenance=_build_per_metric_provenance())
             raise RuntimeError(
                 f"fail-closed: Prometheus 조회 실패(데이터 공백 아님, reason_kind={reason_kind!r}) - "
                 f"{metric_name}({probe_promql}): {freshness.get('reason')}")
@@ -281,22 +352,54 @@ def _evaluate_v32b_verbose(model, scaler, schema, *,
     x6 = apply_feature_schema(feats, schema)
     x_scaled = scaler.transform([x6])
     score = float(model.decision_function(x_scaled)[0])
-    query_received_at = now_fn()
-    # §163 - window_start/end_utc(요청한 구간)를 "원본 표본이 실제로 언제
-    # 참이 됐는가"와 같다고 단정하지 않는다 - 후자는 여기서만 상한/하한
-    # (또는 no_samples, 캡처가 아예 없었으면 빈 dict)으로 표현한다.
-    per_metric_provenance = {
-        metric_name: _raw_sample_staleness(captured_pairs.get(promql, []), query_received_at)
-        for metric_name, promql in METRICS.items()
-    } if captured_pairs else {}
-    return {
+    feature_computed_at = now_fn()
+    # §163/§164 - window_start/end_utc(요청한 구간)를 "원본 표본이 실제로
+    # 언제 참이 됐는가"와 같다고 단정하지 않는다 - 후자는 per_metric_
+    # provenance에서만(지표별 평가 격자 시각·주기 기반 참고 하한 또는
+    # no_samples/not_queried로) 표현한다.
+    per_metric_provenance = _build_per_metric_provenance()
+    out = {
         "window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(),
         "raw_feature_vector": feats, "ordered_feature_vector": x6,
         "scaled_feature_vector": [float(v) for v in x_scaled[0]],
         "score": score, "freshness_by_metric": freshness_by_metric,
-        "feature_computed_at_utc": query_received_at.isoformat(),
+        "feature_computed_at_utc": feature_computed_at.isoformat(),
         "per_metric_provenance": per_metric_provenance,
     }
+    if os.environ.get(PARALLEL_CANDIDATE_ENV) == "1":  # 진단 전용 - 위 값이 모두 확정된 뒤에만 보낸다
+        out["parallel_candidate"] = _parallel_candidate_record(start, end, now_fn)
+    return out
+
+
+def _parallel_candidate_record(start, end, now_fn) -> dict:
+    """후보 입력 병렬 기록(진단 전용). 질의마다 원문·요청/응답 시각·오류를 남기고, 실패는 예외 없이 기록만 한다
+    (실패한 후보가 정상 후보로 보이지 않도록 error와 빈 series를 그대로 남김)."""
+    from features import PROM_URL
+    candidate_cpu_promql = METRICS["cpu"].replace("[30s]", "[60s]")
+    rec = {"window_start_utc": start.isoformat(), "window_end_utc": end.isoformat(), "step": "15s",
+           "cpu_queries": [], "freshness_queries": []}
+    for label, promql in (("candidate_rate60", candidate_cpu_promql), ("requery_rate30", METRICS["cpu"])):
+        raw, err, sent = [], None, now_fn()
+        try:
+            _query_range_with_timestamps(promql, start, end, "15s", raw_out=raw)
+        except Exception as e:  # noqa: BLE001 - 진단 기록이 탐지기를 멈추지 않게
+            err = f"{type(e).__name__}: {e}"
+        rec["cpu_queries"].append({"label": label, "promql": promql, "start_utc": start.isoformat(),
+                                   "end_utc": end.isoformat(), "step": "15s", "query_sent_at_utc": sent.isoformat(),
+                                   "query_received_at_utc": now_fn().isoformat(), "series": raw, "error": err})
+    for name, selector in FRESHNESS_PROBE_QUERIES.items():
+        body, err, sent = None, None, now_fn()
+        try:
+            r = requests.get(f"{PROM_URL}/api/v1/query", params={"query": f"timestamp({selector})"}, timeout=5.0)
+            r.raise_for_status()
+            body = r.json()
+        except Exception as e:  # noqa: BLE001
+            err = f"{type(e).__name__}: {e}"
+        rec["freshness_queries"].append({"metric": name, "promql": f"timestamp({selector})",
+                                         "query_sent_at_utc": sent.isoformat(),
+                                         "query_received_at_utc": now_fn().isoformat(), "body": body, "error": err})
+    rec["extra_query_count"] = len(rec["cpu_queries"]) + len(rec["freshness_queries"])
+    return rec
 
 
 def evaluate_v32b(model, scaler, schema, *,
@@ -520,6 +623,10 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
                         "reason": str(e),
                         "consecutive_data_gap_cycles": consecutive_data_gap_cycles,
                         "gap_classification": gap_classification,
+                        # §164 - fail-closed 시점까지 확인된 지표별 진단(무엇을
+                        # 확인했고 무엇을 확인 못 했는지) - 캡처가 아예 없었던
+                        # 경로(커스텀 query_range_fn 등)면 빈 dict.
+                        "per_metric_provenance": e.partial_provenance,
                     })
                 if gap_classification == "prolonged":
                     # §108(2026-09-24) - 4회 연속(=WINDOW_SEC 전체가 갭 안에
@@ -605,6 +712,7 @@ def main(artifacts_dir: str, model_version: str, once: bool = False, experiment_
                     # query_range_fn 테스트에서는 빈 dict)으로만 표현한다.
                     "feature_computed_at_utc": verbose.get("feature_computed_at_utc"),
                     "per_metric_provenance": verbose.get("per_metric_provenance", {}),
+                    **({"parallel_candidate": verbose["parallel_candidate"]} if "parallel_candidate" in verbose else {}),
                     "raw_feature_vector": verbose["raw_feature_vector"],
                     "ordered_feature_vector": verbose["ordered_feature_vector"],
                     "scaled_feature_vector": verbose["scaled_feature_vector"],

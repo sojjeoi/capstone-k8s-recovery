@@ -1,0 +1,170 @@
+{
+ "series": "v3.3-c1",
+ "created_at": "2026-10-05T04:52:13.993460+00:00",
+ "train": [
+  "c1tr01",
+  "c1tr02",
+  "c1tr03",
+  "c1tr04",
+  "c1tr05",
+  "c1tr06"
+ ],
+ "calibration": [
+  "c1ca01",
+  "c1ca02",
+  "c1ca03",
+  "c1ca04"
+ ],
+ "sessions": {
+  "c1tr01": {
+   "role": "train",
+   "run_id": "c1_normal-c1tr01-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v1(관찰 시작 = 탐지기 기동)",
+   "features_file": "experiments/analysis_v1/c1-features-c1tr01-20261004.json",
+   "features_sha256": "af61a66535db0020c8376582509bc30aa7f5934fe3a7f0854e0ad8577f3bc803",
+   "raw_files_sha256": {
+    "summary": "fbb434a47c5fb84897f68cf5a11a1a44c62ca8344e41dc6d79efcb9a6dadd6ce",
+    "detector-evidence": "96f16fb7bcdbff923d2b7bef138170177c29f414ce6b9ef0521e871f626bee94",
+    "samples": "a92ea86ab30eb6376067a53ef7e039f561d2e19af0c34bfc212988482a9939d6",
+    "pod-events": "37f82fa4e757de87567dfc634d92b432b711e05e86a0d6f4d17a7292b9d0cd62"
+   },
+   "usable_rows": 103,
+   "evaluations_total": 107
+  },
+  "c1ca01": {
+   "role": "calibration",
+   "run_id": "c1_normal-c1ca01-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v1(관찰 시작 = 탐지기 기동)",
+   "features_file": "experiments/analysis_v1/c1-features-c1ca01-20261004.json",
+   "features_sha256": "32918165902699979d2757bb9a3c82fd05cbc32bb2c367dcca3aa4cb7aec68c1",
+   "raw_files_sha256": {
+    "summary": "d7a2e2eb21d4d1e25a92394d424e2205db4f688ef06d6a6ce7cd5378ba64e0a0",
+    "detector-evidence": "aeac89030b18bb1d2b5459cc8e93b649decc83244844ac77723ceaa35d95cbbf",
+    "samples": "af38b0f4d9b1ebc949c1de0bb20ac997495dba2dc55025911a6be915d9b82442",
+    "pod-events": "55c2d946faa27c4b36be6c293f58315f45c4448b067506b4ffc70e2ae74d328d"
+   },
+   "usable_rows": 100,
+   "evaluations_total": 104
+  },
+  "c1tr02": {
+   "role": "train",
+   "run_id": "c1_normal-c1tr02-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v1(관찰 시작 = 탐지기 기동)",
+   "features_file": "experiments/analysis_v1/c1-features-c1tr02-20261005.json",
+   "features_sha256": "b9ec305cda507aa487ff09904e31c2707aff3bcf31efecbbbbd3319ae932b444",
+   "raw_files_sha256": {
+    "summary": "388940a63b92f57397423fd35e38312cc4bda0f43bb2cf9f0755a778109f1cfc",
+    "detector-evidence": "f0f746114e1ecf665d93f3d35907e0b69fe6d43487b0056340a4024eb1b3d71b",
+    "samples": "4b01525dd0a9ffa9ab10ea1b4505e45fe021c39539c87e73c0f2ec7ccd1d2869",
+    "pod-events": "f0ca26ba5e9dab671477bd5c3afa688aeacc5a5abf256b5964b1f79b933c22ee"
+   },
+   "usable_rows": 102,
+   "evaluations_total": 105
+  },
+  "c1tr03": {
+   "role": "train",
+   "run_id": "c1_normal-c1tr03-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v1(관찰 시작 = 탐지기 기동)",
+   "features_file": "experiments/analysis_v1/c1-features-c1tr03-20261005.json",
+   "features_sha256": "ea175a595a7ccda5ec05b4694072720b21fcf791f8893487f669b550de0248ec",
+   "raw_files_sha256": {
+    "summary": "c3f6c9bbe67c5da27558e823358780ec73acb522af7140e1787dcbf31e8f4e5f",
+    "detector-evidence": "84e4feaae4fb9975bacbccf4d2dbd6b62a8d0cbc2bc82fc9715f963219a49ad5",
+    "samples": "7cef7d2aab19544240ab35f6e2c067b0d54ab0c87fb321838af38435d4749768",
+    "pod-events": "6c8a80f082b6854f64ea5736fe826a81bab2e2f3a23a248856cec95f44fdd336"
+   },
+   "usable_rows": 96,
+   "evaluations_total": 96
+  },
+  "c1ca02": {
+   "role": "calibration",
+   "run_id": "c1_normal-c1ca02-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v2-20261005",
+   "features_file": "experiments/analysis_v1/c1-features-c1ca02-20261005.json",
+   "features_sha256": "3c0d20f1090cd079fb731ebce5ab3d0f43b6ff2a4baa5468bbb7f08362e03835",
+   "raw_files_sha256": {
+    "summary": "12628b6156c29341ca5f6f0a13505b0c66608d29ce88c544992e3282f8066d0e",
+    "detector-evidence": "687a8dfd35e44001ee4e657ac51eb1b4194a4c15d3d859766c9d4d17d7a15551",
+    "samples": "7efe259ab3528b734718ff0822c43cd6eb714af07eae6e14f2215d0ad249e04b",
+    "pod-events": "a4106a0af9750dbf8c64e8a7ffa806b8fb4831242b490f345d627039fd3c212e"
+   },
+   "usable_rows": 107,
+   "evaluations_total": 109
+  },
+  "c1tr04": {
+   "role": "train",
+   "run_id": "c1_normal-c1tr04-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v2-20261005",
+   "features_file": "experiments/analysis_v1/c1-features-c1tr04-20261005.json",
+   "features_sha256": "e9d532212613c0d38dd6332bd7449f77d5c6305229fa38875f704d65ca65e08f",
+   "raw_files_sha256": {
+    "summary": "f851c29e09e21640372708c2f06c46d4ed62743a6f87ee3aa863fe6c8c72f78e",
+    "detector-evidence": "1ebe18a6fa4d988cee1deadbf7aa5827434dfe094dd59e9306c82e15e597da5f",
+    "samples": "a1d1bd947ec3b7004446df1edcfc15c519f430c8f038701c301ccec057d568c3",
+    "pod-events": "69f46a774a4933642652152a432d5eeca5ee97e3bd97798abed8cf9c988f0c29"
+   },
+   "usable_rows": 106,
+   "evaluations_total": 110
+  },
+  "c1tr05": {
+   "role": "train",
+   "run_id": "c1_normal-c1tr05-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v2-20261005",
+   "features_file": "experiments/analysis_v1/c1-features-c1tr05-20261005.json",
+   "features_sha256": "f6b71b772436f4bffd61bf997af51f7e45a4f58e4b6b74c94975c2845d480cb2",
+   "raw_files_sha256": {
+    "summary": "df7c882a88e3a3cd061faed330ef327fb1d3f60104254c4c9f4eb51e1b482ced",
+    "detector-evidence": "fc37831a1329a2bddcb0511adfeadb5bc810c2f160e343c79dda31a360c766ed",
+    "samples": "ceb74651901e22cf8837f9ed66016d03d2c3198e0dfe94fb2166848af0623842",
+    "pod-events": "afdb2198336fa83a39c3c983fbb2ce1b76b67a1008d426e08d319784f22425d0"
+   },
+   "usable_rows": 106,
+   "evaluations_total": 110
+  },
+  "c1ca03": {
+   "role": "calibration",
+   "run_id": "c1_normal-c1ca03-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v2-20261005",
+   "features_file": "experiments/analysis_v1/c1-features-c1ca03-20261005.json",
+   "features_sha256": "a687666764076014c35f3d6f6389cbaac09f4c387c6b9d082ad783426e739867",
+   "raw_files_sha256": {
+    "summary": "a9f9cf398894db0204364df8f0429d857f4ae8f4650fe6f5628ce129b33cbcad",
+    "detector-evidence": "c1bd03bdb761972f46e2fe5064717aa59902f53a065ba6e52fbb3bc9fa2e2980",
+    "samples": "1c294f5efc4a7ae3ca893f0030dcd4983c82e3781036f7798fa9862a5a1ccabf",
+    "pod-events": "d9cc3c33ce076baab7702b8e7cdcc0dd895fbc3e11c30a7d3756452c3aea47f6"
+   },
+   "usable_rows": 107,
+   "evaluations_total": 111
+  },
+  "c1tr06": {
+   "role": "train",
+   "run_id": "c1_normal-c1tr06-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v2-20261005",
+   "features_file": "experiments/analysis_v1/c1-features-c1tr06-20261005.json",
+   "features_sha256": "2be28a67800859a0ca193777784308edaecc274a02e272c03e582b986b181a4c",
+   "raw_files_sha256": {
+    "summary": "3216edc0384d1473e2437326f4a86db2c8b1a0fe9648eca981de47877708919e",
+    "detector-evidence": "28d710449b82c1c03676cd5d2589e665bfa4f597cab45c4470f597182bc7a136",
+    "samples": "b9a6b6395d540dfed58459afe77caaa5851f32315353e7715ec41f97ab508783",
+    "pod-events": "af5ec6c74477ce8e3e2ac07f0e1bda7423871b39c2a836c5e459f8a1156ebb44"
+   },
+   "usable_rows": 106,
+   "evaluations_total": 111
+  },
+  "c1ca04": {
+   "role": "calibration",
+   "run_id": "c1_normal-c1ca04-capstone-c1-normal-20261004",
+   "start_procedure": "c1-start-v2-20261005",
+   "features_file": "experiments/analysis_v1/c1-features-c1ca04-20261005.json",
+   "features_sha256": "9ef12def121041806ae619ff57e4d1638f8d1b34919dcba51e3ef89967af4fff",
+   "raw_files_sha256": {
+    "summary": "9e6accd84db3a2fe254a1875f73f17eec4e11fd42f403514b55f93854ad7ae70",
+    "detector-evidence": "6de5d508e567524622bf052f9fb8f669d246d0b3574a078b7e7fef66e679628d",
+    "samples": "b105bb353623b408542b2bb0782f71732c9f2275a9a4da974f0f2feb590e8476",
+    "pod-events": "2311561af082d0246386d848dcf649ebdb15394249a49fecccd7cef341ff702a"
+   },
+   "usable_rows": 107,
+   "evaluations_total": 111
+  }
+ }
+}

@@ -1,0 +1,112 @@
+{
+  "status": "candidate",
+  "version": "v2wl-v2",
+  "series": "capstone-v2-workload-feasibility-20261009",
+  "counted": false,
+  "created_at_utc": "2026-10-09T09:03:56.383644+00:00",
+  "supersedes": "phase8-aiops-v2-workload-feasibility-freeze-manifest-v1-20261009.json (candidate, 이력 보존 - 해시는 r1 파일 기준)",
+  "note": "freeze 후보 v2 - 사용자 승인 뒤 status=frozen으로 바꿔야 runner 시작(fail-closed). 자기 해시 없음. pilot은 학습·보정·검증 근거 아님. live pilot 미실행.",
+  "contract": "docs/design/phase8-aiops-v2-workload-feasibility-contract-20261009.md (r2)",
+  "ladder": {
+    "target": {
+      "url": "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions",
+      "model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "prompt": "Hello",
+      "max_tokens": 10
+    },
+    "stages": [
+      {
+        "name": "L1-0.025rps",
+        "rps": 0.025,
+        "duration_sec": 300
+      },
+      {
+        "name": "L2-0.05rps",
+        "rps": 0.05,
+        "duration_sec": 300
+      },
+      {
+        "name": "L3-0.10rps",
+        "rps": 0.1,
+        "duration_sec": 300
+      },
+      {
+        "name": "L4-0.15rps",
+        "rps": 0.15,
+        "duration_sec": 300
+      },
+      {
+        "name": "L5-0.20rps",
+        "rps": 0.2,
+        "duration_sec": 300
+      }
+    ],
+    "baseline_L0_sec": 300
+  },
+  "arrival": {
+    "rule": "jittered_grid_v1",
+    "definition": "N=ceil(rps*duration), slot=duration/N, t_k=(k+U_k)*slot, U_k=random.Random(stage_seed).random()",
+    "run_seeds": {
+      "v2wl90": 2026100990,
+      "v2wl91": 2026100991,
+      "v2wl92": 2026100992
+    },
+    "stage_seed": "run_seed*10 + stage_index(1..5)",
+    "tolerance": {
+      "sent_equals_planned": true,
+      "achieved_rps_abs_error_max": "1/duration_sec",
+      "max_send_lag_sec": 1.0,
+      "schedule_recomputed_must_match": true
+    },
+    "request_sender": "frozen /ramp.py fire_request in image loadgen-runner:phase8-v3-boundaries (sha256 aadab9fc...)"
+  },
+  "activation": {
+    "metric": "vllm:num_requests_running{pod,job=\"vllm-active\"} raw scrape samples, stage window [start,end)",
+    "rule": "fraction(running>=1) >= 0.20",
+    "min_fraction": 0.2,
+    "sample_coverage_min": 0.8
+  },
+  "slo_boundary_rule": "단계 종료 후 동결 slo_episodes r2로 [기준선 시작, 단계 끝] 공식 판정(stage_slo_verdict, 실행기·분석기 공용); 위반이면 결과 보존·rep valid·더 높은 단계 시작 안 함·ramp_terminated_after_slo_boundary=true; 판정 불가면 aborted",
+  "selection_rule": "high=모든 유효 rep에서 normal_and_safe·evaluable·load_conformant·activated인 최고 단계(SLO 위반·미실행 단계 불가); medium=같은 조건(activated 제외) 중 rps가 high/2에 가장 가까운 단계(동률 낮은 쪽, high·low와 다름); low=L1; 하나라도 없으면 feasible=false(보간 없음)",
+  "metric_semantics": "vllm:request_success_total = 완료 counter(finished_reason 합) → service throughput, 도착률 아님; harness target/achieved RPS = workload 라벨/진단만",
+  "runs": {
+    "ids": [
+      "v2wl90",
+      "v2wl91",
+      "v2wl92"
+    ],
+    "valid_target": 2,
+    "max_attempts": 3
+  },
+  "tests": {
+    "file": "experiments/test_v2_workload_pilot.py",
+    "sha256": "023c98da0b04e994fec16b9ac3afe3a6a40cd05fa01e0fe9a8277c26c61ca00c",
+    "result": "32 passed (2026-10-09); regression with test_run_guarded_normal_bc.py + test_run_guarded_pilot.py: 132 passed"
+  },
+  "provenance_code": {
+    "verify": "experiments/run_v2_workload_pilot.py verify_provenance (status must be frozen, version v2wl-v2, all file hashes match)",
+    "in_pod_check": "ramp pod /ramp.py·/v2_arrival.py·ladder sha256 대조 (make_stage_ramp.prepare)"
+  },
+  "files": {
+    "docs/design/phase8-aiops-v2-workload-feasibility-contract-20261009.md": "920a807649d65aa8edf0fa7ca70407cf869848de81daffc7c077ee700fe6b6d5",
+    "docs/design/phase8-aiops-v2-design-draft-20261009.md": "238f79a368b37a5b1b15c321ebe5288b84a507591c6f4c0cd3b22eeef079f8d6",
+    "chaos/v2-workload-ladder.yaml": "463e3bcfc7c2ba40dd6c03308457f28ae59d18f9eca66f6a63bf1189fd2c98c4",
+    "experiments/run_v2_workload_pilot.py": "bd516c83b1c1aa40cd14a12fe411770074af26a58d3d18b3de8bcfd61a2a2b41",
+    "experiments/v2_workload_pilot_analysis.py": "cd3fbdb56d2066e37b3bce54502bed856438f962b7b724e8224052cc9bd48f86",
+    "experiments/test_v2_workload_pilot.py": "023c98da0b04e994fec16b9ac3afe3a6a40cd05fa01e0fe9a8277c26c61ca00c",
+    "chaos/loadgen/ramp.py": "aadab9fc7f2a5a51cfee4e666ba7872c8e8fa378389d47a0e68e501f39153a82",
+    "experiments/load_ramp_adapter.py": "148c46272652978566ff74f48e7d8e5904e3947358e4ce631a62bc5c213e1c1a",
+    "experiments/run_guarded_pilot.py": "53b555b8997d7330a0fd73bb49388c52c0f2640e3832ed8d2ea1cd2b2d476597",
+    "experiments/run_if_threshold_candidate_smoke.py": "ddc87334a82a1af698ea3cf82c34ad905981512312b0127fb190061a1ec572fc",
+    "experiments/run_cpu_demo_shadow_no_injection_trial.py": "bce82f734863edd56d97bfa6746c26c5a388e821e405d76865506284f51b92e9",
+    "experiments/guarded_cleanup_gate.py": "baff9fe74eb2e06de09333347dfbd11e900faa9a29c68bfc95fe37e2da9e1e12",
+    "experiments/slo_judge.py": "a66957761e0e433e3efdf0037f0c3c0833c1542c85c756a49085aee9c3447022",
+    "experiments/slo_episodes.py": "33ff83de00800db01206f7738e390884987a1338537e15477c876f5245e5cd85",
+    "experiments/c1_shadow_pilot_analysis.py": "577be4bc96d68ac0086ab2a4769ee9f7ca8163c0b8decf327778e4ba00717432",
+    "experiments/guarded_pilot_session.ps1": "68c9349ab27216a3ad5b5b8f63329919bdc3b7994162e3b72343d238b9ba4efe",
+    "chaos/probe-config.yaml": "36ec46ee19a01ce348abb95b65c1b45dc6074ab43fddc07bbe2313deab777851",
+    "chaos/loadgen/v2_arrival.py": "bed343e2f71b93a3b6d863aac48e16c9500385007c0c6b889424c43fad774cad",
+    "experiments/run_once.py": "6953f4d6953b2855467408f7f93c29c85fb51ec9cad5aeaddea7047814d622af",
+    "experiments/run_timed_switch_recovery_trial.py": "ecbcbe4c0727ac1227af29c821849882a4258580ba3283c0871877a28a5b3c85"
+  }
+}

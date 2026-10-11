@@ -1,0 +1,38 @@
+{
+ "status": "frozen",
+ "version": "n1-v1",
+ "series": "capstone-guarded-normal-bc-v1-20261008",
+ "created_at_utc": "2026-10-08T12:36:12.222429+00:00",
+ "note": "frozen(2026-10-08 사용자 승인: candidate→frozen 전환만, 파일 해시 변경 없음). runner는 시작 전 전체 재해시(fail-closed). 자기 해시 없음. B/C/K v1.2 manifest는 읽기 전용 상속 확인용 해시만 담는다. 이후 v1 파일 수정 금지 - 결함은 v1.1 amendment로 분리.",
+ "known_test_status": {
+  "new_tests": "31 passed (2026-10-08)",
+  "frozen_bck_regression": "120 passed, 1 expected failure test_guarded_bck_analysis.py::test_real_bck_folder_absent_or_pilot_only_has_no_official_blocks (실제 폴더에 공식 bc01-bc06이 생겨 전제가 바뀐 것, 회귀 아님)"
+ },
+ "files": {
+  "docs/design/phase8-v33c1-guarded-normal-bc-n1-contract-20261008.md": "77a60e86fb6454434c5368bd38acfc6d031265038aad5630a3b4931f14cd0a2f",
+  "experiments/run_guarded_normal_bc.py": "6eebdf47b6b1e6b9e8860b039a76d2a50eb233f3dec6571ec7cd9b29a021c467",
+  "experiments/guarded_normal_bc_analysis.py": "dd510fe20cb0be40061706d4ba43140cf20ec4d83a19e490b3609d7ea3aeff0e",
+  "anomaly-detection/c1_bck_shadow_pair.py": "72487204bde3ef4b705a365a5e3fb8b0e5fc7982d2039619431ec1c2a82f54c6",
+  "experiments/test_run_guarded_normal_bc.py": "e224c080f07cf41b9bad33f8ff44810849b1226d7baee7804294b131c1efb10f",
+  "experiments/test_guarded_normal_bc_analysis.py": "d523406b911d1f89256cad4e4f089b05177f00ebe9a39e97473a27be61ddc7d9",
+  "anomaly-detection/test_c1_bck_shadow_pair.py": "bb5a65ea6056a59fca82cefb660e02f9a7761399f49f235bf354c4a6886168a2",
+  "anomaly-detection/c1_bck_live_detector.py": "7db774283efbd2f6c352bad81ad6d8498d3ddae3c531a3a429e4f3ea694cb33a",
+  "anomaly-detection/bck_rules/rule-spec-v1.json": "b0113f174893173cbf208d4f587b541f5f4cfa21c6a362cc535ffd5d06ce4630",
+  "anomaly-detection/c1_shadow_detector.py": "1c9b172d5b22722fb773fbb792922aa0854ed49e304a7688b41cd9d75a76b91d",
+  "anomaly-detection/v3/model_v33_c1/artifacts/model.pkl": "0aa5d4c95a32c0cb6a34f2384a824ea886acb5ef6c95e73bdcf4a71e86d1b390",
+  "anomaly-detection/v3/model_v33_c1/artifacts/scaler.pkl": "fd4a615242596a12c6da2c6d41257acf2d5af25d91e26737fb9be5df1ffda891",
+  "anomaly-detection/v3/model_v33_c1/artifacts/threshold.json": "c35121327cb03a441c9e0015d7e533444fef5ca63633861808073faf19d6b49c",
+  "experiments/run_guarded_pilot.py": "53b555b8997d7330a0fd73bb49388c52c0f2640e3832ed8d2ea1cd2b2d476597",
+  "experiments/run_guarded_bck.py": "1dd6b5fb250f5cd137fb8ea4def5f4142d09714c98ae603668ff688b6d4f5cfb",
+  "experiments/guarded_cleanup_gate.py": "baff9fe74eb2e06de09333347dfbd11e900faa9a29c68bfc95fe37e2da9e1e12",
+  "experiments/run_if_threshold_candidate_smoke.py": "ddc87334a82a1af698ea3cf82c34ad905981512312b0127fb190061a1ec572fc",
+  "experiments/guarded_pilot_session.ps1": "68c9349ab27216a3ad5b5b8f63329919bdc3b7994162e3b72343d238b9ba4efe",
+  "experiments/guarded_ab_analysis.py": "51886c97152d639e4a4a86a7370ac19c8a91b2f78a8fb1b10d279455985b3bbd",
+  "experiments/c1_shadow_pilot_analysis.py": "577be4bc96d68ac0086ab2a4769ee9f7ca8163c0b8decf327778e4ba00717432",
+  "experiments/detector_same_tick_replay.py": "b267905c3644a2a80faae7839972a300a9c46bc8eddfafb8bfb941f9a58398b9",
+  "experiments/slo_judge.py": "a66957761e0e433e3efdf0037f0c3c0833c1542c85c756a49085aee9c3447022",
+  "experiments/slo_episodes.py": "33ff83de00800db01206f7738e390884987a1338537e15477c876f5245e5cd85",
+  "docs/design/phase8-v33c1-guarded-bck-freeze-manifest-v1.2-20261008.json": "f1471560fdc39bb5a30b435b33ba32311d09e718544812da6db4f0cf84a281ac"
+ },
+ "frozen_at_utc": "2026-10-08T13:02:34.776004+00:00"
+}

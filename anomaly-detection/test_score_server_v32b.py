@@ -201,7 +201,16 @@ def test_default_query_range_fn_captures_provenance_with_no_extra_http_calls():
     assert set(verbose["per_metric_provenance"].keys()) == {"cpu", "memory", "queue", "cache"}
     for prov in verbose["per_metric_provenance"].values():
         assert prov["raw_sample_status"] == "ok"
-    print("OK - 기본 query_range_fn 경로에서 provenance가 캡처되고 HTTP 요청은 지표당 정확히 1회(추가 재조회 없음)")
+        assert prov["query_sent_at_utc"] is not None and prov["query_received_at_utc"] is not None
+    # §164 - cpu/memory는 이 저장소로 스크레이프 주기가 확인 안 되므로
+    # 미확인 15초를 대입하면 안 되고, queue/cache에만 근거 있는 15초가 붙어야 한다.
+    for name in ("cpu", "memory"):
+        assert verbose["per_metric_provenance"][name]["scrape_interval_used_sec"] is None, \
+            f"{name}에 미확인 스크레이프 주기가 대입됨: {verbose['per_metric_provenance'][name]}"
+        assert verbose["per_metric_provenance"][name]["interval_based_lower_bound_utc"] is None
+    for name in ("queue", "cache"):
+        assert verbose["per_metric_provenance"][name]["scrape_interval_used_sec"] == 15
+    print("OK - 기본 query_range_fn 경로에서 provenance가 캡처되고 HTTP 요청은 지표당 정확히 1회(추가 재조회 없음), cpu/memory에는 미확인 주기 미대입")
 
 
 def test_custom_query_range_fn_still_yields_empty_provenance_unchanged_feats():
@@ -216,6 +225,93 @@ def test_custom_query_range_fn_still_yields_empty_provenance_unchanged_feats():
     assert verbose["per_metric_provenance"] == {}, \
         "커스텀 query_range_fn인데 provenance가 채워짐(캡처 조건 오판)"
     print("OK - 커스텀 query_range_fn 경로는 provenance 캡처를 안 타고 빈 dict만 남김(기존 계약 100% 유지)")
+
+
+def _fake_get_for_metrics(missing: set = frozenset(), nan: set = frozenset()):
+    """§164 - 기본 query_range_fn 경로(features.requests.get 모킹)로
+    지표별 원시 응답을 다르게 만든다 - missing에 든 지표는 빈 시계열,
+    nan에 든 지표는 NaN 값, 나머지는 정상값(1.0)을 돌려준다. METRICS
+    dict 순서(cpu/memory/queue/cache)대로 어디까지 조회됐는지(short-
+    circuit) 확인하는 데 쓴다."""
+    def fake_get(*args, **kwargs):
+        promql = kwargs["params"]["query"]
+        name = next(n for n, p in ss.METRICS.items() if p == promql)
+
+        class _R:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                if name in missing:
+                    return {"data": {"result": []}}
+                now = __import__("time").time()
+                v = "NaN" if name in nan else "1.0"
+                values = [[now - (4 - i) * 15, v] for i in range(5)]
+                return {"data": {"result": [{"metric": {}, "values": values}]}}
+        return _R()
+    return fake_get
+
+
+def test_fail_closed_missing_metric_preserves_partial_provenance_and_marks_unqueried():
+    # §164 - queue(METRICS 순서상 3번째: cpu/memory/queue/cache)가 빈
+    # 시계열이면 extract_window_strict()가 거기서 short-circuit한다.
+    # 앞선 cpu/memory는 이미 캡처됐어야 하고(raw_sample_status="ok"),
+    # 뒤의 cache는 아예 조회되지 않았어야 한다("not_queried" - 조용히
+    # 생략하지 않고 명시).
+    a = _load_real_artifacts()
+    with patch("features.requests.get", side_effect=_fake_get_for_metrics(missing={"queue"})):
+        try:
+            ss._evaluate_v32b_verbose(a["model"], a["scaler"], a["schema"],
+                                       freshness_check_fn=_always_fresh)
+            assert False, "queue 결측인데 예외가 안 남"
+        except ss.DataGapFailClosed as e:
+            prov = e.partial_provenance
+            assert prov["cpu"]["raw_sample_status"] == "ok", prov
+            assert prov["memory"]["raw_sample_status"] == "ok", prov
+            assert prov["queue"]["raw_sample_status"] == "no_samples", prov
+            assert prov["cache"]["raw_sample_status"] == "not_queried", \
+                f"short-circuit 이후 지표(cache)가 조회된 것처럼 나옴: {prov}"
+            assert prov["cache"]["query_sent_at_utc"] is None, "not_queried인데 가짜 시각이 생성됨"
+    print("OK - fail-closed(결측) 시점까지 캡처된 지표는 보존, short-circuit으로 못 본 지표는 not_queried로 명시(날조 없음)")
+
+
+def test_fail_closed_stale_metric_still_has_full_partial_provenance_no_short_circuit():
+    # §164 - freshness 실패(stale)로 인한 fail-closed는 extract_window_
+    # strict()가 이미 성공(4개 지표 전부 정상 응답)한 *뒤*에 일어난다 -
+    # 따라서 partial_provenance에 "not_queried"가 하나도 없어야 한다
+    # (missing-metric 경로와의 차이를 명시적으로 구분).
+    a = _load_real_artifacts()
+    stale_fn = lambda promql, max_age_sec: {"fresh": False, "age_sec": 999.0,
+                                             "reason": "age 999.0s > 120.0s", "reason_kind": "stale"}
+    with patch("features.requests.get", side_effect=_fake_get_for_metrics()):
+        try:
+            ss._evaluate_v32b_verbose(a["model"], a["scaler"], a["schema"], freshness_check_fn=stale_fn)
+            assert False, "stale metric인데 예외가 안 남"
+        except ss.DataGapFailClosed as e:
+            prov = e.partial_provenance
+            assert set(prov.keys()) == {"cpu", "memory", "queue", "cache"}
+            for name, p in prov.items():
+                assert p["raw_sample_status"] == "ok", f"{name}: {p}"
+    print("OK - stale-metric fail-closed는 short-circuit 이전이라 4개 지표 전부 캡처된 채로 남음(not_queried 없음)")
+
+
+def test_fail_closed_nan_feature_still_has_full_partial_provenance_no_short_circuit():
+    # §164 - NaN/Inf 검사도 extract_window_strict()가 이미 성공(4개 지표
+    # 전부 비어있지 않은 응답)한 *뒤*에 일어난다 - 값 자체가 NaN이어도
+    # "빈 시계열"이 아니므로 short-circuit되지 않는다. stale-metric
+    # 경로와 같은 이유로 partial_provenance에 not_queried가 없어야 한다.
+    a = _load_real_artifacts()
+    with patch("features.requests.get", side_effect=_fake_get_for_metrics(nan={"cache"})):
+        try:
+            ss._evaluate_v32b_verbose(a["model"], a["scaler"], a["schema"], freshness_check_fn=_always_fresh)
+            assert False, "NaN feature인데 예외가 안 남"
+        except ss.DataGapFailClosed as e:
+            prov = e.partial_provenance
+            assert set(prov.keys()) == {"cpu", "memory", "queue", "cache"}
+            for name, p in prov.items():
+                assert p["raw_sample_status"] == "ok", \
+                    f"{name}: NaN은 '값'의 문제고 '빈 응답'이 아니므로 provenance는 여전히 ok여야 함: {p}"
+    print("OK - NaN/Inf fail-closed도 short-circuit 없이 4개 지표 전부 캡처(not_queried 없음)")
 
 
 def test_missing_metric_fails_closed_no_score():
@@ -734,6 +830,64 @@ def test_once_mode_returns_after_skip_without_retry_loop():
         skipped = [r for r in _read_jsonl(evidence_path) if r["record_type"] == "evaluation_skipped"]
         assert len(skipped) == 1
     print("OK - once=True에서 스킵이 나도 재시도 안 하고 그 자리에서 반환(정확히 1건만 기록)")
+
+
+def test_evaluation_skipped_record_carries_partial_provenance_end_to_end():
+    # §164 - _evaluate_v32b_verbose()가 예외 객체에 실은 partial_provenance가
+    # main()의 evaluation_skipped JSONL record까지 실제로 도달하는지 확인한다
+    # (지금까지의 테스트는 예외 객체 자체만 확인했고, main() 루프를 거친
+    # 최종 기록까지는 확인하지 않았음).
+    fake_partial = {
+        "cpu": {"raw_sample_status": "ok", "eval_grid_ts_utc": "2026-01-01T00:00:00+00:00",
+                "sample_lag_at_query_sec": 1.0, "scrape_interval_used_sec": None,
+                "interval_based_lower_bound_utc": None,
+                "query_sent_at_utc": "2026-01-01T00:00:00+00:00",
+                "query_received_at_utc": "2026-01-01T00:00:00.100000+00:00"},
+        "memory": {"raw_sample_status": "ok", "eval_grid_ts_utc": "2026-01-01T00:00:00+00:00",
+                   "sample_lag_at_query_sec": 1.0, "scrape_interval_used_sec": None,
+                   "interval_based_lower_bound_utc": None,
+                   "query_sent_at_utc": "2026-01-01T00:00:00+00:00",
+                   "query_received_at_utc": "2026-01-01T00:00:00.100000+00:00"},
+        "queue": {"raw_sample_status": "no_samples", "eval_grid_ts_utc": None,
+                  "sample_lag_at_query_sec": None, "scrape_interval_used_sec": 15,
+                  "interval_based_lower_bound_utc": None,
+                  "query_sent_at_utc": None, "query_received_at_utc": None},
+        "cache": {"raw_sample_status": "not_queried", "eval_grid_ts_utc": None,
+                  "sample_lag_at_query_sec": None, "scrape_interval_used_sec": 15,
+                  "interval_based_lower_bound_utc": None,
+                  "query_sent_at_utc": None, "query_received_at_utc": None},
+    }
+
+    def raises_with_provenance(model, scaler, schema, **kwargs):
+        raise ss.DataGapFailClosed("fail-closed: feature 결측 - queue 지표 응답 없음",
+                                    partial_provenance=fake_partial)
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        _run_main_n_cycles_raw(evidence_path, raises_with_provenance, n=999, once=True)
+        skipped = [r for r in _read_jsonl(evidence_path) if r["record_type"] == "evaluation_skipped"]
+        assert len(skipped) == 1
+        assert skipped[0]["per_metric_provenance"] == fake_partial, \
+            "예외의 partial_provenance가 evaluation_skipped record에 그대로 전달되지 않음"
+    print("OK - partial_provenance가 main() 루프를 거쳐 evaluation_skipped JSONL record까지 그대로 도달함")
+
+
+def test_evaluation_skipped_record_has_empty_provenance_when_exception_omits_it():
+    # §164 - 기존(§164 이전) raise 호출부처럼 partial_provenance를 아예
+    # 안 주는 경우에도 main()이 죽지 않고 빈 dict로 기록해야 한다(getattr
+    # 기본값 - 하위호환).
+    def raises_without_provenance(model, scaler, schema, **kwargs):
+        raise ss.DataGapFailClosed("fail-closed: feature 결측 - queue 지표 응답 없음")
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        evidence_path = Path(d) / "evidence.jsonl"
+        _run_main_n_cycles_raw(evidence_path, raises_without_provenance, n=999, once=True)
+        skipped = [r for r in _read_jsonl(evidence_path) if r["record_type"] == "evaluation_skipped"]
+        assert len(skipped) == 1
+        assert skipped[0]["per_metric_provenance"] == {}
+    print("OK - partial_provenance를 안 주는 기존 방식의 raise도 빈 dict로 안전하게 기록됨(하위호환)")
 
 
 def test_non_datagapfailclosed_exception_from_verbose_still_propagates_and_crashes():

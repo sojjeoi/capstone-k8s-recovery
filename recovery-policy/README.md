@@ -1,5 +1,7 @@
 # 복구 정책 결정 서비스
 
+> Status: **HISTORICAL**(초기 정책 서비스 `main.py` 설명). 공식 실험은 guarded 정책(`guarded_*.py`, `main_guarded.py`)을 사용 - `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조.
+
 `anomaly-detection`의 위험 신호(예측 경로) + Alertmanager 알림(반응 경로, 필수)을 둘 다 받아 조치를 결정하고, Kubernetes API(Argo Rollouts promotion)로 시간민감적 트래픽 전환을 즉시 실행한다. **Git은 감사 기록 전용** — 판단 근거·실행 결과를 사후 추적용으로 커밋할 뿐, 실행 자체를 막거나 트리거하는 승인 게이트가 아니다(정상 상태·배포 구성은 별도로 GitOps/ArgoCD가 관리).
 
 in-cluster Deployment로 배포한다(`gitops/apps/recovery-policy/`) — `rollouts_client.py`는 `KUBERNETES_SERVICE_HOST` 존재 여부로 in-cluster/로컬을 자동 판단.

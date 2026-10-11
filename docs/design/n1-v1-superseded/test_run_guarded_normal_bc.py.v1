@@ -1,0 +1,149 @@
+"""run_guarded_normal_bc - 동결 test_run_guarded_pilot의 World(실제 guarded 정책 앱 record_only + 가짜 클러스터·시계)로
+새 실행기를 진입점부터 끝까지 돌린다. 네트워크·클러스터 접속 없음."""
+import hashlib
+import json
+
+import pytest
+
+import guarded_live_detector_runner as gr
+import run_guarded_normal_bc as rn
+import run_guarded_pilot as gp
+import test_run_guarded_pilot as tgp
+
+
+class ShadowStub:
+    """c1_bck_shadow_pair 자리 - 시작 기록·scored 평가 1개를 쓰고, 정지 전까지 살아 있다. 송신 경로 없음."""
+
+    def __init__(self):
+        self.started, self.stopped = [], 0
+
+    def __call__(self, results_dir):
+        def start(rid, path, sink_url):
+            self.started.append((rid, sink_url))
+            p = gr.live_evidence_path(results_dir, rid)
+            recs = [{"record_type": "c1_shadow_start", "run_id": rid, "signal_send": False},
+                    {"record_type": "c1_evaluation", "run_id": rid, "evaluation_seq": 1, "status": "scored", "score": 0.1}]
+            p.write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+            alive = {"v": True}
+
+            def stop():
+                alive["v"] = False
+                self.stopped += 1
+                return {"returncode": 0, "exited_cleanly": True}
+            return gp.smoke.DetectorHandle(is_alive=lambda: alive["v"], stop=stop, label="shadow-stub")
+        return start
+
+
+def _world(tmp_path, monkeypatch, mode=gp.MODE_RO):
+    return tgp.World(tmp_path, monkeypatch, mode=mode, send_at=(), wrap_preview=True)
+
+
+def _run(w, run, stub=None, **kw):
+    return rn.run_normal(run, deps=kw.pop("deps", None) or w.deps(), results_dir=w.results,
+                         starter=stub or ShadowStub(), **kw)
+
+
+def test_ids_reps_and_windows_are_separate_from_bck():
+    assert sorted(rn.RUNS) == [f"nb0{i}" for i in range(1, 10)] + ["nb90"]
+    assert {rep for _, rep in rn.RUNS.values()} == {*range(2001, 2010), 2090}
+    assert rn.OFFICIAL_OBSERVATION_SEC == 4200 and rn.DECISION_SEC == 3600 and rn.FOLLOW_UP_SEC == 600
+    assert rn.observation_sec_for("nb01") == 4200 and rn.observation_sec_for("nb90") == 600
+    assert rn.run_id_for("nb01").startswith("guarded_normal_record_only-nb01-")
+
+
+def test_official_session_record_only_no_promotion_no_context_canonical_restore(tmp_path, monkeypatch):
+    w, stub = _world(tmp_path, monkeypatch), ShadowStub()
+    s = _run(w, "nb01", stub)
+    assert s["outcome_status"] == "completed" and s["cleanup_errors"] == [], s["cleanup_errors"]
+    assert w.promotes == [] and w.overrides == [] and w.delay == 30
+    assert w.policy.snapshot()["context"] is None and s["policy_state_after"]["context"] is None
+    assert stub.started and stub.started[0][0] == s["run_id"] and stub.stopped == 1
+    assert "inject" not in w.injector.calls and "cleanup" in w.injector.calls
+    assert len(w.restore_calls) == 1 and s["canonical_end"]["ok"]
+    assert s["comparison"]["counted_in_comparison"] is True and s["comparison"]["arm_order"] is None
+    assert s["evidence_counts"]["send_attempts"] == 0 and s["detector_started"] is True
+    c = json.loads((w.results / f"contract-{s['run_id']}.json").read_text(encoding="utf-8"))
+    assert c["observation_sec"] == 4200 and c["conditions"]["windows"] == {
+        "decision_sec": 3600, "follow_up_sec": 600, "observation_sec": 4200, "grace_sec": 0}
+    assert c["signal_send"] is False and c["actuating_rule"] is None and c["conditions"]["injection"] is None
+    assert not list(w.results.glob("running-*.json"))
+
+
+def test_pilot_is_600s_and_not_counted(tmp_path, monkeypatch):
+    w = _world(tmp_path, monkeypatch)
+    s = _run(w, "nb90")
+    c = json.loads((w.results / f"contract-{s['run_id']}.json").read_text(encoding="utf-8"))
+    assert c["observation_sec"] == 600 and s["comparison"]["counted_in_comparison"] is False
+    assert s["outcome_status"] == "completed" and s["cleanup_errors"] == []
+
+
+def test_schedule_requires_previous_attempt(tmp_path, monkeypatch):
+    w = _world(tmp_path, monkeypatch)
+    with pytest.raises(SystemExit, match="순서 밖"):
+        _run(w, "nb02")
+    _run(w, "nb01")
+    assert _run(w, "nb02")["outcome_status"] == "completed"
+
+
+def test_run_id_reuse_refused(tmp_path, monkeypatch):
+    w = _world(tmp_path, monkeypatch)
+    s = _run(w, "nb90")
+    (w.results / f"summary-{s['run_id']}.json").rename(w.results / "moved.json")
+    with pytest.raises(SystemExit, match="재사용 금지"):
+        _run(w, "nb90")
+
+
+def test_act_policy_refused_before_any_cluster_change(tmp_path, monkeypatch):
+    w = _world(tmp_path, monkeypatch, mode=gp.MODE_ACT)
+    with pytest.raises(SystemExit, match="사전검사 실패"):
+        _run(w, "nb01")
+    assert w.injector.calls == [] and not list(w.results.glob("contract-*.json"))
+
+
+def test_shadow_starter_launches_new_script_without_policy_url(tmp_path):
+    calls = []
+    start = rn.shadow_starter(tmp_path, start_subprocess=lambda cmd, **k: calls.append(cmd) or {"proc": tgp.FakeProc()},
+                              stop_subprocess=lambda h, n: {"returncode": 0})
+    h = start("rid", None, "http://127.0.0.1:1/signal")
+    cmd = calls[0]
+    assert cmd[2].endswith("c1_bck_shadow_pair.py") and "--policy-url" not in cmd and "--arm" not in cmd
+    assert cmd[cmd.index("--evidence-log") + 1] == str(gr.live_evidence_path(tmp_path, "rid"))
+    assert h.stop()["exit_meaning"] == "ok"
+
+
+def _manifest(root, files, **over):
+    m = {"status": "frozen", "version": rn.FREEZE_VERSION, "files": files, **over}
+    p = root / rn.FREEZE_MANIFEST
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(m), encoding="utf-8")
+
+
+def _tree(tmp_path):
+    files = {}
+    for rel in rn.PROVENANCE_REQUIRED.values():
+        f = tmp_path / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(rel, encoding="utf-8")
+        files[rel] = hashlib.sha256(rel.encode()).hexdigest()
+    return files
+
+
+def test_provenance_verified_and_fail_closed(tmp_path):
+    files = _tree(tmp_path)
+    _manifest(tmp_path, files)
+    assert rn.verify_provenance(root=tmp_path)["verification_status"] == "verified"
+    (tmp_path / rn.PROVENANCE_REQUIRED["runner"]).write_text("changed", encoding="utf-8")
+    with pytest.raises(SystemExit, match="해시 불일치"):
+        rn.verify_provenance(root=tmp_path)
+    files = _tree(tmp_path)
+    _manifest(tmp_path, {k: v for k, v in files.items() if k != rn.PROVENANCE_REQUIRED["analyzer"]})
+    with pytest.raises(SystemExit, match="필수 항목 누락"):
+        rn.verify_provenance(root=tmp_path)
+    _manifest(tmp_path, files, version="v1.2")
+    with pytest.raises(SystemExit, match="형식 오류"):
+        rn.verify_provenance(root=tmp_path)
+
+
+def test_frozen_bck_runner_untouched_by_import():
+    import run_guarded_bck as gb
+    assert gb.FREEZE_VERSION == "v1.2" and gb.LATIN == ("BCK", "CKB", "KBC", "KCB", "CBK", "BKC")

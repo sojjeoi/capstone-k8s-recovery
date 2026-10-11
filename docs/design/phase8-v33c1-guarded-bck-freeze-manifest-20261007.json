@@ -1,0 +1,48 @@
+{
+ "status": "frozen",
+ "series": "capstone-guarded-bck-v1-20261007",
+ "prepared_at_utc": "2026-10-07T14:33:53.542970+00:00",
+ "frozen_at_utc": "2026-10-07T14:38:59.486970+00:00",
+ "approved_by": "user (chat 2026-10-07)",
+ "scope": "신규 B/C/K 파일만. 동결 A/B 파일은 대상 아님(수정 없음, 해시 불변 확인). 이 manifest 자신의 해시는 내부에 넣지 않고 별도 보고.",
+ "change_rule": "freeze 이후 코드·계약·규칙 명세 수정 금지. 바꿔야 하면 실행을 멈추고 새 버전 ID와 이유를 먼저 기록(결과를 보고 바꾸지 않음).",
+ "thresholds": {
+  "B": -0.07667538512242333,
+  "C": 1.6842544293089357,
+  "K": 2.7
+ },
+ "tests": {
+  "new": {
+   "test_c1_bck_live_detector.py": "22 passed",
+   "test_run_guarded_bck.py": "23 passed",
+   "test_guarded_bck_analysis.py": "34 passed"
+  },
+  "full_regression_2026-10-07": {
+   "experiments": "2100 passed, 1 failed, 3 skipped",
+   "anomaly-detection": "421 passed, 4 xfailed",
+   "recovery-policy": "279 passed"
+  },
+  "known_failure": {
+   "test": "experiments/test_guarded_ab_analysis.py::test_real_folder_dry_run_excludes_rehearsals_and_has_no_official_pairs",
+   "note": "기존 frozen A/B 테스트 1건은 ab01 이전의 공식 pair 0개 가정을 갖고 있어 현재 실제 결과 폴더에서는 실패한다. B/C/K 변경으로 인한 회귀가 아니며 frozen 파일이므로 수정하지 않았다."
+  }
+ },
+ "ponytail": {
+  "high": 0,
+  "medium": 0,
+  "low": 2,
+  "low_disposition": "accepted/no-change (user 2026-10-07): rule_value(), run_name() 한 줄 helper 축약 제안"
+ },
+ "files": {
+  "docs/design/phase8-v33c1-guarded-bck-comparison-contract-draft-20261007.md": "c363e9e66c090adef1874a15f38b41e1adc6c9a2e3d9b583497030770259841e",
+  "anomaly-detection/bck_rules/rule-spec-v1.json": "b0113f174893173cbf208d4f587b541f5f4cfa21c6a362cc535ffd5d06ce4630",
+  "anomaly-detection/c1_bck_live_detector.py": "7db774283efbd2f6c352bad81ad6d8498d3ddae3c531a3a429e4f3ea694cb33a",
+  "anomaly-detection/test_c1_bck_live_detector.py": "0a3372a9bccc876eb927fcb643091f89a72bdbb53d516737d8677f661006b32e",
+  "experiments/run_guarded_bck.py": "ea471e5fbe085200230e04196b524e1bc201129d77ce74f68ca0a1c5142ea9f3",
+  "experiments/test_run_guarded_bck.py": "c3f98abd95dbba1f0fb755214240ccfa24611582b63b5ff67d45d0660da2cef1",
+  "experiments/guarded_bck_analysis.py": "16e49f7d8e9604691167853e5272655df1e812444d3a7c98d2edb962a7f8f161",
+  "experiments/test_guarded_bck_analysis.py": "6572583549d2c1b4a344e6ec9828e8ac796ea0d449e28235107e365e784909aa",
+  "experiments/bck_fixed_threshold_calibration.py": "0242f7b9e22500332e7d6fff490422d9422e97e11349883629092b95840fc038",
+  "experiments/analysis_v1/bck-fixed-threshold-calibration-20261007.json": "4ba8cf8da2525b5ec3b7904b5b0c78580e7ecaf56f04a21956fa579836b86c74"
+ }
+}

@@ -1,0 +1,59 @@
+{
+ "spec_version": "bck-rule-spec-v1",
+ "series": "capstone-guarded-bck-v1-20261007",
+ "contract_doc": "docs/design/phase8-v33c1-guarded-bck-comparison-contract-draft-20261007.md",
+ "input": {
+  "evaluation": "c1_shadow_detector.evaluate_once (1회/평가 tick, 세 규칙 공통)",
+  "cpu_mean": "c1 특징 cpu_mean = rate(container_cpu_usage_seconds_total{namespace=vllm-serving,container=vllm}[60s]), Rollout selector로 확인된 active+preview 두 Pod 합산, 60초 창(15초 격자 5점) 평균, Pod UID·full grid·per-pod freshness 검사(input_integrity)",
+  "if_score": "v3.3-c1 StandardScaler+IsolationForest decision_function (같은 평가 레코드의 특징)",
+  "skipped_evaluation": "세 규칙 모두 연속 0 리셋"
+ },
+ "common": {
+  "consecutive": 3,
+  "cooldown_sec": 60.0,
+  "eval_interval_sec": 15.0,
+  "window_sec": 60,
+  "signal_time": "3번째 연속 평가의 점수 계산 완료 시각(score_completed_at_utc)",
+  "streak_function": "score_server.advance_streak(value, threshold) - value < threshold 이면 이상"
+ },
+ "rules": {
+  "B": {
+   "name": "isolation_forest",
+   "detector_id": "c1_bck_v1_if",
+   "model_version": "v3.3-c1",
+   "value": "if_score",
+   "anomalous_if": "if_score < threshold",
+   "threshold": -0.07667538512242333,
+   "streak_input": "advance_streak(if_score, threshold)",
+   "provenance": "anomaly-detection/v3/model_v33_c1/artifacts/threshold.json (SHA256SUMS.json)"
+  },
+  "C": {
+   "name": "calibrated_fixed_cpu",
+   "detector_id": "c1_bck_v1_fixed_cal",
+   "model_version": "fixed-cpu-gt-1.6842544293089357",
+   "value": "cpu_mean",
+   "anomalous_if": "cpu_mean > threshold",
+   "threshold": 1.6842544293089357,
+   "display": "약 1.6843 core",
+   "streak_input": "advance_streak(-cpu_mean, -threshold)",
+   "provenance": "experiments/bck_fixed_threshold_calibration.py -> experiments/analysis_v1/bck-fixed-threshold-calibration-20261007.json: model_v31/replay.calibrate_threshold(score=-cpu_mean), 보정 4세션 c1ca01-04(c1-data-manifest.json sha256 99a2242d01586f41b11a86f3739dc3f202c68692ab68f7bb13c7d10f183da283), 3연속·쿨다운 60·간격 15 - IF와 같은 함수·같은 세션·같은 기준. ab01-ab05 등 압박 결과 미사용."
+  },
+  "K": {
+   "name": "legacy_fixed_cpu",
+   "detector_id": "c1_bck_v1_fixed_legacy",
+   "model_version": "fixed-cpu-gt-2.7",
+   "value": "cpu_mean",
+   "anomalous_if": "cpu_mean > threshold",
+   "threshold": 2.7,
+   "streak_input": "advance_streak(-cpu_mean, -threshold)",
+   "provenance": "컨테이너 CPU limit 3코어 x 90% - anomaly-detection/fixed_threshold.py:51,55-68, docs/design/experiment-contract.md:504(§6), 2026-09-20 변경 기록(:601). 한계: 단일 컨테이너 한도 기반 값을 두 Pod 합산 cpu_mean에 적용."
+  }
+ },
+ "signal_identity": {
+  "B": "model_hash = model.pkl sha256, artifact_manifest_hash = c1_policy_link.artifact_manifest_hash(SHA256SUMS)",
+  "C_K": "model_hash = 이 파일 sha256, artifact_manifest_hash = c1_policy_link.artifact_manifest_hash({\"rule-spec-v1.json\": 이 파일 sha256})",
+  "score": "B = if_score, C/K = cpu_mean",
+  "note": "guarded 정책은 context 일치(run_id·detector_id·model_version·hashes·threshold)만 확인하고 score 방향은 보지 않는다(guarded_policy.py:377-388). schema 필드 추가 없음."
+ },
+ "frozen_rule": "pilot·공식 결과를 보고 세 임계값·연속·쿨다운을 바꾸지 않는다. 주입 전 발화는 false-positive evidence로 보존."
+}

@@ -1,0 +1,21 @@
+{
+  "plan_id": "capstone-c3-normal-coverage-20261010",
+  "plan": "minimum_viable",
+  "prereg": "experiments/results/c3_normal_coverage_prereg_20261010/C3-NORMAL-COVERAGE-PREREGISTRATION.md",
+  "note": "PREREG H 최소안 그대로 - 역할·블록·순서는 수집 전 고정, 결과를 보고 옮기지 않음. 예비 ID는 같은 역할의 대체에만 순서대로 사용.",
+  "observation_sec": 4200,
+  "max_attempts": 14,
+  "sessions": [
+    {"id": "c3n01", "role": "TRAIN", "block": 1, "order": 1},
+    {"id": "c3n02", "role": "VALIDATION", "block": 1, "order": 2},
+    {"id": "c3n03", "role": "CALIBRATION", "block": 1, "order": 3},
+    {"id": "c3n04", "role": "TRAIN", "block": 2, "order": 4},
+    {"id": "c3n05", "role": "VALIDATION", "block": 2, "order": 5},
+    {"id": "c3n06", "role": "TRAIN", "block": 2, "order": 6},
+    {"id": "c3n07", "role": "CALIBRATION", "block": 3, "order": 7},
+    {"id": "c3n08", "role": "VALIDATION", "block": 3, "order": 8},
+    {"id": "c3n09", "role": "TRAIN", "block": 3, "order": 9},
+    {"id": "c3n10", "role": "VALIDATION", "block": 3, "order": 10}
+  ],
+  "spares": ["c3r01", "c3r02", "c3r03", "c3r04"]
+}

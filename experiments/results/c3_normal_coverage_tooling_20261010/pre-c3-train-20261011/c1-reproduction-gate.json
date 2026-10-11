@@ -1,0 +1,166 @@
+{
+  "verdict": "C1_REPRODUCTION_GATE_PASS",
+  "checked_at_utc": "2026-10-11T02:41:53.938873+00:00",
+  "gate": {
+    "A_feature_rows": {
+      "train_rows": 619,
+      "c1_official_n_train_rows": 619,
+      "schema_recomputed_equals_official": true,
+      "c3_assemble_equals_c1_rows": true,
+      "ok": true
+    },
+    "B_scaler": {
+      "ok": true
+    },
+    "C_scores": {
+      "trees_equal": true,
+      "n_rows": 1040,
+      "max_abs_score_diff": 0.0,
+      "ok": true
+    },
+    "D_threshold": {
+      "reproduced": -0.07667538512242333,
+      "official": -0.07667538512242333,
+      "per_session_equal": true,
+      "ok": true
+    },
+    "E_decision_sequence": {
+      "files": {
+        "c1-live-evidence-guarded_normal_record_only-nb01-capstone-guarded-normal-bc-v1-20261008.jsonl": {
+          "n_evals": 228,
+          "n_scored": 228,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 2,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_normal_record_only-nb02-capstone-guarded-normal-bc-v1-20261008.jsonl": {
+          "n_evals": 202,
+          "n_scored": 202,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 1,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_normal_record_only-nb03-capstone-guarded-normal-bc-v1-20261008.jsonl": {
+          "n_evals": 243,
+          "n_scored": 243,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 8,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_normal_record_only-nb04-capstone-guarded-normal-bc-v1-20261008.jsonl": {
+          "n_evals": 245,
+          "n_scored": 245,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 12,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_normal_record_only-nb05-capstone-guarded-normal-bc-v1-20261008.jsonl": {
+          "n_evals": 248,
+          "n_scored": 248,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 5,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_normal_record_only-nb06-capstone-guarded-normal-bc-v1-20261008.jsonl": {
+          "n_evals": 247,
+          "n_scored": 247,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 1,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_normal_record_only-nb07-capstone-guarded-normal-bc-v1-20261008.jsonl": {
+          "n_evals": 94,
+          "n_scored": 94,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 5,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_normal_record_only-nb08-capstone-guarded-normal-bc-v1-20261008.jsonl": {
+          "n_evals": 251,
+          "n_scored": 251,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 3,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_pressure_record_only-ab00a-capstone-guarded-ab-v1-20261007.jsonl": {
+          "n_evals": 37,
+          "n_scored": 37,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 5,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_pressure_record_only-ab01a-capstone-guarded-ab-v1-20261007.jsonl": {
+          "n_evals": 37,
+          "n_scored": 37,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 5,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_pressure_record_only-ab02a-capstone-guarded-ab-v1-20261007.jsonl": {
+          "n_evals": 36,
+          "n_scored": 36,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 6,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_pressure_record_only-ab03a-capstone-guarded-ab-v1-20261007.jsonl": {
+          "n_evals": 37,
+          "n_scored": 37,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 5,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_pressure_record_only-ab04a-capstone-guarded-ab-v1-20261007.jsonl": {
+          "n_evals": 37,
+          "n_scored": 37,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 5,
+          "ok": true
+        },
+        "c1-live-evidence-guarded_pressure_record_only-ab05a-capstone-guarded-ab-v1-20261007.jsonl": {
+          "n_evals": 37,
+          "n_scored": 37,
+          "max_abs_scaled_diff": 0.0,
+          "max_abs_score_diff": 0.0,
+          "decision_mismatch_seqs": [],
+          "signals": 5,
+          "ok": true
+        }
+      },
+      "n_files": 14,
+      "ok": true
+    }
+  },
+  "note": "공식 c1 artifact·특징·evidence는 읽기만. 재현 모델은 메모리에만 있고 저장하지 않음",
+  "versions": {
+    "python": "3.14.3 (tags/v3.14.3:323c59a, Feb  3 2026, 16:04:56) [MSC v.1944 64 bit (AMD64)]",
+    "sklearn": "1.9.0",
+    "numpy": "2.5.1"
+  }
+}

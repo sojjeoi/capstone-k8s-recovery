@@ -1,0 +1,50 @@
+# Stage 0 I/O feasibility 설정(counted=false, 2026-10-09). 계약: docs/design/phase8-iof-stage0-contract-20261009.md
+# 결과를 보고 값을 바꾸지 않는다. 바꾸려면 amendment(새 freeze)로만.
+# 배경 workload: probe 1 RPS + L1(0.025 RPS, jittered_grid_v1, max_tokens 10) - v2wl 두 rep 모두 SLO 정상이었던 수준.
+# v2_arrival.py가 이 파일의 target·stages[0]을 그대로 읽는다(배경 한 단계 = 세션 전체).
+target:
+  url: "http://vllm-active.vllm-serving.svc.cluster.local:8000/v1/completions"
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  prompt: "Hello"
+  max_tokens: 10
+
+arrival:
+  rule: jittered_grid_v1
+  seeds:            # 실행 ID에 묶인 사전 고정 seed(단계 seed = run_seed*10 + 1)
+    iob90: 2026101090
+    iob91: 2026101091
+    iod90: 2026101190
+    iod91: 2026101191
+    iod92: 2026101192
+    iof90: 2026101290
+    iof91: 2026101291
+    iof92: 2026101292
+
+stages:
+  - name: BG-L1-0.025rps
+    rps: 0.025
+    duration_sec: 2280   # ramp pod 수명(2400 s) - 안정화 60 s - 여유. 세션이 먼저 끝나면 정리에서 중단
+
+io:
+  tool: chaos/loadgen/io_writer.py   # O_DIRECT 순차 쓰기, 블록 1 MiB, 쓰기 1개, 1 GiB 순환 파일
+  axis: target_write_mbps            # 유일한 강도 축(1 MB = 1e6 B)
+  emptydir_size_limit: 2Gi
+  writer_cpu_limit: 250m
+  writer_memory_limit: 128Mi
+  # 개발 사다리 - 근거(Prometheus 읽기 조회, 2026-10-09): sj-worker2 vda 7일 쓰기 p99 2.24 MB/s, 7일 최대 6.0 MB/s,
+  # 클러스터 7일 최대 17.8 MB/s(sj-worker). 모두 이미 관측된 수준 안. 이보다 큰 값은 넣지 않는다.
+  development_ladder:
+    - {name: I1, target_write_mbps: 2}
+    - {name: I2, target_write_mbps: 6}
+    - {name: I3, target_write_mbps: 18}
+  confirmatory: null   # 개발 결과 뒤 amendment로 weak·strong 고정(선택 규칙은 계약 §7)
+
+timing:
+  readiness_min_bg_sec: 120
+  readiness_max_sec: 600          # probe 시작부터
+  pre_stress_sec: 300
+  stress_sec: 300
+  dev_recovery_sec: 120
+  confirm_gap_sec: 240            # weak 뒤, strong 전
+  confirm_tail_sec: 240           # strong 뒤
+  baseline_observation_sec: 1200  # iob 세션(스트레스 없음, CPU envelope·I/O 기준)

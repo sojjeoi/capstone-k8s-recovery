@@ -1,0 +1,70 @@
+{
+ "status": "frozen",
+ "version": "v1.1",
+ "series": "capstone-guarded-bck-v1-20261007",
+ "frozen_at_utc": "2026-10-07T15:00:53.595481+00:00",
+ "approved_by": "user (chat 2026-10-07/08)",
+ "supersedes": {
+  "manifest": "docs/design/phase8-v33c1-guarded-bck-freeze-manifest-20261007.json",
+  "sha256": "77164a0e157a8cf4ed5c63faf4e49cdcd4f6a09c00c8c245f7ccc9c7a1dba365",
+  "status_of_v1": "superseded (preserved, unmodified)",
+  "reason": "live result collection 전에 session wrapper(guarded_pilot_session.ps1, 항상 --mode 전달) → runner CLI(--mode 없음) 비호환 발견. bc90 ID 미사용·결과 폴더 없음·cluster 미접속·CPU pressure 없음·promotion 없음·결과/SLO 미확인."
+ },
+ "change": {
+  "file": "experiments/run_guarded_bck.py",
+  "v1_sha256": "ea471e5fbe085200230e04196b524e1bc201129d77ce74f68ca0a1c5142ea9f3",
+  "v1_byte_copy": "docs/design/bck-v1-superseded/run_guarded_bck.py.v1",
+  "diff": "main(): + p.add_argument('--mode', required=True, choices=[MODE_ACT]) (+ 주석 1줄)",
+  "added_test": "experiments/test_run_guarded_bck_cli.py"
+ },
+ "unchanged": "판단 알고리즘·임계값·규칙 명세·탐지기·분석기·signal identity/context·arm·압박·관찰·서비스 확인·cleanup·유효성·지표·통계·반복 수·순서·승인 단위·session wrapper",
+ "contract": {
+  "base_v1": "docs/design/phase8-v33c1-guarded-bck-comparison-contract-draft-20261007.md",
+  "amendment": "docs/design/phase8-v33c1-guarded-bck-contract-amendment-v1.1-20261007.md"
+ },
+ "thresholds": {
+  "B": -0.07667538512242333,
+  "C": 1.6842544293089357,
+  "K": 2.7
+ },
+ "tests": {
+  "new_bck": {
+   "test_c1_bck_live_detector.py": "22 passed",
+   "test_run_guarded_bck.py": "23 passed",
+   "test_guarded_bck_analysis.py": "34 passed",
+   "test_run_guarded_bck_cli.py": "15 passed"
+  },
+  "experiments_full": "2114 passed, 2 failed, 3 skipped",
+  "known_failures": {
+   "test_guarded_ab_analysis.py::test_real_folder_dry_run_excludes_rehearsals_and_has_no_official_pairs": "기존 frozen A/B 테스트 1건은 ab01 이전의 공식 pair 0개 가정을 갖고 있어 현재 실제 결과 폴더에서는 실패한다. B/C/K 변경으로 인한 회귀가 아니며 frozen 파일이므로 수정하지 않았다.",
+   "test_ssh_check_evidence.py::test_timeout_with_partial_output_fails_and_preserves_partial": "전체 실행 중 1회 실패, 단독 재실행 3/3 통과 - 부하 민감 timing 테스트로 판단(추정). B/C/K와 무관, 수정하지 않음."
+  }
+ },
+ "ponytail_v1.1": {
+  "high": 0,
+  "medium": 0,
+  "low": 1,
+  "low_disposition": "accepted/no-change: test_run_guarded_bck_cli._argv의 미사용 approval 인자"
+ },
+ "ponytail_v1": {
+  "high": 0,
+  "medium": 0,
+  "low": 2,
+  "low_disposition": "accepted/no-change"
+ },
+ "files": {
+  "docs/design/phase8-v33c1-guarded-bck-contract-amendment-v1.1-20261007.md": "f3e1c86f02bc89a1d8d6e5cd5e482557753040ec5932feb6cd74f44b6b638056",
+  "docs/design/phase8-v33c1-guarded-bck-comparison-contract-draft-20261007.md": "c363e9e66c090adef1874a15f38b41e1adc6c9a2e3d9b583497030770259841e",
+  "anomaly-detection/bck_rules/rule-spec-v1.json": "b0113f174893173cbf208d4f587b541f5f4cfa21c6a362cc535ffd5d06ce4630",
+  "anomaly-detection/c1_bck_live_detector.py": "7db774283efbd2f6c352bad81ad6d8498d3ddae3c531a3a429e4f3ea694cb33a",
+  "anomaly-detection/test_c1_bck_live_detector.py": "0a3372a9bccc876eb927fcb643091f89a72bdbb53d516737d8677f661006b32e",
+  "experiments/run_guarded_bck.py": "74e384f90844bf1603ed9baa3cac3426c483afc71829671b88395ca14b24470a",
+  "experiments/test_run_guarded_bck.py": "c3f98abd95dbba1f0fb755214240ccfa24611582b63b5ff67d45d0660da2cef1",
+  "experiments/guarded_bck_analysis.py": "16e49f7d8e9604691167853e5272655df1e812444d3a7c98d2edb962a7f8f161",
+  "experiments/test_guarded_bck_analysis.py": "6572583549d2c1b4a344e6ec9828e8ac796ea0d449e28235107e365e784909aa",
+  "experiments/bck_fixed_threshold_calibration.py": "0242f7b9e22500332e7d6fff490422d9422e97e11349883629092b95840fc038",
+  "experiments/analysis_v1/bck-fixed-threshold-calibration-20261007.json": "4ba8cf8da2525b5ec3b7904b5b0c78580e7ecaf56f04a21956fa579836b86c74",
+  "experiments/test_run_guarded_bck_cli.py": "14609f6457e7ea36f01e833fd142fb9d30f75868ec0a7f3c27070c451b4c34f5",
+  "docs/design/bck-v1-superseded/run_guarded_bck.py.v1": "ea471e5fbe085200230e04196b524e1bc201129d77ce74f68ca0a1c5142ea9f3"
+ }
+}

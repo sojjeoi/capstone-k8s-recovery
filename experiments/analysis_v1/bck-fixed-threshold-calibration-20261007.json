@@ -1,0 +1,129 @@
+{
+ "created_at_utc": "2026-10-07T14:00:32.722440+00:00",
+ "script": "bck_fixed_threshold_calibration.py",
+ "rule": "calibrate_threshold(score=-cpu_mean): 모든 보정 세션 3연속 경고 0인 가장 민감한 값; 경고 = cpu_mean > T (strict)",
+ "manifest": "anomaly-detection/v3/model_v33_c1/c1-data-manifest.json",
+ "manifest_sha256": "99a2242d01586f41b11a86f3739dc3f202c68692ab68f7bb13c7d10f183da283",
+ "calibration_sessions": [
+  "c1ca01",
+  "c1ca02",
+  "c1ca03",
+  "c1ca04"
+ ],
+ "replay_params": {
+  "consecutive_threshold": 3,
+  "cooldown_sec": 60.0,
+  "eval_interval_sec": 15.0
+ },
+ "computed_threshold_exact": 1.6842544293089357,
+ "calibration_failed": false,
+ "per_session_at_exact": {
+  "c1ca01": {
+   "n_points": 100,
+   "point_anomaly_count": 6,
+   "signal_count": 0,
+   "max_consecutive_anomalous": 2
+  },
+  "c1ca02": {
+   "n_points": 107,
+   "point_anomaly_count": 12,
+   "signal_count": 0,
+   "max_consecutive_anomalous": 2
+  },
+  "c1ca03": {
+   "n_points": 107,
+   "point_anomaly_count": 3,
+   "signal_count": 0,
+   "max_consecutive_anomalous": 2
+  },
+  "c1ca04": {
+   "n_points": 107,
+   "point_anomaly_count": 0,
+   "signal_count": 0,
+   "max_consecutive_anomalous": 0
+  }
+ },
+ "frozen": {
+  "C_calibrated": {
+   "threshold": 1.6843,
+   "per_session": {
+    "c1ca01": {
+     "n_points": 100,
+     "point_anomaly_count": 6,
+     "signal_count": 0,
+     "max_consecutive_anomalous": 2
+    },
+    "c1ca02": {
+     "n_points": 107,
+     "point_anomaly_count": 12,
+     "signal_count": 0,
+     "max_consecutive_anomalous": 2
+    },
+    "c1ca03": {
+     "n_points": 107,
+     "point_anomaly_count": 3,
+     "signal_count": 0,
+     "max_consecutive_anomalous": 2
+    },
+    "c1ca04": {
+     "n_points": 107,
+     "point_anomaly_count": 0,
+     "signal_count": 0,
+     "max_consecutive_anomalous": 0
+    }
+   }
+  },
+  "K_legacy": {
+   "threshold": 2.7,
+   "per_session": {
+    "c1ca01": {
+     "n_points": 100,
+     "point_anomaly_count": 0,
+     "signal_count": 0,
+     "max_consecutive_anomalous": 0
+    },
+    "c1ca02": {
+     "n_points": 107,
+     "point_anomaly_count": 0,
+     "signal_count": 0,
+     "max_consecutive_anomalous": 0
+    },
+    "c1ca03": {
+     "n_points": 107,
+     "point_anomaly_count": 0,
+     "signal_count": 0,
+     "max_consecutive_anomalous": 0
+    },
+    "c1ca04": {
+     "n_points": 107,
+     "point_anomaly_count": 0,
+     "signal_count": 0,
+     "max_consecutive_anomalous": 0
+    }
+   }
+  }
+ },
+ "observed_between_exact_and_1.6843": [],
+ "cpu_mean_by_session": {
+  "c1ca01": {
+   "n": 100,
+   "median": 1.6381725418236255,
+   "max": 1.689009931116609
+  },
+  "c1ca02": {
+   "n": 107,
+   "median": 1.6355292039476637,
+   "max": 1.7045722447336562
+  },
+  "c1ca03": {
+   "n": 107,
+   "median": 1.6341761301491076,
+   "max": 1.6920045103071033
+  },
+  "c1ca04": {
+   "n": 107,
+   "median": 1.6219826595098428,
+   "max": 1.6837314016981442
+  }
+ }
+}
