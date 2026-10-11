@@ -1,0 +1,6 @@
+{
+  "design_rev6_correctness": "rev 6 문서 High 0 / Medium 0(Medium 1 = 구현 rev 5 참조 → 바인딩 커밋 12a2b6d로 해소), Low 3(runbook 문구 수정, '기존 실행기의 안전 감시' 문구 수용 - 동작 영향 없음, rev 5 이력 파일 freeze 포함)",
+  "implementation_correctness": "1차 High 4 / Medium 7 / Low 6 → 2차 Medium 3 / Low 2 → 3차 Medium 1 → rev 6 바인딩 확인 High 0 / Medium 0 / Low 0 (M-c는 rev 6 교체로 해소)",
+  "ponytail": "중복 헬퍼·유효성 dict 합침(-23줄 가능 중 적용), run_pressure 동결 경로 복사는 ponytail 주석으로 근거 기록(동결 파일 수정 금지)",
+  "codex": "사용자 지시로 사용하지 않음"
+}

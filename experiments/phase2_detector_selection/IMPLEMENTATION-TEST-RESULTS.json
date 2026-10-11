@@ -1,0 +1,18 @@
+{
+  "recorded_at_utc": "2026-10-11",
+  "phase2": {
+    "suite": "experiments/phase2_detector_selection",
+    "passed": 90,
+    "failed": 0,
+    "skipped": 0,
+    "note": "PHASE2_ARTIFACT_ROOT=실제 c3-A 원본 artifact 폴더(로컬 읽기)로 실행 - 실제 artifact 해시 확인 포함 100%. 미지정 시 89 passed 1 skipped(같은 코드)"
+  },
+  "existing": {
+    "canonical_baseline": "ab8d994 깨끗한 checkout: recovery-policy 69 passed / anomaly-detection 46 failed 1 error / experiments 107 failed 2 errors",
+    "branch_final": "recovery-policy 69 passed(재실행 3회; 첫 실행 1건 Windows 파일 잠금 flaky) / anomaly-detection 46 failed 1 error / experiments 107 failed 2 errors",
+    "failure_set_vs_canonical": "동일(새 실패 0, 사라진 실패 0)",
+    "known_baseline_file": "KNOWN-BASELINE-FAILURES.txt"
+  },
+  "new_regressions": [],
+  "artifact_validation": "실제 c3-A model/scaler/feature-schema/threshold/freeze SHA-256·series/plan·sklearn 1.9.0·threshold 일치(test_real_external_artifacts_match_frozen_hashes 통과)"
+}

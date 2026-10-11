@@ -11,6 +11,8 @@
 # Phase 2 무관 = 같은 파일이 이 브랜치에서 바뀌지 않았고 canonical에서도 같은 실패. Phase 2 판정에서 제외(전체 suite 0 실패는 성공 조건 아님)
 # 별도: experiments/test_calibration_node_probe.py::test_timeout_is_recorded_as_error_at_the_timeout_latency 는 시간 의존 flaky
 #   (브랜치·canonical 모두 반복 실행 시 통과, 브랜치 1회 실패 관찰) - 파일 미변경, Phase 2 무관
+# 별도: recovery-policy/test_git_client.py::test_restart_requeues_pending 은 Windows 임시 파일 잠금(PermissionError) flaky
+#   (최종 회귀 실행에서 1회 관찰, 바로 3회 재실행 모두 69 passed) - recovery-policy 파일 ab8d994 이후 변경 없음, Phase 2 무관
 
 ERROR | anomaly-detection/test_c1_bck_live_detector.py | c1_pkl | yes | yes
 FAILED | anomaly-detection/test_c1_bck_shadow_pair.py::test_cooldown_and_independent_states_match_frozen_judge_all | c1_pkl | yes | yes
