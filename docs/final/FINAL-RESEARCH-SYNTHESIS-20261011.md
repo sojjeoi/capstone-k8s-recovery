@@ -1,6 +1,7 @@
 # Phase 1 최종 연구 정리 (2026-10-11)
 
-> Status: **CURRENT** - Phase 1(이 snapshot까지)의 결과와 최종 후속 연구 방향을 한곳에 정리한 문서.
+> Status: **CURRENT(Phase 1 정리)** - Phase 1(이 snapshot까지)의 결과와 최종 후속 연구 방향을 한곳에 정리한 문서.
+> **2026-10-12 업데이트**: §4의 후속 방향(Phase 2)은 이후 사전등록·실행·판정까지 완료되었다 - 최종 판정 `PHASE2_ARCHITECTURE_VALIDATED`. 결과는 [PHASE2-FINAL-RESULT-20261012.md](PHASE2-FINAL-RESULT-20261012.md) 참조. 아래 본문은 Phase 1 시점 기록으로 그대로 둔다.
 > 공식 결과를 새로 만들거나 바꾸지 않는다. 숫자는 각 공식 결과 파일에서 그대로 옮겼다.
 > `FINAL-EVIDENCE-SUMMARY-20261010.md`(A/B·B/C/K·N1 공식 증거·주장 판정표)는 그대로 유효하며, 이 문서는 그 이후 결과(c3-A, Axis 2, 문헌·S3)와 방향을 더한다.
 
@@ -38,6 +39,8 @@
 → 따라서 복구 시스템을 특정 detector에 종속시키기보다 **detector와 recovery를 분리**하는 것이 합리적이다. 이 방향은 새로 떠올린 아이디어가 아니라 위 결과에서 나온 결론이다.
 
 ## 4. 최종 후속 연구 방향 (Phase 2 제안, 미구현)
+
+> 2026-10-12: 이 방향은 Phase 2로 구현·검증되었다(현재 CPU-vLLM 환경, `PHASE2_ARCHITECTURE_VALIDATED`, [PHASE2-FINAL-RESULT-20261012.md](PHASE2-FINAL-RESULT-20261012.md)). 아래는 제안 당시 기록이다.
 
 환경별 workload와 병목 특성에 따라 적합한 detector를 선택할 수 있도록 Detection Layer를 교체 가능한 구조로 확장하고, 선택된 detector의 anomaly signal은 기존 Recovery Policy와 Argo Rollouts 기반 복구 파이프라인에 공통으로 연결하는 방향을 후속 연구로 제안한다.
 

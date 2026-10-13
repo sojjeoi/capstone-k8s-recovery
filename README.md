@@ -1,10 +1,11 @@
 # LLM 서빙 성능 저하 대응을 위한 Kubernetes 자동 복구 시스템
 
-> 느리지만 살아 있는 LLM 추론 서비스의 이상 신호를 받아, guarded recovery policy가 Argo Rollouts Blue/Green 전환과 실제 traffic verification까지 수행하는 Kubernetes 자동 복구 시스템. 특정 detector에 종속되지 않도록 Detection Layer와 Recovery Layer를 분리한다.
+> 느리지만 살아 있는 LLM 추론 서비스의 이상 신호를 받아, guarded recovery policy가 Argo Rollouts Blue/Green 전환과 실제 traffic verification까지 수행하는 Kubernetes 자동 복구 시스템. 특정 detector에 종속되지 않도록 Detection Layer와 Recovery Layer를 분리하고, 환경에 맞는 detector를 사전등록 규칙으로 선택해 같은 복구 경로에 연결한다.
 
 - 지도교수: 김영한 교수님 · 작성자: 박소정 (숭실대 전자정보공학부 IT융합전공)
-- 가장 먼저 읽을 문서: [docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md](docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md)
+- 가장 먼저 읽을 문서: [docs/final/PHASE2-FINAL-RESULT-20261012.md](docs/final/PHASE2-FINAL-RESULT-20261012.md)(Phase 2 최종 결과), [docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md](docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md)(Phase 1 정리)
 - Phase 1 최종 연구 상태: tag `phase1-final-20261011`
+- Phase 2 최종 판정: **`PHASE2_ARCHITECTURE_VALIDATED`**(2026-10-12) - 현재 CPU-vLLM 환경에서 cpu-threshold-c를 ACTIVE로 선택, 선택된 detector로 실제 복구 3/3 성공
 
 ## 1. Problem
 
@@ -21,11 +22,13 @@ LLM 서빙 Pod는 죽지 않고 느려지기만 하는 경우가 많다(예: CPU
 ## 3. Architecture
 
 ```
-Environment (Kubernetes · vLLM CPU · Prometheus)
+Environment / Profile (Kubernetes · vLLM CPU · Prometheus)
       ↓
-Detection Layer
+Detector Validation / Selection   ← Phase 2 Stage 1: 사전등록 Gate로 선택
       ↓
-Selected Detector        ← 현재: 실험마다 사람이 지정(CPU threshold 또는 IF)
+Active Profile                    ← 현재 환경: ACTIVE cpu-threshold-c, SHADOW c3-a-if
+      ↓
+Detection Layer [ACTIVE | SHADOW] ← SHADOW는 기록만(송신·조치·승격 권한 없음)
       ↓
 Recovery Policy (guarded)
       ↓
@@ -38,8 +41,11 @@ Verification (새/이전 Pod 실제 요청 수)
 
 | 구분 | 내용 |
 |---|---|
-| **현재 구현·검증** | CPU threshold·IF detector 연구와 비교, guarded recovery, 실제 promotion, 실제 traffic verification |
-| **후속 연구(미구현)** | Environment Profile → Detector Validation → Active / Shadow Detector Selection → 공통 Recovery Pipeline |
+| **Phase 1 구현·검증** | CPU threshold·IF detector 연구와 비교, guarded recovery, 실제 promotion, 실제 traffic verification |
+| **Phase 2 구현·검증** | Environment Profile → Detector Validation / Selection(사전등록) → Active / Shadow → 공통 Recovery Pipeline. 현재 CPU-vLLM 환경 1곳에서 `PHASE2_ARCHITECTURE_VALIDATED` |
+| **미검증** | 다른 환경(GPU·다른 모델·다른 저하 유형)에서의 선택, 자동 benchmarking·여러 detector 자동 학습 |
+
+detector는 환경에 따라 바뀔 수 있지만, Recovery Policy 이후의 복구 경로는 같다.
 
 ## 4. Detector Strategy
 
@@ -48,7 +54,7 @@ Verification (새/이전 Pod 실제 요청 수)
 - **보정 CPU 임계값**(calibrated CPU threshold): `cpu_mean > 1.68425`, 3연속
 - **Isolation Forest**: 정상 데이터로만 학습. c1(초기), c3-A(정상 범위를 넓혀 다시 학습)
 
-환경에 따라 적합한 detector가 달라질 수 있으므로 recovery system을 특정 detector에 종속시키지 않는다. **자동 detector 선택은 구현하지 않았다** - 후속 연구 방향이다.
+환경에 따라 적합한 detector가 달라질 수 있으므로 recovery system을 특정 detector에 종속시키지 않는다. Phase 2에서 새로 수집한 세션에 사전등록 선택 규칙(세션 유효성 → Gate 1 → Gate 2(압박, 필수) → Gate 3(정상 불필요 신호) → tie-break, 가중 점수 없음)을 적용해 현재 환경의 ACTIVE detector를 골랐다. 선택은 사람이 결과를 보고 정한 것이 아니라 동결된 규칙으로 1회 계산했다. 다른 환경에 대한 자동 benchmarking·자동 선택은 구현하지 않았다.
 
 ## 5. Key Results (공식 실험으로 확인된 숫자만)
 
@@ -59,6 +65,8 @@ Verification (새/이전 Pod 실제 요청 수)
 | **N1 정상 운전**(6 세션) | c1 IF가 보정 CPU 임계값보다 불필요 신호를 더 일찍 냄(6/6). 원인: 정상 학습 범위가 좁음(무결성 감사로 확인). |
 | **c3-A**(사전등록, 블라인드 검증 4 세션) | 정상 운전 불필요 신호 **c1 14 → c3-A 1(92.9% 감소)**, 사전등록 판정 **PROMISING**. 압박 기준은 사전 정의상 5/5 통과했지만, 4/5는 첫 3연속에 주입 전 평가 1개가 포함됨(주입 뒤만 보면 363초 이내 2/5). |
 | **Axis 2**(LLM 지표 다변량 detector) | **NO_GO** - 현재 환경에서 LLM 지표가 정상·CPU 압박에서 거의 변하지 않고, 변하게 할 부하는 SLO를 먼저 깸. 문헌 기반 KV cache 압박(S3)도 환경 변경 없이는 불가(예상), pilot 미실행. |
+| **Phase 2 Stage 1**(사전등록 detector 선택, 정상 4·압박 5 새 세션) | 압박 Gate 2(주입 뒤 363 s 안 3연속, 4/5 필요): **CPU threshold C 5/5, c3-A IF 0/5**. 정상 불필요 신호 CPU 1 · IF 0(보고용). IF는 정상에서 더 조용했지만 필수 Gate 2를 통과하지 못해 ACTIVE 불가 → **`SELECTED:cpu-threshold-c`**. |
+| **Phase 2 Stage 2**(선택된 detector로 live 복구 3회) | **3/3 성공**: 매회 ACTIVE 신호 1 · 조치 1 · 승격 1, 새 Pod +60 / 이전 Pod +0(verified). SHADOW 권한 누수 0. 최종 판정 **`PHASE2_ARCHITECTURE_VALIDATED`**. 신호 송신은 세 번 모두 주입 뒤였지만 3연속의 앞쪽 평가 창 일부는 주입 전에 시작함(해석 caveat). |
 
 ## 6. What We Learned
 
@@ -66,14 +74,15 @@ Verification (새/이전 Pod 실제 요청 수)
 - Isolation Forest는 **정상 데이터 범위에 민감했다**. 정상 범위를 넓힌 c3-A에서 정상 운전 불필요 신호가 크게 줄었다(c1 대비).
 - 현재 CPU 기반 vLLM 환경에서 AI가 CPU 임계값보다 낫다는 추가 우월성은 **확인되지 않았다.**
 - 효과의 핵심은 "검증된 전환"이었다.
+- 환경에 맞는 detector를 사전등록 규칙으로 고르고 같은 복구 경로에 연결하는 구조가 이 환경에서 실제로 동작했다(Phase 2). 이 환경의 선택 결과(CPU threshold)는 CPU threshold가 일반적으로 IF보다 낫다는 뜻이 아니다.
 
 ## 7. Current Design Principle - Detector-agnostic Recovery
 
-복구 경로(guarded 정책 → 승격 → 전환 → 검증)는 신호가 IF든 CPU 규칙이든 같게 동작했다(A/B, B/C/K). 그래서 detector는 환경에 맞게 바꿀 수 있는 부품으로 두고, Recovery Layer는 공통으로 재사용한다.
+복구 경로(guarded 정책 → 승격 → 전환 → 검증)는 신호가 IF든 CPU 규칙이든 같게 동작했다(A/B, B/C/K). 그래서 detector는 환경에 맞게 바꿀 수 있는 부품으로 두고, Recovery Layer는 공통으로 재사용한다. Phase 2에서는 이 원칙을 Active / Shadow 권한 분리(ACTIVE 1개만 조치 신호, SHADOW는 기록만)와 함께 live로 검증했다.
 
 ## 8. Limitations
 
-- CPU 기반 소형 LLM(Qwen2.5-0.5B, vLLM CPU) 단일 환경, workload 다양성 제한
+- CPU 기반 소형 LLM(Qwen2.5-0.5B, vLLM CPU) 단일 환경, workload 다양성 제한. Phase 2 선택 결과도 이 환경 1곳에 한정(Stage 2 n = 3)
 - c3-A 검증 세션 n = 4, 검증·학습이 같은 block(날짜·Pod) 공유, c3-A는 c1과만 비교(CPU 임계값과의 새 비교 없음)
 - 운영 GPU·사설 클라우드 일반화 미검증
 - **재현성 범위**: 실험 계약·freeze manifest(SHA256)·분석기·테스트는 저장소에 있지만 clone만으로 전부 재현할 수는 없다.
@@ -87,7 +96,7 @@ Verification (새/이전 Pod 실제 요청 수)
 Environment Profile → Detector Validation → Selected (Active) Detector + Shadow 후보 → 공통 Recovery Pipeline
 ```
 
-환경별 workload·자원·병목 특성에 따라 적합한 detector를 검증·선택하고, 선택된 detector의 신호를 같은 복구 경로에 연결한다. 목표는 AI 우월성 증명이 아니라 환경에 맞는 detector 선택이다. 자동 benchmarking·자동 선택·여러 detector 자동 학습은 아직 구현하지 않았다.
+이 구조는 Phase 2에서 현재 CPU-vLLM 환경 1곳에 대해 검증했다(`PHASE2_ARCHITECTURE_VALIDATED`). 남은 일은 다른 환경(GPU, 다른 모델, CPU 외 저하 유형)에서 같은 절차로 다시 선택·검증하는 것이다. 다른 환경에서는 다른 detector가 선택될 수 있다. 자동 benchmarking·여러 detector 자동 학습은 구현하지 않았다.
 
 ## 10. Repository Structure
 
@@ -111,6 +120,7 @@ docs/history/        초기 제안서와 대체된 요약
 
 | 목적 | 문서 |
 |---|---|
+| **Phase 2 최종 결과**(선택·live 복구·판정·caveat) | [docs/final/PHASE2-FINAL-RESULT-20261012.md](docs/final/PHASE2-FINAL-RESULT-20261012.md) |
 | Phase 1 연구 정리·후속 방향 | [docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md](docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md) |
 | 공식 실험 증거·주장 판정표(A/B·B/C/K·N1) | [docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md](docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md) |
 | 발표 문구·예상 질문 | [docs/final/PRESENTATION-PACKAGE-20261010.md](docs/final/PRESENTATION-PACKAGE-20261010.md), [docs/presentation/](docs/presentation/) |
@@ -122,5 +132,7 @@ docs/history/        초기 제안서와 대체된 요약
 | 내용 | 위치 |
 |---|---|
 | 실험 계약·freeze manifest·중간 설계 | [docs/design/](docs/design/) |
+| Phase 2 사전등록 rev 6·design freeze | [docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md](docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md) |
+| Phase 2 실행기·implementation freeze r2·Stage 1 runbook | [experiments/phase2_detector_selection/](experiments/phase2_detector_selection/) |
 | c3-A 사전등록·수집 runbook(frozen) | [experiments/results/c3_normal_coverage_prereg_20261010/](experiments/results/c3_normal_coverage_prereg_20261010/) |
 | 초기 제안서·대체된 요약 | [docs/history/](docs/history/) |

@@ -1,0 +1,36 @@
+{
+ "run": "p2s01",
+ "run_id": "guarded_pressure_act-p2s01-capstone-phase2-detector-selection-v1-stage2",
+ "generated_at_utc": "2026-10-12T02:01:58.777596+00:00",
+ "session_wrapper_path": "experiments/guarded_pilot_session.ps1",
+ "session_wrapper_sha256": "78fea68a3c0931dd60c10333b88b49c08fff11e8d3da4487811df671e7402c19",
+ "session_wrapper_in_freeze": true,
+ "runner_path": "experiments/phase2_detector_selection/run_stage2.py",
+ "runner_sha256_lf": "0bc251026f4204ad62deca8537f3d854d4ab4aa8214b5d0b4e4eb43e95f18475",
+ "implementation_freeze": {
+  "manifest": "experiments/phase2_detector_selection/phase2-detector-selection-implementation-freeze-r2.json",
+  "manifest_sha256": "06c3ecf8135e5a529924689b29518d569165b3aeaa774223516cfbbc24257df0",
+  "commit": "9ce85f3"
+ },
+ "active_profile_sha256": "246af4004db88534bccec36e93a485d0e148d2bebc0793c61f3fefafd237c2ea",
+ "selection_evidence_sha256": "e8bffe98f5932f33fa3f185fbeefed1a34fd5ea346de06cba7a3776518d9c921",
+ "act_switch": {
+  "file": "act-switch-p2s01.json",
+  "sha256": "ba6e7a82b00504ea869191a487e5fd011ac18f427d5db1731f85f8d87ea0ce11"
+ },
+ "wrapper_invocation": {
+  "script": "experiments/guarded_pilot_session.ps1",
+  "Run": "p2s01",
+  "Mode": "act",
+  "ActApproval": "experiments/results/phase2_stage2/ops-p2s01/p2s01-act-approval-20261012T020158Z.json",
+  "RunnerScript": "experiments/phase2_detector_selection/run_stage2.py",
+  "SessionRoot": "experiments/results/phase2_stage2",
+  "PolicyPort": 18090,
+  "env": {
+   "GUARDED_ADMIN_TOKEN": "<set in launching env from token file; value not recorded>",
+   "PHASE2_ACTIVE_PROFILE": "experiments/results/phase2_selection/active-profile.json",
+   "PHASE2_SELECTION_EVIDENCE": "experiments/results/phase2_selection/phase2-selection-evidence.json",
+   "PHASE2_ARTIFACT_ROOT": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\anomaly-detection\\v3\\model_c3_normal_coverage\\artifacts"
+  }
+ }
+}

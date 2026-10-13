@@ -1,0 +1,64 @@
+{
+ "label": "act-switch-p2s02",
+ "mode": "act",
+ "started_utc": "2026-10-12T03:14:25.881912+00:00",
+ "procedure": "B/C/K bc90_switch.py same steps; imports from frozen worktree",
+ "clock_tool": {
+  "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\measure_clock_offset.py",
+  "sha256": "9b7c08bd0d78a2e81854424b8889c50b47181c1bfcdeff0d867c78c3af6ca4f5"
+ },
+ "old_pod": "guarded-recovery-policy-5b977879bc-cr7fm",
+ "set_env": {
+  "rc": 0,
+  "out": "deployment.apps/guarded-recovery-policy env updated",
+  "err": "",
+  "at_utc": "2026-10-12T03:14:26.773722+00:00"
+ },
+ "rollout": {
+  "rc": 0,
+  "out": "Waiting for deployment \"guarded-recovery-policy\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"guarded-recovery-policy\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"guarded-recovery-policy\" rollout to finish: 0 of 1 updated replicas are available...\ndeployment \"guarded-recovery-policy\" successfully rolled out",
+  "err": ""
+ },
+ "old_pod_lock_released": true,
+ "new_pod": "guarded-recovery-policy-5b5b85b55f-jxj8h",
+ "identity": {
+  "role": "guarded-recovery-policy",
+  "version": "guarded-v1",
+  "mode": "act",
+  "timing": {
+   "max_signal_age_sec": 15.0,
+   "max_future_skew_sec": 2.0,
+   "max_window_to_decision_sec": 10.0
+  },
+  "actions_enabled": true
+ },
+ "state": {
+  "state_available": true,
+  "mode": "act",
+  "blocked": null,
+  "unresolved": {},
+  "context": null
+ },
+ "ledger": {
+  "lines": 89,
+  "last": {
+   "at": "2026-10-12T02:12:30.318011+00:00",
+   "event": "service_result",
+   "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:7976ddcdb6->66bb554f46#bcab9d92-c7df-4e79-b1b9-c1c0ec5636dd",
+   "status": "verified",
+   "ok": true
+  }
+ },
+ "clock": {
+  "file": "clock-offset-act-switch-p2s02.json",
+  "best_offset": 0.35472,
+  "uncertainty": 0.05987340000865515,
+  "bound": 0.41459340000865513,
+  "n_ok": 20
+ },
+ "temp_port_forward": {
+  "pid": 8572,
+  "returncode": 1
+ },
+ "ok": true
+}

@@ -1,6 +1,6 @@
 # 교수 발표용 최종 package (2026-10-10)
 
-> Status: **CURRENT - 발표 문구·예상 질문**(2026-10-10 작성, E8은 2026-10-11 추가). c3-A·Axis 2·문헌·S3 결과는 E8과 아래 synthesis 참조. 최신 결과와 최종 후속 연구 방향은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조. 아래 E8에 후속 방향만 짧게 더함.
+> Status: **CURRENT - 발표 문구·예상 질문**(2026-10-10 작성, E8은 2026-10-11 추가). **Phase 2 최종 결과(2026-10-12)는 [PHASE2-FINAL-RESULT-20261012.md](PHASE2-FINAL-RESULT-20261012.md)가 우선한다.** c3-A·Axis 2·문헌·S3 결과는 E8과 아래 synthesis 참조. 최신 결과와 최종 후속 연구 방향은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조. 아래 E8에 후속 방향만 짧게 더함.
 
 근거: `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(공식 결과 재확인·claim matrix), `docs/history/REPRODUCIBILITY-AUDIT-20261010.md`, `docs/demo/DEMO-RUNBOOK-20261010.md`.
 
@@ -63,6 +63,8 @@ Prometheus(컨테이너 CPU·메모리) → Isolation Forest 이상 점수(15초
 6. Pod-relative memory: NOT PROMISING(세션 차이는 줄었지만 불필요 신호 24 → 99)
 
 ## E8. 최종 후속 연구 방향 (2026-10-11 추가, 미구현 제안)
+
+> 2026-10-12: 이 방향은 Phase 2로 구현·검증되었다 - 현재 CPU-vLLM 환경에서 사전등록 규칙으로 cpu-threshold-c 선택(Gate 2 CPU 5/5 · c3-A IF 0/5), 선택된 detector로 live 복구 3/3 성공(새 Pod +60 / 이전 Pod +0), SHADOW 권한 누수 0, 최종 판정 `PHASE2_ARCHITECTURE_VALIDATED`. 발표 문구·말하지 않는 것은 [PHASE2-FINAL-RESULT-20261012.md](PHASE2-FINAL-RESULT-20261012.md) §6–§7. 아래는 2026-10-11 당시 기록이다.
 
 **한 문장**: "환경별 workload와 병목 특성에 따라 적합한 detector를 선택할 수 있도록 Detection Layer를 교체 가능한 구조로 확장하고, 선택된 detector의 anomaly signal은 기존 Recovery Policy와 Argo Rollouts 기반 복구 파이프라인에 공통으로 연결하는 방향을 후속 연구로 제안한다."
 - 근거(결과에서 도출): 단순 CPU 압박에서는 보정 CPU 임계값이 충분히 강했고, IF는 정상 coverage에 민감했으며(c3-A로 불필요 신호 c1 14 → 1), 현재 환경에서는 다변량 ML의 추가 우월성이 검증되지 않았다(Axis 2 NO_GO). 반면 복구 경로는 신호 출처와 무관하게 같게 동작했다.
