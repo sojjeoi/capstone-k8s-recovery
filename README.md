@@ -60,7 +60,8 @@ detector는 환경에 따라 바뀔 수 있지만, Recovery Policy 이후의 복
 
 | 실험 | 결과 |
 |---|---|
-| **A/B 선제 전환**(공식 5쌍) | 기록만 한 A의 누적 SLO 위반 204.504 / ≥210.83 / 201.68 / 287.79 / 207.396 s, 실제 전환한 B **5/5 모두 0 s**. 실제 전환이 5쌍 모두에서 누적 SLO 피해를 줄였다(부호 검정 p = 0.0625, 기술값). |
+| **A/B 선제 전환 - Stage 1**(사전 고정 공식 5쌍) | 기록만 한 A의 누적 SLO 위반 204.504 / ≥210.83 / 201.68 / 287.79 / 207.396 s, 실제 전환한 B **5/5 모두 0 s**. 실제 전환이 5쌍 모두에서 누적 SLO 피해를 줄였다(부호 검정 p = 0.0625, 기술값). |
+| **A/B 선제 전환 - Stage 2**(사전 등록 추가 반복 3쌍, 2026-10-13) | 같은 동결 조건·실행기·분석기로 A 202.578 / 238.484 / 294.715 s, B **3/3 모두 0 s**(유효 3/3, 무효 0, 사전 중단 기준 충족). B는 매회 실제 승격 1·새 Pod +60/+60/+61·이전 Pod +0(verified). 공식 Stage 1 결과는 바꾸지 않았고, Stage 1+2 8쌍(8/8)은 참고 관측으로만 본다. [상세](docs/final/PHASE1-AB-ADDITIONAL-REPLICATION-20261013.md) |
 | **B/C/K**(c1 IF 대 CPU 임계값) | c1 IF가 보정 CPU 임계값보다 낫다는 증거 없음(D 중앙값 0). 기존 고정 임계값(2.7 core)은 5/5 늦고 피해가 컸다. |
 | **N1 정상 운전**(6 세션) | c1 IF가 보정 CPU 임계값보다 불필요 신호를 더 일찍 냄(6/6). 원인: 정상 학습 범위가 좁음(무결성 감사로 확인). |
 | **c3-A**(사전등록, 블라인드 검증 4 세션) | 정상 운전 불필요 신호 **c1 14 → c3-A 1(92.9% 감소)**, 사전등록 판정 **PROMISING**. 압박 기준은 사전 정의상 5/5 통과했지만, 4/5는 첫 3연속에 주입 전 평가 1개가 포함됨(주입 뒤만 보면 363초 이내 2/5). |
@@ -88,7 +89,7 @@ detector는 환경에 따라 바뀔 수 있지만, Recovery Policy 이후의 복
 - **재현성 범위**: 실험 계약·freeze manifest(SHA256)·분석기·테스트는 저장소에 있지만 clone만으로 전부 재현할 수는 없다.
   - 원 실험 evidence(`experiments/results/*` 원자료)는 저장소 밖 보존, `model.pkl`·`scaler.pkl`은 `.gitignore` 대상(메타데이터·해시만 커밋)
   - freeze 해시는 원래 작업 폴더 파일 바이트(CRLF/LF 혼재) 기준이라 새 checkout에서는 내용이 같아도 줄바꿈 차이로 provenance 해시가 다를 수 있음
-  - "공식 실행 전" 상태를 가정한 일부 frozen 테스트는 지금 실패함
+  - 일부 frozen 테스트는 "공식 실행 전"(공식 A/B 결과가 저장소에 추가되기 전) 상태를 가정한다. 지금처럼 ab01~ab08 핵심 evidence가 있는 checkout에서는 이 테스트들이 실패할 수 있으며, 이는 현재 구현의 regression이 아니라 frozen test의 전제 차이다
 
 ## 9. Future Work
 
@@ -106,13 +107,16 @@ recovery-policy/     guarded 복구 정책(guarded_*.py, main_guarded.py)과 초
 gitops/              Argo Rollouts(Blue/Green)·Service·RBAC·ServiceMonitor 매니페스트
 chaos/               부하·CPU/I/O 압박 생성기와 시나리오 정의
 experiments/         실험 실행기·분석기·테스트, c3-A·Axis 2·문헌 연구 폴더, 공식 사전등록·평가 요약(results/)
+                     results/capstone_guarded_ab_v1/: Phase 1 A/B 핵심 근거(분석·승인·요약·계약, EVIDENCE-INDEX.md)
+demo/                발표 시연 스크립트(demo-only, counted=false)
 audit-log/           recovery-policy가 남긴 조치 감사 기록(bot commit)
 docs/final/          현재 문서
 docs/design/         실험 계약·freeze manifest·중간 설계(historical/frozen)
+docs/demo/           Phase 2 시연 runbook
 docs/history/        초기 제안서와 대체된 요약
 ```
 
-`cluster/`, `monitoring/`, `finops/`, `operator/`, `pvc-backup/`에는 초기 계획 README만 있다(설정 파일·구현 없음, 각 README 상단에 상태 표시).
+초기 계획 README만 있던 `cluster/`, `monitoring/`, `finops/`, `operator/`, `pvc-backup/`와 참조되지 않는 중간 기록 일부는 2026-10-14 정리에서 master에서 뺐다(tag `phase1-final-20261011`·branch `research-snapshot-20261011`에 그대로 남아 있음).
 
 ## 11. Documents
 
@@ -123,7 +127,9 @@ docs/history/        초기 제안서와 대체된 요약
 | **Phase 2 최종 결과**(선택·live 복구·판정·caveat) | [docs/final/PHASE2-FINAL-RESULT-20261012.md](docs/final/PHASE2-FINAL-RESULT-20261012.md) |
 | Phase 1 연구 정리·후속 방향 | [docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md](docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md) |
 | 공식 실험 증거·주장 판정표(A/B·B/C/K·N1) | [docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md](docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md) |
-| 발표 문구·예상 질문 | [docs/final/PRESENTATION-PACKAGE-20261010.md](docs/final/PRESENTATION-PACKAGE-20261010.md), [docs/presentation/](docs/presentation/) |
+| Phase 1 A/B 추가 반복(Stage 2, ab06~ab08) | [docs/final/PHASE1-AB-ADDITIONAL-REPLICATION-20261013.md](docs/final/PHASE1-AB-ADDITIONAL-REPLICATION-20261013.md), 근거 [experiments/results/capstone_guarded_ab_v1/](experiments/results/capstone_guarded_ab_v1/EVIDENCE-INDEX.md) |
+| 발표 문구·예상 질문 | [docs/final/PRESENTATION-PACKAGE-20261010.md](docs/final/PRESENTATION-PACKAGE-20261010.md) |
+| Phase 2 시연 runbook | [docs/demo/PHASE2-DEMO-RUNBOOK-20261012.md](docs/demo/PHASE2-DEMO-RUNBOOK-20261012.md) |
 | c3-A 결과 | [experiments/results/c3_normal_coverage_evaluation/](experiments/results/c3_normal_coverage_evaluation/) |
 | Axis 2·문헌·S3 | [experiments/llm_multivariate_added_value/](experiments/llm_multivariate_added_value/), [experiments/llm_failure_scenario_research/](experiments/llm_failure_scenario_research/) |
 

@@ -1,0 +1,28 @@
+﻿{
+ "restored": true,
+ "error": null,
+ "restored_at_utc": "2026-10-13T13:30:06.488198+00:00",
+ "wait": {
+  "ok": true,
+  "detail": {
+   "read_at_utc": "2026-10-13T13:30:06.403117+00:00",
+   "errors": [],
+   "api_timeout_sec": 5.0,
+   "deployment": {
+    "uid": "ebdcfc7e-19e5-413c-9284-6fa8168d17be",
+    "replicas": 0,
+    "ready_replicas": 0,
+    "gitops_markers": []
+   },
+   "pods_present": 0,
+   "pods_terminating": 0,
+   "endpoints_ready": 0,
+   "endpoints_not_ready": 0,
+   "argocd": {
+    "installed": false,
+    "managing": []
+   }
+  },
+  "elapsed_sec": 0.08507619999727467
+ }
+}

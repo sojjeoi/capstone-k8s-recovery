@@ -76,7 +76,7 @@ Environment
 
 | 분류 | 문서 |
 |---|---|
-| A. CURRENT | `README.md`, 이 문서, `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(A/B·B/C/K·N1 공식 증거), `docs/final/PRESENTATION-PACKAGE-20261010.md`(발표 문구·E8), `docs/presentation/`, `experiments/llm_multivariate_added_value/AXIS2-FEASIBILITY-20261011.md`, `experiments/llm_failure_scenario_research/*.md`, 하위 폴더 README(`anomaly-detection/`, `recovery-policy/`, `chaos/`, `gitops/`, `experiments/`) |
+| A. CURRENT | `README.md`, 이 문서, `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(A/B·B/C/K·N1 공식 증거), `docs/final/PRESENTATION-PACKAGE-20261010.md`(발표 문구·E8), `experiments/llm_multivariate_added_value/AXIS2-FEASIBILITY-20261011.md`, `experiments/llm_failure_scenario_research/*.md`, 하위 폴더 README(`anomaly-detection/`, `recovery-policy/`, `chaos/`, `gitops/`, `experiments/`) |
 | B. FROZEN / REPRODUCIBILITY(경로·내용 유지) | freeze manifest가 해시로 참조하는 문서·코드(예: `docs/design/phase8-aiops-next-research-direction-20261009.md`, `experiments/results/c3_normal_coverage_prereg_20261010/` 사전등록·runbook, 각 `docs/design/*freeze-manifest*.json`), 공식 평가 결과 JSON |
 | C. HISTORICAL BUT NECESSARY | `docs/design/` 실험 계약·중간 설계(당시 기준), `docs/history/`(초기 제안서 `PROPOSAL-2026-07.md`, 대체된 `REPRODUCIBILITY-AUDIT-20261010.md`, `C1-DETECTOR-LIMITATIONS-AND-FUTURE-WORK-20261010.md`) |
-| D. OBSOLETE / CONFUSING | `cluster/`, `monitoring/`(존재하지 않는 설정 파일을 설명하던 README), `finops/`, `operator/`, `pvc-backup/`(미구현 보너스 계획) - 삭제 후보였으나 이번 정리에서는 삭제하지 않고 README를 현재 상태 설명으로 바꿈 |
+| D. OBSOLETE / CONFUSING | `cluster/`, `monitoring/`(존재하지 않는 설정 파일을 설명하던 README), `finops/`, `operator/`, `pvc-backup/`(미구현 보너스 계획) - 2026-10-14 저장소 정리에서 master에서 삭제(tag `phase1-final-20261011`에 보존) |

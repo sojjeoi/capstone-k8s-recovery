@@ -1,0 +1,906 @@
+{
+  "run_id": "guarded_pressure_record_only-ab06a-capstone-guarded-ab-v1-20261007",
+  "run": "ab06a",
+  "kind": "pressure",
+  "mode": "record_only",
+  "outcome_status": "completed",
+  "outcome_reason": "전환 없음 대조 관찰 600초 완료",
+  "invalidity_reasons": [],
+  "detector_readiness": {
+    "timeout_sec": 300.0,
+    "wait_started_at_utc": "2026-10-13T09:04:20.773704+00:00",
+    "ready_at_utc": "2026-10-13T09:04:25.728833+00:00",
+    "waited_sec": 5.0,
+    "detail": {
+      "evaluations_seen": 1,
+      "skipped_seen": 0,
+      "last_skip_reason": null,
+      "ready_seq": 1
+    }
+  },
+  "evidence_counts": {
+    "scored": 37,
+    "skipped": 0,
+    "condition_met": 6,
+    "send_attempts": 6,
+    "send_results": {
+      "would_pass_record_only": 6
+    },
+    "parse_errors": 0
+  },
+  "watcher": {
+    "action": null,
+    "guard_starts": 0,
+    "duplicates": 0,
+    "guard_result": null,
+    "guard_pending_at_end": false,
+    "promotion_events": [],
+    "late_failures": []
+  },
+  "context": {
+    "run_id": "guarded_pressure_record_only-ab06a-capstone-guarded-ab-v1-20261007",
+    "detector_id": "c1_live_v3.3",
+    "model_version": "v3.3-c1",
+    "model_hash": "0aa5d4c95a32c0cb6a34f2384a824ea886acb5ef6c95e73bdcf4a71e86d1b390",
+    "artifact_manifest_hash": "2897f3a1d092c5490a38a71f4a0e7b79d4ccc333fc226a4b8ceac63a6414e9da",
+    "threshold": -0.07667538512242333,
+    "rollout": {
+      "namespace": "vllm-serving",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "actions_allowed": false
+  },
+  "policy_state_after": {
+    "state_available": true,
+    "mode": "record_only",
+    "schema_version": "c1-signal-v2",
+    "context": {
+      "run_id": "guarded_pressure_record_only-ab06a-capstone-guarded-ab-v1-20261007",
+      "detector_id": "c1_live_v3.3",
+      "model_version": "v3.3-c1",
+      "model_hash": "0aa5d4c95a32c0cb6a34f2384a824ea886acb5ef6c95e73bdcf4a71e86d1b390",
+      "artifact_manifest_hash": "2897f3a1d092c5490a38a71f4a0e7b79d4ccc333fc226a4b8ceac63a6414e9da",
+      "rollout": {
+        "namespace": "vllm-serving",
+        "name": "vllm-serving",
+        "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+      },
+      "threshold": -0.07667538512242333,
+      "actions_allowed": false,
+      "set_at": "2026-10-13T08:56:50.977454+00:00"
+    },
+    "blocked": null,
+    "unresolved": {},
+    "actions": {}
+  },
+  "scale_down_delay_override": null,
+  "scale_down_delay_override_error": null,
+  "scale_down_delay_restore": null,
+  "scale_down_delay_before": 30,
+  "scale_down_delay_after": 30,
+  "session_start": {
+    "ok": true,
+    "problems": [],
+    "checked_at_utc": "2026-10-13T08:56:43.535297+00:00",
+    "session": {
+      "run": "ab06a",
+      "mode": "record_only",
+      "started_local": "2026-10-13T17:56:37.5010579+09:00",
+      "keep_awake": 20388,
+      "pf_prometheus": 20304,
+      "pf_policy": 23240,
+      "prometheus_url": "http://127.0.0.1:9090",
+      "policy_url": "http://127.0.0.1:18090"
+    }
+  },
+  "session_end": {
+    "ok": true,
+    "problems": [],
+    "checked_at_utc": "2026-10-13T09:16:32.900090+00:00",
+    "session": {
+      "run": "ab06a",
+      "mode": "record_only",
+      "started_local": "2026-10-13T17:56:37.5010579+09:00",
+      "keep_awake": 20388,
+      "pf_prometheus": 20304,
+      "pf_policy": 23240,
+      "prometheus_url": "http://127.0.0.1:9090",
+      "policy_url": "http://127.0.0.1:18090"
+    }
+  },
+  "pod_events_error": null,
+  "probe_image_runtime_check": {
+    "expected_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "checked_at": "2026-10-13T09:02:32.538763+00:00",
+    "pods": [
+      {
+        "name": "ramp-probe-768c5ced",
+        "node": "sj-worker2",
+        "terminating": false,
+        "image": "docker.io/library/loadgen-runner:phase8-v4-forceclose-20261002",
+        "image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b"
+      }
+    ],
+    "observed_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "verified": true
+  },
+  "start_active_node": "sj-worker",
+  "harness_error": null,
+  "cleanup_errors": [],
+  "rehearsal": {
+    "connection_evaluation_recording_ok": true,
+    "signal_observed": true,
+    "send_results": {
+      "would_pass_record_only": 6
+    },
+    "note": "신호가 없으면 탐지·정책 판단 경로는 확인되지 않은 것이다(0건을 '경고 없음 검증'으로 쓰지 않음)"
+  },
+  "service_extensions": [],
+  "observation_ended_at_utc": "2026-10-13T09:14:38.563066+00:00",
+  "old_policy_isolation": {
+    "start": {
+      "isolated": true,
+      "reasons": [],
+      "state": {
+        "read_at_utc": "2026-10-13T08:56:49.475938+00:00",
+        "errors": [],
+        "api_timeout_sec": 5.0,
+        "deployment": {
+          "uid": "ebdcfc7e-19e5-413c-9284-6fa8168d17be",
+          "replicas": 0,
+          "ready_replicas": 0,
+          "gitops_markers": []
+        },
+        "pods_present": 0,
+        "pods_terminating": 0,
+        "endpoints_ready": 0,
+        "endpoints_not_ready": 0,
+        "argocd": {
+          "installed": false,
+          "managing": []
+        }
+      }
+    },
+    "checks": {
+      "n": 130,
+      "last": {
+        "isolated": true,
+        "reasons": []
+      }
+    },
+    "end": {
+      "isolated": true,
+      "reasons": []
+    }
+  },
+  "service_check_note": "짧은 전환 직후 트래픽 확인 - 사용자 품질 개선 입증 아님",
+  "trial_outcome": {
+    "status": "completed",
+    "reason": "전환 없음 대조 관찰 600초 완료",
+    "elapsed_sec": 1178.0219940000002,
+    "prober_stop_failed": null,
+    "injector_cleanup_failed": null,
+    "sink_exit": {
+      "pid": 16480,
+      "returncode": 1,
+      "exited_cleanly": true
+    },
+    "score_server_exit": {
+      "pid": 12608,
+      "returncode": 1,
+      "exited_cleanly": true,
+      "exit_meaning": "terminated_or_unknown"
+    },
+    "injection_valid": true,
+    "t_injection_requested_utc": "2026-10-13T09:04:25.728841+00:00",
+    "t_injection_observed_utc": "2026-10-13T09:04:35.637380+00:00",
+    "observation_ended_at_utc": "2026-10-13T09:14:38.563066+00:00",
+    "probe_last_request_utc": "2026-10-13T09:14:36.685316+00:00",
+    "probe_data_gap_sec": 1.87775,
+    "probe_data_gap_detected": false,
+    "probe_max_internal_gap_sec": 1.00686,
+    "cleanup_status": "complete",
+    "invalidity_reasons": [],
+    "detector_readiness": {
+      "timeout_sec": 300.0,
+      "wait_started_at_utc": "2026-10-13T09:04:20.773704+00:00",
+      "ready_at_utc": "2026-10-13T09:04:25.728833+00:00",
+      "waited_sec": 5.0,
+      "detail": {
+        "evaluations_seen": 1,
+        "skipped_seen": 0,
+        "last_skip_reason": null,
+        "ready_seq": 1
+      }
+    }
+  },
+  "preview_cleanup_gate": [
+    {
+      "action": "cleanup_allowed",
+      "verdict": "not_promoted",
+      "reasons": [],
+      "attempt_evidence": [],
+      "assessed_at_utc": "2026-10-13T09:15:15.929346+00:00",
+      "cleanup_result": true,
+      "canonical_restore": {
+        "ok": true,
+        "problems": [],
+        "evidence": {
+          "patched": true,
+          "before": {
+            "t": "2026-10-13T09:16:00.944678+00:00",
+            "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+            "generation": 449,
+            "observed": "449",
+            "phase": "Degraded",
+            "abort": true,
+            "active": "59f65899d8",
+            "preview": "7bcbffd85c",
+            "stable": "59f65899d8",
+            "current": "7bcbffd85c",
+            "delay": 30,
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "experiment-prep-ts": "2026-10-13T08:56:52.549930+00:00",
+                  "promotion-verify-ts": "2026-09-06T10:14:52Z",
+                  "regime-test-ts": "2026-09-06T11:07:08Z",
+                  "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+                },
+                "labels": {
+                  "app": "vllm-serving"
+                }
+              },
+              "spec": {
+                "containers": [
+                  {
+                    "args": [
+                      "--model=Qwen/Qwen2.5-0.5B-Instruct",
+                      "--port=8000",
+                      "--gpu-memory-utilization=0.3",
+                      "--enforce-eager",
+                      "--max-model-len=2048"
+                    ],
+                    "image": "vllm-cpu-env:latest",
+                    "imagePullPolicy": "Never",
+                    "livenessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 10
+                    },
+                    "name": "vllm",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http",
+                        "protocol": "TCP"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 5
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "3",
+                        "memory": "6Gi"
+                      },
+                      "requests": {
+                        "cpu": "2",
+                        "memory": "4Gi"
+                      }
+                    },
+                    "startupProbe": {
+                      "exec": {
+                        "command": [
+                          "python3",
+                          "/opt/probes/warmup_probe.py"
+                        ]
+                      },
+                      "failureThreshold": 90,
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 65
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "dshm"
+                      },
+                      {
+                        "mountPath": "/root/.cache/huggingface",
+                        "name": "hf-cache"
+                      },
+                      {
+                        "mountPath": "/opt/probes",
+                        "name": "warmup-probe",
+                        "readOnly": true
+                      }
+                    ]
+                  }
+                ],
+                "volumes": [
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "1Gi"
+                    },
+                    "name": "dshm"
+                  },
+                  {
+                    "hostPath": {
+                      "path": "/home/ubuntu/hf-cache",
+                      "type": "DirectoryOrCreate"
+                    },
+                    "name": "hf-cache"
+                  },
+                  {
+                    "configMap": {
+                      "name": "vllm-warmup-probe"
+                    },
+                    "name": "warmup-probe"
+                  }
+                ]
+              }
+            },
+            "template_prep_ts": "2026-10-13T08:56:52.549930+00:00",
+            "rs": {
+              "59f65899d8": {
+                "uid": "23b667e3-c93e-47b6-bdf8-f24abaf3ce84",
+                "desired": 1,
+                "current": 1,
+                "ready": 1,
+                "revision": "369"
+              },
+              "5bd654b96b": {
+                "uid": "b5a9b8f3-2fbd-474d-b9d5-68608d9db795",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "368"
+              },
+              "7bcbffd85c": {
+                "uid": "45a5b8f1-6220-4d20-870e-84301daa0a39",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "370"
+              },
+              "7f6dcd75f5": {
+                "uid": "98dd52e4-cfc5-43c5-9a13-f7ecf55fd646",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "367"
+              }
+            },
+            "pods": [
+              {
+                "name": "vllm-serving-59f65899d8-g4zvq",
+                "uid": "270e73fd-57fe-4256-9ea4-8ec888cbab29",
+                "ip": "10.244.36.49",
+                "hash": "59f65899d8",
+                "deleting": false,
+                "ready": true,
+                "restarts": 0
+              }
+            ],
+            "svc_selectors": {
+              "vllm-active": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "59f65899d8"
+              },
+              "vllm-preview": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "7bcbffd85c"
+              }
+            },
+            "endpoints": {
+              "vllm-active": [
+                "10.244.36.49"
+              ],
+              "vllm-preview": []
+            },
+            "health_rc": 0
+          },
+          "template_diff": [
+            ".metadata.annotations.experiment-prep-ts"
+          ],
+          "stable_value": "2026-10-12T13:47:04.503825+00:00",
+          "previous_value": "2026-10-13T08:56:52.549930+00:00",
+          "allowed_deletions": [
+            "5bd654b96b",
+            "7bcbffd85c",
+            "7f6dcd75f5"
+          ],
+          "patched_at_utc": "2026-10-13T09:16:02.416480+00:00",
+          "timeline": [
+            {
+              "t": "2026-10-13T09:16:02.881658+00:00",
+              "phase": "Healthy",
+              "abort": null,
+              "bad": [],
+              "not_canonical": []
+            },
+            {
+              "t": "2026-10-13T09:16:05.554837+00:00",
+              "phase": "Healthy",
+              "abort": null,
+              "bad": [],
+              "not_canonical": []
+            },
+            {
+              "t": "2026-10-13T09:16:08.288277+00:00",
+              "phase": "Healthy",
+              "abort": null,
+              "bad": [],
+              "not_canonical": []
+            }
+          ],
+          "final": {
+            "t": "2026-10-13T09:16:28.978823+00:00",
+            "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+            "generation": 450,
+            "observed": "450",
+            "phase": "Healthy",
+            "abort": null,
+            "active": "59f65899d8",
+            "preview": "59f65899d8",
+            "stable": "59f65899d8",
+            "current": "59f65899d8",
+            "delay": 30,
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "experiment-prep-ts": "2026-10-12T13:47:04.503825+00:00",
+                  "promotion-verify-ts": "2026-09-06T10:14:52Z",
+                  "regime-test-ts": "2026-09-06T11:07:08Z",
+                  "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+                },
+                "labels": {
+                  "app": "vllm-serving"
+                }
+              },
+              "spec": {
+                "containers": [
+                  {
+                    "args": [
+                      "--model=Qwen/Qwen2.5-0.5B-Instruct",
+                      "--port=8000",
+                      "--gpu-memory-utilization=0.3",
+                      "--enforce-eager",
+                      "--max-model-len=2048"
+                    ],
+                    "image": "vllm-cpu-env:latest",
+                    "imagePullPolicy": "Never",
+                    "livenessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 10
+                    },
+                    "name": "vllm",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http",
+                        "protocol": "TCP"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 5
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "3",
+                        "memory": "6Gi"
+                      },
+                      "requests": {
+                        "cpu": "2",
+                        "memory": "4Gi"
+                      }
+                    },
+                    "startupProbe": {
+                      "exec": {
+                        "command": [
+                          "python3",
+                          "/opt/probes/warmup_probe.py"
+                        ]
+                      },
+                      "failureThreshold": 90,
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 65
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "dshm"
+                      },
+                      {
+                        "mountPath": "/root/.cache/huggingface",
+                        "name": "hf-cache"
+                      },
+                      {
+                        "mountPath": "/opt/probes",
+                        "name": "warmup-probe",
+                        "readOnly": true
+                      }
+                    ]
+                  }
+                ],
+                "volumes": [
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "1Gi"
+                    },
+                    "name": "dshm"
+                  },
+                  {
+                    "hostPath": {
+                      "path": "/home/ubuntu/hf-cache",
+                      "type": "DirectoryOrCreate"
+                    },
+                    "name": "hf-cache"
+                  },
+                  {
+                    "configMap": {
+                      "name": "vllm-warmup-probe"
+                    },
+                    "name": "warmup-probe"
+                  }
+                ]
+              }
+            },
+            "template_prep_ts": "2026-10-12T13:47:04.503825+00:00",
+            "rs": {
+              "59f65899d8": {
+                "uid": "23b667e3-c93e-47b6-bdf8-f24abaf3ce84",
+                "desired": 1,
+                "current": 1,
+                "ready": 1,
+                "revision": "371"
+              },
+              "5bd654b96b": {
+                "uid": "b5a9b8f3-2fbd-474d-b9d5-68608d9db795",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "368"
+              },
+              "7bcbffd85c": {
+                "uid": "45a5b8f1-6220-4d20-870e-84301daa0a39",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "370"
+              }
+            },
+            "pods": [
+              {
+                "name": "vllm-serving-59f65899d8-g4zvq",
+                "uid": "270e73fd-57fe-4256-9ea4-8ec888cbab29",
+                "ip": "10.244.36.49",
+                "hash": "59f65899d8",
+                "deleting": false,
+                "ready": true,
+                "restarts": 0
+              }
+            ],
+            "svc_selectors": {
+              "vllm-active": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "59f65899d8"
+              },
+              "vllm-preview": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "59f65899d8"
+              }
+            },
+            "endpoints": {
+              "vllm-active": [
+                "10.244.36.49"
+              ],
+              "vllm-preview": [
+                "10.244.36.49"
+              ]
+            },
+            "health_rc": 0
+          },
+          "bookkeeping": {
+            "active_rs_revision": [
+              "369",
+              "371"
+            ],
+            "deleted_rs": [
+              "7f6dcd75f5"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "final_promotion_assessment": null,
+  "ssh_check_evidence": {
+    "dir": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\ssh-evidence-guarded_pressure_record_only-ab06a-capstone-guarded-ab-v1-20261007",
+    "index": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\ssh-evidence-guarded_pressure_record_only-ab06a-capstone-guarded-ab-v1-20261007\\ssh-check-index.jsonl",
+    "session": "20261013T085643535356Z",
+    "checks": 27,
+    "by_observed": {
+      "exited_after_completion_marker": 27
+    },
+    "failed_checks": [],
+    "write_errors": [],
+    "note": "관측 분류이며 원인(네트워크·dmesg 등)을 단정하지 않는다. 판정은 기존 evaluate_node_disk_health 그대로."
+  },
+  "run_guard": {
+    "mem_drop_abort_gib": 1.0,
+    "disk_recheck_sec": 60.0,
+    "preview_actual_node": "sj-worker2",
+    "start_active_node": "sj-worker",
+    "preview_verified": true,
+    "pre_stress": {
+      "preview_node": "sj-worker2",
+      "min_available_gib": 1.5,
+      "checked_at": "2026-10-13T09:02:17.722330+00:00",
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      },
+      "calico": {
+        "pod": "calico-node-6xw8m",
+        "ready": true,
+        "restarts": 2,
+        "working_set_gib": 5.215
+      },
+      "active_service": {
+        "endpoint_count": 1,
+        "pod": "vllm-serving-59f65899d8-g4zvq",
+        "health_ok": true
+      },
+      "available_gib": 6.177,
+      "ok": true,
+      "failures": []
+    },
+    "read_failures": 0,
+    "mem_baseline_gib": {
+      "sj-worker": 5.03,
+      "sj-worker2": 6.177
+    },
+    "mem_min_gib": {
+      "sj-worker": 4.924,
+      "sj-worker2": 6.126
+    },
+    "disk_checks": 12
+  },
+  "stress_delivery_record": {
+    "continue_after_target_replacement": true,
+    "planned_cr_names": [
+      "cpustress-guarded-pressure-record-only-ab06a-capstone-guarded-ab-v1-20261007-s0-e396bb",
+      "cpustress-guarded-pressure-record-only-ab06a-capstone-guarded-ab-v1-20261007-s1-cc138c",
+      "cpustress-guarded-pressure-record-only-ab06a-capstone-guarded-ab-v1-20261007-s2-af6daf",
+      "cpustress-guarded-pressure-record-only-ab06a-capstone-guarded-ab-v1-20261007-s3-2002e1"
+    ],
+    "target": {
+      "name": "vllm-serving-59f65899d8-g4zvq",
+      "uid": "270e73fd-57fe-4256-9ea4-8ec888cbab29",
+      "node_name": "sj-worker",
+      "baseline_cpu_cores": 0.0193177873134097
+    },
+    "baseline_restart_count": 0,
+    "injection_started_at": "2026-10-13T09:04:35.637380+00:00",
+    "target_replacement": null,
+    "stages": [
+      {
+        "index": 0,
+        "name": "stage-1-1worker",
+        "cr_name": "cpustress-guarded-pressure-record-only-ab06a-capstone-guarded-ab-v1-20261007-s0-e396bb",
+        "workers": 1,
+        "duration_sec": 90,
+        "created_at": "2026-10-13T09:04:26.398232+00:00",
+        "deleted_at": "2026-10-13T09:05:56.899969+00:00",
+        "end": "completed"
+      },
+      {
+        "index": 1,
+        "name": "stage-2-2worker",
+        "cr_name": "cpustress-guarded-pressure-record-only-ab06a-capstone-guarded-ab-v1-20261007-s1-cc138c",
+        "workers": 2,
+        "duration_sec": 90,
+        "created_at": "2026-10-13T09:05:57.527814+00:00",
+        "deleted_at": "2026-10-13T09:07:27.995122+00:00",
+        "end": "completed"
+      },
+      {
+        "index": 2,
+        "name": "stage-3-3worker",
+        "cr_name": "cpustress-guarded-pressure-record-only-ab06a-capstone-guarded-ab-v1-20261007-s2-af6daf",
+        "workers": 3,
+        "duration_sec": 90,
+        "created_at": "2026-10-13T09:07:28.410204+00:00",
+        "deleted_at": "2026-10-13T09:08:58.897262+00:00",
+        "end": "completed"
+      },
+      {
+        "index": 3,
+        "name": "stage-4-4worker",
+        "cr_name": "cpustress-guarded-pressure-record-only-ab06a-capstone-guarded-ab-v1-20261007-s3-2002e1",
+        "workers": 4,
+        "duration_sec": 90,
+        "created_at": "2026-10-13T09:08:59.376959+00:00",
+        "deleted_at": "2026-10-13T09:10:29.769817+00:00",
+        "end": "completed"
+      }
+    ],
+    "end_reason": "completed",
+    "target_lost": null
+  },
+  "comparison": {
+    "series": "capstone-guarded-ab-v1-20261007",
+    "pair": "ab06",
+    "arm": "A_no_switch",
+    "counted_in_comparison": true,
+    "expected_start_active_node": null
+  },
+  "preflight_file": "preflight-guarded_pressure_record_only-ab06a-capstone-guarded-ab-v1-20261007-run-20261013T085650566966Z.json",
+  "canonical_end": {
+    "ok": true,
+    "problems": []
+  },
+  "cpu_raw_counter_samples": [
+    [
+      "2026-10-13T09:03:40.342000+00:00",
+      2626.915938798
+    ],
+    [
+      "2026-10-13T09:04:00.135000+00:00",
+      2659.368300029
+    ],
+    [
+      "2026-10-13T09:04:11.425000+00:00",
+      2677.326776806
+    ],
+    [
+      "2026-10-13T09:04:26.757000+00:00",
+      2702.197978173
+    ],
+    [
+      "2026-10-13T09:04:44.926000+00:00",
+      2739.899863172
+    ],
+    [
+      "2026-10-13T09:04:57.079000+00:00",
+      2768.907699773
+    ],
+    [
+      "2026-10-13T09:05:15.438000+00:00",
+      2813.359753818
+    ],
+    [
+      "2026-10-13T09:05:33.998000+00:00",
+      2858.379803004
+    ],
+    [
+      "2026-10-13T09:05:44.289000+00:00",
+      2883.035301477
+    ],
+    [
+      "2026-10-13T09:05:54.956000+00:00",
+      2908.84576572
+    ],
+    [
+      "2026-10-13T09:06:13.137000+00:00",
+      2960.832196471
+    ],
+    [
+      "2026-10-13T09:06:30.362000+00:00",
+      3012.186154374
+    ],
+    [
+      "2026-10-13T09:06:47.355000+00:00",
+      3062.900819616
+    ],
+    [
+      "2026-10-13T09:07:06.254000+00:00",
+      3119.366621166
+    ],
+    [
+      "2026-10-13T09:07:20.124000+00:00",
+      3160.83175328
+    ],
+    [
+      "2026-10-13T09:07:34.147000+00:00",
+      3201.784500555
+    ],
+    [
+      "2026-10-13T09:07:49.933000+00:00",
+      3249.080446584
+    ],
+    [
+      "2026-10-13T09:08:04.111000+00:00",
+      3291.560484529
+    ],
+    [
+      "2026-10-13T09:08:19.234000+00:00",
+      3336.945627857
+    ],
+    [
+      "2026-10-13T09:08:34.519000+00:00",
+      3382.754278299
+    ],
+    [
+      "2026-10-13T09:08:46.087000+00:00",
+      3417.540239116
+    ],
+    [
+      "2026-10-13T09:09:02.076000+00:00",
+      3464.90065098
+    ],
+    [
+      "2026-10-13T09:09:21.194000+00:00",
+      3522.201447255
+    ],
+    [
+      "2026-10-13T09:09:34.718000+00:00",
+      3562.696246928
+    ],
+    [
+      "2026-10-13T09:09:53.932000+00:00",
+      3620.383298975
+    ],
+    [
+      "2026-10-13T09:10:05.017000+00:00",
+      3653.572646507
+    ],
+    [
+      "2026-10-13T09:10:24.097000+00:00",
+      3710.870691379
+    ],
+    [
+      "2026-10-13T09:10:36.768000+00:00",
+      3739.813530111
+    ],
+    [
+      "2026-10-13T09:10:50.100000+00:00",
+      3761.757712025
+    ],
+    [
+      "2026-10-13T09:11:09.313000+00:00",
+      3793.542542891
+    ],
+    [
+      "2026-10-13T09:11:28.250000+00:00",
+      3825.282427567
+    ],
+    [
+      "2026-10-13T09:11:45.406000+00:00",
+      3852.961369131
+    ],
+    [
+      "2026-10-13T09:11:58.808000+00:00",
+      3875.073953681
+    ],
+    [
+      "2026-10-13T09:12:15.283000+00:00",
+      3902.10112377
+    ],
+    [
+      "2026-10-13T09:12:29.715000+00:00",
+      3926.166342456
+    ]
+  ],
+  "cpu_raw_counter_error": null
+}

@@ -1,0 +1,57 @@
+{
+ "label": "revert-record-only-after-ab08b",
+ "mode": "record_only",
+ "started_utc": "2026-10-13T15:45:36.593693+00:00",
+ "procedure": "B/C/K bc90_switch.py same steps; imports from canonical D: repo",
+ "clock_tool": {
+  "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\measure_clock_offset.py",
+  "sha256": "9b7c08bd0d78a2e81854424b8889c50b47181c1bfcdeff0d867c78c3af6ca4f5"
+ },
+ "old_pod": "guarded-recovery-policy-5b5b85b55f-95pxd",
+ "set_env": {
+  "rc": 0,
+  "out": "deployment.apps/guarded-recovery-policy env updated",
+  "err": "",
+  "at_utc": "2026-10-13T15:45:37.175807+00:00"
+ },
+ "rollout": {
+  "rc": 0,
+  "out": "Waiting for deployment \"guarded-recovery-policy\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"guarded-recovery-policy\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"guarded-recovery-policy\" rollout to finish: 0 of 1 updated replicas are available...\ndeployment \"guarded-recovery-policy\" successfully rolled out",
+  "err": ""
+ },
+ "old_pod_lock_released": true,
+ "new_pod": "guarded-recovery-policy-5b977879bc-dlhpv",
+ "identity": {
+  "role": "guarded-recovery-policy",
+  "version": "guarded-v1",
+  "mode": "record_only",
+  "timing": {
+   "max_signal_age_sec": 15.0,
+   "max_future_skew_sec": 2.0,
+   "max_window_to_decision_sec": 10.0
+  },
+  "actions_enabled": false
+ },
+ "state": {
+  "state_available": true,
+  "mode": "record_only",
+  "blocked": null,
+  "unresolved": {},
+  "context": null
+ },
+ "ledger": {
+  "lines": 110,
+  "last": {
+   "at": "2026-10-13T15:35:32.415859+00:00",
+   "event": "service_result",
+   "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:d774768f6->845756749f#202fb0c6-0f43-4ae9-972a-16b276eaa5c7",
+   "status": "verified",
+   "ok": true
+  }
+ },
+ "temp_port_forward": {
+  "pid": 27508,
+  "returncode": 1
+ },
+ "ok": true
+}

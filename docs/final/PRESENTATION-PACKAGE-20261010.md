@@ -2,7 +2,7 @@
 
 > Status: **CURRENT - 발표 문구·예상 질문**(2026-10-10 작성, E8은 2026-10-11 추가). **Phase 2 최종 결과(2026-10-12)는 [PHASE2-FINAL-RESULT-20261012.md](PHASE2-FINAL-RESULT-20261012.md)가 우선한다.** c3-A·Axis 2·문헌·S3 결과는 E8과 아래 synthesis 참조. 최신 결과와 최종 후속 연구 방향은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조. 아래 E8에 후속 방향만 짧게 더함.
 
-근거: `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(공식 결과 재확인·claim matrix), `docs/history/REPRODUCIBILITY-AUDIT-20261010.md`, `docs/demo/DEMO-RUNBOOK-20261010.md`.
+근거: `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(공식 결과 재확인·claim matrix), `docs/history/REPRODUCIBILITY-AUDIT-20261010.md`, 시연 runbook `docs/demo/PHASE2-DEMO-RUNBOOK-20261012.md`(2026-10-10 runbook은 로컬 전용·저장소 미포함).
 
 ## E1. 한 문장
 

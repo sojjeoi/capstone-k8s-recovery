@@ -43,4 +43,4 @@
 
 ## B4. 시연 재현
 
-`docs/demo/DEMO-RUNBOOK-20261010.md` 참조.
+당시 `docs/demo/DEMO-RUNBOOK-20261010.md`(로컬 전용, 저장소 미포함). 현재 시연은 `docs/demo/PHASE2-DEMO-RUNBOOK-20261012.md` 참조.

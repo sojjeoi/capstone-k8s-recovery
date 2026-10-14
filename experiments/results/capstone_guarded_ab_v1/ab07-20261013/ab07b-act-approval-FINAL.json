@@ -1,0 +1,37 @@
+{
+ "status": "final",
+ "run": "ab07b",
+ "runs": [
+  "ab07b"
+ ],
+ "scope": "계약 r2 사전 등록 2단계(Stage 2) 두 번째 쌍의 B arm ab07b 1회 한정(counted_in_comparison=true). 다른 ID에 재사용 불가(runs 범위·ID 재사용 금지)",
+ "approved_by": "user (chat 2026-10-13: 'ab07b 준비 단계 진행 승인합니다' - act 전환·clock 확인·FINAL approval 작성까지. 'ab07b live 실행 승인'은 별도 채팅 승인 후에만 시작)",
+ "approved_at_utc": "2026-10-13T13:06:11+00:00",
+ "contract_doc": "docs/design/phase8-v33c1-guarded-ab-comparison-contract-r2-20261007.md",
+ "inherits_values_from": "../ab05-20261007/ab05b-act-approval-FINAL.json (gap01 사용자 확정값, 변경 없음)",
+ "timing_source": "gap01 승인값 재사용: grn/grp 리허설 실측 + 읽기 전용 사전 확인(capstone_guarded_v1_pilot/gap01-plan-20261006)",
+ "clock_measurement_file": "clock-offset-pre-ab07b.json",
+ "clock_check": "best_offset 0.1999 + uncertainty 0.0694 = 0.269s <= 0.5s (n_ok 20/20, measured 2026-10-13T13:05:45.455982+00:00)",
+ "timing": {
+  "max_signal_age_sec": 15.0,
+  "max_future_skew_sec": 2.0,
+  "max_window_to_decision_sec": 10.0
+ },
+ "service_wait_deadline_sec": 120.0,
+ "policy_env": {
+  "GUARDED_COUNTER_MAX_STALENESS_SEC": 30.0,
+  "GUARDED_COUNTER_MAX_FUTURE_SEC": 0.0,
+  "counter_source": "Pod IP /metrics 직접(Pod별 호출 제한 기본 5초)"
+ },
+ "scale_down_wait_margin_sec": 180.0,
+ "pilot_operational_limits_not_measured": [
+  "service_wait_deadline_sec 120",
+  "scale_down_wait_margin_sec 180"
+ ],
+ "rules": [
+  "IF 신호 없음·정책 거부 시 수동 승격·신호 재전송·재실행 금지 - 미승격 정리(D5→canonical 복원)로 종료, ITT로 B 결과에 포함",
+  "결과 불명·실패: 자동 재승격·미검증 롤백·자동 재시도 금지, D6 보류 시 수동 원복으로 덮지 않음",
+  "port-forward 연결 거부 등 시작 전 실패 시 같은 ID 재시작 안 함(사용자 보고)"
+ ],
+ "interpretation": "사전 등록 2단계 추가 반복의 B - Stage 1 공식 5쌍은 소급 변경하지 않음, 효과가 통계적으로 입증됐다고 표현하지 않음"
+}

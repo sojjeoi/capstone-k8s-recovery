@@ -1,0 +1,1015 @@
+{
+ "result": {
+  "rules_doc": "phase8-v33c1-guarded-ab-analysis-rules-20261007.md",
+  "official_id_pattern": "ab(0[1-9]|1[0-5])[ab]",
+  "attempted_pairs": 5,
+  "final": false,
+  "excluded_runs": [
+   {
+    "run": "ab00a",
+    "reasons": [
+     "not_official_id"
+    ],
+    "label": "development/rehearsal excluded"
+   },
+   {
+    "run": "ab90a",
+    "reasons": [
+     "not_official_id"
+    ],
+    "label": "development/rehearsal excluded"
+   },
+   {
+    "run": "ab90b",
+    "reasons": [
+     "not_official_id"
+    ],
+    "label": "development/rehearsal excluded"
+   }
+  ],
+  "pair_status": {
+   "ab01": {
+    "status": "valid"
+   },
+   "ab02": {
+    "status": "valid"
+   },
+   "ab03": {
+    "status": "valid"
+   },
+   "ab04": {
+    "status": "valid"
+   },
+   "ab05": {
+    "status": "valid"
+   }
+  },
+  "runs": {
+   "ab01a": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_record_only-ab01a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "e1419b5c4f2f632f331bcf85639b43373469729003866536dadf593a60b47a6b"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_record_only-ab01a-capstone-guarded-ab-v1-20261007-run-20261007T071451679218Z.json",
+      "sha256": "ca4d366c87dc47f382ab38a51718605e626425664ba98cd7a7337231dc4bca51"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_record_only-ab01a-capstone-guarded-ab-v1-20261007-proposed-802-raw.csv",
+      "sha256": "99e5ca72e9cba8fe6847762f5d1e84a9fb60874683693d6bf6e8b3dc1b350fe4"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_record_only-ab01a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "76d4a2168e008d364c7fd2bec3cd72b9aa29dcb0a281abae3013af69d05af59c"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 204.504,
+     "lower_bound": false,
+     "t_slo_first": "2026-10-07T07:23:44.317496+00:00",
+     "episodes": [
+      {
+       "t_slo": "2026-10-07T07:23:44.317496+00:00",
+       "t_recovery": "2026-10-07T07:27:08.821395+00:00",
+       "t_recovery_confirmed_at": "2026-10-07T07:27:39.889266+00:00",
+       "end_counted": "2026-10-07T07:27:08.821395+00:00",
+       "duration_sec": 204.504,
+       "lower_bound": false,
+       "t_slo_rel_sec": 216.9,
+       "end_rel_sec": 421.4
+      }
+     ],
+     "recovered_by_end": true,
+     "requests_in_window": 601,
+     "max_gap_in_window_sec": 1.023
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 601,
+     "success": 601,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.33098038396565244,
+     "p95": 0.9256932416872587,
+     "p99": 1.0235534334229306,
+     "max_latency": 1.2000346180284396,
+     "slow_requests": 146,
+     "max_gap_sec": 1.023
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": null,
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker2"
+    }
+   },
+   "ab01b": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_act-ab01b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "996bc96ed53fa0b484f529dc88e4d93292ce193e880b1bc2a99a137ded6279aa"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_act-ab01b-capstone-guarded-ab-v1-20261007-run-20261007T073524763755Z.json",
+      "sha256": "d40a67ffd3dcb3fb29d50d3012bbcf141d2d7ba8891d48ea5fd367ced12c9777"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_act-ab01b-capstone-guarded-ab-v1-20261007-proposed-803-raw.csv",
+      "sha256": "d192a7d53098079f6c050452c0df7edc04d878788999381ceaf64ad322a76df0"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_act-ab01b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "0032506fe9e9963f277692c5cad4417cfb7aa135fcfd57a7d9cf7ba81288b287"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 0,
+     "lower_bound": false,
+     "t_slo_first": null,
+     "episodes": [],
+     "recovered_by_end": true,
+     "requests_in_window": 599,
+     "max_gap_in_window_sec": 2.308
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 599,
+     "success": 599,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.28006969299167395,
+     "p95": 0.33016338595189154,
+     "p99": 0.3654678529710509,
+     "max_latency": 1.0341924219974317,
+     "slow_requests": 1,
+     "max_gap_sec": 2.308
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": {
+      "signal_sent": true,
+      "policy_outcomes": {
+       "promoted_verified": 1
+      },
+      "promoted": true,
+      "action_status": "verified",
+      "promote_called_at": "2026-10-07T07:41:11.623782+00:00",
+      "promote_rc": 0,
+      "switched_at": "2026-10-07T07:41:12.915333+00:00",
+      "service_verified": true,
+      "service_finished_at": "2026-10-07T07:42:23.224863+00:00",
+      "d6": {
+       "path": "promoted_service_ok",
+       "restored": true,
+       "held": null,
+       "restored_at": "2026-10-07T07:51:34.680467+00:00"
+      }
+     },
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker2"
+    }
+   },
+   "ab02a": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_record_only-ab02a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "b826436ce43dfc30b5304a5c9ee591503244e4a30e79f35fe8dd8ffce8e1f1f1"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_record_only-ab02a-capstone-guarded-ab-v1-20261007-run-20261007T080602921757Z.json",
+      "sha256": "5f6e725a98be1fc3d9645168f4b728044149d086ceae2628e8367e89c56823ab"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_record_only-ab02a-capstone-guarded-ab-v1-20261007-proposed-804-raw.csv",
+      "sha256": "c01a6ba23fa9b4b72d660218824fc981882634dfb5e66c4457d3c1412abadd9a"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_record_only-ab02a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "3c91b10e75c2ba9ce8e6ab37d6dc4af5dacd1c083c62f9b5f542b0536ae889d4"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 210.83,
+     "lower_bound": true,
+     "t_slo_first": "2026-10-07T08:14:09.511317+00:00",
+     "episodes": [
+      {
+       "t_slo": "2026-10-07T08:14:09.511317+00:00",
+       "t_recovery": "2026-10-07T08:17:27.976204+00:00",
+       "t_recovery_confirmed_at": "2026-10-07T08:17:58.917236+00:00",
+       "end_counted": "2026-10-07T08:17:27.976204+00:00",
+       "duration_sec": 198.465,
+       "lower_bound": false,
+       "t_slo_rel_sec": 220.9,
+       "end_rel_sec": 419.4
+      },
+      {
+       "t_slo": "2026-10-07T08:20:16.917059+00:00",
+       "t_recovery": null,
+       "t_recovery_confirmed_at": null,
+       "end_counted": "2026-10-07T08:20:29.282301+00:00",
+       "duration_sec": 12.365,
+       "lower_bound": true,
+       "t_slo_rel_sec": 588.3,
+       "end_rel_sec": 600.7
+      }
+     ],
+     "recovered_by_end": false,
+     "requests_in_window": 598,
+     "max_gap_in_window_sec": 3.588
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 598,
+     "success": 598,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.341692621470429,
+     "p95": 0.9082851778162876,
+     "p99": 4.215009876755648,
+     "max_latency": 9.669453385984525,
+     "slow_requests": 131,
+     "max_gap_sec": 3.588
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": null,
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker"
+    }
+   },
+   "ab02b": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "d9e1ceaee2eaa3dba65b3427cc333b061937be2a906b5de8fb8ef7fcd34c04e8"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007-run-20261007T082506280191Z.json",
+      "sha256": "aeed1f9082932fc85ce7b07710ca0906d3a8f0fcaf0fed2cc4b5fa9140812645"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007-proposed-805-raw.csv",
+      "sha256": "b3d9e0c548a44d37a1be9af2b99c72c49d0e55219a6063b9ababad846a55c8c2"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "90e9e25828a9480519ca64659268d0687063a495d920fde1ff768edee3ec714a"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 0,
+     "lower_bound": false,
+     "t_slo_first": null,
+     "episodes": [],
+     "recovered_by_end": true,
+     "requests_in_window": 602,
+     "max_gap_in_window_sec": 1.029
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 602,
+     "success": 602,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.25062908048857935,
+     "p95": 0.33865358351904434,
+     "p99": 0.38969854269351345,
+     "max_latency": 0.5829986039898358,
+     "slow_requests": 0,
+     "max_gap_sec": 1.029
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": {
+      "signal_sent": true,
+      "policy_outcomes": {
+       "promoted_verified": 1
+      },
+      "promoted": true,
+      "action_status": "verified",
+      "promote_called_at": "2026-10-07T08:29:56.742566+00:00",
+      "promote_rc": 0,
+      "switched_at": "2026-10-07T08:29:58.290696+00:00",
+      "service_verified": true,
+      "service_finished_at": "2026-10-07T08:31:08.589455+00:00",
+      "d6": {
+       "path": "promoted_service_ok",
+       "restored": true,
+       "held": null,
+       "restored_at": "2026-10-07T08:40:10.090757+00:00"
+      }
+     },
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker"
+    }
+   },
+   "ab03a": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_record_only-ab03a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "c1dad414b2598b779535f967fe8d1d94d271071266a490f6c19f27a4598818c1"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_record_only-ab03a-capstone-guarded-ab-v1-20261007-run-20261007T091501140207Z.json",
+      "sha256": "36e520d802a73ea845ca55b925eae9aed340976004c69bb3bd3717fc32c961f4"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_record_only-ab03a-capstone-guarded-ab-v1-20261007-proposed-806-raw.csv",
+      "sha256": "d13e4b896038fdef47cca43effae3a3ee8e8cb84ab780884d846868604065bd4"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_record_only-ab03a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "4141cf225454ad016c4f3c41454de6da28d81a0e6824c2ceb49700c72abae436"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 201.68,
+     "lower_bound": false,
+     "t_slo_first": "2026-10-07T09:23:07.526442+00:00",
+     "episodes": [
+      {
+       "t_slo": "2026-10-07T09:23:07.526442+00:00",
+       "t_recovery": "2026-10-07T09:26:29.206499+00:00",
+       "t_recovery_confirmed_at": "2026-10-07T09:26:59.183283+00:00",
+       "end_counted": "2026-10-07T09:26:29.206499+00:00",
+       "duration_sec": 201.68,
+       "lower_bound": false,
+       "t_slo_rel_sec": 218.0,
+       "end_rel_sec": 419.7
+      }
+     ],
+     "recovered_by_end": true,
+     "requests_in_window": 599,
+     "max_gap_in_window_sec": 2.553
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 599,
+     "success": 599,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.3372938939719461,
+     "p95": 0.8589420289499685,
+     "p99": 1.0277919599902816,
+     "max_latency": 1.0667537149856798,
+     "slow_requests": 148,
+     "max_gap_sec": 2.553
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": null,
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker2"
+    }
+   },
+   "ab03b": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_act-ab03b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "674eabc5e70277d7b8411076a7646703920697a9241a5e0166581375c32f780f"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_act-ab03b-capstone-guarded-ab-v1-20261007-run-20261007T093406184712Z.json",
+      "sha256": "33e8b62c9032987ae9dea066390207ee0ecabfdf8f1dfedb7458c560b944abde"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_act-ab03b-capstone-guarded-ab-v1-20261007-proposed-807-raw.csv",
+      "sha256": "11138e458a4fdd90b1431c0528169dd97787728e67bd7ff75db85f3349eba3c4"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_act-ab03b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "8961f0f7b39fce620863d4bf3da0b4b951ae8a4a0980bd1b6075dd0e7ff80133"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 0,
+     "lower_bound": false,
+     "t_slo_first": null,
+     "episodes": [],
+     "recovered_by_end": true,
+     "requests_in_window": 601,
+     "max_gap_in_window_sec": 1.487
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 601,
+     "success": 601,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.26380884600803256,
+     "p95": 0.33726264571887443,
+     "p99": 0.43138408121536487,
+     "max_latency": 1.012192064023111,
+     "slow_requests": 1,
+     "max_gap_sec": 1.487
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": {
+      "signal_sent": true,
+      "policy_outcomes": {
+       "promoted_verified": 1
+      },
+      "promoted": true,
+      "action_status": "verified",
+      "promote_called_at": "2026-10-07T09:39:18.407488+00:00",
+      "promote_rc": 0,
+      "switched_at": "2026-10-07T09:39:19.424765+00:00",
+      "service_verified": true,
+      "service_finished_at": "2026-10-07T09:40:29.754196+00:00",
+      "d6": {
+       "path": "promoted_service_ok",
+       "restored": true,
+       "held": null,
+       "restored_at": "2026-10-07T09:49:38.521958+00:00"
+      }
+     },
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker2"
+    }
+   },
+   "ab04a": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_record_only-ab04a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "66498a6405d8a1d6e145a93878663acb362efb3132e6d36cf41a3b847a0da251"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_record_only-ab04a-capstone-guarded-ab-v1-20261007-run-20261007T100954250345Z.json",
+      "sha256": "a2d44ce936989da6b7581fd533c11571098e76a07d62709a5d0db4fd38d6653b"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_record_only-ab04a-capstone-guarded-ab-v1-20261007-proposed-808-raw.csv",
+      "sha256": "b33dc71b583131d49894aa527cfa7e628c30685beb3e2379beca0a17bd203ea8"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_record_only-ab04a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "25cd6d2339e15625366ad57b556c6d2f668ec6fc2f2f595740d906d6070a1f88"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 287.79,
+     "lower_bound": false,
+     "t_slo_first": "2026-10-07T10:16:25.306105+00:00",
+     "episodes": [
+      {
+       "t_slo": "2026-10-07T10:16:25.306105+00:00",
+       "t_recovery": "2026-10-07T10:21:13.096450+00:00",
+       "t_recovery_confirmed_at": "2026-10-07T10:21:44.103695+00:00",
+       "end_counted": "2026-10-07T10:21:13.096450+00:00",
+       "duration_sec": 287.79,
+       "lower_bound": false,
+       "t_slo_rel_sec": 132.9,
+       "end_rel_sec": 420.6
+      }
+     ],
+     "recovered_by_end": true,
+     "requests_in_window": 601,
+     "max_gap_in_window_sec": 1.987
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 601,
+     "success": 601,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.3427423580433242,
+     "p95": 0.8487104091676884,
+     "p99": 1.0098478400579187,
+     "max_latency": 1.0456999079906382,
+     "slow_requests": 112,
+     "max_gap_sec": 1.987
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": null,
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker"
+    }
+   },
+   "ab04b": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_act-ab04b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "e8da58c28d6ea3b23adb8edb6c051aa556de99a848969af7fa5c4cd3baf81380"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_act-ab04b-capstone-guarded-ab-v1-20261007-run-20261007T102922287499Z.json",
+      "sha256": "2bac78ca5278d0b11935d96922d3eb0354da8070c06162708f574b1fa7ff777f"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_act-ab04b-capstone-guarded-ab-v1-20261007-proposed-809-raw.csv",
+      "sha256": "e954351289dc321946871d97269c4fd1416491e78a13892e53f8bd42d3a514d0"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_act-ab04b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "c29e3c5499a3a4c549e74d044eef44363537c1ef012cc8146c1fbf699f4ec7b4"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 0,
+     "lower_bound": false,
+     "t_slo_first": null,
+     "episodes": [],
+     "recovered_by_end": true,
+     "requests_in_window": 597,
+     "max_gap_in_window_sec": 3.984
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 597,
+     "success": 597,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.2782676719943993,
+     "p95": 0.30684228700702076,
+     "p99": 0.39183262059814294,
+     "max_latency": 0.5294056209968403,
+     "slow_requests": 0,
+     "max_gap_sec": 3.984
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": {
+      "signal_sent": true,
+      "policy_outcomes": {
+       "promoted_verified": 1
+      },
+      "promoted": true,
+      "action_status": "verified",
+      "promote_called_at": "2026-10-07T10:34:24.362347+00:00",
+      "promote_rc": 0,
+      "switched_at": "2026-10-07T10:34:25.225295+00:00",
+      "service_verified": true,
+      "service_finished_at": "2026-10-07T10:35:35.491249+00:00",
+      "d6": {
+       "path": "promoted_service_ok",
+       "restored": true,
+       "held": null,
+       "restored_at": "2026-10-07T10:44:33.676207+00:00"
+      }
+     },
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker"
+    }
+   },
+   "ab05a": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_record_only-ab05a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "d23dfb3954067e8d1e9d4333fddf37b9597d6ebbfd3711c646777ec03157d5aa"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_record_only-ab05a-capstone-guarded-ab-v1-20261007-run-20261007T122526095378Z.json",
+      "sha256": "2608d4b355807d19161b154966d1ba215805cd4cf672ae2bd048658ef029dd04"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_record_only-ab05a-capstone-guarded-ab-v1-20261007-proposed-810-raw.csv",
+      "sha256": "c3cd3d9ed81ab5ad112ec51418276710812b730cf2531012fcee3971070313af"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_record_only-ab05a-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "650286289226d730d7f44da7cd00cc3ad38a6023d31fe3f7748533b5ed03e69e"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 207.396,
+     "lower_bound": false,
+     "t_slo_first": "2026-10-07T12:33:15.423968+00:00",
+     "episodes": [
+      {
+       "t_slo": "2026-10-07T12:33:15.423968+00:00",
+       "t_recovery": "2026-10-07T12:36:42.820145+00:00",
+       "t_recovery_confirmed_at": "2026-10-07T12:37:12.891093+00:00",
+       "end_counted": "2026-10-07T12:36:42.820145+00:00",
+       "duration_sec": 207.396,
+       "lower_bound": false,
+       "t_slo_rel_sec": 206.8,
+       "end_rel_sec": 414.2
+      }
+     ],
+     "recovered_by_end": true,
+     "requests_in_window": 600,
+     "max_gap_in_window_sec": 1.023
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 600,
+     "success": 600,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.3640780539717525,
+     "p95": 0.9012261948053493,
+     "p99": 1.0786944446375129,
+     "max_latency": 1.165016682993155,
+     "slow_requests": 153,
+     "max_gap_sec": 1.023
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": null,
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker2"
+    }
+   },
+   "ab05b": {
+    "files": {
+     "contract": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\contract-guarded_pressure_act-ab05b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "409b8220f63de9436fc7e13b1b671577fe7c94fac8123315b2fd6333ba752c57"
+     },
+     "preflight": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\preflight-guarded_pressure_act-ab05b-capstone-guarded-ab-v1-20261007-run-20261007T124414207747Z.json",
+      "sha256": "021eedd570623a137a0044dffcde20bd041177dd0a5823673bd06aeed72a9100"
+     },
+     "probe_csv": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_pressure_act-ab05b-capstone-guarded-ab-v1-20261007-proposed-811-raw.csv",
+      "sha256": "698f93c9ceb65d37b5caebae23bbb6fee05c72ecfda79d278891ebe429556054"
+     },
+     "summary": {
+      "path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\summary-guarded_pressure_act-ab05b-capstone-guarded-ab-v1-20261007.json",
+      "sha256": "e628a02365518f41ba25f5a7561511b008c5411a2f7afb19e43a0cc928b6db81"
+     }
+    },
+    "primary": {
+     "computable": true,
+     "reason": null,
+     "cumulative_sec": 0,
+     "lower_bound": false,
+     "t_slo_first": null,
+     "episodes": [],
+     "recovered_by_end": true,
+     "requests_in_window": 597,
+     "max_gap_in_window_sec": 4.121
+    },
+    "secondary": {
+     "computable": true,
+     "requests": 597,
+     "success": 597,
+     "failure": 0,
+     "timeout": 0,
+     "p50": 0.2553049619891681,
+     "p95": 0.3422450300073251,
+     "p99": 0.38753649858990685,
+     "max_latency": 1.126462576969061,
+     "slow_requests": 1,
+     "max_gap_sec": 4.121
+    },
+    "validity": {
+     "valid": true,
+     "reasons": [],
+     "notes": {
+      "stress": {
+       "verified": true,
+       "reasons": [],
+       "criterion": "raw-counter-v2.3-guarded-ab-20261007"
+      }
+     },
+     "b_outcome": {
+      "signal_sent": true,
+      "policy_outcomes": {
+       "promoted_verified": 1
+      },
+      "promoted": true,
+      "action_status": "verified",
+      "promote_called_at": "2026-10-07T12:49:26.263781+00:00",
+      "promote_rc": 0,
+      "switched_at": "2026-10-07T12:49:27.721157+00:00",
+      "service_verified": true,
+      "service_finished_at": "2026-10-07T12:50:38.124831+00:00",
+      "d6": {
+       "path": "promoted_service_ok",
+       "restored": true,
+       "held": null,
+       "restored_at": "2026-10-07T12:59:36.911251+00:00"
+      }
+     },
+     "pre_injection_promotion": false,
+     "b_mechanism_failure": false,
+     "post_observation_cleanup_errors": [],
+     "next_run_independence_risk": false,
+     "start_active_node": "sj-worker2"
+    }
+   }
+  },
+  "primary_analysis": {
+   "n_valid_pairs": 5,
+   "direction_D_positive_means": "B의 공식 SLO 누적 위반시간이 A보다 적음 (D = A − B)",
+   "pairs": [
+    {
+     "pair": "ab01",
+     "A_sec": 204.504,
+     "B_sec": 0,
+     "D_sec": 204.504,
+     "lower_bound": {
+      "A": false,
+      "B": false
+     }
+    },
+    {
+     "pair": "ab02",
+     "A_sec": 210.83,
+     "B_sec": 0,
+     "D_sec": 210.83,
+     "lower_bound": {
+      "A": true,
+      "B": false
+     }
+    },
+    {
+     "pair": "ab03",
+     "A_sec": 201.68,
+     "B_sec": 0,
+     "D_sec": 201.68,
+     "lower_bound": {
+      "A": false,
+      "B": false
+     }
+    },
+    {
+     "pair": "ab04",
+     "A_sec": 287.79,
+     "B_sec": 0,
+     "D_sec": 287.79,
+     "lower_bound": {
+      "A": false,
+      "B": false
+     }
+    },
+    {
+     "pair": "ab05",
+     "A_sec": 207.396,
+     "B_sec": 0,
+     "D_sec": 207.396,
+     "lower_bound": {
+      "A": false,
+      "B": false
+     }
+    }
+   ],
+   "D_median": 207.396,
+   "D_range": [
+    201.68,
+    287.79
+   ],
+   "B_less": 5,
+   "equal": 0,
+   "B_more": 0,
+   "stage": "stage1_descriptive",
+   "sign_test_reference": {
+    "n_nonzero": 5,
+    "positive": 5,
+    "p_two_sided": 0.0625
+   },
+   "note": "1단계 기술 통계 - 유의성 주장 아님"
+  },
+  "sensitivity_without_lower_bound_pairs": {
+   "n_valid_pairs": 4,
+   "direction_D_positive_means": "B의 공식 SLO 누적 위반시간이 A보다 적음 (D = A − B)",
+   "pairs": [
+    {
+     "pair": "ab01",
+     "A_sec": 204.504,
+     "B_sec": 0,
+     "D_sec": 204.504,
+     "lower_bound": {
+      "A": false,
+      "B": false
+     }
+    },
+    {
+     "pair": "ab03",
+     "A_sec": 201.68,
+     "B_sec": 0,
+     "D_sec": 201.68,
+     "lower_bound": {
+      "A": false,
+      "B": false
+     }
+    },
+    {
+     "pair": "ab04",
+     "A_sec": 287.79,
+     "B_sec": 0,
+     "D_sec": 287.79,
+     "lower_bound": {
+      "A": false,
+      "B": false
+     }
+    },
+    {
+     "pair": "ab05",
+     "A_sec": 207.396,
+     "B_sec": 0,
+     "D_sec": 207.396,
+     "lower_bound": {
+      "A": false,
+      "B": false
+     }
+    }
+   ],
+   "D_median": 205.95,
+   "D_range": [
+    201.68,
+    287.79
+   ],
+   "B_less": 4,
+   "equal": 0,
+   "B_more": 0,
+   "stage": "descriptive_only_n_lt_5"
+  },
+  "counts": {
+   "pre_injection_promotion": 0,
+   "b_mechanism_failure": 0
+  },
+  "frozen_expectations": {
+   "threshold": -0.07667538512242333,
+   "artifact_hashes": {
+    "dataset-manifest.json": "fd24097783ebef976c0a1e16181e9309977872b020295526ab96bfcd350c0086",
+    "feature-schema.json": "9d8ddb6eb45448361015f58c42c7189af59b649b5f52781c677b8f33a45fbc51",
+    "model.pkl": "0aa5d4c95a32c0cb6a34f2384a824ea886acb5ef6c95e73bdcf4a71e86d1b390",
+    "scaler.pkl": "fd4a615242596a12c6da2c6d41257acf2d5af25d91e26737fb9be5df1ffda891",
+    "sensitivity-check.json": "b8f3fc4c2075e000e8de4c2f92a378979cb95cde41a0e7edde722b48741ac2bc",
+    "split-manifest.json": "c27e2db51f4257e82e16311ff2a9a6e2e020a31cf9d22b27a46e287f57f287be",
+    "threshold.json": "c35121327cb03a441c9e0015d7e533444fef5ca63633861808073faf19d6b49c",
+    "training-metadata.json": "92c0029c948ca20c7e4eaa52edbcc704dfa6087f3149e91791711e6ff2687f53",
+    "verification.json": "7fb00daa1df144063d5f8e579e699c59a0b35ccc2775ee4e19e1a64ea65378fa"
+   },
+   "observation_sec": 600.0,
+   "stress_stages": [
+    {
+     "name": "stage-1-1worker",
+     "workers": 1,
+     "load": 100,
+     "duration_sec": 90
+    },
+    {
+     "name": "stage-2-2worker",
+     "workers": 2,
+     "load": 100,
+     "duration_sec": 90
+    },
+    {
+     "name": "stage-3-3worker",
+     "workers": 3,
+     "load": 100,
+     "duration_sec": 90
+    },
+    {
+     "name": "stage-4-4worker",
+     "workers": 4,
+     "load": 100,
+     "duration_sec": 90
+    }
+   ],
+   "probe_config_sha256": "36ec46ee19a01ce348abb95b65c1b45dc6074ab43fddc07bbe2313deab777851",
+   "probe_image": "loadgen-runner:phase8-v4-forceclose-20261002",
+   "probe_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+   "detector_rule": {
+    "consecutive": 3,
+    "cooldown_sec": 60
+   },
+   "start_state_rule": "canonical_healthy_r2"
+  },
+  "corrections": {
+   "accepted": [],
+   "rejected": [],
+   "use": "기록 연결만 - 판정은 분석기 코드의 결정적 수정(예: norm_generation)으로 모든 실행에 동일 적용, 원본 판정 파일은 읽기만"
+  }
+ },
+ "result_digest": "f54e256665d5279507fee531ad9ba865014dcfc057423cae9fb174bcd118884e",
+ "provenance": {
+  "analyzed_at_utc": "2026-10-07T13:01:31.100800+00:00",
+  "code_and_docs_sha256": {
+   "guarded_ab_analysis.py": "51886c97152d639e4a4a86a7370ac19c8a91b2f78a8fb1b10d279455985b3bbd",
+   "slo_judge.py": "a66957761e0e433e3efdf0037f0c3c0833c1542c85c756a49085aee9c3447022",
+   "slo_episodes.py": "33ff83de00800db01206f7738e390884987a1338537e15477c876f5245e5cd85",
+   "timed_switch_verdict.py": "4716d3ce79eaa0bcccce0b64dda4ff7f5bcd0ebb5b49fb9c69dbe116d4fb6ef9",
+   "guarded_cleanup_gate.py": "baff9fe74eb2e06de09333347dfbd11e900faa9a29c68bfc95fe37e2da9e1e12",
+   "phase8-v33c1-guarded-ab-analysis-rules-20261007.md": "227d2e775c24de35bfeac215cfb2f108522764c4dd71c891246f40230925cf1b",
+   "phase8-v33c1-guarded-ab-comparison-contract-20261007.md": "3aeb8ac0e7147d29662f66f830f37c2e31ed88cbd2922c678e2c6e82757e765f",
+   "phase8-v33c1-guarded-ab-comparison-contract-r2-20261007.md": "0130deb886ad7c0cffb182f7f1d61fde7ac7397608ec5914d2e15346acf0b330"
+  },
+  "slo_version": "v3",
+  "slo_episodes_revision": "r2-20261004"
+ }
+}

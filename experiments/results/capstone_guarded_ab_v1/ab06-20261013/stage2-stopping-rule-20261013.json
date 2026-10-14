@@ -1,0 +1,23 @@
+{
+ "kind": "stage2_stopping_rule",
+ "recorded_at_utc": "2026-10-13T08:41:00Z",
+ "recorded_before_any_stage2_result": true,
+ "evidence_no_stage2_files_at_record_time": "capstone_guarded_ab_v1 폴더에 ab06~ab15 파일 0개 확인(2026-10-13T08:40:58Z)",
+ "contract_doc": "docs/design/phase8-v33c1-guarded-ab-comparison-contract-r2-20261007.md",
+ "contract_basis": "계약 r1 §7 2단계(누적 유효 10 / 최대 시도 15, ab06~ab15). 2단계 진행 여부는 일정·서버 상태로만 정하고 1단계 결과로 정하지 않는다.",
+ "decided_by": "user (chat 2026-10-13: '선택지 1로 진행하겠습니다 ... 중단 기준은 결과를 보기 전인 지금 다음과 같이 고정합니다')",
+ "rule": {
+  "target_valid_pairs_in_stage2": 3,
+  "planned_ids": ["ab06a", "ab06b", "ab07a", "ab07b", "ab08a", "ab08b"],
+  "replacement": "invalid 실행 기록은 그대로 보존하고 다음 사용 가능한 ID(ab09 이후, 계약 상한 ab15)로 대체",
+  "stop_when": "Stage 2 유효 쌍 3개 확보 시 추가 실행 종료(결과가 좋아도 더 실행하지 않음)",
+  "no_exclusion": "나쁜 결과도 숨기거나 제외하지 않음",
+  "contract_early_stop_still_applies": "계약 r1 §7 조기 중단(B 메커니즘 실패 2회, 안전 문제 반복)과 최대 시도 ab15"
+ },
+ "reporting": {
+  "stage1": "ab01~ab05 공식 5쌍 - 기존 결과·문서·분석 파일 그대로(소급 변경 없음)",
+  "stage2": "사전 등록 추가 반복, 유효 3쌍 목표, ab06부터 순차",
+  "reference_all": "Stage 1 5쌍 + Stage 2 유효 쌍 - 참고용 전체 관측으로 별도 요약",
+  "analyzer": "experiments/guarded_ab_analysis.py 동결본(sha256 51886c97152d639e4a4a86a7370ac19c8a91b2f78a8fb1b10d279455985b3bbd), 새 파일 이름으로만 출력"
+ }
+}
