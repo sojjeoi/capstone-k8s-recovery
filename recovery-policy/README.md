@@ -13,6 +13,8 @@ detector 신호를 받아 **안전 조건을 다시 확인한 뒤에만** Argo R
 
 동작 모드: `record_only`(판단·기록만, 조치 없음) / `act`(조건이 모두 맞을 때 승격 1회). 실험과 시연은 승인된 경우에만 `act`로 전환했다.
 
+배포 매니페스트: [gitops/apps/guarded-recovery-policy/guarded-recovery-policy.yaml](../gitops/apps/guarded-recovery-policy/guarded-recovery-policy.yaml) (실제 클러스터에서 내보낸 것)
+
 `check_target`이 거부하는 경우(하나라도 해당하면 전환하지 않음): Rollout이 다름, active/preview selector가 신호 시점과 다름, preview가 승격 대기 상태가 아님, 버전별 Pod가 정확히 1개가 아님, Pod UID 변경·종료 중·신호 이후 재시작 증가, preview가 Ready가 아님.
 
 ## 초기 버전 (historical - 최종 실험에 쓰지 않음)

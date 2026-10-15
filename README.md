@@ -111,6 +111,7 @@ CPU 임계값이 선택된 것은 **이 CPU 압박 환경**의 결과이며, CPU
 | [anomaly-detection/bck_rules/rule-spec-v1.json](anomaly-detection/bck_rules/rule-spec-v1.json) | CPU 임계값 규칙 정의 |
 | [experiments/results/phase2_selection/active-profile.json](experiments/results/phase2_selection/active-profile.json) | 현재 환경의 ACTIVE/SHADOW 지정 |
 | [gitops/apps/vllm-serving/rollout.yaml](gitops/apps/vllm-serving/rollout.yaml) | vLLM Blue/Green Rollout |
+| [gitops/apps/guarded-recovery-policy/guarded-recovery-policy.yaml](gitops/apps/guarded-recovery-policy/guarded-recovery-policy.yaml) | Recovery Policy 배포(권한·저장소·Deployment) |
 
 `recovery-policy/`의 `main.py`·`policy.py`·`rollouts_client.py`·`git_client.py` 등은 **초기 버전**이며 최종 실험에 쓰지 않았다.
 
@@ -146,7 +147,7 @@ CPU 임계값이 선택된 것은 **이 CPU 압박 환경**의 결과이며, CPU
   - 대용량 원자료(`experiments/results/*`의 tick 기록·로그)는 저장소 밖에 보존하고, `model.pkl`·`scaler.pkl`은 커밋하지 않았다(메타데이터·해시만 커밋).
   - freeze 해시는 원래 작업 폴더 파일 바이트(CRLF/LF 혼재) 기준이라 새 checkout에서는 줄바꿈 차이로 해시가 다를 수 있다.
   - 일부 frozen 테스트는 공식 결과가 저장소에 추가되기 전 상태를 가정하므로, 지금 checkout에서는 실패할 수 있다(현재 구현의 regression이 아니라 전제 차이).
-  - 최종 guarded 정책의 배포 매니페스트는 저장소에 포함돼 있지 않다(`gitops/apps/recovery-policy/`는 초기 정책용).
+  - vLLM·guarded 정책 이미지는 노드에 직접 적재한 로컬 이미지라 레지스트리에서 받을 수 없다(매니페스트는 [gitops/](gitops/README.md)에 있음).
 
 ## 문서
 

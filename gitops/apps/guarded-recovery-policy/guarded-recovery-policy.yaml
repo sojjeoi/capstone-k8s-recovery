@@ -1,0 +1,213 @@
+# guarded-recovery-policy - 최종 Recovery Policy(recovery-policy/main_guarded.py) 배포 매니페스트
+# 2026-10-16 실제 클러스터(vllm-serving)에서 읽기 전용으로 내보낸 7개 객체. status·uid·managedFields 등 실행 중 메타데이터만 뺐다.
+# - 관리자 토큰 값은 포함하지 않는다(Secret `guarded-recovery-policy-admin`은 운영자가 직접 만든다 - 여기는 참조만).
+# - GUARDED_MODE=record_only가 평상시 상태다. 실험·시연에서는 승인 후 `kubectl set env ... GUARDED_MODE=act`로 바꾸고 끝나면 되돌렸다.
+# - 이미지는 노드에 직접 적재한 로컬 이미지(imagePullPolicy: Never, recovery-policy/Dockerfile 기반).
+# - Deployment annotation `timing-source`는 생성 당시 값이다. 실제 기준값은 아래 env(신호 나이 15 s·시계 오차 2 s·창→결정 10 s)다.
+# - 이 클러스터에는 Argo CD가 없어 이 파일이 자동 적용되지 않는다. 기록·재현용이며 이 정리에서 클러스터에 적용하지 않았다.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: guarded-recovery-policy
+  namespace: vllm-serving
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: guarded-recovery-policy
+  namespace: vllm-serving
+rules:
+- apiGroups:
+  - argoproj.io
+  resources:
+  - rollouts
+  verbs:
+  - get
+  - list
+  - watch
+  - patch
+  - update
+- apiGroups:
+  - argoproj.io
+  resources:
+  - rollouts/status
+  verbs:
+  - patch
+  - update
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - ''
+  resources:
+  - services
+  - endpoints
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: guarded-recovery-policy
+  namespace: vllm-serving
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: guarded-recovery-policy
+subjects:
+- kind: ServiceAccount
+  name: guarded-recovery-policy
+  namespace: vllm-serving
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: guarded-recovery-policy-data-pv
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 1Gi
+  local:
+    path: /home/ubuntu/guarded-recovery-policy-data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - sj-worker
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: guarded-recovery-policy-data
+  namespace: vllm-serving
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-storage
+  volumeName: guarded-recovery-policy-data-pv
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guarded-recovery-policy
+  namespace: vllm-serving
+spec:
+  ports:
+  - port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: guarded-recovery-policy
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    capstone.guarded/rendered-from: docs/deploy-drafts/guarded-recovery-policy/guarded-recovery-policy.yaml
+      (2026-10-06)
+    capstone.guarded/timing-source: rehearsal-provisional-30-5-30-not-final
+  name: guarded-recovery-policy
+  namespace: vllm-serving
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guarded-recovery-policy
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: guarded-recovery-policy
+    spec:
+      containers:
+      - command:
+        - uvicorn
+        - --factory
+        - main_guarded:build_app_from_env
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8080'
+        - --workers
+        - '1'
+        env:
+        - name: RECOVERY_POLICY_DATA_DIR
+          value: /data
+        - name: GUARDED_MODE
+          value: record_only
+        - name: GUARDED_SHUTDOWN_WAIT_SEC
+          value: '150'
+        - name: GUARDED_REHEARSAL_CLUSTER_READ
+          value: '1'
+        - name: GUARDED_MAX_SIGNAL_AGE_SEC
+          value: '15'
+        - name: GUARDED_MAX_FUTURE_SKEW_SEC
+          value: '2'
+        - name: GUARDED_MAX_WINDOW_TO_DECISION_SEC
+          value: '10'
+        - name: GUARDED_STATE_INITIALIZE
+          value: '0'
+        - name: GUARDED_ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: token
+              name: guarded-recovery-policy-admin
+        - name: GUARDED_LEDGER_CREATE
+          value: '0'
+        - name: GUARDED_SERVICE_CRITERIA_ACK
+          value: reused-timed-switch-v1
+        - name: GUARDED_COUNTER_MAX_STALENESS_SEC
+          value: '30'
+        - name: GUARDED_COUNTER_MAX_FUTURE_SEC
+          value: '0'
+        - name: GUARDED_PROMETHEUS_URL
+          value: http://kube-prom-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+        image: guarded-recovery-policy:podmetrics-20261007
+        imagePullPolicy: Never
+        name: guarded-recovery-policy
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: guarded-recovery-policy
+      serviceAccountName: guarded-recovery-policy
+      terminationGracePeriodSeconds: 180
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: guarded-recovery-policy-data
