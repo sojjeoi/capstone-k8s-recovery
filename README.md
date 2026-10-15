@@ -1,17 +1,37 @@
+<div align="center">
+
 # LLM 서빙 성능 저하 대응을 위한 Kubernetes 자동 복구 시스템
 
-> Kubernetes 위의 vLLM 서빙에서 운영 지표의 이상 신호를 감지하면, **안전 조건을 다시 확인한 뒤** Argo Rollouts Blue/Green 전환을 실행하고, **기존/새 Pod의 실제 요청 수로 트래픽이 정말 옮겨졌는지까지 확인**하는 자동 복구 시스템.
+**운영 지표의 이상 신호를 감지하면, 안전 조건을 다시 확인한 뒤 Blue/Green 전환을 실행하고<br>기존/새 Pod의 실제 요청 수로 트래픽 이동까지 확인하는 자동 복구 시스템**
 
-- 지도교수: 김영한 교수님 · 작성자: 박소정 (숭실대 전자정보공학부 IT융합전공)
-- 최종 결과 문서: [docs/final/PHASE2-FINAL-RESULT-20261012.md](docs/final/PHASE2-FINAL-RESULT-20261012.md)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?logo=kubernetes&logoColor=white)
+![Argo Rollouts](https://img.shields.io/badge/Argo_Rollouts-EF7B4D?logo=argo&logoColor=white)
+![vLLM](https://img.shields.io/badge/vLLM-Qwen2.5--0.5B-30A2FF)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-F7931E?logo=scikitlearn&logoColor=white)
+![Chaos Mesh](https://img.shields.io/badge/Chaos_Mesh-172B4D)
+
+[![Final Result](https://img.shields.io/badge/Final_Result-Phase_2-0D786E?style=for-the-badge)](docs/final/PHASE2-FINAL-RESULT-20261012.md)
+[![Demo](https://img.shields.io/badge/Demo-Runbook-2EA44F?style=for-the-badge)](demo/README.md)
+[![Evidence](https://img.shields.io/badge/Evidence-Index-555555?style=for-the-badge)](experiments/README.md)
+
+<sub>2026 숭실대학교 전자정보공학부 IT융합전공 졸업작품 · 지도교수 김영한 교수님 · 작성자 박소정</sub>
+
+</div>
+
+---
 
 ## 왜 필요한가
 
 LLM 서빙 Pod는 죽지 않고 **느려지기만** 하는 경우가 많다(예: CPU 압박). Kubernetes 기본 self-healing(재시작·재생성)은 Pod·컨테이너 상태와 probe 결과를 기준으로 동작하므로, Pod는 살아 있는데 응답만 느린 상태는 그대로 이어질 수 있다. 이 프로젝트는 그 구간을 운영 지표로 감지하고, 미리 준비해 둔 새 Pod로 트래픽을 옮겨 서비스 품질 저하 시간을 줄인다.
 
-## 구조
+## 아키텍처
 
-![아키텍처](docs/images/architecture.png)
+<p align="center">
+  <img src="docs/images/architecture.png" alt="아키텍처 - 환경별 감지기 선택, ACTIVE/SHADOW 감지기, Recovery Policy, Argo Rollouts Blue/Green 전환, 실제 트래픽 검증" width="100%">
+</p>
 
 <details>
 <summary>텍스트 다이어그램</summary>
