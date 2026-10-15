@@ -25,3 +25,25 @@
 - [slo-definition.md](design/slo-definition.md) - 서비스 품질(SLO) 판정 정의
 
 design/의 파일은 freeze 해시·실행기 경로가 참조하므로 이동·수정하지 않는다.
+
+## 세부 연구 기록 - 실험 단계별 결과
+
+| 실험 | 한 줄 결과 |
+|---|---|
+| Phase 1 A/B | 같은 압박에서 기록만 한 경우 vs 실제 전환. 공식 5쌍 5/5 + 사전등록 추가 3쌍 3/3 같은 방향(8쌍 합산은 참고 관측) |
+| B/C/K | 초기 Isolation Forest(c1)가 보정 CPU 임계값보다 낫다는 증거 없음. 기존 고정 임계값(2.7 core)은 5/5 늦고 피해가 컸음 |
+| N1 정상 운전 | 초기 Isolation Forest(c1)가 불필요 신호를 더 일찍 냄(정상 학습 범위가 좁음) |
+| c3-A | 정상 범위를 넓혀 다시 학습해 정상 불필요 신호 14 → 1, 사전등록 판정 PROMISING |
+| Axis 2 | LLM 지표를 쓰는 다변량 감지기 NO_GO - 현재 환경에서 LLM 지표가 거의 변하지 않음 |
+| Phase 2 | 사전등록 규칙으로 감지기 선택(CPU 5/5 · IF 0/5) → 선택된 감지기로 실제 복구 3/3, `PHASE2_ARCHITECTURE_VALIDATED` |
+
+모든 공식 실험은 결과를 보기 전에 비교 지표·반복 수·중단 규칙·선택 기준을 사전등록하고 고정했다. 서비스 품질 판정 정의: [design/slo-definition.md](design/slo-definition.md). 실험별 실행기·근거 위치: [../experiments/README.md](../experiments/README.md)
+
+## 재현성 범위
+
+- 실험 계약·freeze manifest(SHA256)·분석기·테스트는 저장소에 있지만 clone만으로 전부 재현할 수는 없다.
+- 대용량 원자료(탐지기 tick 기록·로그)는 저장소 밖에 보존하고, `model.pkl`·`scaler.pkl`은 커밋하지 않았다(메타데이터·해시만 커밋).
+- freeze 해시는 원래 작업 폴더의 파일 바이트(CRLF/LF 혼재) 기준이라, 새 checkout에서는 줄바꿈 차이로 일부 해시가 다를 수 있다.
+- 일부 frozen 테스트는 공식 결과가 저장소에 추가되기 전 상태를 가정하므로 지금 checkout에서는 실패할 수 있다(현재 구현의 regression이 아니라 전제 차이).
+- vLLM·Recovery Policy 이미지는 노드에 직접 적재한 로컬 이미지라 레지스트리에서 받을 수 없다.
+- Phase 1 최종 연구 상태는 tag `phase1-final-20261011`에 있다. 초기 계획 README만 있던 `cluster/`, `monitoring/`, `finops/`, `operator/`, `pvc-backup/`와 참조되지 않는 중간 기록 일부는 2026-10-14 정리에서 master에서 뺐다(tag `phase1-final-20261011`·branch `research-snapshot-20261011`에 남아 있음).
