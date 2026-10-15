@@ -1,6 +1,8 @@
 # 교수 발표용 최종 package (2026-10-10)
 
-> Status: **CURRENT - 발표 문구·예상 질문**(2026-10-10 작성, E8은 2026-10-11 추가). **Phase 2 최종 결과(2026-10-12)는 [PHASE2-FINAL-RESULT-20261012.md](PHASE2-FINAL-RESULT-20261012.md)가 우선한다.** c3-A·Axis 2·문헌·S3 결과는 E8과 아래 synthesis 참조. 최신 결과와 최종 후속 연구 방향은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조. 아래 E8에 후속 방향만 짧게 더함.
+> **SUPERSEDED (2026-10-15)** - 이 문서는 2026-10-10 기준 발표 준비 자료다. 일부 수치는 현재 기준과 정의가 다르다. 특히 아래의 selector 전환 "≈0.5 s"는 promote 명령이 끝난 뒤 확인까지의 시간이며, 승격 요청 → selector 변경 확인 시간(중앙값 1.37 s, 범위 0.86–7.87 s)은 [AB-TRAFFIC-SWITCH-TIMING-20261015.md](AB-TRAFFIC-SWITCH-TIMING-20261015.md)를 본다. 현재 결과는 [PHASE2-FINAL-RESULT-20261012.md](PHASE2-FINAL-RESULT-20261012.md)와 [PHASE1-AB-ADDITIONAL-REPLICATION-20261013.md](PHASE1-AB-ADDITIONAL-REPLICATION-20261013.md)가 우선한다. 아래 본문은 당시 그대로 둔다.
+
+> Status (2026-10-10 작성 당시): **CURRENT - 발표 문구·예상 질문**(2026-10-10 작성, E8은 2026-10-11 추가). **Phase 2 최종 결과(2026-10-12)는 [PHASE2-FINAL-RESULT-20261012.md](PHASE2-FINAL-RESULT-20261012.md)가 우선한다.** c3-A·Axis 2·문헌·S3 결과는 E8과 아래 synthesis 참조. 최신 결과와 최종 후속 연구 방향은 `docs/final/FINAL-RESEARCH-SYNTHESIS-20261011.md` 참조. 아래 E8에 후속 방향만 짧게 더함.
 
 근거: `docs/final/FINAL-EVIDENCE-SUMMARY-20261010.md`(공식 결과 재확인·claim matrix), `docs/history/REPRODUCIBILITY-AUDIT-20261010.md`, 시연 runbook `docs/demo/PHASE2-DEMO-RUNBOOK-20261012.md`(2026-10-10 runbook은 로컬 전용·저장소 미포함).
 

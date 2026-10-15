@@ -62,3 +62,17 @@
 | 약 950 MB의 이전 실험 원자료 | 저장소 밖 보존(README Limitations 재현성 범위) |
 
 **재현 범위:** 이 파일들만으로 쌍별 값·유효성 판정·트래픽 확인 결과를 읽을 수 있다. 동결 분석기를 처음부터 다시 실행하려면 저장소 밖에 보존한 probe CSV·run-preflight 원자료가 필요하다(분석 파일에 각 원자료의 SHA-256이 남아 있어 대조 가능).
+
+## 추가 (2026-10-15) - ab01b~ab05b 실행 요약
+
+위 "넣지 않은 것" 표의 첫 줄 중 **B 실행 요약 5개만** 추가했다. 목적은 [docs/final/AB-TRAFFIC-SWITCH-TIMING-20261015.md](../../../docs/final/AB-TRAFFIC-SWITCH-TIMING-20261015.md)의 전환 시간 8회를 저장소 안에서 확인할 수 있게 하는 것이다. 각 파일의 SHA-256은 위 두 공식 분석 파일에 기록된 해시와 일치한다. 공식 결과·분석은 바꾸지 않았다.
+
+| 파일 | SHA-256(앞 16자) | 크기(byte) | 내용 |
+|---|---|---:|---|
+| `summary-guarded_pressure_act-ab01b-capstone-guarded-ab-v1-20261007.json` | `0032506fe9e9963f…` | 35011 | 실행 요약(승격·selector 전환·트래픽 확인 포함) |
+| `summary-guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007.json` | `90e9e25828a94805…` | 38032 | 같음 |
+| `summary-guarded_pressure_act-ab03b-capstone-guarded-ab-v1-20261007.json` | `8961f0f7b39fce62…` | 41222 | 같음 |
+| `summary-guarded_pressure_act-ab04b-capstone-guarded-ab-v1-20261007.json` | `c29e3c5499a3a4c5…` | 44484 | 같음 |
+| `summary-guarded_pressure_act-ab05b-capstone-guarded-ab-v1-20261007.json` | `e628a02365518f41…` | 47673 | 같음 |
+
+A arm(ab01a~ab05a) 요약·contract·운영 기록과 나머지 원자료는 계속 저장소 밖에 보존한다.

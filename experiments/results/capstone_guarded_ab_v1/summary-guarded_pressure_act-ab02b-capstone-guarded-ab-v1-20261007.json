@@ -1,0 +1,1080 @@
+{
+  "run_id": "guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007",
+  "run": "ab02b",
+  "kind": "pressure",
+  "mode": "act",
+  "outcome_status": "completed",
+  "outcome_reason": "전환 없음 대조 관찰 600초 완료",
+  "invalidity_reasons": [],
+  "detector_readiness": {
+    "timeout_sec": 300.0,
+    "wait_started_at_utc": "2026-10-07T08:29:19.822316+00:00",
+    "ready_at_utc": "2026-10-07T08:29:23.075028+00:00",
+    "waited_sec": 3.3,
+    "detail": {
+      "evaluations_seen": 1,
+      "skipped_seen": 0,
+      "last_skip_reason": null,
+      "ready_seq": 1
+    }
+  },
+  "evidence_counts": {
+    "scored": 3,
+    "skipped": 37,
+    "condition_met": 1,
+    "send_attempts": 1,
+    "send_results": {
+      "promoted_verified": 1
+    },
+    "parse_errors": 0
+  },
+  "watcher": {
+    "action": {
+      "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:6bcc45cb7c->74fdf54796#88611e01-1439-4fbb-a2bc-fa3607ee8d36",
+      "outcome": "promoted_verified",
+      "evaluation_seq": 3
+    },
+    "guard_starts": 1,
+    "duplicates": 0,
+    "guard_result": {
+      "result": "verified",
+      "service_ok": true,
+      "read_errors": [],
+      "runner_action": "continue"
+    },
+    "guard_pending_at_end": false,
+    "promotion_events": [
+      {
+        "evaluation_seq": 3,
+        "policy_outcome": "promoted_verified",
+        "effective": "promoted_verified",
+        "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:6bcc45cb7c->74fdf54796#88611e01-1439-4fbb-a2bc-fa3607ee8d36",
+        "source": "safety_check",
+        "seen_at_utc": "2026-10-07T08:30:01.265550+00:00"
+      }
+    ],
+    "late_failures": []
+  },
+  "context": {
+    "run_id": "guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007",
+    "detector_id": "c1_live_v3.3",
+    "model_version": "v3.3-c1",
+    "model_hash": "0aa5d4c95a32c0cb6a34f2384a824ea886acb5ef6c95e73bdcf4a71e86d1b390",
+    "artifact_manifest_hash": "2897f3a1d092c5490a38a71f4a0e7b79d4ccc333fc226a4b8ceac63a6414e9da",
+    "threshold": -0.07667538512242333,
+    "rollout": {
+      "namespace": "vllm-serving",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "actions_allowed": true
+  },
+  "policy_state_after": {
+    "state_available": true,
+    "mode": "act",
+    "schema_version": "c1-signal-v2",
+    "context": {
+      "run_id": "guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007",
+      "detector_id": "c1_live_v3.3",
+      "model_version": "v3.3-c1",
+      "model_hash": "0aa5d4c95a32c0cb6a34f2384a824ea886acb5ef6c95e73bdcf4a71e86d1b390",
+      "artifact_manifest_hash": "2897f3a1d092c5490a38a71f4a0e7b79d4ccc333fc226a4b8ceac63a6414e9da",
+      "rollout": {
+        "namespace": "vllm-serving",
+        "name": "vllm-serving",
+        "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+      },
+      "threshold": -0.07667538512242333,
+      "actions_allowed": true,
+      "set_at": "2026-10-07T08:25:06.683915+00:00"
+    },
+    "blocked": null,
+    "unresolved": {},
+    "actions": {
+      "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:66ffb65476->58d5d59c6c#19d30bd6-316d-47b7-bce9-0d658aca0f6b": {
+        "status": "resolved",
+        "run_id": "guarded_pressure_act-gap01-capstone-guarded-v1-pilot-20261006",
+        "delivery_key": "guarded_pressure_act-gap01-capstone-guarded-v1-pilot-20261006:c1_live_v3.3:2026-10-06T14:02:32.054731+00:00:3",
+        "reserved_at": "2026-10-06T14:03:09.777157+00:00",
+        "prior_aborts": [],
+        "promote_called_at": "2026-10-06T14:03:10.554422+00:00",
+        "promote_result": {
+          "called": true,
+          "started_at": "2026-10-06T14:03:10.554806+00:00",
+          "cli": {
+            "argv": [
+              "kubectl-argo-rollouts",
+              "promote",
+              "vllm-serving",
+              "-n",
+              "vllm-serving"
+            ],
+            "returncode": 0,
+            "stdout": "rollout 'vllm-serving' promoted\n",
+            "stderr": ""
+          },
+          "verify": {
+            "switched": true,
+            "switched_at": "2026-10-06T14:03:11.289614+00:00",
+            "last": {
+              "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+              "active_selector": "58d5d59c6c",
+              "service_selector": "58d5d59c6c",
+              "observed_at": "2026-10-06T14:03:11.289614+00:00"
+            },
+            "deadline_sec": 10.0,
+            "api_timeout_sec": 5.0,
+            "elapsed_sec": 0.5473111541941762
+          },
+          "verified": true,
+          "verified_at": "2026-10-06T14:03:11.289614+00:00",
+          "note": "상태 전환 관측은 이 명령이 원인이라는 증명이 아니다"
+        },
+        "finished_at": "2026-10-06T14:03:11.289751+00:00",
+        "service_job": {
+          "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:66ffb65476->58d5d59c6c#19d30bd6-316d-47b7-bce9-0d658aca0f6b",
+          "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+          "verified_at": "2026-10-06T14:03:11.289614+00:00",
+          "new_pod": "vllm-serving-58d5d59c6c-zzqgs",
+          "new_pod_uid": "19d30bd6-316d-47b7-bce9-0d658aca0f6b",
+          "new_pod_ip": "10.244.224.243",
+          "old_pod": "vllm-serving-66ffb65476-xd5mt",
+          "old_pod_uid": "6f2ce239-c228-4ac0-bcf3-4daee661f53c"
+        },
+        "service_check": {
+          "ok": null,
+          "verdict": {
+            "verified": null,
+            "reasons": [
+              "request_counter_unavailable"
+            ]
+          },
+          "validity": [
+            "old_counter_missing_end"
+          ],
+          "endpoint_samples": 12,
+          "criteria": {
+            "settle_sec": 10.0,
+            "window_sec": 60.0,
+            "sample_interval_sec": 5.0,
+            "min_endpoint_samples": 3,
+            "min_new": 30.0,
+            "max_old": 2.0
+          },
+          "note": "선택자 전환과 별개의 짧은 서비스 확인 - 사용자 품질 개선 입증 아님"
+        },
+        "service_finished_at": "2026-10-06T14:04:21.520438+00:00",
+        "resolutions": [
+          {
+            "previous_status": "verified_service_unknown",
+            "resolution": "switch_verified; service_check_unknown_at_time; post_observed_and_cleanup_confirmed",
+            "evidence": {
+              "switch": "promote rc=0, Rollout activeSelector+vllm-active selector=58d5d59c6c verified 2026-10-06T14:03:11.29Z (0.55s)",
+              "service_check_at_time": "verified_service_unknown (request_counter_unavailable, old_counter_missing_end) - 원래 판정 유지, 성공으로 바꾸지 않음",
+              "post_observation": "옛 Pod 마지막 원본 표본 14:03:09Z, 전환 뒤 Prometheus 수집 대상 아님(ServiceMonitor는 Service endpoint만). 새 Pod 카운터 14:03:30→14:05:30 14→115 증가(사후 관측, 정책 판정 아님)",
+              "cleanup": "구 RS 14:10:10Z 0(전환+약 419초), scaleDownDelaySeconds 420→30 원복 14:33:08Z(restore_override), 새 active 58d5d59c6c Healthy 유지, chaos·probe 없음",
+              "evidence_files": "experiments/results/capstone_guarded_v1_pilot/gap01-20261006/(GAP01-RESULT-SUMMARY.md, service-unknown-prometheus-readonly.txt, post-cleanup/)"
+            },
+            "by": "user-approved post-run cleanup (Claude Code operator), 2026-10-06",
+            "at": "2026-10-06T14:34:01.226282+00:00"
+          }
+        ]
+      },
+      "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:58d5d59c6c->bbf47d9c5#779bcbbc-3279-4428-8ada-0518df92ebe7": {
+        "status": "verified",
+        "run_id": "guarded_pressure_act-gap02-capstone-guarded-v1-pilot-20261006",
+        "delivery_key": "guarded_pressure_act-gap02-capstone-guarded-v1-pilot-20261006:c1_live_v3.3:2026-10-06T15:32:01.860908+00:00:3",
+        "reserved_at": "2026-10-06T15:32:38.057240+00:00",
+        "prior_aborts": [],
+        "promote_called_at": "2026-10-06T15:32:38.478160+00:00",
+        "promote_result": {
+          "called": true,
+          "started_at": "2026-10-06T15:32:38.478447+00:00",
+          "cli": {
+            "argv": [
+              "kubectl-argo-rollouts",
+              "promote",
+              "vllm-serving",
+              "-n",
+              "vllm-serving"
+            ],
+            "returncode": 0,
+            "stdout": "rollout 'vllm-serving' promoted\n",
+            "stderr": ""
+          },
+          "verify": {
+            "switched": true,
+            "switched_at": "2026-10-06T15:32:39.186173+00:00",
+            "last": {
+              "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+              "active_selector": "bbf47d9c5",
+              "service_selector": "bbf47d9c5",
+              "observed_at": "2026-10-06T15:32:39.186173+00:00"
+            },
+            "deadline_sec": 10.0,
+            "api_timeout_sec": 5.0,
+            "elapsed_sec": 0.5302175851538777
+          },
+          "verified": true,
+          "verified_at": "2026-10-06T15:32:39.186173+00:00",
+          "note": "상태 전환 관측은 이 명령이 원인이라는 증명이 아니다"
+        },
+        "finished_at": "2026-10-06T15:32:39.186292+00:00",
+        "service_job": {
+          "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:58d5d59c6c->bbf47d9c5#779bcbbc-3279-4428-8ada-0518df92ebe7",
+          "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+          "verified_at": "2026-10-06T15:32:39.186173+00:00",
+          "new_pod": "vllm-serving-bbf47d9c5-kntw4",
+          "new_pod_uid": "779bcbbc-3279-4428-8ada-0518df92ebe7",
+          "new_pod_ip": "10.244.36.14",
+          "old_pod": "vllm-serving-58d5d59c6c-zzqgs",
+          "old_pod_uid": "19d30bd6-316d-47b7-bce9-0d658aca0f6b",
+          "old_pod_ip": "10.244.224.243"
+        },
+        "service_check": {
+          "ok": true,
+          "verdict": {
+            "verified": true,
+            "reasons": [],
+            "new_pod_increase": 60.0,
+            "old_pod_increase": 0.0
+          },
+          "validity": [],
+          "endpoint_samples": 12,
+          "counter_window_sec": 60.222,
+          "criteria": {
+            "settle_sec": 10.0,
+            "window_sec": 60.0,
+            "sample_interval_sec": 5.0,
+            "min_endpoint_samples": 3,
+            "min_new": 30.0,
+            "max_old": 2.0
+          },
+          "note": "선택자 전환과 별개의 짧은 서비스 확인 - 사용자 품질 개선 입증 아님"
+        },
+        "service_finished_at": "2026-10-06T15:33:49.597927+00:00"
+      },
+      "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:bbf47d9c5->5889d5fc8b#da7b66af-9dc0-4f3d-86f8-eedbb1e8b592": {
+        "status": "verified",
+        "run_id": "guarded_pressure_act-ab90b-capstone-guarded-ab-v1-20261007",
+        "delivery_key": "guarded_pressure_act-ab90b-capstone-guarded-ab-v1-20261007:c1_live_v3.3:2026-10-07T06:01:02.716226+00:00:3",
+        "reserved_at": "2026-10-07T06:01:38.424001+00:00",
+        "prior_aborts": [],
+        "promote_called_at": "2026-10-07T06:01:38.699922+00:00",
+        "promote_result": {
+          "called": true,
+          "started_at": "2026-10-07T06:01:38.700198+00:00",
+          "cli": {
+            "argv": [
+              "kubectl-argo-rollouts",
+              "promote",
+              "vllm-serving",
+              "-n",
+              "vllm-serving"
+            ],
+            "returncode": 0,
+            "stdout": "rollout 'vllm-serving' promoted\n",
+            "stderr": ""
+          },
+          "verify": {
+            "switched": true,
+            "switched_at": "2026-10-07T06:01:39.432742+00:00",
+            "last": {
+              "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+              "active_selector": "5889d5fc8b",
+              "service_selector": "5889d5fc8b",
+              "observed_at": "2026-10-07T06:01:39.432742+00:00"
+            },
+            "deadline_sec": 10.0,
+            "api_timeout_sec": 5.0,
+            "elapsed_sec": 0.5273667443543673
+          },
+          "verified": true,
+          "verified_at": "2026-10-07T06:01:39.432742+00:00",
+          "note": "상태 전환 관측은 이 명령이 원인이라는 증명이 아니다"
+        },
+        "finished_at": "2026-10-07T06:01:39.432820+00:00",
+        "service_job": {
+          "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:bbf47d9c5->5889d5fc8b#da7b66af-9dc0-4f3d-86f8-eedbb1e8b592",
+          "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+          "verified_at": "2026-10-07T06:01:39.432742+00:00",
+          "new_pod": "vllm-serving-5889d5fc8b-zd9sr",
+          "new_pod_uid": "da7b66af-9dc0-4f3d-86f8-eedbb1e8b592",
+          "new_pod_ip": "10.244.224.251",
+          "old_pod": "vllm-serving-bbf47d9c5-kntw4",
+          "old_pod_uid": "779bcbbc-3279-4428-8ada-0518df92ebe7",
+          "old_pod_ip": "10.244.36.14"
+        },
+        "service_check": {
+          "ok": true,
+          "verdict": {
+            "verified": true,
+            "reasons": [],
+            "new_pod_increase": 60.0,
+            "old_pod_increase": 0.0
+          },
+          "validity": [],
+          "endpoint_samples": 12,
+          "counter_window_sec": 60.199,
+          "criteria": {
+            "settle_sec": 10.0,
+            "window_sec": 60.0,
+            "sample_interval_sec": 5.0,
+            "min_endpoint_samples": 3,
+            "min_new": 30.0,
+            "max_old": 2.0
+          },
+          "note": "선택자 전환과 별개의 짧은 서비스 확인 - 사용자 품질 개선 입증 아님"
+        },
+        "service_finished_at": "2026-10-07T06:02:49.754870+00:00"
+      },
+      "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:5889d5fc8b->6bcc45cb7c#2e6ff547-5156-4c8e-a73a-da5018318112": {
+        "status": "verified",
+        "run_id": "guarded_pressure_act-ab01b-capstone-guarded-ab-v1-20261007",
+        "delivery_key": "guarded_pressure_act-ab01b-capstone-guarded-ab-v1-20261007:c1_live_v3.3:2026-10-07T07:40:35.506373+00:00:3",
+        "reserved_at": "2026-10-07T07:41:11.059303+00:00",
+        "prior_aborts": [],
+        "promote_called_at": "2026-10-07T07:41:11.623782+00:00",
+        "promote_result": {
+          "called": true,
+          "started_at": "2026-10-07T07:41:11.625088+00:00",
+          "cli": {
+            "argv": [
+              "kubectl-argo-rollouts",
+              "promote",
+              "vllm-serving",
+              "-n",
+              "vllm-serving"
+            ],
+            "returncode": 0,
+            "stdout": "rollout 'vllm-serving' promoted\n",
+            "stderr": ""
+          },
+          "verify": {
+            "switched": true,
+            "switched_at": "2026-10-07T07:41:12.915333+00:00",
+            "last": {
+              "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+              "active_selector": "6bcc45cb7c",
+              "service_selector": "6bcc45cb7c",
+              "observed_at": "2026-10-07T07:41:12.915333+00:00"
+            },
+            "deadline_sec": 10.0,
+            "api_timeout_sec": 5.0,
+            "elapsed_sec": 0.5355457956902683
+          },
+          "verified": true,
+          "verified_at": "2026-10-07T07:41:12.915333+00:00",
+          "note": "상태 전환 관측은 이 명령이 원인이라는 증명이 아니다"
+        },
+        "finished_at": "2026-10-07T07:41:12.915427+00:00",
+        "service_job": {
+          "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:5889d5fc8b->6bcc45cb7c#2e6ff547-5156-4c8e-a73a-da5018318112",
+          "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+          "verified_at": "2026-10-07T07:41:12.915333+00:00",
+          "new_pod": "vllm-serving-6bcc45cb7c-72z5n",
+          "new_pod_uid": "2e6ff547-5156-4c8e-a73a-da5018318112",
+          "new_pod_ip": "10.244.36.7",
+          "old_pod": "vllm-serving-5889d5fc8b-zd9sr",
+          "old_pod_uid": "da7b66af-9dc0-4f3d-86f8-eedbb1e8b592",
+          "old_pod_ip": "10.244.224.251"
+        },
+        "service_check": {
+          "ok": true,
+          "verdict": {
+            "verified": true,
+            "reasons": [],
+            "new_pod_increase": 60.0,
+            "old_pod_increase": 0.0
+          },
+          "validity": [],
+          "endpoint_samples": 12,
+          "counter_window_sec": 60.247,
+          "criteria": {
+            "settle_sec": 10.0,
+            "window_sec": 60.0,
+            "sample_interval_sec": 5.0,
+            "min_endpoint_samples": 3,
+            "min_new": 30.0,
+            "max_old": 2.0
+          },
+          "note": "선택자 전환과 별개의 짧은 서비스 확인 - 사용자 품질 개선 입증 아님"
+        },
+        "service_finished_at": "2026-10-07T07:42:23.224863+00:00"
+      },
+      "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:6bcc45cb7c->74fdf54796#88611e01-1439-4fbb-a2bc-fa3607ee8d36": {
+        "status": "verified",
+        "run_id": "guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007",
+        "delivery_key": "guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007:c1_live_v3.3:2026-10-07T08:29:20.363056+00:00:3",
+        "reserved_at": "2026-10-07T08:29:56.329171+00:00",
+        "prior_aborts": [],
+        "promote_called_at": "2026-10-07T08:29:56.742566+00:00",
+        "promote_result": {
+          "called": true,
+          "started_at": "2026-10-07T08:29:56.742782+00:00",
+          "cli": {
+            "argv": [
+              "kubectl-argo-rollouts",
+              "promote",
+              "vllm-serving",
+              "-n",
+              "vllm-serving"
+            ],
+            "returncode": 0,
+            "stdout": "rollout 'vllm-serving' promoted\n",
+            "stderr": ""
+          },
+          "verify": {
+            "switched": true,
+            "switched_at": "2026-10-07T08:29:58.290696+00:00",
+            "last": {
+              "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+              "active_selector": "74fdf54796",
+              "service_selector": "74fdf54796",
+              "observed_at": "2026-10-07T08:29:58.290696+00:00"
+            },
+            "deadline_sec": 10.0,
+            "api_timeout_sec": 5.0,
+            "elapsed_sec": 0.5297133978456259
+          },
+          "verified": true,
+          "verified_at": "2026-10-07T08:29:58.290696+00:00",
+          "note": "상태 전환 관측은 이 명령이 원인이라는 증명이 아니다"
+        },
+        "finished_at": "2026-10-07T08:29:58.290762+00:00",
+        "service_job": {
+          "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:6bcc45cb7c->74fdf54796#88611e01-1439-4fbb-a2bc-fa3607ee8d36",
+          "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+          "verified_at": "2026-10-07T08:29:58.290696+00:00",
+          "new_pod": "vllm-serving-74fdf54796-vcklf",
+          "new_pod_uid": "88611e01-1439-4fbb-a2bc-fa3607ee8d36",
+          "new_pod_ip": "10.244.224.195",
+          "old_pod": "vllm-serving-6bcc45cb7c-72z5n",
+          "old_pod_uid": "2e6ff547-5156-4c8e-a73a-da5018318112",
+          "old_pod_ip": "10.244.36.7"
+        },
+        "service_check": {
+          "ok": true,
+          "verdict": {
+            "verified": true,
+            "reasons": [],
+            "new_pod_increase": 60.0,
+            "old_pod_increase": 0.0
+          },
+          "validity": [],
+          "endpoint_samples": 12,
+          "counter_window_sec": 60.219,
+          "criteria": {
+            "settle_sec": 10.0,
+            "window_sec": 60.0,
+            "sample_interval_sec": 5.0,
+            "min_endpoint_samples": 3,
+            "min_new": 30.0,
+            "max_old": 2.0
+          },
+          "note": "선택자 전환과 별개의 짧은 서비스 확인 - 사용자 품질 개선 입증 아님"
+        },
+        "service_finished_at": "2026-10-07T08:31:08.589455+00:00"
+      }
+    }
+  },
+  "scale_down_delay_override": {
+    "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+    "original_present": true,
+    "original_value": 30,
+    "applied_value": 420,
+    "written_at": "2026-10-07T08:27:02.265307+00:00",
+    "before": {
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+      "generation": 287,
+      "observed_generation": "287",
+      "delay_present": true,
+      "delay": 30,
+      "current_pod_hash": "74fdf54796",
+      "active_selector": "6bcc45cb7c",
+      "abort": false,
+      "phase": "Paused",
+      "rs": {
+        "56ffc844b8": {
+          "desired": 0,
+          "current": 0
+        },
+        "677f548b7c": {
+          "desired": 0,
+          "current": 0
+        },
+        "6bcc45cb7c": {
+          "desired": 1,
+          "current": 1
+        },
+        "74fdf54796": {
+          "desired": 1,
+          "current": 1
+        }
+      }
+    },
+    "applied": true,
+    "verified": true,
+    "after": {
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+      "generation": 288,
+      "observed_generation": "288",
+      "delay_present": true,
+      "delay": 420,
+      "current_pod_hash": "74fdf54796",
+      "active_selector": "6bcc45cb7c",
+      "abort": false,
+      "phase": "Paused",
+      "rs": {
+        "56ffc844b8": {
+          "desired": 0,
+          "current": 0
+        },
+        "677f548b7c": {
+          "desired": 0,
+          "current": 0
+        },
+        "6bcc45cb7c": {
+          "desired": 1,
+          "current": 1
+        },
+        "74fdf54796": {
+          "desired": 1,
+          "current": 1
+        }
+      }
+    }
+  },
+  "scale_down_delay_override_error": null,
+  "scale_down_delay_restore": {
+    "path": "promoted_service_ok",
+    "restored": true,
+    "error": null,
+    "waited_old_rs": true,
+    "restored_at": "2026-10-07T08:40:10.090757+00:00",
+    "final": {
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+      "generation": 289,
+      "observed_generation": "289",
+      "delay_present": true,
+      "delay": 30,
+      "current_pod_hash": "74fdf54796",
+      "active_selector": "74fdf54796",
+      "abort": false,
+      "phase": "Healthy",
+      "rs": {
+        "677f548b7c": {
+          "desired": 0,
+          "current": 0
+        },
+        "6bcc45cb7c": {
+          "desired": 0,
+          "current": 0
+        },
+        "74fdf54796": {
+          "desired": 1,
+          "current": 1
+        }
+      }
+    },
+    "wait": {
+      "old_hash": "6bcc45cb7c",
+      "new_hash": "74fdf54796",
+      "applied_delay_sec": 420,
+      "margin_sec": 180.0,
+      "promote_called_at": "2026-10-07T08:29:56.742566+00:00",
+      "deadline_utc": "2026-10-07T08:39:56.742566+00:00",
+      "min_check_sec": 171,
+      "wait_limit_sec": 171.0,
+      "polls": 1,
+      "safety_checks": 1,
+      "read_failures": 0,
+      "nonzero_samples": 0,
+      "last_rs": {
+        "desired": 0,
+        "current": 0
+      },
+      "old_rs_zero_observed_at_utc": "2026-10-07T08:40:08.851781+00:00",
+      "ended_mono_elapsed_sec": 4.465
+    }
+  },
+  "scale_down_delay_before": 30,
+  "scale_down_delay_after": 30,
+  "session_start": {
+    "ok": true,
+    "problems": [],
+    "checked_at_utc": "2026-10-07T08:24:59.480802+00:00",
+    "session": {
+      "run": "ab02b",
+      "mode": "act",
+      "started_local": "2026-10-07T17:24:55.2499746+09:00",
+      "keep_awake": 1064,
+      "pf_prometheus": 17056,
+      "pf_policy": 11400,
+      "prometheus_url": "http://127.0.0.1:9090",
+      "policy_url": "http://127.0.0.1:18090"
+    }
+  },
+  "session_end": {
+    "ok": true,
+    "problems": [],
+    "checked_at_utc": "2026-10-07T08:40:12.260443+00:00",
+    "session": {
+      "run": "ab02b",
+      "mode": "act",
+      "started_local": "2026-10-07T17:24:55.2499746+09:00",
+      "keep_awake": 1064,
+      "pf_prometheus": 17056,
+      "pf_policy": 11400,
+      "prometheus_url": "http://127.0.0.1:9090",
+      "policy_url": "http://127.0.0.1:18090"
+    }
+  },
+  "pod_events_error": null,
+  "probe_image_runtime_check": {
+    "expected_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "checked_at": "2026-10-07T08:28:13.795610+00:00",
+    "pods": [
+      {
+        "name": "ramp-probe-da870405",
+        "node": "sj-worker2",
+        "terminating": false,
+        "image": "docker.io/library/loadgen-runner:phase8-v4-forceclose-20261002",
+        "image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b"
+      }
+    ],
+    "observed_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "verified": true
+  },
+  "start_active_node": "sj-worker",
+  "harness_error": null,
+  "cleanup_errors": [],
+  "rehearsal": null,
+  "service_extensions": [],
+  "observation_ended_at_utc": "2026-10-07T08:39:28.239630+00:00",
+  "old_policy_isolation": {
+    "start": {
+      "isolated": true,
+      "reasons": [],
+      "state": {
+        "read_at_utc": "2026-10-07T08:25:05.226652+00:00",
+        "errors": [],
+        "api_timeout_sec": 5.0,
+        "deployment": {
+          "uid": "ebdcfc7e-19e5-413c-9284-6fa8168d17be",
+          "replicas": 0,
+          "ready_replicas": 0,
+          "gitops_markers": []
+        },
+        "pods_present": 0,
+        "pods_terminating": 0,
+        "endpoints_ready": 0,
+        "endpoints_not_ready": 0,
+        "argocd": {
+          "installed": false,
+          "managing": []
+        }
+      }
+    },
+    "checks": {
+      "n": 124,
+      "last": {
+        "isolated": true,
+        "reasons": []
+      }
+    },
+    "end": {
+      "isolated": true,
+      "reasons": []
+    }
+  },
+  "service_check_note": "짧은 전환 직후 트래픽 확인 - 사용자 품질 개선 입증 아님",
+  "trial_outcome": {
+    "status": "completed",
+    "reason": "전환 없음 대조 관찰 600초 완료",
+    "elapsed_sec": 895.5789967000019,
+    "prober_stop_failed": null,
+    "injector_cleanup_failed": null,
+    "sink_exit": {
+      "pid": 26904,
+      "returncode": 1,
+      "exited_cleanly": true
+    },
+    "score_server_exit": {
+      "pid": 28976,
+      "returncode": 1,
+      "exited_cleanly": true,
+      "exit_meaning": "terminated_or_unknown"
+    },
+    "injection_valid": true,
+    "t_injection_requested_utc": "2026-10-07T08:29:23.075039+00:00",
+    "t_injection_observed_utc": "2026-10-07T08:29:25.841360+00:00",
+    "observation_ended_at_utc": "2026-10-07T08:39:28.239630+00:00",
+    "probe_last_request_utc": "2026-10-07T08:39:27.754054+00:00",
+    "probe_data_gap_sec": 0.485576,
+    "probe_data_gap_detected": false,
+    "probe_max_internal_gap_sec": 1.029278,
+    "cleanup_status": "complete",
+    "invalidity_reasons": [],
+    "detector_readiness": {
+      "timeout_sec": 300.0,
+      "wait_started_at_utc": "2026-10-07T08:29:19.822316+00:00",
+      "ready_at_utc": "2026-10-07T08:29:23.075028+00:00",
+      "waited_sec": 3.3,
+      "detail": {
+        "evaluations_seen": 1,
+        "skipped_seen": 0,
+        "last_skip_reason": null,
+        "ready_seq": 1
+      }
+    }
+  },
+  "preview_cleanup_gate": [
+    {
+      "action": "skipped_preview_is_new_active",
+      "verdict": "promoted_service_ok",
+      "reasons": [],
+      "attempt_evidence": [
+        "policy_action:verified",
+        "ledger:intent>result:verified_service_pending>service_result:verified",
+        "detector:promoted_verified",
+        "live_selector_changed: rollout=74fdf54796 service=74fdf54796 (was 6bcc45cb7c)"
+      ],
+      "assessed_at_utc": "2026-10-07T08:40:01.981818+00:00"
+    }
+  ],
+  "final_promotion_assessment": {
+    "reasons": [],
+    "attempt_evidence": [
+      "policy_action:verified",
+      "ledger:intent>result:verified_service_pending>service_result:verified",
+      "detector:promoted_verified",
+      "live_selector_changed: rollout=74fdf54796 service=74fdf54796 (was 6bcc45cb7c)"
+    ],
+    "sources": {
+      "assessed_at_utc": "2026-10-07T08:40:03.769458+00:00",
+      "policy": {
+        "blocked": null,
+        "unresolved": [],
+        "run_actions": {
+          "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:6bcc45cb7c->74fdf54796#88611e01-1439-4fbb-a2bc-fa3607ee8d36": {
+            "status": "verified",
+            "promote_called_at": "2026-10-07T08:29:56.742566+00:00",
+            "reserved_at": "2026-10-07T08:29:56.329171+00:00"
+          }
+        }
+      },
+      "ledger": {
+        "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:6bcc45cb7c->74fdf54796#88611e01-1439-4fbb-a2bc-fa3607ee8d36": [
+          [
+            "intent",
+            "result:verified_service_pending",
+            "service_result:verified"
+          ]
+        ]
+      },
+      "detector": {
+        "attempts": [
+          3
+        ],
+        "results": [
+          3
+        ],
+        "uncertain": [],
+        "promotion_results": [
+          {
+            "seq": 3,
+            "outcome": "promoted_verified",
+            "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:6bcc45cb7c->74fdf54796#88611e01-1439-4fbb-a2bc-fa3607ee8d36"
+          }
+        ]
+      },
+      "live": {
+        "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+        "active_selector": "74fdf54796",
+        "preview_selector": "74fdf54796",
+        "current_pod_hash": "74fdf54796",
+        "delay": 420,
+        "service_selector": "74fdf54796"
+      }
+    },
+    "target": {
+      "target_key": "vllm-serving/vllm-serving@8e07240c-6cad-44b5-9990-1c76c19a174a:6bcc45cb7c->74fdf54796#88611e01-1439-4fbb-a2bc-fa3607ee8d36",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+      "old": "6bcc45cb7c",
+      "new": "74fdf54796",
+      "promote_called_at": "2026-10-07T08:29:56.742566+00:00"
+    },
+    "verdict": "promoted_service_ok"
+  },
+  "ssh_check_evidence": {
+    "dir": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\ssh-evidence-guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007",
+    "index": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\capstone_guarded_ab_v1\\ssh-evidence-guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007\\ssh-check-index.jsonl",
+    "session": "20261007T082459480836Z",
+    "checks": 27,
+    "by_observed": {
+      "exited_after_completion_marker": 27
+    },
+    "failed_checks": [],
+    "write_errors": [],
+    "note": "관측 분류이며 원인(네트워크·dmesg 등)을 단정하지 않는다. 판정은 기존 evaluate_node_disk_health 그대로."
+  },
+  "run_guard": {
+    "mem_drop_abort_gib": 1.0,
+    "disk_recheck_sec": 60.0,
+    "preview_actual_node": "sj-worker2",
+    "start_active_node": "sj-worker",
+    "preview_verified": true,
+    "pre_stress": {
+      "preview_node": "sj-worker2",
+      "min_available_gib": 1.5,
+      "checked_at": "2026-10-07T08:28:09.409704+00:00",
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      },
+      "calico": {
+        "pod": "calico-node-6xw8m",
+        "ready": true,
+        "restarts": 2,
+        "working_set_gib": 2.693
+      },
+      "active_service": {
+        "endpoint_count": 1,
+        "pod": "vllm-serving-6bcc45cb7c-72z5n",
+        "health_ok": true
+      },
+      "available_gib": 8.712,
+      "ok": true,
+      "failures": []
+    },
+    "read_failures": 0,
+    "mem_baseline_gib": {
+      "sj-worker": 7.862,
+      "sj-worker2": 8.712
+    },
+    "mem_min_gib": {
+      "sj-worker": 7.847,
+      "sj-worker2": 8.625
+    },
+    "disk_checks": 12
+  },
+  "stress_delivery_record": {
+    "continue_after_target_replacement": true,
+    "planned_cr_names": [
+      "cpustress-guarded-pressure-act-ab02b-capstone-guarded-ab-v1-20261007-s0-dd803c",
+      "cpustress-guarded-pressure-act-ab02b-capstone-guarded-ab-v1-20261007-s1-5a942d",
+      "cpustress-guarded-pressure-act-ab02b-capstone-guarded-ab-v1-20261007-s2-3c0bbe",
+      "cpustress-guarded-pressure-act-ab02b-capstone-guarded-ab-v1-20261007-s3-d29231"
+    ],
+    "target": {
+      "name": "vllm-serving-6bcc45cb7c-72z5n",
+      "uid": "2e6ff547-5156-4c8e-a73a-da5018318112",
+      "node_name": "sj-worker",
+      "baseline_cpu_cores": 0.01927506014230919
+    },
+    "baseline_restart_count": 0,
+    "injection_started_at": "2026-10-07T08:29:25.841360+00:00",
+    "target_replacement": {
+      "replaced_at": "2026-10-07T08:30:01.016611+00:00",
+      "replacement_pod": {
+        "name": "vllm-serving-74fdf54796-vcklf",
+        "uid": "88611e01-1439-4fbb-a2bc-fa3607ee8d36"
+      }
+    },
+    "stages": [
+      {
+        "index": 0,
+        "name": "stage-1-1worker",
+        "cr_name": "cpustress-guarded-pressure-act-ab02b-capstone-guarded-ab-v1-20261007-s0-dd803c",
+        "workers": 1,
+        "duration_sec": 90,
+        "created_at": "2026-10-07T08:29:23.829596+00:00",
+        "deleted_at": "2026-10-07T08:30:54.410067+00:00",
+        "end": "completed"
+      },
+      {
+        "index": 1,
+        "name": "stage-2-2worker",
+        "cr_name": "cpustress-guarded-pressure-act-ab02b-capstone-guarded-ab-v1-20261007-s1-5a942d",
+        "workers": 2,
+        "duration_sec": 90,
+        "created_at": "2026-10-07T08:30:55.223761+00:00",
+        "deleted_at": "2026-10-07T08:32:25.505060+00:00",
+        "end": "completed"
+      },
+      {
+        "index": 2,
+        "name": "stage-3-3worker",
+        "cr_name": "cpustress-guarded-pressure-act-ab02b-capstone-guarded-ab-v1-20261007-s2-3c0bbe",
+        "workers": 3,
+        "duration_sec": 90,
+        "created_at": "2026-10-07T08:32:25.997397+00:00",
+        "deleted_at": "2026-10-07T08:33:56.479025+00:00",
+        "end": "completed"
+      },
+      {
+        "index": 3,
+        "name": "stage-4-4worker",
+        "cr_name": "cpustress-guarded-pressure-act-ab02b-capstone-guarded-ab-v1-20261007-s3-d29231",
+        "workers": 4,
+        "duration_sec": 90,
+        "created_at": "2026-10-07T08:33:56.954491+00:00",
+        "deleted_at": "2026-10-07T08:35:28.070741+00:00",
+        "end": "completed"
+      }
+    ],
+    "end_reason": "completed",
+    "target_lost": null
+  },
+  "comparison": {
+    "series": "capstone-guarded-ab-v1-20261007",
+    "pair": "ab02",
+    "arm": "B_if_switch",
+    "counted_in_comparison": true,
+    "expected_start_active_node": "sj-worker"
+  },
+  "preflight_file": "preflight-guarded_pressure_act-ab02b-capstone-guarded-ab-v1-20261007-run-20261007T082506280191Z.json",
+  "canonical_end": {
+    "ok": true,
+    "problems": []
+  },
+  "cpu_raw_counter_samples": [
+    [
+      "2026-10-07T08:28:25.976000+00:00",
+      2780.872076239
+    ],
+    [
+      "2026-10-07T08:28:45.873000+00:00",
+      2813.440549865
+    ],
+    [
+      "2026-10-07T08:29:04.023000+00:00",
+      2842.946569418
+    ],
+    [
+      "2026-10-07T08:29:20.520000+00:00",
+      2869.643465555
+    ],
+    [
+      "2026-10-07T08:29:36.414000+00:00",
+      2905.40050493
+    ],
+    [
+      "2026-10-07T08:29:49.901000+00:00",
+      2938.059459151
+    ],
+    [
+      "2026-10-07T08:30:08.454000+00:00",
+      2969.608673377
+    ],
+    [
+      "2026-10-07T08:30:18.714000+00:00",
+      2980.035902436
+    ],
+    [
+      "2026-10-07T08:30:35.428000+00:00",
+      2997.002432198
+    ],
+    [
+      "2026-10-07T08:30:50.356000+00:00",
+      3012.170146685
+    ],
+    [
+      "2026-10-07T08:31:03.138000+00:00",
+      3032.160652378
+    ],
+    [
+      "2026-10-07T08:31:16.218000+00:00",
+      3058.357634246
+    ],
+    [
+      "2026-10-07T08:31:31.727000+00:00",
+      3089.413627683
+    ],
+    [
+      "2026-10-07T08:31:48.811000+00:00",
+      3123.605529637
+    ],
+    [
+      "2026-10-07T08:32:06.779000+00:00",
+      3159.597100893
+    ],
+    [
+      "2026-10-07T08:32:20.222000+00:00",
+      3186.526761741
+    ],
+    [
+      "2026-10-07T08:32:31.462000+00:00",
+      3213.212669615
+    ],
+    [
+      "2026-10-07T08:32:46.567000+00:00",
+      3258.346665901
+    ],
+    [
+      "2026-10-07T08:33:05.826000+00:00",
+      3315.894354952
+    ],
+    [
+      "2026-10-07T08:33:16.769000+00:00",
+      3348.588085424
+    ],
+    [
+      "2026-10-07T08:33:28.241000+00:00",
+      3382.890311241
+    ],
+    [
+      "2026-10-07T08:33:41.088000+00:00",
+      3421.259492808
+    ],
+    [
+      "2026-10-07T08:33:57.624000+00:00",
+      3468.905924255
+    ],
+    [
+      "2026-10-07T08:34:13.297000+00:00",
+      3515.985399097
+    ],
+    [
+      "2026-10-07T08:34:27.381000+00:00",
+      3558.227686635
+    ],
+    [
+      "2026-10-07T08:34:47.052000+00:00",
+      3617.223258848
+    ],
+    [
+      "2026-10-07T08:35:05.963000+00:00",
+      3673.972414634
+    ],
+    [
+      "2026-10-07T08:35:25.404000+00:00",
+      3732.292442322
+    ],
+    [
+      "2026-10-07T08:35:38.861000+00:00",
+      3740.905795503
+    ],
+    [
+      "2026-10-07T08:35:54.671000+00:00",
+      3741.20377017
+    ],
+    [
+      "2026-10-07T08:36:09.059000+00:00",
+      3741.482844239
+    ],
+    [
+      "2026-10-07T08:36:22.576000+00:00",
+      3741.743845254
+    ],
+    [
+      "2026-10-07T08:36:42.513000+00:00",
+      3742.114580966
+    ]
+  ],
+  "cpu_raw_counter_error": null
+}

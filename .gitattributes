@@ -3,3 +3,7 @@
 # Windows PC의 `git archive`가 CRLF로 내보냄 - docs/design/phase8-blue-green-preflight-incident.md §40.2).
 # 이 파일 하나만 LF로 고정한다 - 전역 *.sh 규칙이나 다른 파일의 줄바꿈 변경은 하지 않는다.
 recovery-policy/git_askpass.sh text eol=lf
+
+# Phase 1 A/B B 실행 요약 ab01b~ab05b(2026-10-15 추가)는 원래 바이트(CRLF) 그대로 저장한다 - 공식 분석 파일에 기록된
+# SHA-256과 clone한 파일이 일치해야 하기 때문(docs/final/AB-TRAFFIC-SWITCH-TIMING-20261015.md). 다른 파일은 바꾸지 않는다.
+experiments/results/capstone_guarded_ab_v1/summary-guarded_pressure_act-ab0[1-5]b-capstone-guarded-ab-v1-20261007.json -text

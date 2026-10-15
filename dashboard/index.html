@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vLLM 모니터링 대시보드</title>
+<style>
+/* 발표용 단순 화면: 회색 배경 + 흰 카드(둥근 모서리·살짝 뜬 그림자). 색은 상태색 3개(초록 완료 / 주황 탐지 / 파랑 진행)만.
+   외부 폰트·스크립트 없음(오프라인 시연). 1920x1080 고정 화면을 창 크기에 맞춰 통째로 축소/확대 */
+:root {
+  --bg: #e7e9ec; --card: #ffffff; --ink: #1d1f23; --sub: #6b7078; --faint: #b4b8be; --line: #eceef1;
+  --green: #1f9d55; --green-bg: #e3f4ea; --orange: #e0782b; --orange-bg: #fcefe3; --blue: #2f6fde; --blue-bg: #e6eefc;
+  --gray-bg: #f1f2f4;
+  --sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+#stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0;
+  display: grid; grid-template-rows: 56px 168px 1fr 214px; gap: 18px; padding: 24px 40px 26px; }
+.card { background: var(--card); border-radius: 26px; border: 1px solid rgba(0, 0, 0, .04);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 10px 30px rgba(20, 24, 32, .07); padding: 26px 32px; min-height: 0; display: flex; flex-direction: column; }
+h2 { font-size: 28px; font-weight: 800; display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+h2 .r { margin-left: auto; }
+.pill { display: inline-block; border-radius: 999px; font-weight: 800; padding: 8px 20px; font-size: 22px; background: var(--gray-bg); color: var(--sub); white-space: nowrap; }
+.pill.ok { background: var(--green-bg); color: var(--green); } .pill.warn { background: var(--orange-bg); color: var(--orange); }
+.pill.info { background: var(--blue-bg); color: var(--blue); }
+
+/* 머리줄 */
+header { display: flex; align-items: center; gap: 18px; }
+header h1 { font-size: 40px; font-weight: 800; letter-spacing: -.02em; }
+header .sub { font-size: 22px; color: var(--sub); }
+.mode { font-size: 16px; font-weight: 800; padding: 5px 12px; border-radius: 999px; background: var(--blue-bg); color: var(--blue); }
+.mode.mock { background: var(--orange-bg); color: var(--orange); }
+#conn { margin-left: auto; font-size: 18px; color: var(--sub); font-variant-numeric: tabular-nums; }
+
+/* 상단 요약 한 줄: 현재 CPU | ACTIVE | SHADOW | 복구 상태 */
+.summary { flex-direction: row; align-items: center; padding: 16px 8px; }
+.summary .seg { flex: 1; padding: 0 30px; border-left: 2px solid var(--line); min-width: 0; }
+.summary .seg:first-child { border-left: 0; }
+.summary .k { font-size: 21px; font-weight: 700; color: var(--sub); }
+.summary .v { font-size: 52px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 2px; white-space: nowrap; }
+.summary .v small { font-size: 24px; color: var(--sub); font-weight: 700; margin-left: 10px; }
+.summary .s { font-size: 18px; color: var(--sub); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.summary .s b { font-size: 22px; color: var(--ink); font-weight: 800; }
+/* 실제 식별자(hash)는 작게 - 사람이 읽는 주 정보는 역할 이름(기존 Pod / 새 Pod) */
+.hx { font-size: 15px; font-weight: 600; color: var(--faint); margin-left: 8px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.summary .chipv { display: inline-block; margin-top: 8px; font-size: 34px; font-weight: 800; padding: 6px 20px; border-radius: 14px; background: var(--blue-bg); color: var(--blue); white-space: nowrap; }
+.summary .chipv.dim { background: var(--gray-bg); color: var(--sub); }
+.summary .state { font-size: 52px; font-weight: 800; letter-spacing: -.02em; margin-top: 2px; color: var(--sub); white-space: nowrap; }
+.summary .state.ok { color: var(--green); } .summary .state.info { color: var(--blue); } .summary .state.warn { color: var(--orange); }
+.summary .dot { width: 20px; height: 20px; border-radius: 50%; background: var(--faint); display: inline-block; margin-right: 14px; vertical-align: 6px; }
+.summary .state.ok .dot { background: var(--green); } .summary .state.info .dot { background: var(--blue); } .summary .state.warn .dot { background: var(--orange); }
+
+/* 가운데: 그래프(좁게) + 롤아웃·요청 이동 검증(넓게) */
+.main { display: grid; grid-template-columns: 1fr 1.3fr; gap: 18px; min-height: 0; }
+.legend { margin-left: auto; display: flex; gap: 22px; font-size: 18px; font-weight: 600; color: var(--sub); }
+.legend i { display: inline-block; width: 14px; height: 14px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+.legend i.dash { width: 24px; height: 0; border-radius: 0; border-top: 3px dashed var(--blue); vertical-align: 4px; }
+.chart { flex: 1; min-height: 0; position: relative; margin-top: 12px; }
+.chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.na { position: absolute; inset: 0; display: grid; place-items: center; font-size: 24px; font-weight: 700; color: var(--faint); }
+.right { display: grid; grid-template-rows: 204px 1fr; gap: 18px; min-height: 0; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: 20px; color: var(--sub); font-weight: 600; padding: 6px 8px 10px; border-bottom: 1px solid var(--line); }
+td { font-size: 26px; font-weight: 700; padding: 8px 8px 0; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 14px; }
+.tile { border-radius: 20px; background: var(--gray-bg); padding: 18px 24px; }
+.tile .k { font-size: 21px; font-weight: 700; color: var(--sub); }
+.tile .n { font-size: 72px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.tile .n small { font-size: 24px; font-weight: 700; color: var(--sub); margin-left: 8px; }
+.tile.new { background: var(--green-bg); } .tile.new .n { color: var(--green); }
+.tile.old .n { color: var(--ink); }
+.switch { margin-top: 14px; display: flex; align-items: baseline; gap: 18px; font-size: 22px; color: var(--sub); font-weight: 600; }
+.switch b { font-size: 32px; color: var(--ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+.switch .meta { margin-left: auto; font-size: 19px; }
+.vbody { display: none; } .vbody.show { display: block; }
+.vwait { flex: 1; display: grid; place-items: center; font-size: 44px; font-weight: 800; color: var(--faint); }
+.vwait.hide { display: none; }
+
+/* 복구 진행 흐름(단계형) */
+.flow { justify-content: center; padding: 20px 32px; }
+.steps { list-style: none; display: grid; grid-template-columns: repeat(6, 1fr); margin-top: 10px; }
+.steps li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.steps li::before { content: ""; position: absolute; top: 25px; left: -50%; width: 100%; height: 4px; background: var(--line); z-index: 0; }
+.steps li:first-child::before { display: none; }
+.steps li.done::before { background: var(--green); }
+.steps .c { position: relative; z-index: 1; width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 24px; font-weight: 800; background: var(--gray-bg); color: var(--faint); border: 3px solid var(--line); }
+.steps li.done .c { background: var(--green); color: #fff; border-color: var(--green); }
+.steps li.next .c { background: #fff; color: var(--blue); border-color: var(--blue); }
+.steps li.unknown .c { color: var(--orange); border-color: var(--orange-bg); }
+.steps .l { font-size: 24px; font-weight: 800; color: var(--faint); white-space: nowrap; }
+.steps li.done .l, .steps li.next .l { color: var(--ink); }
+.steps .t { font-size: 19px; color: var(--sub); font-variant-numeric: tabular-nums; height: 24px; }
+</style>
+</head>
+<body>
+<div id="stage">
+<header>
+  <h1>vLLM 모니터링 대시보드</h1>
+  <span id="conn">연결 중</span>
+</header>
+
+<section class="card summary">
+  <div class="seg"><div class="k">현재 CPU</div><div class="v"><span id="k-cpu">N/A</span><small>core</small></div><div class="s" id="k-cpu-s"></div></div>
+  <div class="seg"><div class="k">ACTIVE 감지기</div><span class="chipv" id="k-act">N/A</span><div class="s">복구 신호 권한</div></div>
+  <div class="seg"><div class="k">SHADOW 감지기</div><span class="chipv dim" id="k-sh">N/A</span><div class="s">기록 전용</div></div>
+  <div class="seg"><div class="k">복구 상태</div><div class="state" id="k-rec"><span class="dot"></span><span id="k-rec-t">…</span></div></div>
+</section>
+
+<section class="main">
+  <div class="card">
+    <h2>CPU 사용량 변화<span class="legend" id="legend"></span></h2>
+    <div class="chart" id="chart"></div>
+  </div>
+  <div class="right">
+    <div class="card">
+      <h2>롤아웃 상태<span class="r pill" id="ro-pill">…</span></h2>
+      <table><thead><tr><th>이름</th><th>상태</th><th>현재 서비스</th><th>안정 상태</th></tr></thead>
+        <tbody><tr><td id="ro-name">N/A</td><td id="ro-phase">N/A</td><td id="ro-act">N/A</td><td id="ro-stable">N/A</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h2>요청 이동 검증<span class="r pill" id="v-pill">…</span></h2>
+      <div class="vwait" id="v-wait">전환 대기</div>
+      <div class="vbody" id="v-body">
+      <div class="tiles">
+        <div class="tile new" id="v-new-t"><div class="k">새 Pod 요청 수<span class="hx" id="v-new-h"></span></div><div class="n"><span id="v-new">N/A</span><small>요청</small></div></div>
+        <div class="tile old" id="v-old-t"><div class="k">기존 Pod 요청 수<span class="hx" id="v-old-h"></span></div><div class="n"><span id="v-old">N/A</span><small>요청</small></div></div>
+      </div>
+      <div class="switch">전환 <b id="v-from">N/A</b><span class="hx" id="v-from-h"></span><span class="meta" id="v-meta"></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="card flow">
+  <h2>복구 진행 흐름</h2>
+  <ol class="steps" id="steps"></ol>
+</section>
+</div>
+
+<script>
+"use strict";
+const POLL_MS = 2000, FETCH_TIMEOUT_MS = 4000, STALE_MS = 10000;
+// 그래프 범위(분): 기본 5분. 시연 길이에 맞춰 주소에 ?range=30 처럼 붙여 바꿀 수 있다(5·30·60·360)
+const RANGE = [5, 30, 60, 360].includes(+new URLSearchParams(location.search).get("range")) ? +new URLSearchParams(location.search).get("range") : 5;
+const $ = id => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const p2 = n => String(n).padStart(2, "0");
+const hm = d => `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+const hhmmss = iso => { if (!iso) return null; const d = new Date(iso); return isNaN(d) ? null : `${hm(d)}:${p2(d.getSeconds())}`; };
+const plus = v => v == null ? "N/A" : "+" + Math.round(v);
+const PILL = { VERIFIED: "ok", VERIFYING: "info", "NOT VERIFIED": "warn" };
+const RO_PILL = { HEALTHY: "ok", PROMOTED: "ok", PROMOTING: "info", PROGRESSING: "info", PAUSED: "info", DEGRADED: "warn" };
+const COLOR = { "새 Pod": "#1f9d55", "현재 Pod": "#4a4f57", "기존 Pod": "#9aa0a8", "이전 Pod": "#cfd3d8" };
+const STEP_LABEL = { pressure: "압박 주입", detect: "이상 감지", policy: "정책 확인", promotion: "롤아웃 전환", switch: "서비스 전환", verify: "요청 이동 검증" };
+let lastGen = 0, lastBadge = null, timer = null, seq = 0, inflight = null;
+
+function svgEl(tag, attrs, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; }
+function svgText(parent, x, y, s, attrs = {}) { const t = svgEl("text", { x, y, fill: "#6b7078", "font-size": 18, ...attrs }, parent); t.textContent = s; return t; }
+
+function drawChart(c, nowMs, ok) {
+  const box = $("chart"); box.textContent = "";
+  const series = (c.series || []).filter(s => s.points.length);
+  if (!series.length) { const d = document.createElement("div"); d.className = "na"; d.textContent = ok ? (c.ok === false ? "Prometheus 연결 없음" : "CPU 기록 대기") : "N/A"; box.appendChild(d); return; }
+  const W = box.clientWidth, H = box.clientHeight, L = 54, R = 12, T = 30, B = 36;
+  const x1 = nowMs, x0 = nowMs - (c.minutes || RANGE) * 60000;
+  const ys = series.flatMap(s => s.points.map(p => p[1])).concat(c.threshold != null ? [c.threshold] : []);
+  const yMax = Math.max(1, Math.ceil(Math.max(...ys) * 1.15));
+  const X = ms => L + (ms - x0) / (x1 - x0) * (W - L - R), Y = v => T + (1 - v / yMax) * (H - T - B);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}` }, box);
+  const stepY = yMax <= 4 ? 1 : Math.ceil(yMax / 4);
+  for (let v = 0; v <= yMax + 1e-9; v += stepY) {
+    svgEl("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: "#eceef1" }, svg);
+    svgText(svg, L - 12, Y(v) + 6, v.toFixed(0), { "text-anchor": "end" });
+  }
+  const tickMs = { 5: 60000, 30: 600000, 60: 900000, 360: 3600000 }[c.minutes || RANGE];
+  for (let t = Math.ceil(x0 / tickMs) * tickMs; t <= x1; t += tickMs) svgText(svg, X(t), H - 8, hm(new Date(t)), { "text-anchor": "middle" });
+  if (c.threshold != null) svgEl("line", { x1: L, x2: W - R, y1: Y(c.threshold), y2: Y(c.threshold), stroke: "#2f6fde", "stroke-dasharray": "8 7", "stroke-width": 2.5 }, svg);
+  [[c.pressure_at, "압박"], [c.signal_at, "감지"], [c.switch_at, "전환"]].forEach(([iso, label], i) => {
+    const ms = iso ? Date.parse(iso) : NaN; if (!(ms >= x0 && ms <= x1)) return;
+    svgEl("line", { x1: X(ms), x2: X(ms), y1: T - 8, y2: H - B, stroke: "#b4b8be", "stroke-width": 1.5, "stroke-dasharray": "3 5" }, svg);
+    svgText(svg, X(ms) + 6, T + 6 + i * 22, label, { "font-weight": 700, fill: "#4a4f57" });  // 시각이 가까워도 겹치지 않게 층을 나눈다
+  });
+  const order = s => ({ "새 Pod": 3, "현재 Pod": 3, "기존 Pod": 2 }[s.label] || 1);
+  for (const s of series.slice().sort((a, b) => order(a) - order(b))) {
+    const pts = s.points.map(p => [p[0] * 1000, p[1]]).filter(p => p[0] >= x0 - 60000);
+    if (!pts.length) continue;
+    const gaps = pts.slice(1).map((p, i) => p[0] - pts[i][0]).sort((a, b) => a - b);
+    const maxGap = 3 * (gaps[Math.floor(gaps.length / 2)] || 15000);  // 수집 공백은 선을 끊는다
+    let seg = [];
+    const flush = () => { if (seg.length) { const pl = svgEl("polyline", { points: seg.map(p => `${X(p[0])},${Y(p[1])}`).join(" "), fill: "none",
+      stroke: COLOR[s.label] || "#cfd3d8", "stroke-width": order(s) >= 3 ? 4 : 3, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+      if (s.tip) svgEl("title", {}, pl).textContent = `${s.label}\n${s.tip}`; } seg = []; };  // hover: 실제 Pod 이름·hash·Node
+    pts.forEach((p, i) => { if (i && p[0] - pts[i - 1][0] > maxGap) flush(); seg.push(p); });
+    flush();
+  }
+}
+
+function legend(c) {
+  const el = $("legend"); el.textContent = "";
+  const add = (cls, color, text, tip) => { const s = document.createElement("span"); const i = document.createElement("i"); if (cls) i.className = cls; if (color) i.style.background = color; s.append(i, text); if (tip) s.title = tip; el.appendChild(s); };
+  // 범례는 역할 이름만(실제 Pod 이름은 hover)
+  [...new Set((c.series || []).map(s => s.label))].filter(l => l !== "이전 Pod")
+    .forEach(l => add("", COLOR[l], l, (c.series || []).filter(s => s.label === l).map(s => s.tip).filter(Boolean).join("\n\n")));
+  if (c.threshold != null) add("dash", null, "이상 감지선");
+}
+
+function roleCell(td, main, hash, tip) {
+  td.textContent = main; td.title = tip || "";
+  if (hash) { const x = document.createElement("span"); x.className = "hx"; x.textContent = hash; td.appendChild(x); }
+}
+
+function setPill(el, text, cls) { el.textContent = text; el.className = el.className.split(" ").filter(c => !["ok", "warn", "info"].includes(c)).join(" ") + (cls ? " " + cls : ""); }
+
+function render(u, nowMs, ok) {
+  const k = u.kpi;
+  $("k-cpu").textContent = k.cpu.value == null ? "N/A" : k.cpu.value.toFixed(2);
+  // 현재 CPU 아래: 역할 이름 + 작은 hash(전체 Pod 이름은 hover로만)
+  const cs = $("k-cpu-s"); cs.textContent = ""; cs.title = k.cpu.tip || "";
+  if (k.cpu.role) { const b = document.createElement("b"); b.textContent = k.cpu.role; cs.appendChild(b); }
+  if (k.cpu.hash) { const x = document.createElement("span"); x.className = "hx"; x.textContent = k.cpu.hash; cs.appendChild(x); }
+  const h = u.header || {};
+  $("k-act").textContent = (h.active || {}).label || "N/A";
+  $("k-sh").textContent = (h.shadow || {}).label || "N/A";
+  const rec = k.recovery || { value: "UNKNOWN", label: "확인 불가" };
+  $("k-rec").className = "state " + ({ DONE: "ok", PROGRESS: "info", FAILED: "warn" }[rec.value] || "");
+  $("k-rec-t").textContent = rec.label;
+  legend(u.cpu_chart); drawChart(u.cpu_chart, nowMs, ok);
+  const r = u.rollout;
+  setPill($("ro-pill"), r.label, RO_PILL[r.value]);
+  $("ro-name").textContent = r.name || "N/A"; $("ro-phase").textContent = r.phase || "N/A";
+  roleCell($("ro-act"), r.active_role || (r.active ? "확인 불가" : "N/A"), r.active ? "hash: " + r.active : "", r.active_tip);
+  roleCell($("ro-stable"), r.stable_state || "N/A", r.stable && r.stable !== r.active ? "hash: " + r.stable : "", "");
+  const v = u.verify;
+  setPill($("v-pill"), v.label, PILL[v.value]);
+  // 공식 숫자는 정책 판정이 끝난 뒤에만. 측정 중에는 Pod 카운터를 직접 읽은 실시간 증가량(있을 때만, 판정 아님)
+  const judged = v.value === "VERIFIED" || v.value === "NOT VERIFIED";
+  const live = v.value === "VERIFYING" && v.live && v.live.new != null && v.live.old != null;
+  $("v-body").classList.toggle("show", judged || live); $("v-wait").classList.toggle("hide", judged || live);
+  $("v-wait").textContent = { WAITING: "전환 대기", VERIFYING: "요청 이동 측정 중" }[v.value] || "확인 불가";
+  $("v-new").textContent = plus(live ? v.live.new : v.new); $("v-old").textContent = plus(live ? v.live.old : v.old);
+  $("v-new-h").textContent = v.to || ""; $("v-old-h").textContent = v.from || "";
+  $("v-new-t").title = v.new_tip || ""; $("v-old-t").title = v.old_tip || "";
+  $("v-from").textContent = v.from_label && v.to_label ? `${v.from_label} → ${v.to_label}` : "N/A";
+  $("v-from-h").textContent = v.from && v.to ? `${v.from} → ${v.to}` : "";
+  $("v-meta").textContent = live ? "실시간 카운터 · 공식 판정 대기"
+    : v.window_sec == null ? "" : `검증 ${Math.round(v.window_sec)}초` + (v.samples != null ? ` · 샘플 ${v.samples}회` : "");
+  const ol = $("steps"); ol.textContent = "";
+  u.events.forEach((e, i) => {
+    const li = document.createElement("li"); li.className = e.state + (i === u.next_event ? " next" : "");
+    const c = document.createElement("span"); c.className = "c"; c.textContent = e.state === "done" ? "✓" : e.state === "unknown" ? "?" : String(i + 1);
+    const l = document.createElement("span"); l.className = "l"; l.textContent = e.label || STEP_LABEL[e.key] || e.source;
+    const t = document.createElement("span"); t.className = "t"; t.textContent = e.state === "done" ? hhmmss(e.at) || "" : e.state === "unknown" ? "확인 불가" : e.note || "";
+    li.append(c, l, t); ol.appendChild(li);
+  });
+}
+
+// 연결이 끊기거나 오래되면 마지막 값을 남기지 않고 전부 N/A·확인 불가로 다시 그린다
+function failView() {
+  const U = { value: "UNKNOWN", label: "확인 불가" };
+  return { badge: lastBadge || "…", kpi: { cpu: {}, verify: { ...U }, recovery: { value: "UNKNOWN", label: "확인 불가" } }, cpu_chart: { series: [] },
+    rollout: { value: "UNKNOWN", label: "확인 불가" }, verify: { ...U }, next_event: null,
+    events: Object.keys(STEP_LABEL).map(key => ({ key, state: "unknown" })) };
+}
+
+async function tick() {
+  clearTimeout(timer); if (inflight) inflight.abort();
+  const my = ++seq, ctl = inflight = new AbortController(), t = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const r = await fetch(`/api/state?range=${RANGE}`, { cache: "no-store", signal: ctl.signal });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const v = await r.json();
+    if (my !== seq) return;
+    const gen = Date.parse(v.generated_at);
+    if (!(Date.now() - gen < STALE_MS)) throw new Error("stale snapshot");  // 오래된 스냅샷은 쓰지 않는다
+    lastGen = gen; lastBadge = v.ui.badge;
+    render(v.ui, gen, true);
+    $("conn").textContent = (v.ui.badge === "MOCK" ? "연습 데이터 · " : "") + "갱신 " + hhmmss(v.generated_at);
+  } catch (e) {
+    if (my !== seq) return;
+    $("conn").textContent = "연결 끊김"; render(failView(), Date.now(), false);
+  } finally { clearTimeout(t); if (my === seq) { inflight = null; timer = setTimeout(tick, POLL_MS); } }
+}
+setInterval(() => { if (lastGen && Date.now() - lastGen > STALE_MS) { $("conn").textContent = "응답 없음"; render(failView(), Date.now(), false); lastGen = 0; } }, 1000);
+function fit() { const f = Math.min(innerWidth / 1920, innerHeight / 1080);
+  $("stage").style.transform = `translate(${(innerWidth - 1920 * f) / 2}px, ${(innerHeight - 1080 * f) / 2}px) scale(${f})`; }
+addEventListener("resize", fit); fit();
+tick();
+</script>
+</body>
+</html>
