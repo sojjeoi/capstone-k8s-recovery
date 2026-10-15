@@ -432,6 +432,18 @@ def run_demo_session(run, *, deps, entry: dict, active_profile_path, artifact_ro
     return {"summary": summary, "session_record": rec}
 
 
+def merged_stage1_dir(raw_dir, repo_dir=None, into=None) -> Path:
+    """저장소 정리(b88bbc3) 뒤 Stage 1 기록이 둘로 나뉘었다: 세션·유효성 기록은 저장소, 원자료(evidence jsonl·probe 등)는
+    저장소 밖(local-only). 공식 진입 검사가 Stage 1을 다시 계산할 수 있게 두 폴더를 임시 폴더에 **복사**해 합친다.
+    원본은 읽기만 한다. 같은 이름이 있으면 저장소(커밋된) 쪽을 쓴다."""
+    import shutil
+    import tempfile
+    out = Path(into or tempfile.mkdtemp(prefix="p2demo-stage1-"))
+    shutil.copytree(raw_dir, out, dirs_exist_ok=True)
+    shutil.copytree(repo_dir or s1.RESULTS_DIR, out, dirs_exist_ok=True)
+    return out
+
+
 def main(argv=None) -> int:  # pragma: no cover - 라이브 진입점(세션 래퍼가 부른다, 사용자 승인 필요)
     p = argparse.ArgumentParser(description="Phase 2 demo-only 세션 1회(act, 실제 승격 - 사용자 승인 필요)")
     p.add_argument("--run", required=True, choices=sorted(RUNS))
@@ -444,6 +456,8 @@ def main(argv=None) -> int:  # pragma: no cover - 라이브 진입점(세션 래
     p.add_argument("--active-profile", type=Path, default=os.environ.get("PHASE2_ACTIVE_PROFILE") or None)
     p.add_argument("--selection-evidence", type=Path, default=os.environ.get("PHASE2_SELECTION_EVIDENCE") or None)
     p.add_argument("--artifact-root", type=Path, default=os.environ.get(s2.ARTIFACT_ENV) or None)
+    p.add_argument("--stage1-raw-dir", type=Path, default=os.environ.get("PHASE2_STAGE1_RAW_DIR") or None,
+                   help="저장소 밖으로 옮긴 Stage 1 원자료 폴더(없으면 저장소 폴더만으로 검사)")
     a = p.parse_args(argv)
     if not (a.active_profile and a.selection_evidence and a.artifact_root):
         raise SystemExit("PHASE2_ACTIVE_PROFILE / PHASE2_SELECTION_EVIDENCE / PHASE2_ARTIFACT_ROOT 필요")
@@ -458,7 +472,8 @@ def main(argv=None) -> int:  # pragma: no cover - 라이브 진입점(세션 래
     # 공식과 같은 진입 검사(읽기 전용) - ACTIVE = Stage 1 선택 결과 = Active Profile, 다르면 시작하지 않는다
     entry = s2.entry_check(selection_profile_path=a.selection_profile, active_profile_path=a.active_profile,
                            evidence_path=a.selection_evidence, artifact_root=a.artifact_root,
-                           snapshot_fn=deps.canonical_snapshot, impl=impl, stage1_dir=s1.RESULTS_DIR)
+                           snapshot_fn=deps.canonical_snapshot, impl=impl,
+                           stage1_dir=merged_stage1_dir(a.stage1_raw_dir) if a.stage1_raw_dir else s1.RESULTS_DIR)
     r = run_demo_session(a.run, deps=deps, entry=entry, active_profile_path=a.active_profile, artifact_root=a.artifact_root,
                          approval_path=a.act_approval, policy_url=a.policy_url, preflight_only=a.preflight_only,
                          code_provenance=impl, audit_reader=lambda: s1.read_policy_audit(gp.MODE_ACT))

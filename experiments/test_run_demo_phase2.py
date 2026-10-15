@@ -266,3 +266,16 @@ def test_demo_ids_and_dir_are_separate_from_official():
     assert not set(dm.RUNS) & set(s2.RUNS) and dm.DEMO_PLAN_ID != s2.STAGE2_PLAN_ID
     assert dm.DEMO_DIR != s2.RESULTS_DIR and dm.DEMO_DIR.name == "demo_only_phase2"
     assert {r[2] for r in dm.RUNS.values()}.isdisjoint({r[2] for r in s2.RUNS.values()})
+
+
+def test_merged_stage1_dir_copies_both_and_leaves_originals(tmp_path):
+    raw, repo = tmp_path / "raw", tmp_path / "repo"
+    raw.mkdir(); repo.mkdir()
+    (raw / "c1-live-evidence-x.jsonl").write_text("raw")
+    (repo / "p2-session-x.json").write_text("{}")
+    (raw / "same.json").write_text("raw-version"); (repo / "same.json").write_text("repo-version")
+    out = dm.merged_stage1_dir(raw, repo, into=tmp_path / "merged")
+    assert sorted(f.name for f in out.iterdir()) == ["c1-live-evidence-x.jsonl", "p2-session-x.json", "same.json"]
+    assert (out / "same.json").read_text() == "repo-version"                    # 같은 이름은 저장소(커밋) 쪽
+    assert sorted(f.name for f in raw.iterdir()) == ["c1-live-evidence-x.jsonl", "same.json"]  # 원본 그대로
+    assert sorted(f.name for f in repo.iterdir()) == ["p2-session-x.json", "same.json"]

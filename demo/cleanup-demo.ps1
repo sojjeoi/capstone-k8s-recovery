@@ -4,6 +4,7 @@
 param([string]$Run = '', [int]$WaitSec = 1500,
       [string]$PythonExe = $(if ($env:PYTHON_EXE) { $env:PYTHON_EXE } else { 'python' }))
 $ErrorActionPreference = 'Stop'
+$env:PYTHONUTF8 = '1'   # 한글 경로(cp949 기본값)에서도 Python 입출력을 UTF-8로
 $WT = (Resolve-Path "$PSScriptRoot\..").Path
 $PY = $PythonExe
 $DEMO = "$WT\experiments\results\demo_only_phase2"

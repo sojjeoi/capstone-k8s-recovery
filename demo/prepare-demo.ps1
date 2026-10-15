@@ -8,9 +8,11 @@ param(
     [int]$ReadyWaitSec = 720,
     [string]$MainRepo = $env:CAPSTONE_MAIN_REPO,   # keep_awake.py·measure_clock_offset.py·c3 artifacts가 있는 저장소
     [string]$PythonExe = $(if ($env:PYTHON_EXE) { $env:PYTHON_EXE } else { 'python' }),
-    [string]$TokenFile = ''               # GUARDED_ADMIN_TOKEN 환경변수가 없을 때만 읽는다
+    [string]$TokenFile = '',              # GUARDED_ADMIN_TOKEN 환경변수가 없을 때만 읽는다
+    [string]$Stage1RawDir = $env:PHASE2_STAGE1_RAW_DIR   # 저장소 밖 Stage 1 원자료(비우면 <MainRepo>\..\local-only\raw-results\phase2\phase2_stage1)
 )
 $ErrorActionPreference = 'Stop'
+$env:PYTHONUTF8 = '1'   # 한글 경로(cp949 기본값)에서도 Python 입출력을 UTF-8로 - 자식 세션·keep_awake에도 상속
 $WT = (Resolve-Path "$PSScriptRoot\..").Path
 $MAIN = $MainRepo
 $PY = $PythonExe
@@ -61,6 +63,10 @@ if (-not $env:GUARDED_ADMIN_TOKEN) {
 $env:PHASE2_ACTIVE_PROFILE = $AP
 $env:PHASE2_SELECTION_EVIDENCE = $EVID
 $env:PHASE2_ARTIFACT_ROOT = $ART
+if (-not $Stage1RawDir) { $Stage1RawDir = Join-Path (Split-Path $MAIN -Parent) 'local-only\raw-results\phase2\phase2_stage1' }
+if (-not (Test-Path $Stage1RawDir)) { Stop-Demo "Stage 1 원자료 폴더 없음: $Stage1RawDir (-Stage1RawDir로 지정)" }
+$env:PHASE2_STAGE1_RAW_DIR = $Stage1RawDir   # 실행기 진입 검사가 저장소 기록 + 원자료를 임시 복사본으로 합쳐 Stage 1을 다시 계산
+Write-Host "  Stage 1 원자료: $Stage1RawDir"
 Write-Host "  Active Profile: $AP"
 
 Step '3/8 ★ 정책 act 전환'
