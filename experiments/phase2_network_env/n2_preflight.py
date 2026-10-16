@@ -40,8 +40,10 @@ def net_probe_reading(body, *, threshold: float = nc.NET_THRESHOLD) -> dict:
     return out
 
 
-def pod_problems(pods: list, active_hash: str, preview_hash: str) -> list:
-    """pods = [{"name","uid","hash","ready","terminating"}]. active(대상) 정확히 1개·Ready, preview(보호) 1개가 다른 hash·Ready."""
+def pod_problems(pods: list, active_hash: str, preview_hash: str, *, require_preview: bool = True) -> list:
+    """pods = [{"name","uid","hash","ready","terminating"}]. active(대상) 정확히 1개·Ready.
+    require_preview=True: preview(보호) 1개가 다른 hash·Ready(주입 중 상태). False: 세션 시작 상태 - preview는 아직 없고(prepare가 만든다)
+    active 외의 살아 있는 Pod가 없어야 한다."""
     probs = []
     act = [p for p in pods if p.get("hash") == active_hash and not p.get("terminating")]
     prev = [p for p in pods if p.get("hash") == preview_hash and not p.get("terminating")]
@@ -49,6 +51,11 @@ def pod_problems(pods: list, active_hash: str, preview_hash: str) -> list:
         probs.append(f"active_pod_count={len(act)}")
     elif not act[0].get("ready"):
         probs.append("active_pod_not_ready")
+    if not require_preview:
+        extra = protected_pods(pods, active_hash)
+        if extra:
+            probs.append(f"unexpected_extra_pods={extra}")
+        return probs
     if active_hash == preview_hash:
         probs.append("active_equals_preview(보호할 새 Pod 없음)")
     elif len(prev) != 1:
@@ -64,8 +71,10 @@ def protected_pods(pods: list, active_hash: str) -> list:
 
 
 def preflight_problems(*, profile: dict, observed_env: dict, policy_sha256: str, template: dict, chaos_names, pods: list,
-                       active_hash: str, preview_hash: str, net_probe_body, policy: dict, policy_mode: str = "record_only") -> dict:
-    """모든 점검을 모아 {"ok", "problems", "net_probe", "target", "protected"} 반환. 읽기 전용 값만 받는다."""
+                       active_hash: str, preview_hash: str, net_probe_body, policy: dict, policy_mode: str = "record_only",
+                       require_preview: bool = True) -> dict:
+    """모든 점검을 모아 {"ok", "problems", "net_probe", "target", "protected"} 반환. 읽기 전용 값만 받는다.
+    세션 시작 점검은 require_preview=False(preview는 prepare가 만든다 - 보호 Pod는 그 뒤에 확정)."""
     probs = []
     stale = pc.check_stale(profile, observed_env, policy_sha256)
     if stale:
@@ -73,7 +82,7 @@ def preflight_problems(*, profile: dict, observed_env: dict, policy_sha256: str,
     probs += nc.probe_profile_problems(template, expect_tolerant=True)
     if chaos_names:
         probs.append(f"network_chaos_present:{sorted(chaos_names)}")
-    probs += pod_problems(pods, active_hash, preview_hash)
+    probs += pod_problems(pods, active_hash, preview_hash, require_preview=require_preview)
     reading = net_probe_reading(net_probe_body)
     probs += reading["problems"]
     p = policy or {}

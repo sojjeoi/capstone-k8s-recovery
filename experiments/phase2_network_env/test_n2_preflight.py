@@ -143,6 +143,18 @@ def test_multiple_problems_are_all_reported(ctx):
     assert len(r["problems"]) >= 4 and not r["ok"]
 
 
+def test_session_start_mode_has_only_the_active_pod_and_no_protected_pod_yet(ctx):
+    """세션 시작 상태(canonical)에는 preview가 없다 - prepare가 만든다. 이때 점검이 통과해야 실제 세션이 시작된다."""
+    r = run(ctx, pods=[PODS[0]], preview_hash=ACTIVE, require_preview=False)
+    assert r["ok"] and r["target"] == "vllm-serving-aaa111-x" and r["protected"] == []
+    assert not run(ctx, pods=[PODS[0]], preview_hash=ACTIVE)["ok"]                      # 주입 중 상태 기준이면 preview가 없어 거부(기존 동작)
+    extra = run(ctx, pods=PODS, require_preview=False)                                  # 시작 전에 남은 새 Pod가 있으면 거부
+    assert any("unexpected_extra_pods" in p for p in extra["problems"])
+    assert any("active_pod_count=0" in p for p in run(ctx, pods=[], require_preview=False)["problems"])
+    assert any("active_pod_not_ready" in p for p in run(ctx, pods=[{**PODS[0], "ready": False}], preview_hash=ACTIVE,
+                                                        require_preview=False)["problems"])
+
+
 def test_protected_pods_excludes_active_and_terminating():
     pods = PODS + [{"name": "old", "uid": "uo", "hash": "ccc333", "ready": True, "terminating": True}]
     assert pf.protected_pods(pods, ACTIVE) == ["vllm-serving-bbb222-y"]
