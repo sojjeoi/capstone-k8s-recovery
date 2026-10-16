@@ -44,7 +44,11 @@ def test_start_state_must_be_clean_and_not_already_tolerant():
     assert any("running_marker_present" in p for p in cl.start_state_problems(state(markers=["running-a.json"])))
     assert any("policy_context_set" in p for p in cl.start_state_problems(state(policy={**CLEAN_POLICY, "context": {"run_id": "r"}})))
     assert any("policy_mode" in p for p in cl.start_state_problems(state(policy={**CLEAN_POLICY, "mode": "act"})))
-    assert "probe_timeout_unreadable" in cl.start_state_problems(state({"spec": {"containers": [{"name": "vllm"}]}}))
+    no_timeouts = {"spec": {"containers": [{"name": "vllm"}]}}                                # 실제 기본 Rollout: timeoutSeconds 없음 = 정상 시작 상태
+    assert cl.start_state_problems(state(no_timeouts)) == []
+    assert state(no_timeouts)["probe_profile"] == {"readiness_timeout_sec": None, "liveness_timeout_sec": None}
+    assert any("probe_timeout_invalid" in p for p in cl.start_state_problems(state(tpl("1s", 1))))            # 이상한 값만 거부
+    assert any("probe_timeout_invalid" in p for p in cl.start_state_problems(state(tpl(0, 1))))
     assert cl.start_state_problems({"probe_profile": {}})            # 기록 불완전 → 거부
 
 

@@ -31,10 +31,17 @@ PREP = {"ready": True, "pre_prepare_active_selector": "aaa111", "created_pod_has
 
 
 def template(ready=11, live=11):
+    """ready·live가 None이면 timeoutSeconds를 적지 않는다 - 실제 기본 Rollout(gitops/apps/vllm-serving/rollout.yaml)이 이 모양이다."""
+    def probe(v):
+        return {"httpGet": {"path": "/health", "port": 8000}, "periodSeconds": 5} if v is None else {"timeoutSeconds": v}
     return {"spec": {"containers": [{"name": "vllm", "image": "vllm-cpu-env:latest", "imagePullPolicy": "Never",
                                      "args": ["--model=Qwen/Qwen2.5-0.5B-Instruct", "--port=8000"],
                                      "resources": {"limits": {"cpu": "3", "memory": "6Gi"}},
-                                     "readinessProbe": {"timeoutSeconds": ready}, "livenessProbe": {"timeoutSeconds": live}}]}}
+                                     "readinessProbe": probe(ready), "livenessProbe": probe(live)}]}}
+
+
+def base_template():
+    return template(None, None)
 
 
 def prom_body(v, n=1):

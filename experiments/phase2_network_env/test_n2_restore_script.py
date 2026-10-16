@@ -85,6 +85,36 @@ def test_chaos_prefix_matches_the_real_adapter_naming_and_other_chaos_is_never_d
     assert re.search(r"delete networkchaos \$name", text) and "$others" in text
 
 
+def test_absent_probe_timeouts_are_a_valid_baseline_and_are_never_turned_into_zero():
+    """기본 Rollout에는 timeoutSeconds가 적혀 있지 않다(null). [int]$null 은 0 이라 '다름'으로 오판해 불필요한 재배포를 일으킨다."""
+    text = "\n".join(code_lines())
+    assert "[int]$base" not in text and "[int]$cur" not in text and "-ne $wantReadiness" not in text and "-ne $wantLiveness" not in text
+    assert "function Test-SameTimeout" in text and text.count("Test-SameTimeout $cur.") >= 2 and "-eq $null" not in text.replace("$null -eq", "")
+    base = (ROOT / "gitops" / "apps" / "vllm-serving" / "rollout.yaml").read_text(encoding="utf-8")
+    probes = re.findall(r"(readinessProbe|livenessProbe):\n((?:\s+.*\n)+?)(?=\s{0,10}\S+:\s*\n\s*\S|\Z)", base)
+    assert probes and all("timeoutSeconds" not in body.split("volumes:")[0] for _, body in probes)             # 실제 기본 Rollout이 정말 null인지
+
+
+def test_only_the_read_only_checker_is_executed_never_an_arbitrary_script():
+    """Codex 검토: 외부 시연 사전점검 스크립트를 실행하는 훅은 드라이런·ShouldProcess·세 가지 변경 제한을 우회한다 - 없어야 한다."""
+    text = "\n".join(code_lines())
+    assert "DemoPreflight" not in text
+    calls = [ln.strip() for ln in code_lines() if re.search(r"&\s*\$Python\b", ln)]
+    assert calls == ["& $Python $RunPy restore-check --baseline $Baseline --wait-sec $VerifyWaitSec"]
+    assert not re.search(r"Start-Process|Invoke-Item|\bcmd(\.exe)?\b|\bpowershell(\.exe)?\b|\bpwsh\b", text, flags=re.I)
+
+
+def test_promotion_is_decided_from_live_state_and_waits_for_the_controller_to_reconcile():
+    """Codex 검토: 적용 직후 옛 Paused 상태를 믿지 않고(observedGeneration), 중간에 멈춘 뒤 다시 실행해도 승격을 이어 한다(상태 기반)."""
+    text = "\n".join(code_lines())
+    assert "observedGeneration" in text and "currentPodHash" in text and "function Test-Reconciled" in text
+    assert "$previewIsRestored" in text and text.index("$previewIsRestored") < text.index("& kubectl argo rollouts promote")
+    cond = re.search(r"\$previewIsRestored\s*=\s*(.+)", text).group(1)
+    assert "$restoredNow" in cond and "$previewPending" in cond and "currentPodHash" in cond and "Test-Reconciled" in cond   # 복구한 리비전이 확인될 때만 승격
+    assert "$needRollout" not in text                                           # 승격 여부를 '이번에 적용했는가'로 정하지 않는다
+    assert "--wait-sec" in text and "승격 완료" in text
+
+
 def test_referenced_files_and_entry_point_exist():
     assert (ROOT / "gitops" / "apps" / "vllm-serving" / "rollout.yaml").is_file()          # 원복에 쓰는 기본 Rollout(overlay 주석 5번)
     run_py = (HERE / "n2_run.py").read_text(encoding="utf-8")

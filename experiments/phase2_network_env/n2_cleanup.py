@@ -112,8 +112,9 @@ def start_state_problems(start: dict) -> list:
     tol = {"readiness_timeout_sec": nc.PROBE_TIMEOUT_SEC, "liveness_timeout_sec": nc.PROBE_TIMEOUT_SEC}
     if start["probe_profile"] == tol:
         probs.append("already_tolerant")
-    if None in start["probe_profile"].values():
-        probs.append("probe_timeout_unreadable")
+    bad = {k: v for k, v in start["probe_profile"].items() if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v <= 0)}
+    if bad:                                                     # 없음(None)은 Kubernetes 기본 1 s - 기본 Rollout이 이 상태다. 이상한 값만 거부한다
+        probs.append(f"probe_timeout_invalid:{bad}")
     probs += _policy_clean(start["policy"], "record_only")
     if start["network_chaos_names"]:
         probs.append(f"network_chaos_present:{start['network_chaos_names']}")

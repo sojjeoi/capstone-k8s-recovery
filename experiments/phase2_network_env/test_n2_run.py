@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import copy
+
 import pytest
 
 HERE = Path(__file__).resolve().parent
@@ -13,19 +15,25 @@ import n2_common as nc  # noqa: E402
 import n2_run as run  # noqa: E402
 import n2_stage1 as ns1  # noqa: E402
 import n2_stage2 as n2s2  # noqa: E402
-from test_n2_session import CLEAN_POLICY, template  # noqa: E402
+import test_run_guarded_pilot as tgp  # noqa: E402
+from test_n2_session import CLEAN_POLICY, base_template, template  # noqa: E402
 
 pc = nc.pc
 
 
 class FakeReader:
-    """RealNetLive.read_state 자리 - 클러스터 없음."""
+    """RealNetLive 자리 - 클러스터 없음. 스냅샷은 실제 canonical Healthy 모양(tgp.CANON_SNAP)이고 snap_over로 일부를 바꾼다."""
 
-    def __init__(self, tpl=None, chaos=(), policy=None, delay=30):
-        self.tpl, self.chaos, self.policy, self.delay = tpl or template(1, 1), list(chaos), dict(policy or CLEAN_POLICY), delay
+    def __init__(self, tpl=None, chaos=(), policy=None, delay=30, snap_over=None):
+        self.tpl, self.chaos, self.policy, self.delay = tpl or base_template(), list(chaos), dict(policy or CLEAN_POLICY), delay
+        self.snap_over = snap_over or {}
 
-    def read_state(self):
-        return {"template": self.tpl, "chaos_names": list(self.chaos), "policy": dict(self.policy), "delay": self.delay}
+    def snapshot_fn(self):
+        return {**copy.deepcopy(tgp.CANON_SNAP), "template": self.tpl, "delay": self.delay, **copy.deepcopy(self.snap_over)}
+
+    def read_state(self, snap=None):
+        snap = snap if snap is not None else self.snapshot_fn()
+        return {"template": snap["template"], "chaos_names": list(self.chaos), "policy": dict(self.policy), "delay": snap["delay"]}
 
 
 @pytest.fixture
@@ -48,7 +56,8 @@ def test_baseline_is_written_once_for_a_clean_start_state(dirs, capsys):
     out = dirs / "baseline.json"
     assert call(["capture-baseline", "--out", str(out)], FakeReader()) == 0
     b = json.loads(out.read_text(encoding="utf-8"))
-    assert b["state"]["probe_profile"] == {"readiness_timeout_sec": 1, "liveness_timeout_sec": 1} and b["state"]["policy"]["mode"] == "record_only"
+    assert b["state"]["probe_profile"] == {"readiness_timeout_sec": None, "liveness_timeout_sec": None}     # 실제 기본 Rollout: 적혀 있지 않음
+    assert b["state"]["policy"]["mode"] == "record_only"
     assert json.loads(capsys.readouterr().out)["ok"] is True
     with pytest.raises(FileExistsError):
         call(["capture-baseline", "--out", str(out)], FakeReader())                 # 덮어쓰기 금지
@@ -91,6 +100,69 @@ def test_restore_check_with_a_changed_template_beyond_probe_timeouts_is_not_rest
     changed["spec"]["containers"][0]["args"].append("--extra")                         # probe가 아닌 필드가 바뀐 채로 남음
     assert call(["restore-check", "--baseline", str(out)], FakeReader(tpl=changed)) == 2
     assert "rollout_template_not_restored" in capsys.readouterr().out
+
+
+def test_baseline_requires_a_canonical_healthy_state_too(dirs, capsys):
+    out = dirs / "baseline.json"
+    paused = {"phase": "Paused", "preview": "bbb222"}                                       # 대기 중인 preview 가 있는 상태
+    assert call(["capture-baseline", "--out", str(out)], FakeReader(snap_over=paused)) == 2
+    assert not out.exists() and "canonical" in capsys.readouterr().out
+
+
+def test_restore_check_fails_while_the_template_is_back_but_traffic_is_not(dirs, capsys):
+    """Codex 검토 blocker: 템플릿 해시가 원래와 같아도 승격이 끝나지 않았거나 이전(tolerant) 리비전이 서비스 중이면 원복이 아니다."""
+    out = dirs / "baseline.json"
+    call(["capture-baseline", "--out", str(out)], FakeReader())
+    capsys.readouterr()
+    states = [({"phase": "Paused", "preview": "bbb222"}, "phase=Paused"),                       # 복구 리비전이 preview 로 대기 중
+              ({"active": "old111", "stable": "old111", "current": "aaa111", "preview": "aaa111"}, "hash_mismatch"),   # 이전 리비전이 active
+              ({"observed": "0"}, "not_reconciled"),                                          # 컨트롤러가 아직 반영 전
+              ({"endpoints": {"vllm-active": ["10.9.9.9"], "vllm-preview": ["10.0.0.1"]}}, "active_endpoint_mismatch"),
+              ({"rs": {"aaa111": {"uid": "r1", "desired": 1, "current": 1, "ready": 1},
+                       "old111": {"uid": "r0", "desired": 1, "current": 1, "ready": 1}}}, "rs_old111"),   # 이전 ReplicaSet 이 아직 남음
+              ({"health_rc": 7}, "active_health_rc"), ({"chaos": ["stress"]}, "residual")]
+    for over, needle in states:
+        assert call(["restore-check", "--baseline", str(out)], FakeReader(snap_over=over)) == 2
+        assert needle in capsys.readouterr().out, needle
+    assert call(["restore-check", "--baseline", str(out)], FakeReader()) == 0
+
+
+def test_restore_check_wait_polls_until_the_state_is_canonical_but_not_forever(dirs, capsys, monkeypatch):
+    out = dirs / "baseline.json"
+    call(["capture-baseline", "--out", str(out)], FakeReader())
+    capsys.readouterr()
+    clock = {"t": 0.0, "sleeps": 0}
+    monkeypatch.setattr(run, "_mono", lambda: clock["t"])
+    monkeypatch.setattr(run, "_sleep", lambda s: clock.update(t=clock["t"] + s, sleeps=clock["sleeps"] + 1))
+
+    class Settling(FakeReader):                                                    # 승격 직후: 처음 두 번은 이전 ReplicaSet 이 남아 있다가 세 번째에 사라진다
+        reads = 0
+
+        def snapshot_fn(self):
+            Settling.reads += 1
+            self.snap_over = {"rs": {"aaa111": {"uid": "r1", "desired": 1, "current": 1, "ready": 1},
+                                     "old111": {"uid": "r0", "desired": 1, "current": 1, "ready": 1}}} if Settling.reads <= 2 else {}
+            return super().snapshot_fn()
+    assert call(["restore-check", "--baseline", str(out), "--wait-sec", "120"], Settling()) == 0
+    assert clock["sleeps"] == 2 and json.loads(capsys.readouterr().out)["ok"] is True
+    clock.update(t=0.0, sleeps=0)
+    never = FakeReader(snap_over={"phase": "Paused"})
+    assert call(["restore-check", "--baseline", str(out), "--wait-sec", "30"], never) == 2                 # 상한을 넘으면 멈추고 실패를 보고한다
+    assert clock["sleeps"] == 3 and "phase=Paused" in capsys.readouterr().out
+
+
+def test_stage1_records_a_refused_attempt_when_an_existing_freeze_manifest_does_not_match(dirs, tmp_path, monkeypatch):
+    """Codex 검토: 원본 run_stage1.main 은 동결 manifest 가 있는데 불일치하면 시도로 기록한다(동결 전이면 기록 없이 종료)."""
+    orig = type(ns1.NetConfig())                                                          # dirs 가 바꾼 람다가 아닌 실제 설정 클래스
+    monkeypatch.setattr(ns1, "NetConfig", lambda: orig(results_dir=tmp_path / "s1", implementation_freeze="docs/design/PHASE2-NETWORK-ENV-PREREG-v1.md"))
+    monkeypatch.setenv("GUARDED_ADMIN_TOKEN", "dummy-token-xyz")
+
+    def mismatch():
+        raise SystemExit("implementation freeze fail-closed: 해시 불일치 ['x']")
+    with pytest.raises(SystemExit, match="세션 시작 안 함"):
+        run.main(["stage1", "--run", "n2n01", "--artifact-root", str(tmp_path)], verify_freeze=mismatch, real_deps=boom)
+    rec = json.loads((tmp_path / "s1" / "p2-session-n2n01.json").read_text(encoding="utf-8"))
+    assert rec["status"] == "refused_profile_invalid" and rec["cause"] == "implementation_freeze" and rec["attempt_number"] == 1
 
 
 # ---------- (2) 라이브 하위 명령은 동결 전에는 멈춘다 ----------

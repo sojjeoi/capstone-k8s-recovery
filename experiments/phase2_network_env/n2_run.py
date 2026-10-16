@@ -17,6 +17,7 @@ sys.dont_write_bytecode = True
 import argparse  # noqa: E402
 import json  # noqa: E402
 import os  # noqa: E402
+import time  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -30,6 +31,9 @@ import n2_stage2 as n2s2  # noqa: E402
 pc = nc.pc
 ARTIFACT_ENV = "PHASE2_ARTIFACT_ROOT"
 DEFAULT_POLICY_URL = "http://127.0.0.1:18090"
+BASE_DELAY_SEC = 30          # 시연(canonical) 상태의 scaleDownDelaySeconds (run_guarded_pilot.BASE_SCALE_DOWN_DELAY_SEC와 같다)
+POLL_SEC = 10.0
+_sleep, _mono = time.sleep, time.monotonic        # 시험에서 바꾼다
 
 
 def _now():
@@ -55,16 +59,26 @@ def live_reader(policy_url: str, profile_path):
     return ns2.RealNetLive(gcg.read_snapshot, profile_path, policy_state_fn=gp.PolicyClient(policy_url, token).state)
 
 
-def current_state(reader, result_dirs) -> dict:
-    """지금 상태를 보존 형식(n2_cleanup.capture_state)으로 읽는다(읽기 전용). 실행 중 표식은 결과 폴더들에서 모은다."""
-    s = reader.read_state()
+def current_state(reader, result_dirs):
+    """지금 상태를 보존 형식(n2_cleanup.capture_state)으로 읽는다(읽기 전용). 실행 중 표식은 결과 폴더들에서 모은다.
+    반환: (상태 기록, 같은 시점의 스냅샷) - 스냅샷은 canonical Healthy 검사에도 쓴다."""
+    snap = reader.snapshot_fn() or {}
+    s = reader.read_state(snap)
     markers = sorted(p.name for d in result_dirs if Path(d).exists() for p in Path(d).glob("running-*.json"))
-    return cl.capture_state(s["template"], s["delay"], s["policy"] or {}, s["chaos_names"], markers)
+    return cl.capture_state(s["template"], s["delay"], s["policy"] or {}, s["chaos_names"], markers), snap
+
+
+def canonical_problems(snap, delay) -> list:
+    """프로젝트의 기존 canonical Healthy 검사(guarded_cleanup_gate.check_canonical)를 그대로 쓴다: 컨트롤러 반영 완료·Healthy·active=current=stable·
+    Service 선택자·active Pod Ready/재시작 0·endpoint·ReplicaSet 수(이전 리비전 0)·유예 시간·health·잔여 chaos/probe Pod.
+    템플릿이 원래와 같아도 승격이 끝나지 않았거나 이전(tolerant) 리비전이 아직 서비스 중이면 여기서 걸린다."""
+    import guarded_cleanup_gate as gcg
+    return [f"canonical: {p}" for p in gcg.check_canonical(snap, delay=delay)]
 
 
 def cmd_capture_baseline(a, reader, dirs) -> int:
-    state = current_state(reader, dirs)
-    probs = cl.start_state_problems(state)
+    state, snap = current_state(reader, dirs)
+    probs = cl.start_state_problems(state) + canonical_problems(snap, BASE_DELAY_SEC)             # 원복 기준은 정상(canonical) 상태여야 한다
     if probs:                                                   # 이미 tolerant거나 오염된 상태는 원복 기준으로 쓸 수 없다 - 쓰지 않는다
         print(json.dumps({"ok": False, "written": None, "problems": probs}, ensure_ascii=False))
         return 2
@@ -74,8 +88,15 @@ def cmd_capture_baseline(a, reader, dirs) -> int:
 
 
 def cmd_restore_check(a, reader, dirs) -> int:
+    """원복 확인(읽기 전용): 보존한 원래 상태와 같고 + canonical Healthy. --wait-sec > 0이면 통과할 때까지(승격 뒤 이전 리비전이 줄어드는 시간 등) 그 시간 안에서 다시 읽는다."""
     base = json.loads(Path(a.baseline).read_text(encoding="utf-8"))["state"]
-    probs = cl.restore_problems(base, current_state(reader, dirs))
+    deadline = _mono() + max(0.0, float(getattr(a, "wait_sec", 0) or 0))
+    while True:
+        state, snap = current_state(reader, dirs)
+        probs = cl.restore_problems(base, state) + canonical_problems(snap, base["scale_down_delay"])
+        if not probs or _mono() >= deadline:
+            break
+        _sleep(POLL_SEC)
     print(json.dumps({"ok": not probs, "problems": probs}, ensure_ascii=False))
     return 0 if not probs else 2
 
@@ -120,7 +141,13 @@ def cmd_stage1(a, verify_freeze, real_deps=None) -> int:
     if not a.run or not a.artifact_root:
         raise SystemExit(f"--run과 --artifact-root(또는 {ARTIFACT_ENV}) 필요")
     s1 = ns1.load_stage1(ns1.NetConfig(), verify_freeze)
-    prov = s1.pc.verify_implementation_freeze()                  # 클러스터 연결을 조립하기 전에 fail-closed
+    try:
+        prov = s1.pc.verify_implementation_freeze()              # 클러스터 연결을 조립하기 전에 fail-closed
+    except SystemExit as e:                                      # 동결 manifest가 있는데 불일치면 시도로 기록한다(원본 run_stage1.main과 같다 - 동결 전이면 기록 없이 종료)
+        if not (nc.ROOT / s1.pc.IMPLEMENTATION_FREEZE).is_file():
+            raise
+        s1.refuse(a.run, s1.RESULTS_DIR, s1.schedule(a.run, s1.RESULTS_DIR, a.resume_after_refusal), "refused_profile_invalid", str(e),
+                  _now(), "implementation_freeze")
     token = os.environ.get("GUARDED_ADMIN_TOKEN")
     if not token:
         raise SystemExit("GUARDED_ADMIN_TOKEN 환경변수 필요")
@@ -202,6 +229,7 @@ def build_parser():
     s.add_argument("--out", required=True, type=Path)
     s = sub.add_parser("restore-check")
     s.add_argument("--baseline", required=True, type=Path)
+    s.add_argument("--wait-sec", type=float, default=0.0)
     s = sub.add_parser("preflight")
     s.add_argument("--stage", choices=["1", "2"], default="1")
     s.add_argument("--profile", type=Path, default=None)

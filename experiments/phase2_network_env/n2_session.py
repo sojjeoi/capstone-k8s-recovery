@@ -445,8 +445,8 @@ class RealNetLive:
         return sorted(p["name"] for p in self._pods(self.snapshot_fn() or {})
                       if p["hash"] == created_hash and not p["terminating"])
 
-    def read_state(self) -> dict:
-        snap = self.snapshot_fn() or {}
+    def read_state(self, snap=None) -> dict:
+        snap = snap if snap is not None else (self.snapshot_fn() or {})
         pods = self._pods(snap)
         return {"template": snap.get("template"), "pods": pods, "active_hash": snap.get("active"),
                 "preview_hash": snap.get("preview"), "chaos_names": self.list_chaos_names(),
