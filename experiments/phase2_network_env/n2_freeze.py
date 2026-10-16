@@ -157,6 +157,89 @@ def build_implementation_freeze(test_results: Path, review_summary: Path, code_c
             "reviews": json.loads(Path(review_summary).read_text(encoding="utf-8"))}
 
 
+def virtual_tolerant_template(root=nc.ROOT) -> dict:
+    """기본 Rollout(rollout.yaml)의 spec.template에 network-tolerant overlay의 probe 패치를 적용한 **가상** 템플릿(클러스터·kubectl 없이).
+    selection profile의 환경 정의를 live에서 11 s 프로필을 적용하기 전에 만들기 위한 것이다. 적용 뒤 실제 관측과 같아야 하며 PROFILE_STALE 검사가 그것을 확인한다."""
+    import copy
+    import yaml
+    root = Path(root)
+    docs = [d for d in yaml.safe_load_all((root / "gitops/apps/vllm-serving/rollout.yaml").read_text(encoding="utf-8")) if d]
+    rollouts = [d for d in docs if d.get("kind") == "Rollout"]
+    if len(rollouts) != 1:
+        raise SystemExit(f"rollout.yaml에 Rollout이 정확히 1개가 아님: {len(rollouts)}")
+    out = copy.deepcopy(rollouts[0])
+    patch = yaml.safe_load((root / "gitops/apps/vllm-serving/overlays/network-tolerant/probe-timeout-patch.yaml").read_text(encoding="utf-8"))
+    for op in patch:
+        if op.get("op") != "add":
+            raise SystemExit(f"지원하지 않는 패치 연산: {op.get('op')}")
+        parts = [p for p in op["path"].split("/") if p]
+        node = out
+        for p in parts[:-1]:
+            node = node[int(p)] if isinstance(node, list) else node[p]
+        node[int(parts[-1]) if isinstance(node, list) else parts[-1]] = op["value"]
+    return out["spec"]["template"]
+
+
+def build_selection_profile_obj(root=nc.ROOT) -> dict:
+    """가상 tolerant 템플릿에서 selection profile(ACTIVE 0개)을 만든다. 사전등록 해시가 정해진 뒤(동결 시점)에만 만들 수 있다."""
+    if nc.PREREG_SHA256 is None:
+        raise SystemExit("selection profile 생성 거부: n2_common.PREREG_SHA256=None (설계 동결 전)")
+    obs = nc.observe_environment(virtual_tolerant_template(root))
+    if obs["probe_profile"] != nc.PROBE_PROFILE:
+        raise SystemExit(f"가상 템플릿이 network_tolerant가 아님: {obs['probe_profile']}")
+    env = {k: v for k, v in obs.items() if k not in ("probe_profile", "pressure")}
+    return nc.build_selection_profile(env, nc.contract_hashes()["recovery_policy_sha256"], nc.PREREG_SHA256)
+
+
+# ---------------- 시험 결과 모으기 (구현 동결의 입력) ----------------
+_SUMMARY = {"passed": r"(\d+) passed", "failed": r"(\d+) failed", "skipped": r"(\d+) skipped", "errors": r"(\d+) errors?"}
+
+
+def parse_pytest_output(text: str) -> dict:
+    """pytest -q -rfE 출력 -> {"passed","failed","skipped","errors","failed_ids"}. 마지막 요약 줄과 FAILED/ERROR 줄만 읽는다."""
+    import re
+    lines = [ln.strip() for ln in text.splitlines()]
+    last = next((ln for ln in reversed(lines) if re.search(r"\b(passed|failed|error|errors|skipped|no tests ran)\b", ln) and " in " in ln), "")
+    counts = {k: int((re.search(rx, last) or [0, 0])[1]) for k, rx in _SUMMARY.items()}
+    ids = sorted({re.split(r"\s+-\s+", ln.split(None, 1)[1])[0] for ln in lines if re.match(r"(FAILED|ERROR)\s+\S", ln)})
+    return {**counts, "failed_ids": ids}
+
+
+def known_baseline_ids(path=None) -> set:
+    """Phase 2가 기록한 기준선 실패 목록(KNOWN-BASELINE-FAILURES.txt)의 test id - 줄 형식 '결과 | id | …'과 주석 속 flaky id."""
+    import re
+    p = Path(path or nc.P2DIR / "KNOWN-BASELINE-FAILURES.txt")
+    ids = set()
+    for ln in p.read_text(encoding="utf-8").splitlines():
+        if ln.startswith("#"):
+            ids |= set(re.findall(r"([\w./-]+\.py::\w+)", ln))
+        elif "|" in ln:
+            ids.add(ln.split("|")[1].strip())
+    return ids
+
+
+def collect_test_results(root=nc.ROOT, run=None, baseline_ids=None) -> dict:
+    """시험을 실제로 돌려 구현 동결 입력(JSON)을 만든다. 이 환경 폴더와 Phase 2 폴더는 0 실패여야 하고, 기존 recovery-policy·anomaly-detection의 실패는
+    기준선 목록에 없는 것만 새 regression이다. run(targets) -> pytest 출력 문자열 (시험에서 가짜로 바꾼다)."""
+    root = Path(root)
+
+    def real_run(targets):
+        cp = subprocess.run([sys.executable, "-m", "pytest", *targets, "-q", "-p", "no:cacheprovider", "-rfE", "--continue-on-collection-errors"],
+                            cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return cp.stdout + "\n" + cp.stderr
+    run = run or real_run
+    net = parse_pytest_output(run([NET]))
+    p2 = parse_pytest_output(run(["experiments/phase2_detector_selection"]))
+    old = parse_pytest_output(run(["recovery-policy", "anomaly-detection"]))
+    base = known_baseline_ids() if baseline_ids is None else set(baseline_ids)
+    regress = sorted(i for i in old["failed_ids"] if i not in base)
+    slim = lambda r: {k: r[k] for k in ("passed", "failed", "skipped", "errors")}                    # noqa: E731
+    return {"recorded_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "network": {"suite": NET, **slim(net)},
+            "phase2": {"suite": "experiments/phase2_detector_selection", **slim(p2)},
+            "existing": {"suite": "recovery-policy + anomaly-detection", **slim(old), "failed_in_baseline": len(old["failed_ids"]) - len(regress)},
+            "new_regressions": regress}
+
+
 def write_new(path: Path, obj: dict) -> Path:
     with open(path, "x", encoding="utf-8", newline="\n") as fh:      # 덮어쓰기 금지
         fh.write(json.dumps(obj, ensure_ascii=False, indent=2) + "\n")
@@ -173,8 +256,17 @@ def main(argv=None) -> int:  # pragma: no cover - 동결 시점의 파일 쓰기
     s.add_argument("--review-summary", required=True, type=Path)
     s.add_argument("--code-commit", required=True)
     sub.add_parser("verify")
+    sub.add_parser("profile")
+    s = sub.add_parser("tests")
+    s.add_argument("--out", required=True, type=Path)
     a = p.parse_args(argv)
-    if a.cmd == "design":
+    if a.cmd == "profile":
+        out = write_new(nc.ROOT / SELECTION_PROFILE_REL, build_selection_profile_obj())
+    elif a.cmd == "tests":
+        res = collect_test_results()
+        out = write_new(a.out, res)
+        print(json.dumps({k: res[k] for k in ("network", "phase2", "new_regressions")}, ensure_ascii=False))
+    elif a.cmd == "design":
         out = write_new(nc.ROOT / DESIGN_FREEZE, build_design_freeze(a.prereg_commit))
     elif a.cmd == "impl":
         out = write_new(nc.ROOT / IMPLEMENTATION_FREEZE, build_implementation_freeze(a.test_results, a.review_summary, a.code_commit))

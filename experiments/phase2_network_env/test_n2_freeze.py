@@ -169,3 +169,69 @@ def test_implementation_freeze_is_refused_unless_all_tests_pass_and_written_once
     monkeypatch.setattr(fz, "FREEZE_REQUIRED", ("x.py", "missing.py"))
     with pytest.raises(SystemExit, match="필수 파일"):
         fz.build_implementation_freeze(results(), review, "c0ffee", root, files_fn=files_fn)
+
+
+# ---------- (6) selection profile: 가상 tolerant 템플릿에서 ----------
+def test_virtual_tolerant_template_is_the_base_rollout_plus_only_the_two_probe_timeouts():
+    import copy
+    import yaml
+    base = [d for d in yaml.safe_load_all((nc.ROOT / "gitops/apps/vllm-serving/rollout.yaml").read_text(encoding="utf-8")) if d and d.get("kind") == "Rollout"][0]
+    before = copy.deepcopy(base["spec"]["template"])
+    virt = fz.virtual_tolerant_template()
+    c, b = virt["spec"]["containers"][0], before["spec"]["containers"][0]
+    assert c["readinessProbe"]["timeoutSeconds"] == c["livenessProbe"]["timeoutSeconds"] == nc.PROBE_TIMEOUT_SEC
+    assert "timeoutSeconds" not in b["readinessProbe"] and "timeoutSeconds" not in b["livenessProbe"]       # 기본 Rollout에는 없다
+    c["readinessProbe"].pop("timeoutSeconds")
+    c["livenessProbe"].pop("timeoutSeconds")
+    assert virt == before                                                                  # 그 두 값 외에는 기본 Rollout과 같다
+    assert fz.virtual_tolerant_template() != before                                         # 호출마다 새 복사본(원본을 바꾸지 않음)
+
+
+def test_selection_profile_from_virtual_template_matches_tolerant_observation_and_flags_the_base_as_stale(monkeypatch):
+    import yaml
+    monkeypatch.setattr(nc, "PREREG_SHA256", "f" * 64)
+    prof = fz.build_selection_profile_obj()
+    sha = nc.contract_hashes()["recovery_policy_sha256"]
+    assert pc.check_stale(prof, nc.observe_environment(fz.virtual_tolerant_template()), sha) == []        # 11 s 프로필을 적용하면 세션 시작 검사가 통과한다
+    base = [d for d in yaml.safe_load_all((nc.ROOT / "gitops/apps/vllm-serving/rollout.yaml").read_text(encoding="utf-8")) if d and d.get("kind") == "Rollout"][0]
+    assert "environment.probe_profile" in pc.check_stale(prof, nc.observe_environment(base["spec"]["template"]), sha)   # 적용 전(기본)에는 막힌다
+    assert [d["role"] for d in prof["detectors"]] == [nc.SHADOW] * 3 and {d["detector_id"] for d in prof["detectors"]} == set(nc.DETECTOR_IDS)
+    monkeypatch.setattr(nc, "PREREG_SHA256", None)
+    with pytest.raises(SystemExit, match="설계 동결 전"):
+        fz.build_selection_profile_obj()
+
+
+# ---------- (7) 시험 결과 모으기 ----------
+OK_OUT = "........\n273 passed in 89.69s (0:01:29)\n"
+BAD_OUT = ("FAILED recovery-policy/test_a.py::test_one - AssertionError: x\nFAILED anomaly-detection/test_b.py::test_two - boom\n"
+           "ERROR anomaly-detection/test_c.py - ImportError\n== 2 failed, 5 passed, 1 skipped, 1 error in 3.20s ==\n")
+
+
+def test_parse_pytest_output_reads_counts_and_failed_ids():
+    assert fz.parse_pytest_output(OK_OUT) == {"passed": 273, "failed": 0, "skipped": 0, "errors": 0, "failed_ids": []}
+    r = fz.parse_pytest_output(BAD_OUT)
+    assert (r["passed"], r["failed"], r["skipped"], r["errors"]) == (5, 2, 1, 1)
+    assert r["failed_ids"] == ["anomaly-detection/test_b.py::test_two", "anomaly-detection/test_c.py", "recovery-policy/test_a.py::test_one"]
+    assert fz.parse_pytest_output("106 passed, 1 skipped in 13.5s")["skipped"] == 1
+
+
+def test_known_baseline_includes_listed_failures_and_the_documented_flaky_tests():
+    ids = fz.known_baseline_ids()
+    assert "anomaly-detection/test_c1_bck_shadow_pair.py::test_spec_mismatch_fails_closed" in ids
+    assert "recovery-policy/test_git_client.py::test_restart_requeues_pending" in ids                      # 주석에 적힌 flaky
+
+
+def test_collect_test_results_counts_only_failures_outside_the_known_baseline_as_regressions():
+    calls = []
+
+    def fake_run(targets):
+        calls.append(tuple(targets))
+        return {fz.NET: OK_OUT, "experiments/phase2_detector_selection": "106 passed, 1 skipped in 13s\n"}.get(targets[0], BAD_OUT)
+    res = fz.collect_test_results(run=fake_run, baseline_ids={"anomaly-detection/test_c.py", "anomaly-detection/test_b.py::test_two"})
+    assert calls == [(fz.NET,), ("experiments/phase2_detector_selection",), ("recovery-policy", "anomaly-detection")]
+    assert (res["network"]["passed"], res["network"]["failed"]) == (273, 0) and (res["phase2"]["passed"], res["phase2"]["skipped"]) == (106, 1)
+    assert res["new_regressions"] == ["recovery-policy/test_a.py::test_one"]                              # 기준선에 없는 실패만
+    assert res["existing"]["failed_in_baseline"] == 2
+    all_baseline = fz.collect_test_results(run=fake_run, baseline_ids={"anomaly-detection/test_c.py", "anomaly-detection/test_b.py::test_two",
+                                                                       "recovery-policy/test_a.py::test_one"})
+    assert all_baseline["new_regressions"] == []
