@@ -16,6 +16,7 @@
 | [FINAL-EVIDENCE-SUMMARY-20261010.md](final/FINAL-EVIDENCE-SUMMARY-20261010.md) | 공식 실험별 증거·주장 판정표 |
 | [PHASE1-AB-ADDITIONAL-REPLICATION-20261013.md](final/PHASE1-AB-ADDITIONAL-REPLICATION-20261013.md) | A/B 사전등록 추가 반복 3쌍(ab06–ab08) - 공식 5쌍과 분리 보고 |
 | [AB-TRAFFIC-SWITCH-TIMING-20261015.md](final/AB-TRAFFIC-SWITCH-TIMING-20261015.md) | A/B 실제 전환 8회의 승격 요청 → selector 변경 확인 시간 |
+| [GUARD-REFUSAL-EVIDENCE-20261016.md](final/GUARD-REFUSAL-EVIDENCE-20261016.md) | Recovery Guard 거부 경로: 조건이 어긋나면 승격을 호출하지 않는 17개 시나리오(단위 테스트, 실제 클러스터 실험 아님) |
 | [PRESENTATION-PACKAGE-20261010.md](final/PRESENTATION-PACKAGE-20261010.md) | 발표 문구·예상 질문 (2026-10-10 기준 - 이후 Phase 2 결과는 위 최종 결과 문서가 우선) |
 
 ## design/ - 자주 찾는 frozen 문서

@@ -17,6 +17,8 @@ detector 신호를 받아 **안전 조건을 다시 확인한 뒤에만** Argo R
 
 `check_target`이 거부하는 경우(하나라도 해당하면 전환하지 않음): Rollout이 다름, active/preview selector가 신호 시점과 다름, preview가 승격 대기 상태가 아님, 버전별 Pod가 정확히 1개가 아님, Pod UID 변경·종료 중·신호 이후 재시작 증가, preview가 Ready가 아님.
 
+거부 경로 증거(17개 시나리오, 승격 호출 0회, 단위 테스트): [../docs/final/GUARD-REFUSAL-EVIDENCE-20261016.md](../docs/final/GUARD-REFUSAL-EVIDENCE-20261016.md)
+
 ## 초기 버전 (historical - 최종 실험에 쓰지 않음)
 
 `main.py`, `policy.py`, `rollouts_client.py`, `safety.py`, `decision_log.py`, `git_client.py`
