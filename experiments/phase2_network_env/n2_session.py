@@ -351,6 +351,37 @@ def delivery_problems(delivery, protected_samples, protected_observations, *, na
     return {"problems": probs, "container_records_present": records_present}
 
 
+def collect_delivery_evidence(rec, watch, net) -> dict:
+    """주입이 끝난 뒤 전달 증거를 모아 판정한다(읽기 전용: Prometheus 조회). Stage 1·2 공용. 조회 실패 등 예외는 '확인 불가'(문제)로 남긴다."""
+    try:
+        delivery = rec.record() if rec else None
+        names = protected_observation_problems(delivery, watch.obs)[1] if delivery and delivery.get("crs") else []
+        t0, t1 = (delivery or {}).get("first_created_at"), (delivery or {}).get("last_deleted_at")
+        q0 = _iso(datetime.fromtimestamp(_epoch(t0) - QUERY_PREROLL_SEC, timezone.utc)) if t0 else None
+        q1 = _iso(datetime.fromtimestamp(_epoch(t1) + QUERY_TAIL_SEC, timezone.utc)) if t1 else None
+        samples = net.protected_probe_seconds(names, q0, q1) if (q0 and q1 and names) else {}
+        return {"network_delivery": delivery, "network_protected_probe_seconds": samples,
+                "network_protected_pod_observations": watch.obs,
+                "network_delivery_check": delivery_problems(delivery, samples, watch.obs)}
+    except Exception as e:  # noqa: BLE001
+        return {"network_delivery": None, "network_protected_pod_observations": watch.obs,
+                "network_delivery_check": {"problems": [f"delivery_check_error: {type(e).__name__}: {e}"],
+                                           "container_records_present": False}}
+
+
+def network_preflight(net, profile, *, policy_mode="record_only") -> dict:
+    """세션 시작 전 네트워크 환경 점검(읽기 전용, Stage 1·2 공용). 읽지 못하면 시작하지 않는다(fail-closed). 시작 상태에는 새(preview) Pod가 없다."""
+    try:
+        st = net.read_state()
+        return pfm.preflight_problems(
+            profile=profile, observed_env=nc.observe_environment(st["template"]),
+            policy_sha256=nc.contract_hashes()["recovery_policy_sha256"], template=st["template"], chaos_names=st["chaos_names"],
+            pods=st["pods"], active_hash=st["active_hash"], preview_hash=st["preview_hash"], net_probe_body=st["net_probe_body"],
+            policy=st["policy"], policy_mode=policy_mode, require_preview=False)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "problems": [f"network_preflight_error: {type(e).__name__}: {e}"], "protected": [], "target": None}
+
+
 # ---------------- 읽기 전용 클러스터 조회(실제) ----------------
 class RealNetLive:
     """읽기 전용 조회만 한다(kubectl get / Prometheus 질의). run은 주입 가능(테스트가 명령이 get뿐인지 확인한다)."""
@@ -566,15 +597,10 @@ def run_pressure_net(inst, run, *, deps, starter, art_hashes, profile_sha, resul
     reasons += [f"canonical_start: {x}" for x in cp]
     # ---- 네트워크 사전 점검(읽기 전용) ----
     try:
-        st = net.read_state()
         loaded = nc.load_profile(net.profile_path, stage="stage1")
         if loaded["sha256"] != profile_sha:
             raise nc.ProfileInvalid("profile 해시가 세션 시작 때와 다름")
-        net_pf = pfm.preflight_problems(
-            profile=loaded["profile"], observed_env=nc.observe_environment(st["template"]),
-            policy_sha256=nc.contract_hashes()["recovery_policy_sha256"], template=st["template"], chaos_names=st["chaos_names"],
-            pods=st["pods"], active_hash=st["active_hash"], preview_hash=st["preview_hash"], net_probe_body=st["net_probe_body"],
-            policy=st["policy"], require_preview=False)          # 시작 상태에는 preview가 없다 - 보호 Pod는 prepare 뒤 아래에서 확정
+        net_pf = network_preflight(net, loaded["profile"], policy_mode=inst.MODE)
     except Exception as e:  # noqa: BLE001 - 읽지 못하면 시작하지 않는다(fail-closed)
         net_pf = {"ok": False, "problems": [f"network_preflight_error: {type(e).__name__}: {e}"], "protected": [], "target": None}
     preflight["network"] = net_pf
@@ -743,20 +769,7 @@ def run_pressure_net(inst, run, *, deps, starter, art_hashes, profile_sha, resul
                "detector_started": detector["started"],
                "network_preflight": {k: net_pf.get(k) for k in ("target", "net_probe")},
                "network_protected_pod_observations": watch.obs}
-    try:  # 전달 증거(기록 전용 - 판정은 유효성 단계)
-        rec = box.get("rec")
-        delivery = rec.record() if rec else None
-        summary["network_delivery"] = delivery
-        names = protected_observation_problems(delivery, watch.obs)[1] if delivery and delivery.get("crs") else []
-        t0, t1 = (delivery or {}).get("first_created_at"), (delivery or {}).get("last_deleted_at")
-        q0 = _iso(datetime.fromtimestamp(_epoch(t0) - QUERY_PREROLL_SEC, timezone.utc)) if t0 else None
-        q1 = _iso(datetime.fromtimestamp(_epoch(t1) + QUERY_TAIL_SEC, timezone.utc)) if t1 else None
-        samples = net.protected_probe_seconds(names, q0, q1) if (q0 and q1 and names) else {}
-        summary["network_protected_probe_seconds"] = samples
-        summary["network_delivery_check"] = delivery_problems(delivery, samples, watch.obs)
-    except Exception as e:  # noqa: BLE001
-        summary["network_delivery_check"] = {"problems": [f"delivery_check_error: {type(e).__name__}: {e}"],
-                                             "container_records_present": False}
+    summary.update(collect_delivery_evidence(box.get("rec"), watch, net))        # 전달 증거(기록 전용 - 판정은 유효성 단계)
     if code_provenance is not None:
         summary["code_provenance"] = code_provenance
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8")

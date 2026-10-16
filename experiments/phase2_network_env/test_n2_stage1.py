@@ -109,6 +109,16 @@ def test_overrides_are_explicit_instance_attributes_and_rest_delegates():
     assert a.DETECTOR_IDS != pc.DETECTOR_IDS and a.PLAN_ID != pc.PLAN_ID
 
 
+def test_prereg_sha_is_live_and_signal_identity_covers_the_network_candidate(monkeypatch):
+    a = ns1.NetPC(ns1.NetConfig())
+    assert a.PREREG_SHA256 is None                                    # 동결 전 - 어떤 profile도 거부되는 값
+    monkeypatch.setattr(nc, "PREREG_SHA256", FAKE)
+    assert a.PREREG_SHA256 == FAKE                                    # 동결 뒤 채워지면 adapter도 따라간다(복사해 두지 않음)
+    ident = a.signal_identity(nc.NET_ID, {"scaler.pkl": "a" * 64})
+    assert ident["detector_id"] == nc.NET_ID and ident["threshold"] == nc.NET_THRESHOLD
+    assert pc.signal_identity(nc.CPU_ID, {})["detector_id"] == a.signal_identity(nc.CPU_ID, {})["detector_id"]
+
+
 def test_unfrozen_implementation_freeze_fails_closed():
     inst = ns1.load_stage1()
     with pytest.raises(SystemExit, match="fail-closed"):
