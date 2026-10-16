@@ -1,0 +1,281 @@
+{
+  "definition": {
+    "metric": "scrape_duration_seconds{namespace=\"vllm-serving\",job=\"vllm-active\"}",
+    "net_mean": "직전 60초 창(15초 격자 5점) 평균",
+    "consecutive_threshold": 3,
+    "cooldown_sec": 60.0,
+    "eval_interval_sec": 15.0,
+    "anomalous_if": "net_mean > T",
+    "calibration": "replay.calibrate_threshold(score=-net_mean), 보정 세션 전부에서 신호 0인 가장 민감한 값"
+  },
+  "sessions": {
+    "c3n01": {
+      "role": "TRAIN",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n01-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791621150.012102,
+        1791625338.235005
+      ],
+      "n_series": 1,
+      "n_eval_points": 280
+    },
+    "c3n02": {
+      "role": "VALIDATION",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n02-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791626220.697502,
+        1791630419.624259
+      ],
+      "n_series": 1,
+      "n_eval_points": 280
+    },
+    "c3n03": {
+      "role": "CALIBRATION",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n03-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791631181.169153,
+        1791635371.735397
+      ],
+      "n_series": 1,
+      "n_eval_points": 280
+    },
+    "c3n04": {
+      "role": "TRAIN",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n04-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791637765.509521,
+        1791641962.856793
+      ],
+      "n_series": 1,
+      "n_eval_points": 280
+    },
+    "c3n05": {
+      "role": "VALIDATION",
+      "status": "unexpected_degradation",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n05-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791642667.716066,
+        1791644508.41971
+      ],
+      "n_series": 1,
+      "n_eval_points": 123
+    },
+    "c3n06": {
+      "role": "TRAIN",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n06-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791649987.494548,
+        1791654190.621005
+      ],
+      "n_series": 1,
+      "n_eval_points": 281
+    },
+    "c3n07": {
+      "role": "CALIBRATION",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n07-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791655502.055814,
+        1791659694.252366
+      ],
+      "n_series": 1,
+      "n_eval_points": 280
+    },
+    "c3n08": {
+      "role": "VALIDATION",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n08-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791660212.081091,
+        1791664405.685856
+      ],
+      "n_series": 1,
+      "n_eval_points": 280
+    },
+    "c3n09": {
+      "role": "TRAIN",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n09-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791677255.969404,
+        1791681458.0317
+      ],
+      "n_series": 1,
+      "n_eval_points": 281
+    },
+    "c3n10": {
+      "role": "VALIDATION",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3n10-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791681944.476731,
+        1791686140.738451
+      ],
+      "n_series": 1,
+      "n_eval_points": 280
+    },
+    "c3r01": {
+      "role": "VALIDATION",
+      "status": "normal_valid",
+      "evidence": "c1-live-evidence-guarded_normal_record_only-c3r01-capstone-c3-normal-coverage-20261010.jsonl",
+      "window": [
+        1791645191.290696,
+        1791649388.526904
+      ],
+      "n_series": 1,
+      "n_eval_points": 280
+    }
+  },
+  "series_files": {
+    "c3n01": "series-c3n01.json",
+    "c3n02": "series-c3n02.json",
+    "c3n03": "series-c3n03.json",
+    "c3n04": "series-c3n04.json",
+    "c3n05": "series-c3n05.json",
+    "c3n06": "series-c3n06.json",
+    "c3n07": "series-c3n07.json",
+    "c3n08": "series-c3n08.json",
+    "c3n09": "series-c3n09.json",
+    "c3n10": "series-c3n10.json",
+    "c3r01": "series-c3r01.json"
+  },
+  "series_sha256": {
+    "c3n01": "265dff7ae411ac2765158f8b8a37f354b6027e132d86207c3107d711c7dfeb2e",
+    "c3n02": "041eb7bc38c7feade59d68084766c0bac8928c3a0135a5a3a6611102e4d2a46c",
+    "c3n03": "88bae0f9762530abfbd55a6166b797d9c4855952f640378432007ffb1f68750c",
+    "c3n04": "af61088164b3c63603433ccab062771d40f51ddd8e4ac5785982462a853a049c",
+    "c3n05": "bdd72fc16f7517c27162ff6afd4762ea2872de4854fd228e40178a5f4a338e67",
+    "c3n06": "d60e826e83ca15f3c2f11aa46fb4270966132b698fa1bd21b7128dc28818140a",
+    "c3n07": "591d4f446ee63523e84cebd607807bb429b8d58689a913719dcaadbc373ff7a0",
+    "c3n08": "a0f4a5bb9ebbd42e97ac1de5636627793c26d70bae48b3b34dfacbbd84bdf88c",
+    "c3n09": "70e886a5f40748f407d1c1a4247b21122db4e0ea74d557429a28749267cbc2f9",
+    "c3n10": "8fa8fb16d5b4264c6b7976f8014859182750527f30656a6169f177cf50618300",
+    "c3r01": "529bb07d3281cc408328f27ef908b5f53039aab774e27e512542133e24ed9485"
+  },
+  "calibration_sessions": [
+    "c3n01",
+    "c3n03",
+    "c3n04",
+    "c3n06",
+    "c3n07",
+    "c3n09"
+  ],
+  "evaluation_sessions": [
+    "c3n02",
+    "c3n08",
+    "c3n10",
+    "c3r01"
+  ],
+  "excluded": {
+    "c3n05": "unexpected_degradation"
+  },
+  "threshold_seconds": 0.0643225318,
+  "calibration_failed": false,
+  "calibration_result": {
+    "c3n01": {
+      "n_points": 280,
+      "point_anomaly_count": 0,
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "net_mean_max": 0.0291279854
+    },
+    "c3n03": {
+      "n_points": 280,
+      "point_anomaly_count": 0,
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "net_mean_max": 0.026532775600000003
+    },
+    "c3n04": {
+      "n_points": 280,
+      "point_anomaly_count": 0,
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "net_mean_max": 0.028562315999999997
+    },
+    "c3n06": {
+      "n_points": 281,
+      "point_anomaly_count": 0,
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "net_mean_max": 0.0526057028
+    },
+    "c3n07": {
+      "n_points": 280,
+      "point_anomaly_count": 2,
+      "signal_count": 0,
+      "max_consecutive_anomalous": 2,
+      "net_mean_max": 0.0685971434
+    },
+    "c3n09": {
+      "n_points": 281,
+      "point_anomaly_count": 0,
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "net_mean_max": 0.0280343428
+    }
+  },
+  "evaluation_result": {
+    "c3n02": {
+      "n_points": 280,
+      "point_anomaly_count": 0,
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "net_mean_max": 0.030175727800000003
+    },
+    "c3n08": {
+      "n_points": 280,
+      "point_anomaly_count": 0,
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "net_mean_max": 0.028982009800000003
+    },
+    "c3n10": {
+      "n_points": 280,
+      "point_anomaly_count": 0,
+      "signal_count": 0,
+      "max_consecutive_anomalous": 0,
+      "net_mean_max": 0.0566464862
+    },
+    "c3r01": {
+      "n_points": 280,
+      "point_anomaly_count": 26,
+      "signal_count": 5,
+      "max_consecutive_anomalous": 17,
+      "net_mean_max": 0.1351131018
+    }
+  },
+  "excluded_informational": {
+    "c3n05": {
+      "n_points": 123,
+      "point_anomaly_count": 28,
+      "signal_count": 6,
+      "max_consecutive_anomalous": 15,
+      "net_mean_max": 0.12317784600000001
+    }
+  },
+  "pilot_20260919_native_dev_only": {
+    "n_series": 1,
+    "n_signals": 7,
+    "signal_times_utc": [
+      "2026-09-19T15:49:30",
+      "2026-09-19T15:50:30",
+      "2026-09-19T15:51:30",
+      "2026-09-19T15:52:30",
+      "2026-09-19T15:53:30",
+      "2026-09-19T15:54:30",
+      "2026-09-19T15:55:30"
+    ],
+    "t_injection": "2026-09-19T15:48:47.499+00:00",
+    "t_slo": "2026-09-19T15:49:20.434+00:00",
+    "first_signal_after_injection_sec": 42.5,
+    "first_signal_vs_t_slo_sec": 9.6,
+    "net_mean_before_injection_max": 0.0173359812
+  },
+  "note": "압박·SLO 결과는 임계값 산정에 쓰지 않았다. 파일럿 값은 지표 선택(개발)에 참고된 자료라 독립 검증이 아니다."
+}

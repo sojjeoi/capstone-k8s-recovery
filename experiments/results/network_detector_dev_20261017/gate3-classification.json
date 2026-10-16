@@ -1,0 +1,87 @@
+{
+  "threshold_seconds": 0.0643225318,
+  "sessions": {
+    "c3n02": {
+      "raw_signals": 0,
+      "in_decision_window": 0,
+      "class_counts": {
+        "unnecessary": 0,
+        "true_warning_candidate": 0,
+        "during_degradation": 0,
+        "indeterminate": 0
+      },
+      "signals": [],
+      "t0": "2026-10-10T09:57:02.986294+00:00"
+    },
+    "c3n08": {
+      "raw_signals": 0,
+      "in_decision_window": 0,
+      "class_counts": {
+        "unnecessary": 0,
+        "true_warning_candidate": 0,
+        "during_degradation": 0,
+        "indeterminate": 0
+      },
+      "signals": [],
+      "t0": "2026-10-10T19:23:33.740919+00:00"
+    },
+    "c3n10": {
+      "raw_signals": 0,
+      "in_decision_window": 0,
+      "class_counts": {
+        "unnecessary": 0,
+        "true_warning_candidate": 0,
+        "during_degradation": 0,
+        "indeterminate": 0
+      },
+      "signals": [],
+      "t0": "2026-10-11T01:25:46.181718+00:00"
+    },
+    "c3r01": {
+      "raw_signals": 5,
+      "in_decision_window": 5,
+      "class_counts": {
+        "unnecessary": 5,
+        "true_warning_candidate": 0,
+        "during_degradation": 0,
+        "indeterminate": 0
+      },
+      "signals": [
+        {
+          "t_rel_sec": 598.134,
+          "class": "unnecessary",
+          "basis": "no_degradation_service_event_or_infra_in_follow_up"
+        },
+        {
+          "t_rel_sec": 2578.134,
+          "class": "unnecessary",
+          "basis": "no_degradation_service_event_or_infra_in_follow_up"
+        },
+        {
+          "t_rel_sec": 2638.134,
+          "class": "unnecessary",
+          "basis": "no_degradation_service_event_or_infra_in_follow_up"
+        },
+        {
+          "t_rel_sec": 2698.134,
+          "class": "unnecessary",
+          "basis": "no_degradation_service_event_or_infra_in_follow_up"
+        },
+        {
+          "t_rel_sec": 2758.134,
+          "class": "unnecessary",
+          "basis": "no_degradation_service_event_or_infra_in_follow_up"
+        }
+      ],
+      "t0": "2026-10-10T15:13:13.157099+00:00"
+    }
+  },
+  "total_class_counts": {
+    "unnecessary": 5,
+    "true_warning_candidate": 0,
+    "during_degradation": 0,
+    "indeterminate": 0
+  },
+  "unnecessary_total": 5,
+  "note": "Gate 3 지표는 unnecessary 합계(동등 판정: 차이 ≤ 1). 임계값은 바꾸지 않았다."
+}

@@ -1,0 +1,91 @@
+{
+  "run_id": "explore-memory_pressure-native-1500mb-120s-20261016T135228Z",
+  "size_mb": 1500.0,
+  "aborted": false,
+  "abort_reason": null,
+  "adapter_pass": true,
+  "adapter_fail_reasons": [],
+  "baseline_working_set_bytes": 3660021760.0,
+  "max_working_set_bytes": 5165350912.0,
+  "official_slo": {
+    "local_raw_csv": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-explore-memory_pressure-native-1500mb-120s-20261016T135228Z-native-1-raw.csv",
+    "total_samples": 268,
+    "success_rate": 1.0,
+    "t_slo": null,
+    "t_recovery": null,
+    "violation_duration_sec": null,
+    "post_injection_evaluable_samples": 197,
+    "p95_peak": 0.6381988198962063,
+    "availability_min": 1.0
+  },
+  "attribution": {
+    "official_t_slo": null,
+    "S_full": null,
+    "post_only_t_slo": null,
+    "S_post": null,
+    "R1": false,
+    "R2": false,
+    "R3": false,
+    "accepted": false
+  },
+  "telemetry": {
+    "cpu_cores": {
+      "injection": {
+        "n": 4,
+        "min": 1.6242523769313548,
+        "mean": 1.6392301704910917,
+        "max": 1.6470405421502952
+      },
+      "baseline": {
+        "n": 4,
+        "min": 0.24239378562848207,
+        "mean": 0.9808966449727313,
+        "max": 1.6741714220809307
+      }
+    },
+    "cpu_throttle_ratio": {
+      "injection": {
+        "n": 4,
+        "min": 0.21835443037974683,
+        "mean": 0.2232559310710179,
+        "max": 0.22767075306479856
+      },
+      "baseline": {
+        "n": 4,
+        "min": 0.04148471615720524,
+        "mean": 0.1527939912671385,
+        "max": 0.25165562913907286
+      }
+    },
+    "node_psi_memory_some": {
+      "injection": {
+        "n": 4,
+        "min": 0.0,
+        "mean": 0.0,
+        "max": 0.0
+      },
+      "baseline": {
+        "n": 4,
+        "min": 0.0,
+        "mean": 0.0,
+        "max": 0.0
+      }
+    },
+    "node_psi_memory_full": {
+      "injection": {
+        "n": 4,
+        "min": 0.0,
+        "mean": 0.0,
+        "max": 0.0
+      },
+      "baseline": {
+        "n": 4,
+        "min": 0.0,
+        "mean": 0.0,
+        "max": 0.0
+      }
+    }
+  },
+  "cpu_exceeded_threshold": false,
+  "class": "C"
+}

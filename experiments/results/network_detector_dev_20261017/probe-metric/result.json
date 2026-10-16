@@ -1,0 +1,256 @@
+{
+  "revision": "probe-metric-1",
+  "expr": "(sum by (namespace,pod)(rate(prober_probe_duration_seconds_sum{namespace=\"vllm-serving\",container=\"vllm\",probe_type=\"Readiness\"}[60s]))/sum by (namespace,pod)(rate(prober_probe_duration_seconds_count{namespace=\"vllm-serving\",container=\"vllm\",probe_type=\"Readiness\"}[60s]))) and on(namespace,pod) scrape_duration_seconds{namespace=\"vllm-serving\",job=\"vllm-active\"}",
+  "n_sessions": 20,
+  "sessions_meta": {
+    "c3n01": {
+      "n_series": 1,
+      "n_ticks": 276,
+      "n_missing_filled_zero": 0,
+      "max": 0.005999970000001298
+    },
+    "c3n02": {
+      "n_series": 1,
+      "n_ticks": 276,
+      "n_missing_filled_zero": 0,
+      "max": 0.011407253166667648
+    },
+    "c3n03": {
+      "n_series": 1,
+      "n_ticks": 276,
+      "n_missing_filled_zero": 0,
+      "max": 0.017575631833332512
+    },
+    "c3n04": {
+      "n_series": 1,
+      "n_ticks": 276,
+      "n_missing_filled_zero": 0,
+      "max": 0.018616491833333287
+    },
+    "c3n06": {
+      "n_series": 1,
+      "n_ticks": 277,
+      "n_missing_filled_zero": 0,
+      "max": 0.007203574833333152
+    },
+    "c3n07": {
+      "n_series": 1,
+      "n_ticks": 276,
+      "n_missing_filled_zero": 0,
+      "max": 0.005686562333333237
+    },
+    "c3n08": {
+      "n_series": 1,
+      "n_ticks": 276,
+      "n_missing_filled_zero": 0,
+      "max": 0.004930354833333334
+    },
+    "c3n09": {
+      "n_series": 1,
+      "n_ticks": 277,
+      "n_missing_filled_zero": 0,
+      "max": 0.013295664833333257
+    },
+    "c3n10": {
+      "n_series": 1,
+      "n_ticks": 276,
+      "n_missing_filled_zero": 0,
+      "max": 0.006097694499999898
+    },
+    "c3r01": {
+      "n_series": 1,
+      "n_ticks": 276,
+      "n_missing_filled_zero": 0,
+      "max": 0.005712788333333366
+    },
+    "c1ca01": {
+      "n_series": 1,
+      "n_ticks": 119,
+      "n_missing_filled_zero": 0,
+      "max": 0.015067809000000782
+    },
+    "c1ca02": {
+      "n_series": 1,
+      "n_ticks": 123,
+      "n_missing_filled_zero": 0,
+      "max": 0.005997357999998343
+    },
+    "c1ca03": {
+      "n_series": 1,
+      "n_ticks": 125,
+      "n_missing_filled_zero": 0,
+      "max": 0.007299752499999812
+    },
+    "c1ca04": {
+      "n_series": 1,
+      "n_ticks": 125,
+      "n_missing_filled_zero": 0,
+      "max": 0.006281867166666898
+    },
+    "c1tr01": {
+      "n_series": 1,
+      "n_ticks": 120,
+      "n_missing_filled_zero": 0,
+      "max": 0.006496147666666729
+    },
+    "c1tr02": {
+      "n_series": 1,
+      "n_ticks": 120,
+      "n_missing_filled_zero": 0,
+      "max": 0.007002042166665962
+    },
+    "c1tr03": {
+      "n_series": 1,
+      "n_ticks": 109,
+      "n_missing_filled_zero": 0,
+      "max": 0.0037346901666666095
+    },
+    "c1tr04": {
+      "n_series": 1,
+      "n_ticks": 125,
+      "n_missing_filled_zero": 0,
+      "max": 0.006812330499999556
+    },
+    "c1tr05": {
+      "n_series": 1,
+      "n_ticks": 125,
+      "n_missing_filled_zero": 0,
+      "max": 0.005737359666665516
+    },
+    "c1tr06": {
+      "n_series": 1,
+      "n_ticks": 125,
+      "n_missing_filled_zero": 0,
+      "max": 0.005808482166667517
+    }
+  },
+  "threshold_seconds": 0.006401369666666786,
+  "calibration_failed": false,
+  "loso": {
+    "c3n01": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.006,
+      "unnecessary": 0
+    },
+    "c3n02": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0114,
+      "unnecessary": 0
+    },
+    "c3n03": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0176,
+      "unnecessary": 0
+    },
+    "c3n04": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0186,
+      "unnecessary": 0
+    },
+    "c3n06": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0072,
+      "unnecessary": 0
+    },
+    "c3n07": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0057,
+      "unnecessary": 0
+    },
+    "c3n08": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0049,
+      "unnecessary": 0
+    },
+    "c3n09": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0133,
+      "unnecessary": 0
+    },
+    "c3n10": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0061,
+      "unnecessary": 0
+    },
+    "c3r01": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0057,
+      "unnecessary": 0
+    },
+    "c1ca01": {
+      "T_without": 0.0063,
+      "raw_signals": 1,
+      "max": 0.0151
+    },
+    "c1ca02": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.006
+    },
+    "c1ca03": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0073
+    },
+    "c1ca04": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0063
+    },
+    "c1tr01": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0065
+    },
+    "c1tr02": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.007
+    },
+    "c1tr03": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0037
+    },
+    "c1tr04": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0068
+    },
+    "c1tr05": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0057
+    },
+    "c1tr06": {
+      "T_without": 0.0064,
+      "raw_signals": 0,
+      "max": 0.0058
+    }
+  },
+  "loso_sessions_with_signal": [
+    "c1ca01"
+  ],
+  "loso_raw_signals_total": 1,
+  "loso_unnecessary_c3_total": 0,
+  "pilot_20260919_native_dev_only": {
+    "n_series": 1,
+    "n_missing_filled_zero": 0,
+    "n_signals": 6,
+    "first_signal_after_injection_sec": 57.5,
+    "first_signal_vs_t_slo_sec": 24.6,
+    "max_before_injection": 0.004770839999999998,
+    "values_after_injection_max": 7.711508368000001
+  },
+  "note": "모든 세션이 개발 자료. 압박·SLO 결과는 임계값 산정에 쓰지 않았다."
+}

@@ -7,3 +7,7 @@ recovery-policy/git_askpass.sh text eol=lf
 # Phase 1 A/B B 실행 요약 ab01b~ab05b(2026-10-15 추가)는 원래 바이트(CRLF) 그대로 저장한다 - 공식 분석 파일에 기록된
 # SHA-256과 clone한 파일이 일치해야 하기 때문(docs/final/AB-TRAFFIC-SWITCH-TIMING-20261015.md). 다른 파일은 바꾸지 않는다.
 experiments/results/capstone_guarded_ab_v1/summary-guarded_pressure_act-ab0[1-5]b-capstone-guarded-ab-v1-20261007.json -text
+
+# 2026-10-17 development 증거(메모리 pilot, 네트워크 감지기) - 기록한 SHA-256과 clone한 파일이 일치하도록 byte-exact로 저장
+docs/design/evidence/memory-pressure-pilot-20261016/** -text
+experiments/results/network_detector_dev_20261017/** -text

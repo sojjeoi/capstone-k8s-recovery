@@ -1,0 +1,91 @@
+{
+  "run_id": "explore-memory_pressure-native-1500mb-120s-20261016T134514Z",
+  "size_mb": 1500.0,
+  "aborted": false,
+  "abort_reason": null,
+  "adapter_pass": true,
+  "adapter_fail_reasons": [],
+  "baseline_working_set_bytes": 3664080896.0,
+  "max_working_set_bytes": 5205446656.0,
+  "official_slo": {
+    "local_raw_csv": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-explore-memory_pressure-native-1500mb-120s-20261016T134514Z-native-1-raw.csv",
+    "total_samples": 267,
+    "success_rate": 1.0,
+    "t_slo": null,
+    "t_recovery": null,
+    "violation_duration_sec": null,
+    "post_injection_evaluable_samples": 187,
+    "p95_peak": 0.8885084949433804,
+    "availability_min": 1.0
+  },
+  "attribution": {
+    "official_t_slo": null,
+    "S_full": null,
+    "post_only_t_slo": null,
+    "S_post": null,
+    "R1": false,
+    "R2": false,
+    "R3": false,
+    "accepted": false
+  },
+  "telemetry": {
+    "cpu_cores": {
+      "injection": {
+        "n": 4,
+        "min": 1.366763544114576,
+        "mean": 1.5090555235503282,
+        "max": 1.6468831271179
+      },
+      "baseline": {
+        "n": 4,
+        "min": 0.4698782102538638,
+        "mean": 1.056504923379788,
+        "max": 1.417074896374718
+      }
+    },
+    "cpu_throttle_ratio": {
+      "injection": {
+        "n": 4,
+        "min": 0.2843601895734597,
+        "mean": 0.2882463896353741,
+        "max": 0.2932960893854749
+      },
+      "baseline": {
+        "n": 4,
+        "min": 0.09109730848861283,
+        "mean": 0.20366321195396717,
+        "max": 0.2877094972067039
+      }
+    },
+    "node_psi_memory_some": {
+      "injection": {
+        "n": 4,
+        "min": 0.00011369999999999436,
+        "mean": 0.00029308333333334007,
+        "max": 0.00047246666666668583
+      },
+      "baseline": {
+        "n": 4,
+        "min": 0.0,
+        "mean": 0.0,
+        "max": 0.0
+      }
+    },
+    "node_psi_memory_full": {
+      "injection": {
+        "n": 4,
+        "min": 8.253333333338256e-05,
+        "mean": 9.568333333334066e-05,
+        "max": 0.00010883333333329877
+      },
+      "baseline": {
+        "n": 4,
+        "min": 0.0,
+        "mean": 0.0,
+        "max": 0.0
+      }
+    }
+  },
+  "cpu_exceeded_threshold": false,
+  "class": "C"
+}

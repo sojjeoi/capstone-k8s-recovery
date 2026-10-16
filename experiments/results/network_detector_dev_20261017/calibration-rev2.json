@@ -1,0 +1,161 @@
+{
+  "revision": 2,
+  "definition": "개정 1과 같음(지표·net_mean·3연속·쿨다운 60·간격 15). 보정 세션만 다름: 유효 정상 세션 전체",
+  "calibration_sessions": [
+    "c1ca01",
+    "c1ca02",
+    "c1ca03",
+    "c1ca04",
+    "c1tr01",
+    "c1tr02",
+    "c1tr03",
+    "c1tr04",
+    "c1tr05",
+    "c1tr06",
+    "c3n01",
+    "c3n02",
+    "c3n03",
+    "c3n04",
+    "c3n06",
+    "c3n07",
+    "c3n08",
+    "c3n09",
+    "c3n10",
+    "c3r01"
+  ],
+  "n_sessions": 20,
+  "n_eval_points": 4058,
+  "threshold_seconds": 0.1242326662,
+  "calibration_failed": false,
+  "series_sha256": {
+    "c3n01": "265dff7ae411ac2765158f8b8a37f354b6027e132d86207c3107d711c7dfeb2e",
+    "c3n02": "041eb7bc38c7feade59d68084766c0bac8928c3a0135a5a3a6611102e4d2a46c",
+    "c3n03": "88bae0f9762530abfbd55a6166b797d9c4855952f640378432007ffb1f68750c",
+    "c3n04": "af61088164b3c63603433ccab062771d40f51ddd8e4ac5785982462a853a049c",
+    "c3n06": "d60e826e83ca15f3c2f11aa46fb4270966132b698fa1bd21b7128dc28818140a",
+    "c3n07": "591d4f446ee63523e84cebd607807bb429b8d58689a913719dcaadbc373ff7a0",
+    "c3n08": "a0f4a5bb9ebbd42e97ac1de5636627793c26d70bae48b3b34dfacbbd84bdf88c",
+    "c3n09": "70e886a5f40748f407d1c1a4247b21122db4e0ea74d557429a28749267cbc2f9",
+    "c3n10": "8fa8fb16d5b4264c6b7976f8014859182750527f30656a6169f177cf50618300",
+    "c3r01": "529bb07d3281cc408328f27ef908b5f53039aab774e27e512542133e24ed9485",
+    "c1ca01": "b223de702b3e04c3321bc8836be2ee3443e41efaf0b90ad8c8685242313d57af",
+    "c1ca02": "237d33274d55bc3cc58f0e2b6b113e9a51970f2758aa9029c19ca267892f443a",
+    "c1ca03": "93938ddb9763b3c3d99f1c2737bf7bb31fbf2a4c62f3d4fcbac6294a52b6b638",
+    "c1ca04": "38aba9daf824906404b626ff52b5b4d07a86d6aff587a0cfa270ba69d7938249",
+    "c1tr01": "a2ee22903d0659296630e1669683097d8026934932ed6e8262e031aaf7a71536",
+    "c1tr02": "893231c938ee827a09f51b7cb3b064525844afa842afb484107bc1c7bf931623",
+    "c1tr03": "762ca7ab67b59babe6830fd6bd72af88dfd6806e8e5e5d0778c6310c75964db7",
+    "c1tr04": "6d2383fcf7b53fba6225bcf54ab7c22f25701129b87ee429682841a388496653",
+    "c1tr05": "283e51849d6f953818d71c08bb6d4bf9a07efb054b1cc71dd935c92fc4163f16",
+    "c1tr06": "53d80ccbbe19f51621db61d53d09a8664b4dfdf4875a5be493f1b951331f2693"
+  },
+  "in_sample_per_session": {
+    "c3n01": {
+      "n_points": 280,
+      "signals": 0,
+      "net_mean_max": 0.0291279854
+    },
+    "c3n02": {
+      "n_points": 280,
+      "signals": 0,
+      "net_mean_max": 0.030175727800000003
+    },
+    "c3n03": {
+      "n_points": 280,
+      "signals": 0,
+      "net_mean_max": 0.026532775600000003
+    },
+    "c3n04": {
+      "n_points": 280,
+      "signals": 0,
+      "net_mean_max": 0.028562315999999997
+    },
+    "c3n06": {
+      "n_points": 281,
+      "signals": 0,
+      "net_mean_max": 0.0526057028
+    },
+    "c3n07": {
+      "n_points": 280,
+      "signals": 0,
+      "net_mean_max": 0.0685971434
+    },
+    "c3n08": {
+      "n_points": 280,
+      "signals": 0,
+      "net_mean_max": 0.028982009800000003
+    },
+    "c3n09": {
+      "n_points": 281,
+      "signals": 0,
+      "net_mean_max": 0.0280343428
+    },
+    "c3n10": {
+      "n_points": 280,
+      "signals": 0,
+      "net_mean_max": 0.0566464862
+    },
+    "c3r01": {
+      "n_points": 280,
+      "signals": 0,
+      "net_mean_max": 0.1351131018
+    },
+    "c1ca01": {
+      "n_points": 123,
+      "signals": 0,
+      "net_mean_max": 0.024484431
+    },
+    "c1ca02": {
+      "n_points": 127,
+      "signals": 0,
+      "net_mean_max": 0.0340263662
+    },
+    "c1ca03": {
+      "n_points": 129,
+      "signals": 0,
+      "net_mean_max": 0.027900016
+    },
+    "c1ca04": {
+      "n_points": 129,
+      "signals": 0,
+      "net_mean_max": 0.053879077399999996
+    },
+    "c1tr01": {
+      "n_points": 124,
+      "signals": 0,
+      "net_mean_max": 0.1070573552
+    },
+    "c1tr02": {
+      "n_points": 124,
+      "signals": 0,
+      "net_mean_max": 0.024632352
+    },
+    "c1tr03": {
+      "n_points": 113,
+      "signals": 0,
+      "net_mean_max": 0.025657369800000003
+    },
+    "c1tr04": {
+      "n_points": 129,
+      "signals": 0,
+      "net_mean_max": 0.030152004399999998
+    },
+    "c1tr05": {
+      "n_points": 129,
+      "signals": 0,
+      "net_mean_max": 0.036946686
+    },
+    "c1tr06": {
+      "n_points": 129,
+      "signals": 0,
+      "net_mean_max": 0.0630654546
+    }
+  },
+  "net_mean_max_all": 0.1351131018,
+  "pilot_20260919_native_dev_only": {
+    "first_signal_after_injection_sec": 42.5,
+    "first_signal_vs_t_slo_sec": 9.6,
+    "n_signals": 7
+  },
+  "note": "모든 세션이 개발 자료. 공식 평가는 동결 뒤 새 정상 세션. 압박·SLO 결과는 임계값 산정에 쓰지 않았다."
+}

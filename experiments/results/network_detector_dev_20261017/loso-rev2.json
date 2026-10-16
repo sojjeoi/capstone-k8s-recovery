@@ -1,0 +1,141 @@
+{
+  "method": "leave-one-session-out(개발 단계 추정, 독립 검증 아님)",
+  "sessions": {
+    "c3n01": {
+      "T_without": 0.1242,
+      "n_points": 280,
+      "raw_signals": 0,
+      "max_net_mean": 0.0291,
+      "unnecessary": 0
+    },
+    "c3n02": {
+      "T_without": 0.1242,
+      "n_points": 280,
+      "raw_signals": 0,
+      "max_net_mean": 0.0302,
+      "unnecessary": 0
+    },
+    "c3n03": {
+      "T_without": 0.1242,
+      "n_points": 280,
+      "raw_signals": 0,
+      "max_net_mean": 0.0265,
+      "unnecessary": 0
+    },
+    "c3n04": {
+      "T_without": 0.1242,
+      "n_points": 280,
+      "raw_signals": 0,
+      "max_net_mean": 0.0286,
+      "unnecessary": 0
+    },
+    "c3n06": {
+      "T_without": 0.1242,
+      "n_points": 281,
+      "raw_signals": 0,
+      "max_net_mean": 0.0526,
+      "unnecessary": 0
+    },
+    "c3n07": {
+      "T_without": 0.1242,
+      "n_points": 280,
+      "raw_signals": 0,
+      "max_net_mean": 0.0686,
+      "unnecessary": 0
+    },
+    "c3n08": {
+      "T_without": 0.1242,
+      "n_points": 280,
+      "raw_signals": 0,
+      "max_net_mean": 0.029,
+      "unnecessary": 0
+    },
+    "c3n09": {
+      "T_without": 0.1242,
+      "n_points": 281,
+      "raw_signals": 0,
+      "max_net_mean": 0.028,
+      "unnecessary": 0
+    },
+    "c3n10": {
+      "T_without": 0.1242,
+      "n_points": 280,
+      "raw_signals": 0,
+      "max_net_mean": 0.0566,
+      "unnecessary": 0
+    },
+    "c3r01": {
+      "T_without": 0.0978,
+      "n_points": 280,
+      "raw_signals": 2,
+      "max_net_mean": 0.1351,
+      "unnecessary": 2
+    },
+    "c1ca01": {
+      "T_without": 0.1242,
+      "n_points": 123,
+      "raw_signals": 0,
+      "max_net_mean": 0.0245
+    },
+    "c1ca02": {
+      "T_without": 0.1242,
+      "n_points": 127,
+      "raw_signals": 0,
+      "max_net_mean": 0.034
+    },
+    "c1ca03": {
+      "T_without": 0.1242,
+      "n_points": 129,
+      "raw_signals": 0,
+      "max_net_mean": 0.0279
+    },
+    "c1ca04": {
+      "T_without": 0.1242,
+      "n_points": 129,
+      "raw_signals": 0,
+      "max_net_mean": 0.0539
+    },
+    "c1tr01": {
+      "T_without": 0.1242,
+      "n_points": 124,
+      "raw_signals": 0,
+      "max_net_mean": 0.1071
+    },
+    "c1tr02": {
+      "T_without": 0.1242,
+      "n_points": 124,
+      "raw_signals": 0,
+      "max_net_mean": 0.0246
+    },
+    "c1tr03": {
+      "T_without": 0.1242,
+      "n_points": 113,
+      "raw_signals": 0,
+      "max_net_mean": 0.0257
+    },
+    "c1tr04": {
+      "T_without": 0.1242,
+      "n_points": 129,
+      "raw_signals": 0,
+      "max_net_mean": 0.0302
+    },
+    "c1tr05": {
+      "T_without": 0.1242,
+      "n_points": 129,
+      "raw_signals": 0,
+      "max_net_mean": 0.0369
+    },
+    "c1tr06": {
+      "T_without": 0.1242,
+      "n_points": 129,
+      "raw_signals": 0,
+      "max_net_mean": 0.0631
+    }
+  },
+  "sessions_with_signal": [
+    "c3r01"
+  ],
+  "raw_signals_total": 2,
+  "n_sessions": 20,
+  "unnecessary_c3_total": 2
+}
