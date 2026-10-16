@@ -26,6 +26,7 @@ LIVE 옵션:
 | Active / Preview Pod, Service Flow | `vllm-active`·`vllm-preview` Service selector, `vllm-active` Endpoints(targetRef), Pod 목록, Rollout status |
 | AI Anomaly Detection | 실행기가 쓰는 `experiments/results/**/c1-live-evidence-<run>.jsonl` (평가 15초 주기, 줄바꿈으로 끝난 줄만) |
 | Recovery | 위 evidence의 정책 전송 결과 + 정책 `GET /identity`, `GET /admin/state` |
+| 복구 조건 검증 | evidence의 정책 응답 `policy_outcome`·`reasons`(`guarded_policy.check_target` + 신호 시각 검사). 정책은 거부 사유만 돌려주므로 통과 결과 + 사유 없음 = 전 항목 ✓, 사유가 있으면 해당 항목만 ✕, 검사 전에 멈췄으면 – |
 | Traffic Verification | 정책 `service_check`(각 Pod `/metrics` 요청 카운터를 직접 읽은 검증 결과: new/old 증가량) |
 | User Service | `experiments/results/probe-<run>-*-raw.csv` 직전 60초를 `slo_judge`(SLO v3)로 평가 |
 

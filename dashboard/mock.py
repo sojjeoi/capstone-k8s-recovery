@@ -77,7 +77,7 @@ def build(elapsed, now=None, minutes=5):
     if e >= T_SEND:
         sends.append({"evaluation_seq": T_SIGNAL // EVAL_EVERY, "detector_id": ACTIVE, "decision": "post_action",
                       "delivery": "delivered", "attempted_at_utc": iso(T_SIGNAL + 0.5), "completed_at_utc": iso(T_SEND),
-                      "policy_outcome": "promoted_verified", "target_key": TARGET,
+                      "policy_outcome": "promoted_verified", "policy_passed": True, "reasons": [], "target_key": TARGET,
                       "promotion": {"attempted": True, "verified": True, "verified_at": iso(T_SEND)}})
     switched = e >= T_SWITCH
     active = NEW if switched else OLD

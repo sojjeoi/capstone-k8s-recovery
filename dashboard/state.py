@@ -309,6 +309,7 @@ def derive_recovery(raw, kv, now):
            "target": None, "action_status": None, "promote_at": None, "traffic": None, "switched": False,
            "policy_error": None,
            "policy_outcome": (sends[-1] if sends else {}).get("policy_outcome"),
+           "policy_reasons": (sends[-1] if sends else {}).get("reasons"),
            "delivery": (sends[-1] if sends else {}).get("delivery"),
            "signal_sent": bool(sends) or bool(d.get("send_pending")),
            "signal_delivered": any(x.get("delivery") == "delivered" for x in sends),  # 정책이 실제로 받은 신호만
@@ -549,6 +550,50 @@ def _policy_ui(rec, policy_src_ok):
     return {"value": "IDLE", "sub": "신호 대기"}
 
 
+# 복구 조건 검증(guarded_policy.check_target + 신호 시각 검사)을 화면 항목으로. 정책은 통과 항목을 따로 기록하지 않고
+# 거부 사유(reasons)만 돌려주므로: 사유 없음 + 통과 결과 = 전 항목 통과, 사유가 있으면 그 사유의 항목만 실패로 표시한다.
+GUARD_CHECKS = (
+    ("timing", "신호가 최신 (15초 이내)", ("future_signal", "stale_signal", "stale_window")),
+    ("target", "대상 Pod 동일", ("rollout_mismatch", "active_changed", "preview_changed", "preview_not_paused",
+                              "active_pod_count", "preview_pod_count")),
+    ("uid", "Pod UID 동일", ("active_uid_changed", "preview_uid_changed")),
+    ("term", "종료 중 아님", ("active_terminating", "preview_terminating")),
+    ("restart", "재시작 수 동일", ("active_restarted", "preview_restarted")),
+    ("ready", "새 Pod Ready", ("preview_not_ready",)),
+)
+# 이 결과들은 시각·대상 검사를 모두 통과한 뒤의 단계(조치 한도·상태 저장 등)에서 나온다 - guarded_policy._act_locked
+AFTER_TARGET = ("blocked_state", "blocked_unresolved", "already_acted_on_target", "action_limit_reached",
+                "actions_not_allowed", "state_error_no_promote", "aborted_adapter_precheck")
+
+
+def _guard_ui(rec, policy_src_ok):
+    out, reasons = rec.get("policy_outcome"), [str(r) for r in rec.get("policy_reasons") or []]
+    hit = lambda codes: [r for r in reasons if r.startswith(codes)]  # noqa: E731
+    if not policy_src_ok or not rec.get("detector_ok"):
+        st, value, decision = {}, "UNKNOWN", "확인 불가"
+    elif not out:
+        st = {}
+        value, decision = ("CHECKING", "조건 확인 중") if rec.get("signal_sent") else ("IDLE", "신호 대기")
+    elif out in PROMOTED or out == "would_pass_record_only" or out in AFTER_TARGET:
+        st = {k: "pass" for k, _, _ in GUARD_CHECKS}
+        value, decision = (("ALLOW", "전환 허용") if out in PROMOTED else ("RECORD ONLY", "조건 충족 · 기록 전용")
+                           if out == "would_pass_record_only" else ("DENY", f"전환 안 함 ({out})"))
+    elif out == "rejected_timing":
+        st = {"timing": "fail"}
+        value, decision = "DENY", "전환 거부"
+    elif out in ("rejected_target", "aborted_final_check"):
+        view_err = any(r.startswith("cluster_view_error") for r in reasons)
+        st = {k: "fail" if hit(codes) else "unknown" if view_err and k != "timing" else "pass" for k, _, codes in GUARD_CHECKS}
+        value, decision = "DENY", "전환 거부"
+    else:  # 스키마·실행 맥락·중복 신호 등에서 멈춤 - 대상 검사 전
+        st, value, decision = {}, "DENY", f"전환 안 함 ({out})"
+    wait = "unknown" if value == "UNKNOWN" else "wait" if value in ("IDLE", "CHECKING") else "skip"
+    checks = [{"key": k, "label": label, "state": st.get(k, wait), "why": ", ".join(hit(codes)) or None}
+              for k, label, codes in GUARD_CHECKS]
+    return {"value": value, "decision": decision, "checks": checks, "at": rec.get("policy_at"),
+            "passed": sum(c["state"] == "pass" for c in checks), "total": len(checks)}
+
+
 def _rollout_ui(rec, k8s_ok, rollout):
     """PROMOTED는 대시보드가 Service/Endpoints 전환을 직접 확인했을 때만."""
     if not k8s_ok:
@@ -628,7 +673,7 @@ PHASE_KO = {"Healthy": "정상", "Paused": "대기", "Progressing": "진행 중"
 DETECTOR_KO = {"cpu-threshold-c": "CPU 임계치", "c3-a-if": "c3-A IF", "c1-if": "c1 IF"}
 ROLE_KO = {"new": "새 Pod", "old": "기존 Pod", "active": "기존 Pod", "preview": "새 Pod", "current": "현재 Pod",
            "other": "이전 Pod"}
-STEP_KO = {"pressure": "압박 주입", "detect": "이상 감지", "policy": "정책 확인", "promotion": "롤아웃 전환",
+STEP_KO = {"pressure": "압박 주입", "detect": "이상 감지", "policy": "복구 조건 검증", "promotion": "롤아웃 전환",
            "switch": "서비스 전환", "verify": "요청 이동 검증"}
 
 
@@ -754,5 +799,6 @@ def present(view):
                    "live": None if not lt else {"new": lt.get("new"), "old": lt.get("old"), "since": lt.get("since")},
                    "window_sec": tr.get("window_sec") if done else None, "samples": tr.get("samples") if done else None,
                    "new_spark": (ser.get("new") or {}).get("points"), "old_spark": (ser.get("old") or {}).get("points")},
+        "guard": _guard_ui(rec, pol_ok),
         "events": ev, "next_event": next((i for i, e in enumerate(ev) if e["state"] != "done"), None),
     }

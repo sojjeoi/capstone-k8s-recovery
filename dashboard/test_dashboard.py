@@ -196,6 +196,20 @@ def test_record_only_is_not_promoting():
     assert u["header"]["system"]["value"] != "RECOVERING" and u["rollout"]["value"] != "PROMOTING"
 
 
+# 복구 조건 검증 카드: 정책 응답(결과 + 거부 사유)에서만 항목 상태를 만든다
+def test_guard_checklist_from_policy_reasons():
+    g = lambda sends, pending=False: state.derive(raw(detector=detector([ev(-50, 3, cond=True)], sends, pending)))[0]["ui"]["guard"]  # noqa: E731
+    ok = g([{**PROMOTED, "reasons": []}])
+    assert ok["value"] == "ALLOW" and ok["passed"] == ok["total"] == 6
+    bad = g([{**PROMOTED, "policy_outcome": "rejected_target", "target_key": None,
+              "reasons": ["preview_uid_changed", "preview_not_ready"]}])
+    st = {c["key"]: c["state"] for c in bad["checks"]}
+    assert bad["value"] == "DENY" and st["uid"] == st["ready"] == "fail" and st["term"] == st["timing"] == "pass"
+    late = g([{**PROMOTED, "policy_outcome": "rejected_timing", "target_key": None, "reasons": ["stale_signal: age 20s"]}])
+    assert [c["state"] for c in late["checks"]] == ["fail"] + ["skip"] * 5  # 시각 검사에서 멈춤 - 대상 검사는 안 함
+    assert g([], pending=True)["value"] == "CHECKING" and g([])["passed"] == 0
+
+
 # 8. 새 Pod 트래픽 증거 없으면 VERIFIED가 아니다
 @pytest.mark.parametrize("pol,prb,why", [
     (policy(status="verified_service_pending"), probe(window_start=-50), "traffic pending"),
@@ -796,7 +810,7 @@ def test_rollout_progressing_is_not_promoting():
 def test_step_labels_and_verifying_note():
     args = dict(k8s=k8s(**SWITCHED_K8S), detector=detector([ev(-50, 3, cond=True)], [PROMOTED]))
     ev_ = _ui(policy=policy(status="verified_service_pending"), **args)["events"]
-    assert [e["label"] for e in ev_] == ["압박 주입", "이상 감지", "정책 확인", "롤아웃 전환", "서비스 전환", "요청 이동 검증"]
+    assert [e["label"] for e in ev_] == ["압박 주입", "이상 감지", "복구 조건 검증", "롤아웃 전환", "서비스 전환", "요청 이동 검증"]
     assert ev_[-1]["state"] == "wait" and ev_[-1]["note"] == "검증 중"
     ev_ = _ui(**args)["events"]
     assert ev_[-1]["state"] == "done" and ev_[-1]["label"] == "검증 완료"
