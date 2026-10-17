@@ -115,6 +115,17 @@ def test_profiles_may_differ_only_in_the_preregistration_hash(tmp_path):
     assert rn.profiles_equal_except_prereg(a, b) and not rn.profiles_equal_except_prereg(a, c)
 
 
+def test_the_real_rev1_and_rev2_profiles_differ_only_in_the_document_hash(tmp_path):
+    base = HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-"
+    assert rn.profiles_equal_except_prereg(str(base) + "v1.json", str(base) + "v2.json")
+    d = json.loads(Path(str(base) + "v2.json").read_text(encoding="utf-8"))
+    d["selection"]["rule"] = "x"                                       # selection.rule(문서 해시)은 무시하지만 다른 값 변경은 잡는다
+    d["detectors"][1]["threshold"] = 0.123
+    tmp = tmp_path / "changed.json"
+    tmp.write_text(json.dumps(d), encoding="utf-8")
+    assert not rn.profiles_equal_except_prereg(str(base) + "v1.json", tmp)
+
+
 def authorize_setup(tmp_path, *, thr=0.5):
     d = setup(tmp_path)
     prev, cur = tmp_path / "prev.json", tmp_path / "cur.json"

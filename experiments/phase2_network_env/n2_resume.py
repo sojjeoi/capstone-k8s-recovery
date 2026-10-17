@@ -103,10 +103,10 @@ def make_resume_check(m, live_fn):
 
 def profiles_equal_except_prereg(old_path, new_path) -> bool:
     """rev2 selection profile이 이전 profile과 사전등록 해시 필드만 다른지(환경·후보·임계값은 같은지) 확인한다."""
-    def strip(o):
+    def strip(o, parent=None):                    # 사전등록 해시가 들어가는 자리: 이름에 prereg가 든 필드와 selection.rule(= 문서 해시)
         if isinstance(o, dict):
-            return {k: strip(v) for k, v in o.items() if "prereg" not in k}
-        return [strip(x) for x in o] if isinstance(o, list) else o
+            return {k: strip(v, k) for k, v in o.items() if "prereg" not in k and not (parent == "selection" and k == "rule")}
+        return [strip(x, parent) for x in o] if isinstance(o, list) else o
     load = lambda p: json.loads(Path(p).read_text(encoding="utf-8"))          # noqa: E731
     return strip(load(old_path)) == strip(load(new_path))
 
