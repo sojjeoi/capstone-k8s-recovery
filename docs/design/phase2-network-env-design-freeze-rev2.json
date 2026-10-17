@@ -1,0 +1,73 @@
+{
+  "status": "design_frozen",
+  "version": "phase2-network-env-design-v1-rev2",
+  "plan_id": "capstone-phase2-network-env-v1",
+  "prereg_path": "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev2.md",
+  "prereg_sha256": "1e80017b57183b15e089825b9fe5419fd91510e961035223caf83e2eac469b97",
+  "prereg_commit": "42a3b46e2cf2af3d0d82e604d9607b4550bb65c9",
+  "hash_basis": "LF-normalized file content (= committed git blob)",
+  "frozen_at_utc": "2026-10-17T15:46:41+00:00",
+  "candidates": {
+    "cpu-threshold-c": 1.6842544293089357,
+    "net-probe-readiness": 0.006401369666666786,
+    "c3-a-if": -0.1948341270493127
+  },
+  "net_probe": {
+    "definition_sha256": "46c95eed9920c8ddd59dc816960fc4a7c1c96b5a61c95cca2d19e27c6c0167a6",
+    "calibration_sha256": "c6ece5885bb97000f5a4df87ef135ad9a21e358e99b621e90f4b875e48c7af96",
+    "threshold": 0.006401369666666786,
+    "calibration_evidence": "experiments/results/network_detector_dev_20261017/probe-metric/result.json"
+  },
+  "counts": {
+    "normal": 4,
+    "pressure": 5,
+    "stage2": 3,
+    "max_attempts": {
+      "normal": 6,
+      "pressure": 7,
+      "stage2": 5
+    }
+  },
+  "stages": [
+    {
+      "name": "stage-1-500ms",
+      "latency": "500ms",
+      "jitter": "50ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-2-1000ms",
+      "latency": "1000ms",
+      "jitter": "100ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-3-2000ms",
+      "latency": "2000ms",
+      "jitter": "200ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-4-4000ms",
+      "latency": "4000ms",
+      "jitter": "400ms",
+      "duration_sec": 90
+    }
+  ],
+  "probe_profile": {
+    "name": "network_tolerant",
+    "readiness_timeout_sec": 11,
+    "liveness_timeout_sec": 11
+  },
+  "phase2_not_modified": {
+    "prereg_path": "docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md",
+    "prereg_sha256": "a6512ff03f33fb96b1d65031ff7c03f84c26fdfd74dd833e1516336110bad7d3",
+    "implementation_freeze": "experiments/phase2_detector_selection/phase2-detector-selection-implementation-freeze-r2.json",
+    "implementation_freeze_sha256": "06c3ecf8135e5a529924689b29518d569165b3aeaa774223516cfbbc24257df0"
+  },
+  "supersedes": {
+    "manifest_path": "docs/design/phase2-network-env-design-freeze.json",
+    "manifest_sha256": "ee00a2f08f8a958cfa5172faae9d5d2761d47c2c8b736ee6caa0ad89addb00d0",
+    "reason": "rev1(dd3a74f) 동결 뒤 첫 정상 시도 n2n01이 PC 절전으로 중단되고 중단 규칙이 수집을 막음. 사용자 승인(선택지 A)으로 §9.1 재개 규칙만 추가한 rev2로 교체. 완료된 공식 세션 0개"
+  }
+}
