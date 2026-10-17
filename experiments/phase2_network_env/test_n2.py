@@ -356,8 +356,8 @@ def test_profile_builds_and_validates_stage1():
         nc.validate_profile(p, stage="stage2", prereg_sha256=FAKE)          # ACTIVE 0개는 Stage 2 거부
 
 
-def test_unfrozen_prereg_is_refused():
-    assert nc.PREREG_SHA256 is None
+def test_unfrozen_prereg_is_refused(monkeypatch):
+    monkeypatch.setattr(nc, "PREREG_SHA256", None)                      # 동결 전 상태를 가정(동결 뒤에도 거부 동작을 계속 시험)
     with pytest.raises(nc.ProfileInvalid, match="동결되지 않음"):
         nc.validate_profile(make_profile(), stage="stage1")
 

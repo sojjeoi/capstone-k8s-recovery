@@ -111,6 +111,7 @@ def test_overrides_are_explicit_instance_attributes_and_rest_delegates():
 
 def test_prereg_sha_is_live_and_signal_identity_covers_the_network_candidate(monkeypatch):
     a = ns1.NetPC(ns1.NetConfig())
+    monkeypatch.setattr(nc, "PREREG_SHA256", None)
     assert a.PREREG_SHA256 is None                                    # 동결 전 - 어떤 profile도 거부되는 값
     monkeypatch.setattr(nc, "PREREG_SHA256", FAKE)
     assert a.PREREG_SHA256 == FAKE                                    # 동결 뒤 채워지면 adapter도 따라간다(복사해 두지 않음)
