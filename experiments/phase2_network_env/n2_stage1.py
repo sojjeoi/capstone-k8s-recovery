@@ -26,8 +26,9 @@ class NetConfig:
     prereg_doc: str = nc.PREREG_DOC
     results_dir: Path = nc.EXP / "results" / "phase2_network_env"
     executor: Path = nc.HERE / "n2_executor.py"
-    selection_profile: Path = nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v1.json"
-    implementation_freeze: str = "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r2.json"
+    selection_profile: Path = nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v2.json"
+    previous_selection_profile: Path = nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v1.json"   # rev1(n2n01이 쓴 것): 재개 기록의 교체본 확인용
+    implementation_freeze: str = "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r3.json"
     normal_runs: dict = field(default_factory=lambda: {f"n2n{i:02d}": (i, 6000 + i) for i in range(1, pc.MAX_ATTEMPTS["normal"] + 1)})
     pressure_runs: dict = field(default_factory=lambda: {f"n2p{i:02d}": (i, 6100 + i) for i in range(1, pc.MAX_ATTEMPTS["pressure"] + 1)})
 
@@ -59,7 +60,7 @@ def _unfrozen(*a, **k):
     raise SystemExit("implementation freeze fail-closed: 네트워크 환경 구현 동결 검증기가 연결되지 않음(동결 전)")
 
 
-def load_stage1(cfg: NetConfig = None, verify_freeze=None):
+def load_stage1(cfg: NetConfig = None, verify_freeze=None, live_fn=None):
     """run_stage1.py 소스를 별도 모듈 인스턴스로 실행하고 네트워크 설정을 끼운 인스턴스를 돌려준다. 원본 모듈·p2_common은 바뀌지 않는다."""
     cfg = cfg or NetConfig()
     spec = importlib.util.spec_from_file_location("n2_stage1_instance", STAGE1_SOURCE)
@@ -70,4 +71,7 @@ def load_stage1(cfg: NetConfig = None, verify_freeze=None):
     m.RESULTS_DIR, m.EXECUTOR = Path(cfg.results_dir), Path(cfg.executor)
     m.TARGET = {"normal": nc.N_NORMAL, "pressure": nc.N_PRESSURE}
     m.CONFIG = cfg
+    import n2_resume as rn                                       # 호스트 중단(절전) 뒤 재개 조건: 원본 resume_check 대신(rev2 §9.1)
+    m.resume_check = rn.make_resume_check(m, live_fn)
+    m.authorize_cleanup_resume = rn.make_authorize(m, live_fn, previous_profile=cfg.previous_selection_profile)
     return m

@@ -20,14 +20,14 @@ import n2_common as nc  # noqa: E402
 
 pc = nc.pc
 NET = "experiments/phase2_network_env"
-DESIGN_FREEZE = "docs/design/phase2-network-env-design-freeze.json"
-IMPLEMENTATION_FREEZE = f"{NET}/phase2-network-env-implementation-freeze-r2.json"          # n2_stage1.NetConfig.implementation_freeze와 같다
-SELECTION_PROFILE_REL = f"{NET}/profiles/selection-profile-network-tolerant-vllm-qwen05b-v1.json"
+DESIGN_FREEZE = "docs/design/phase2-network-env-design-freeze-rev2.json"
+IMPLEMENTATION_FREEZE = f"{NET}/phase2-network-env-implementation-freeze-r3.json"          # n2_stage1.NetConfig.implementation_freeze와 같다
+SELECTION_PROFILE_REL = f"{NET}/profiles/selection-profile-network-tolerant-vllm-qwen05b-v2.json"
 NET_CODE = ("n2_common.py", "n2_selection.py", "n2_executor.py", "n2_pressure.py", "n2_cleanup.py", "n2_preflight.py", "n2_session.py",
-            "n2_stage1.py", "n2_stage2.py", "n2_select_offline.py", "n2_run.py", "n2_freeze.py", "restore-demo-state.ps1",
+            "n2_stage1.py", "n2_stage2.py", "n2_select_offline.py", "n2_run.py", "n2_freeze.py", "n2_resume.py", "restore-demo-state.ps1",
             "test_n2.py", "test_n2_executor.py", "test_n2_pressure.py", "test_n2_cleanup.py", "test_n2_preflight.py", "test_n2_session.py",
             "test_n2_stage1.py", "test_n2_stage2.py", "test_n2_select_offline.py", "test_n2_run.py", "test_n2_restore_script.py", "test_n2_prereg_doc.py",
-            "test_n2_freeze.py")
+            "test_n2_freeze.py", "test_n2_resume.py")
 # 동결 전에는 없는 파일(동결 절차가 만든다) - 존재 검사에서만 제외한다
 PRODUCED_AT_FREEZE = (SELECTION_PROFILE_REL, DESIGN_FREEZE, IMPLEMENTATION_FREEZE)
 INJECTION_PATH = ("experiments/network_degrade_adapter.py", "experiments/arm_controller.py", "experiments/node_resource_safety_gate.py",
@@ -102,7 +102,16 @@ def blob_sha256(data: bytes) -> str:
     return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
-def build_design_freeze(prereg_commit: str, root=nc.ROOT, show=git_show) -> dict:
+def _supersedes(root, old, reason):
+    """교체하는 이전 동결 기록(경로·해시·사유). 사유 없는 교체는 거부한다."""
+    if old is None:
+        return None
+    if not reason:
+        raise SystemExit("교체 manifest는 사유(--reason)가 필요")
+    return {"manifest_path": Path(old).resolve().relative_to(Path(root).resolve()).as_posix(), "manifest_sha256": text_sha256(old), "reason": reason}
+
+
+def build_design_freeze(prereg_commit: str, root=nc.ROOT, show=git_show, supersedes: Path = None, reason: str = None) -> dict:
     """사전등록 문서를 커밋한 뒤, 그 커밋을 가리키는 설계 동결 기록. 작업 폴더의 문서가 그 커밋의 blob과 같아야 한다."""
     root = Path(root)
     on_disk = text_sha256(root / nc.PREREG_DOC)
@@ -110,7 +119,7 @@ def build_design_freeze(prereg_commit: str, root=nc.ROOT, show=git_show) -> dict
         raise SystemExit("DESIGN FREEZE 거부: 작업 폴더의 사전등록 문서가 지정한 커밋의 blob과 다름(먼저 커밋)")
     if nc.PREREG_SHA256 != on_disk:
         raise SystemExit(f"DESIGN FREEZE 거부: n2_common.PREREG_SHA256({nc.PREREG_SHA256})가 문서 해시({on_disk})와 다름")
-    return {"status": "design_frozen", "version": "phase2-network-env-design-v1", "plan_id": "capstone-phase2-network-env-v1",
+    return {"status": "design_frozen", "version": "phase2-network-env-design-v1-rev2", "plan_id": "capstone-phase2-network-env-v1",
             "prereg_path": nc.PREREG_DOC, "prereg_sha256": on_disk, "prereg_commit": prereg_commit,
             "hash_basis": "LF-normalized file content (= committed git blob)",
             "frozen_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -122,18 +131,14 @@ def build_design_freeze(prereg_commit: str, root=nc.ROOT, show=git_show) -> dict
             "phase2_not_modified": {"prereg_path": pc.PREREG_DOC, "prereg_sha256": text_sha256(root / pc.PREREG_DOC),
                                     "implementation_freeze": pc.IMPLEMENTATION_FREEZE,
                                     "implementation_freeze_sha256": text_sha256(root / pc.IMPLEMENTATION_FREEZE)},
-            "supersedes": None}
+            "supersedes": _supersedes(root, supersedes, reason)}
 
 
 def build_implementation_freeze(test_results: Path, review_summary: Path, code_commit: str, root=nc.ROOT, files_fn=tracked_files,
                                 supersedes: Path = None, reason: str = None) -> dict:
     root = Path(root)
-    old = None
-    if supersedes is not None:
-        if not reason:
-            raise SystemExit("IMPLEMENTATION FREEZE 거부: 교체 manifest는 사유(--reason)가 필요")
-        old = {"manifest_path": Path(supersedes).resolve().relative_to(root.resolve()).as_posix(), "manifest_sha256": text_sha256(supersedes), "reason": reason}
-    tr = json.loads(Path(test_results).read_text(encoding="utf-8"))
+    old = _supersedes(root, supersedes, reason)
+    tr =json.loads(Path(test_results).read_text(encoding="utf-8"))
     if (tr.get("network") or {}).get("failed") != 0 or (tr.get("phase2") or {}).get("failed") != 0 or tr.get("new_regressions") != []:
         raise SystemExit(f"IMPLEMENTATION FREEZE 거부: 시험 100%·새 regression 0 아님 - {tr.get('network')} {tr.get('phase2')} {tr.get('new_regressions')}")
     files = {f: text_sha256(root / f) for f in files_fn(root)}
@@ -143,7 +148,7 @@ def build_implementation_freeze(test_results: Path, review_summary: Path, code_c
     dirty = subprocess.run(["git", "status", "--porcelain", "--", *files], cwd=root, capture_output=True, text=True).stdout
     if dirty.strip():
         raise SystemExit(f"IMPLEMENTATION FREEZE 거부: 커밋되지 않은 변경 {dirty.splitlines()[:5]}")
-    return {"status": "implementation_frozen", "version": "phase2-network-env-impl-r1", "plan_id": "capstone-phase2-network-env-v1",
+    return {"status": "implementation_frozen", "version": "phase2-network-env-impl-r3", "plan_id": "capstone-phase2-network-env-v1",
             "design_freeze": {"manifest_path": DESIGN_FREEZE, "manifest_sha256": text_sha256(root / DESIGN_FREEZE),
                               "prereg_path": nc.PREREG_DOC, "prereg_sha256": nc.PREREG_SHA256},
             "supersedes": old, "git_commit": code_commit, "frozen_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -258,6 +263,8 @@ def main(argv=None) -> int:  # pragma: no cover - 동결 시점의 파일 쓰기
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("design")
     s.add_argument("--prereg-commit", required=True)
+    s.add_argument("--supersedes", type=Path, default=None)
+    s.add_argument("--reason", default=None)
     s = sub.add_parser("impl")
     s.add_argument("--test-results", required=True, type=Path)
     s.add_argument("--review-summary", required=True, type=Path)
@@ -276,7 +283,7 @@ def main(argv=None) -> int:  # pragma: no cover - 동결 시점의 파일 쓰기
         out = write_new(a.out, res)
         print(json.dumps({k: res[k] for k in ("network", "phase2", "new_regressions")}, ensure_ascii=False))
     elif a.cmd == "design":
-        out = write_new(nc.ROOT / DESIGN_FREEZE, build_design_freeze(a.prereg_commit))
+        out = write_new(nc.ROOT / DESIGN_FREEZE, build_design_freeze(a.prereg_commit, supersedes=a.supersedes, reason=a.reason))
     elif a.cmd == "impl":
         out = write_new(nc.ROOT / IMPLEMENTATION_FREEZE, build_implementation_freeze(a.test_results, a.review_summary, a.code_commit, supersedes=a.supersedes, reason=a.reason))
     else:

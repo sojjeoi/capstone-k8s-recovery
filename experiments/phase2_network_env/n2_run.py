@@ -111,6 +111,26 @@ def cmd_session_end_check(a, reader, dirs) -> int:
     return 0 if not probs else 2
 
 
+def live_facts(reader, dirs) -> dict:
+    """호스트 중단 뒤 재개 확인(n2_resume)용 지금의 서버 상태(읽기 전용): 정책 상태와 세션 정리 확인의 문제 목록."""
+    state, snap = current_state(reader, dirs)
+    probs = cl.session_end_problems(state, [], expect_tolerant=True, policy_mode="record_only") + canonical_problems(snap, BASE_DELAY_SEC)
+    return {"policy": state.get("policy") if isinstance(state, dict) else None, "problems": probs}
+
+
+def cmd_authorize_resume(a, reader, dirs, verify_freeze) -> int:
+    """호스트 중단(PC 절전)으로 중단된 시도를 사람이 확인한 뒤 그 시도에 한정해 재개(사전등록 rev2 §9.1). 서버는 읽기만 하고
+    결과 폴더에 재개 기록(새 파일)만 쓴다. 조건이 하나라도 어긋나면 거부하고 아무것도 쓰지 않는다."""
+    if not (a.authorize_resume and a.authorized_by and a.review_note and a.artifact_root):
+        raise SystemExit("--authorize-resume RUN, --authorized-by, --review-note, --artifact-root(또는 환경변수) 필요")
+    s1 = ns1.load_stage1(ns1.NetConfig(), verify_freeze, live_fn=lambda: live_facts(reader, dirs))
+    impl = s1.pc.verify_implementation_freeze()
+    p = s1.authorize_cleanup_resume(s1.RESULTS_DIR, a.authorize_resume, authorized_by=a.authorized_by, review_note=a.review_note,
+                                    impl=impl, artifact_root=a.artifact_root)
+    print(json.dumps({"ok": True, "written": str(p)}, ensure_ascii=False))
+    return 0
+
+
 def cmd_preflight(a, reader, dirs) -> int:
     if a.stage == "1":
         loaded, mode = nc.load_profile(a.profile or ns1.NetConfig().selection_profile, stage="stage1"), "record_only"
@@ -240,6 +260,11 @@ def build_parser():
     s = sub.add_parser("restore-check")
     s.add_argument("--baseline", required=True, type=Path)
     s.add_argument("--wait-sec", type=float, default=0.0)
+    s = sub.add_parser("authorize-resume")
+    s.add_argument("--authorize-resume", required=True, metavar="RUN")
+    s.add_argument("--authorized-by", required=True)
+    s.add_argument("--review-note", required=True)
+    s.add_argument("--artifact-root", type=Path, default=os.environ.get(ARTIFACT_ENV) or None)
     s = sub.add_parser("session-end-check")
     s.add_argument("--policy-mode", choices=["record_only", "act"], default="record_only")
     s = sub.add_parser("preflight")
@@ -285,6 +310,8 @@ def main(argv=None, *, verify_freeze=None, reader_factory=None, real_deps=None) 
         fn = {"capture-baseline": cmd_capture_baseline, "restore-check": cmd_restore_check, "session-end-check": cmd_session_end_check,
               "preflight": cmd_preflight}[a.cmd]
         return fn(a, reader, stage_dirs())
+    if a.cmd == "authorize-resume":
+        return cmd_authorize_resume(a, reader_factory(a.policy_url, ns1.NetConfig().selection_profile), stage_dirs(), verify_freeze)
     if a.cmd == "select":
         if a.artifact_root is None:
             raise SystemExit(f"--artifact-root(또는 {ARTIFACT_ENV}) 필요")

@@ -76,6 +76,16 @@ def test_live_rules_stated_by_the_user_are_in_the_document():
         assert s in TEXT, s
 
 
+def test_rev2_resume_rule_in_the_document_matches_the_code():
+    import n2_resume as rn
+    for s in ("### 9.1 호스트 중단(PC 절전) 뒤 재개", "authorize-resume", "n2_resume.py", "Kernel-Power 42 또는 506", "`n2n01`", "`n2n02`",
+              "policy_state_after_failed", "preview_cleanup_held", "canonical_end_not_reached", "사후", "안전 확인용 집계",
+              "rev2", "supersedes", "절전 방지(rev2)", "규칙을 사고 뒤에 추가했다"):
+        assert s in TEXT, s
+    assert rn.HOST_SLEEP_EVENT_IDS == (42, 506)
+    assert all(p in TEXT for p in rn.RESUMABLE_PREFIXES)
+
+
 def test_document_does_not_use_any_forbidden_claim_phrase_and_states_its_limits():
     for phrase in FORBIDDEN:
         assert phrase not in TEXT, phrase
