@@ -1,6 +1,6 @@
 # Phase 2 추가 환경 사전등록 v1 — 네트워크 지연 환경에서 detector 선택을 다시 하고 같은 Recovery Pipeline을 재사용한다
 
-> **상태: DRAFT (최종 초안) — 미동결·미승인.** 사용자가 검토·승인하기 전에는 동결하지 않고, live 세션을 시작하지 않는다.
+> **상태: DESIGN FREEZE 대상 최종본 (2026-10-17 사용자 동결 승인).** 이 문서의 해시를 `n2_common.PREREG_SHA256`과 `phase2-network-env-design-freeze.json`이 가리킨다. 동결은 live 실행 승인이 아니다: live 세션은 단계마다 별도 승인을 받는다.
 > 이 문서는 **공식 Phase 1 A/B 결과, 공식 Phase 2(CPU 환경) 결과와 합치지 않는 별도 추가 환경 검증**이다.
 > Phase 2 사전등록([PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md](PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md))과 그 동결 기록은 수정하지 않는다.
 > 개발 단계 자료는 `DEVELOPMENT / NOT OFFICIAL`이며 이 문서의 근거로만 참조한다: [NETWORK-DETECTOR-PREREG-DRAFT-20261017.md](NETWORK-DETECTOR-PREREG-DRAFT-20261017.md).
@@ -210,5 +210,6 @@ Phase 2 §10과 같다. 모호한 상태에서는 자동 recovery를 하지 않�
 - **Stage 2 지연의 잔존**: 승격 뒤에도 이전 Pod에는 해당 단계의 지연이 남는다. 서비스 확인은 새 Pod가 요청을 받는지를 본다.
 
 ## 19. 출처와 변경 기록
+- v1 동결 (2026-10-17): 사용자 승인에 따라 이 문서를 DESIGN FREEZE 대상으로 확정했다(상태 줄 외 규칙 변경 없음). 이 시점까지 공식 세션은 0개다.
 - v1 (2026-10-17): 최초 최종 초안. Phase 2 rev6 구조와 값을 그대로 쓰고 환경 정의(§3)·후보(§4)·N3(§6.2)·후보 3개 일반화(§7)·live 운영 규칙(§12)만 이 환경에 맞췄다. 이 시점까지 공식 세션은 0개다.
 - 구현·시험·원복 스크립트 검토에 외부 검토(Codex)를 사용했고 지적 사항(적용 확인 누락, 생성 직후 값 재사용, 새 Pod 교체·공백 판정, 정리 중 경합)을 반영했다. 요약은 구현 동결 manifest의 `reviews`에 남는다.
