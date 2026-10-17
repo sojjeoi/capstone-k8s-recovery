@@ -165,6 +165,42 @@ def test_stage1_records_a_refused_attempt_when_an_existing_freeze_manifest_does_
     assert rec["status"] == "refused_profile_invalid" and rec["cause"] == "implementation_freeze" and rec["attempt_number"] == 1
 
 
+def test_session_end_check_keeps_the_tolerant_profile_and_is_not_a_full_restore(dirs, capsys):
+    """사용자 결정(2026-10-17): 세션 정리(11 s 프로필 유지)와 전체 원복(기본 프로필로 복원)을 구분한다 - 같은 상태가 두 확인에서 반대로 판정된다."""
+    tolerant = FakeReader(tpl=template(11, 11))                                           # 실험 block 진행 중: 11 s 프로필
+    assert call(["session-end-check"], tolerant) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is True and out["scope"].startswith("session_end") and "not a full restore" in out["scope"]
+    base = dirs / "baseline.json"
+    call(["capture-baseline", "--out", str(base)], FakeReader())                              # 시작 전 기본 상태(timeoutSeconds 없음)
+    capsys.readouterr()
+    assert call(["restore-check", "--baseline", str(base)], tolerant) == 2                   # 같은 상태는 전체 원복으로는 통과하지 못한다
+    assert "probe_profile_not_restored" in capsys.readouterr().out
+    assert call(["session-end-check"], FakeReader()) == 2                                    # block 중에 11 s 프로필이 풀려 있으면 문제
+    assert "probe_profile_changed_during_collection" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("reader,args,needle", [
+    (FakeReader(tpl=template(11, 11), chaos=["netdelay-s3"]), [], "network_chaos_residual"),                           # 이 세션의 지연 설정이 남음
+    (FakeReader(tpl=template(11, 11), policy={**CLEAN_POLICY, "context": {"run_id": "r"}}), [], "policy_context_set"),
+    (FakeReader(tpl=template(11, 11), policy={**CLEAN_POLICY, "blocked": True}), [], "policy_blocked"),
+    (FakeReader(tpl=template(11, 11), policy={**CLEAN_POLICY, "unresolved": ["t"]}), [], "policy_unresolved"),
+    (FakeReader(tpl=template(11, 11), policy={**CLEAN_POLICY, "mode": "act"}), [], "policy_mode"),                      # record_only를 기대했는데 act
+    (FakeReader(tpl=template(11, 11), snap_over={"phase": "Paused", "preview": "bbb222"}), [], "canonical"),           # 정리 안 된 preview
+])
+def test_session_end_check_fails_on_each_leftover(dirs, capsys, reader, args, needle):
+    assert call(["session-end-check", *args], reader) == 2
+    assert needle in capsys.readouterr().out
+
+
+def test_session_end_check_marker_left_and_act_mode_expectation(dirs, capsys):
+    (dirs / "s2" / "running-guarded_pressure_act-n2s01-x.json").write_text("{}", encoding="utf-8")
+    assert call(["session-end-check", "--policy-mode", "act"], FakeReader(tpl=template(11, 11), policy={**CLEAN_POLICY, "mode": "act"})) == 2
+    assert "running_marker_left" in capsys.readouterr().out
+    (dirs / "s2" / "running-guarded_pressure_act-n2s01-x.json").unlink()
+    assert call(["session-end-check", "--policy-mode", "act"], FakeReader(tpl=template(11, 11), policy={**CLEAN_POLICY, "mode": "act"})) == 0
+
+
 # ---------- (2) 라이브 하위 명령은 동결 전에는 멈춘다 ----------
 def boom(*a, **k):
     raise AssertionError("클러스터 연결 조립이 호출됨")

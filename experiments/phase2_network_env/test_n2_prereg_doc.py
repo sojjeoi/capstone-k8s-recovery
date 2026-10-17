@@ -50,7 +50,7 @@ def test_environment_stages_probe_profile_and_counts_match_the_code():
 
 def test_selection_gate_constants_match_the_phase2_rules_the_document_says_it_keeps():
     assert (nc.GATE2_LIMIT_SEC, nc.GATE2_MIN_PASS, nc.GATE3_MIN_DIFF, nc.TIMING_MIN_DIFF_SEC, nc.DECISION_SEC) == (363.0, 4, 2, 30.0, 3600.0)
-    for s in ("363 s", "4개 이상", "3600 s", "2 이상", "30 s", "3회 연속", "쿨다운 60 s", "평가 간격 15 s", "평가 창 60 s"):
+    for s in ("363 s", "4개 이상", "3600 s", "min_unnecessary + 2", "best_median + 30 s", "30 s", "3회 연속", "쿨다운 60 s", "평가 간격 15 s", "평가 창 60 s"):
         assert s in TEXT, s
     for verdict in ("ARCHITECTURE_VALIDATED", "SELECTION_VALIDATED_RECOVERY_PENDING", "MIXED", "NOT_VALIDATED"):
         assert verdict in TEXT
@@ -70,7 +70,8 @@ def test_delivery_check_constants_in_the_document_match_the_code():
 
 
 def test_live_rules_stated_by_the_user_are_in_the_document():
-    for s in ("10/21", "10/24", "10/25 이후 live 금지", "세션 수를 줄이지 않고", "capture-baseline", "restore-check", "restore-demo-state.ps1",
+    for s in ("session-end-check", "전체 시연 상태 원복", "밤새 두지 않는다", "블록 시작", "세션 정리", "전체 원복이 아니다", "INVALID로 표시한다",
+              "추정치를 적지 않으며", "10/21", "10/24", "10/25 이후 live 금지", "세션 수를 줄이지 않고", "capture-baseline", "restore-check", "restore-demo-state.ps1",
               "측정한 적이 없", "force push·history 변경 금지", "별도 추가 환경 검증", "합치지 않는"):
         assert s in TEXT, s
 
@@ -79,6 +80,9 @@ def test_document_does_not_use_any_forbidden_claim_phrase_and_states_its_limits(
     for phrase in FORBIDDEN:
         assert phrase not in TEXT, phrase
     for s in ("## 14. 주장 경계", "## 18. 알려진 한계", "측정 위치", "보정 조건 차이", "표본 크기", "개발 자료"):
+        assert s in TEXT, s
+    for s in ("probe timeout 설정이", "확인되지 않았다", "재보정하지 않는다", "새 보정·새 사전등록 revision", "일반적으로 더 낫다는 주장",
+              "SESSION INVALID — target isolation / new-Pod leakage exclusion not established", "감지기 실패가 아니다", "NO_SELECTION"):
         assert s in TEXT, s
     assert "공식 세션" in TEXT and "**0개.**" in TEXT                                  # 아직 공식 세션이 없다고 밝힌다
 

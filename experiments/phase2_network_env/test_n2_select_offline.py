@@ -47,7 +47,7 @@ def evals(rows):
     return out
 
 
-def build_stage1(tmp_path, *, pressure_hot, normal_hot_by_session=None, start_over=None):
+def build_stage1(tmp_path, *, pressure_hot, normal_hot_by_session=None, start_over=None, invalid_pressure=None):
     """합성 Stage 1 폴더. pressure_hot = 압박 세션에서 주입 뒤 이상 값을 내는 후보 집합. normal_hot_by_session = {n(1~4): 후보 집합}(정상 세션 중간 3연속)."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     s1 = ns1.load_stage1(ns1.NetConfig(results_dir=tmp_path / "stage1"))
@@ -61,9 +61,14 @@ def build_stage1(tmp_path, *, pressure_hot, normal_hot_by_session=None, start_ov
     for n in range(1, 5):
         hot = (normal_hot_by_session or {}).get(n, set())
         plan.append((f"n2n0{n}", [row(set())] * 3 + [row(hot)] * 3 + [row(set())] * 2, {"base": base}, "normal_valid"))
-    for n in range(1, 6):
-        plan.append((f"n2p0{n}", [row(set())] * 4 + [row(pressure_hot)] * 8,
-                     {"t_injection_observed_utc": (T0 + timedelta(seconds=60)).isoformat()}, "valid"))
+    inj = {"t_injection_observed_utc": (T0 + timedelta(seconds=60)).isoformat()}
+    first_valid = 1
+    if invalid_pressure is not None:          # 새 Pod 격리를 확립하지 못해 무효가 된 세션 1개를 먼저 시도했고, 유효 5개는 그 뒤(n2p02~06)다
+        plan.append(("n2p01", [row(set())] * 4 + [row(invalid_pressure)] * 8,
+                     {**inj, "valid": False, "invalid_reasons": ["SESSION INVALID — target isolation / new-Pod leakage exclusion not established (1건)"]}, "invalid"))
+        first_valid = 2
+    for n in range(first_valid, first_valid + 5):
+        plan.append((f"n2p0{n}", [row(set())] * 4 + [row(pressure_hot)] * 8, inj, "valid"))
     for n, (run, rows, extra, status) in enumerate(plan, 1):
         rid = s1.run_id_for(run)
         ep = d / f"c1-live-evidence-{rid}.jsonl"
@@ -198,6 +203,24 @@ def test_selected_net_probe_flows_into_active_profile_and_stage2_entry(tmp_path,
         n2s2.entry_check_net(s2, selection_profile_path=profile, active_profile_path=out / "active-profile.json",
                              evidence_path=out / "tampered.json", artifact_root=env[1], snapshot_fn=lambda: {"template": template()},
                              impl={"selection_profile_sha256": sha}, stage1_dir=d, collect_fn=lambda *a, **k: so.collect(s1, *a, **k))
+
+
+@pytest.mark.parametrize("invalid_hot,valid_hot,want", [
+    (set(), {NET}, f"SELECTED:{NET}"),                  # 무효 세션에서 net_probe가 못 잡았어도 net_probe의 실패로 세지 않는다(5/5 통과)
+    ({NET}, {CPU}, f"SELECTED:{CPU}"),                  # 무효 세션에서 net_probe가 잡았어도 net_probe의 성공으로 세지 않는다(0/5)
+])
+def test_leakage_invalid_session_is_excluded_from_every_detectors_gate_results(tmp_path, env, fake_if_scores, invalid_hot, valid_hot, want):
+    """새 Pod 누출 배제를 확립하지 못한 세션은 유효성 기록에서 무효이고 선택 입력(Gate 2·3)에 들어가지 않는다 - 어느 감지기의 실패나 성공으로도 세지 않는다."""
+    s1, d, profile, sha = build_stage1(tmp_path, pressure_hot=valid_hot, invalid_pressure=invalid_hot)
+    c = collect(s1, d, profile, env[1], sha)
+    sessions = [p["session"] for p in c["inputs"]["pressure"]]
+    assert sessions == ["n2p02", "n2p03", "n2p04", "n2p05", "n2p06"] and c["inputs"]["integrity_problems"] == []
+    ev = so.evidence_from(c)
+    assert ev["outcome"] == want
+    assert ev["gate_results"]["gate2"]["pass_count"][NET] == (5 if NET in valid_hot else 0)
+    assert all(s["session"] != "n2p01" for per in ev["gate_results"]["gate2"]["sessions"].values() for s in per)
+    kept = json.loads((d / "p2-validity-n2p01.json").read_text(encoding="utf-8"))                                           # 무효 기록은 보고용으로 그대로 남는다
+    assert kept["valid"] is False and kept["invalid_reasons"][0].startswith("SESSION INVALID — target isolation")
 
 
 def test_no_active_profile_unless_selected(tmp_path, env, fake_if_scores):

@@ -411,6 +411,65 @@ def test_protected_probe_must_cover_every_stage_with_timestamps():
     assert ns2.protected_coverage_problems(good, {}, [NEW_POD]) and ns2.protected_coverage_problems(good, good_samples(), []) == []
 
 
+# ---------- 새 Pod 누출 배제(사용자 결정 2026-10-17): 실패는 감지기 실패가 아니라 세션 무효 ----------
+def one_stage():
+    d = good_delivery()
+    return {"crs": d["crs"][:1], "targets": d["targets"]}                                         # 단계 하나 [BASE, BASE+90] (+ 삭제 뒤 30 s까지 본다)
+
+
+def window_samples(times, value=0.01):
+    return {NEW_POD: [[BASE + t, value] for t in times]}
+
+
+def test_leakage_rule_mean_over_0_1_is_invalid_and_exactly_0_1_is_valid():
+    assert ns2.protected_coverage_problems(one_stage(), window_samples([0, 45, 90], 0.1), [NEW_POD]) == []                  # 0.1 이하
+    bad = ns2.protected_coverage_problems(one_stage(), window_samples([0, 45, 90], 0.1000001), [NEW_POD])
+    assert len(bad) == 1 and "probe_duration_mean_max" in bad[0]
+    mixed = {NEW_POD: [[BASE, 0.01], [BASE + 45, 0.5], [BASE + 90, 0.01]]}                                                   # 한 점이라도 넘으면 무효
+    assert any("probe_duration_mean_max" in p for p in ns2.protected_coverage_problems(one_stage(), mixed, [NEW_POD]))
+
+
+def test_leakage_rule_needs_at_least_3_valid_samples():
+    assert ns2.protected_coverage_problems(one_stage(), window_samples([0, 45, 90]), [NEW_POD]) == []                      # 정확히 3개
+    two = ns2.protected_coverage_problems(one_stage(), window_samples([0, 90]), [NEW_POD])
+    assert len(two) == 1 and "unverifiable_in_stage(2/2 finite, need 3)" in two[0]
+    nan = {NEW_POD: [[BASE, 0.01], [BASE + 45, float("nan")], [BASE + 90, 0.01]]}                                           # 유한하지 않은 값은 유효 샘플이 아니다
+    assert any("unverifiable_in_stage" in p for p in ns2.protected_coverage_problems(one_stage(), nan, [NEW_POD]))
+    assert any("unverifiable_in_stage" in p for p in ns2.protected_coverage_problems(one_stage(), {}, [NEW_POD]))             # 값이 없으면 확인 불가
+
+
+def test_leakage_rule_max_gap_45_is_valid_and_over_45_is_invalid():
+    assert ns2.protected_coverage_problems(one_stage(), window_samples([0, 45, 90]), [NEW_POD]) == []                      # 공백 정확히 45 s
+    gap = ns2.protected_coverage_problems(one_stage(), window_samples([0, 46, 92]), [NEW_POD])
+    assert len(gap) == 1 and "unobserved_gap_in_stage" in gap[0]
+    late = ns2.protected_coverage_problems(one_stage(), window_samples([50, 70, 90]), [NEW_POD])                           # 단계 시작부터 첫 값까지의 공백도 센다
+    assert any("unobserved_gap_in_stage" in p for p in late)
+    no_tail = ns2.protected_coverage_problems(one_stage(), window_samples([0, 15, 30, 45]), [NEW_POD])                     # 삭제 뒤 값이 없다
+    assert any("no_sample_after_stage_end" in p for p in no_tail)
+
+
+def test_leakage_rule_all_three_satisfied_over_a_full_session_is_valid():
+    probs = ns2.delivery_problems(good_delivery(), good_samples(), good_obs())["problems"]
+    assert probs == [] and ns2.isolation_reasons(probs) == []
+    assert ns2.validity_flags([]) == {"isolation_not_established": False, "counts_as_detector_failure": False, "detector_gate_inclusion": "included"}
+
+
+def test_leakage_failure_is_session_invalid_never_a_detector_failure():
+    probs = ns2.delivery_problems(good_delivery(), good_samples(leak_at=45, value=0.5), good_obs())["problems"]
+    why = ns2.isolation_reasons(probs)
+    assert why and why[0].startswith("SESSION INVALID — target isolation / new-Pod leakage exclusion not established")
+    flags = ns2.validity_flags(why + [f"N3_{p}" for p in probs])
+    assert flags == {"isolation_not_established": True, "counts_as_detector_failure": False, "detector_gate_inclusion": "excluded"}
+    for markers_case in (ns2.delivery_problems(good_delivery(), good_samples(drop_stage=1), good_obs())["problems"],               # 값 공백
+                         ns2.delivery_problems(good_delivery(), good_samples(), [])["problems"],                                    # 새 Pod 관측 없음
+                         ns2.delivery_problems(good_delivery(), good_samples(), good_obs() + [{"t": BASE + 150, "pods": [], "error": None}])["problems"]):  # 새 Pod 사라짐
+        assert ns2.isolation_reasons(markers_case)                                                                                  # 모두 같은 무효 분류
+    other = good_delivery()
+    other["crs"][2]["deleted_at"] = None                                                                                            # 격리와 무관한 전달 문제
+    probs = ns2.delivery_problems(other, good_samples(), good_obs())["problems"]
+    assert probs and ns2.isolation_reasons(probs) == []                                                                             # 무효이지만 '격리 확립 실패' 라벨은 아니다
+
+
 # ---------- 정리 확인 ----------
 def test_residual_chaos_after_session_keeps_marker_and_reports(tmp_path, monkeypatch, env):
     w, net, inst, kw = session(tmp_path, monkeypatch, env, net_over={"gone_left": ["netdelay-s3"]})
@@ -754,3 +813,17 @@ def test_installed_validate_routes_pressure_to_network_and_normal_to_original(tm
     assert inst.validate("n2p01", tmp_path, operator="none") == {"valid": "net"}
     assert inst.validate("n2n01", tmp_path, operator="none") == {"valid": "orig"}
     assert calls == [("network", "n2p01"), ("original", "n2n01")]                       # 압박만 네트워크 판정, 정상 세션은 원본 경로
+
+
+def test_validity_record_labels_leakage_and_excludes_the_session_from_detector_results(tmp_path, monkeypatch):
+    leak = {"problems": ["stage-1-500ms: vllm-serving-bbb222-y: probe_duration_mean_max=0.5000s > 0.1s (지연이 샌 것으로 봄)"],
+            "container_records_present": True}
+    inst, _ = _validity_setup(tmp_path, monkeypatch, leak, [])
+    v = ns2.validate_pressure_net(inst, "n2p01", tmp_path, operator="none")
+    assert v["valid"] is False and v["invalid_reasons"][0].startswith(ns2.ISOLATION_INVALID) and any(r.startswith("N3_") for r in v["invalid_reasons"])
+    assert (v["isolation_not_established"], v["counts_as_detector_failure"], v["detector_gate_inclusion"]) == (True, False, "excluded")
+    ok = {"problems": [], "container_records_present": True}
+    (tmp_path / "ok").mkdir()
+    inst2, _ = _validity_setup(tmp_path / "ok", monkeypatch, ok, [])
+    v2 = ns2.validate_pressure_net(inst2, "n2p01", tmp_path / "ok", operator="none")
+    assert v2["valid"] is True and (v2["isolation_not_established"], v2["detector_gate_inclusion"]) == (False, "included")

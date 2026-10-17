@@ -153,6 +153,123 @@ def test_gate3_missing_metric_is_integrity():
     assert ns.select(inputs(nu, pf))["outcome"] == ns.INTEGRITY
 
 
+# ---------- (2b) 사용자 결정(2026-10-17) 명세 그대로의 3후보 규칙 시험 ----------
+# 명세: Gate 2 통과 0개 -> 선택 없음 / 1개 -> 선택 / 2개 이상 -> Gate 3.
+#       Gate 3: 통과 후보의 정상 불필요 신호 합계 중 최소값 m을 찾고 (합계 >= m + 2)인 후보를 제거, 0~1건 차이는 동등.
+#       시각: 중앙값 중 가장 빠른 값 b를 기준으로 (중앙값 >= b + 30 s)인 후보를 제거, 30 s 미만은 동등.
+#       마지막: CPU > net_probe > c3-A IF (성능 우열이 아니라 운영 의존성 순서 - 앞선 기준으로 승부가 나지 않았을 때만).
+# 사용자 문구의 "NO_SELECTION"은 코드·Phase 2 판정 함수의 이름 NO_ELIGIBLE_DETECTOR와 같은 결과다(동결된 phase2_verdict가 이 이름을 읽는다).
+def spread(total):
+    return [total, 0, 0, 0]
+
+
+def pf(**kw):
+    """통과 후보는 5세션 모두 해당 초(첫 3연속), 실패 후보는 None."""
+    return {d: ([kw[d]] * 5 if kw.get(d) is not None else FAIL) for d in (CPU, NET, IF)}
+
+
+def run_spec(unn, **timing):
+    return ns.select(inputs({d: spread(unn.get(d, 0)) for d in (CPU, NET, IF)}, pf(**timing)))
+
+
+def test_spec_1_no_gate2_pass_means_no_selection_and_the_name_matches_the_frozen_verdict_input():
+    out = run_spec({}, **{CPU: None, NET: None, IF: None})
+    assert out["outcome"] == ns.NO_ELIGIBLE == "NO_ELIGIBLE_DETECTOR" and out["gate_results"]["gate2"]["eligible"] == []
+    assert out["gate_results"]["gate3"]["used"] is False and out["gate_results"]["tiebreak_simplicity"]["used"] is False
+    import run_stage2 as frozen_s2                                                               # 동결 판정 함수가 이 이름을 읽는다
+    assert frozen_s2.phase2_verdict(out["outcome"], [])["verdict"] == "PHASE2_SELECTION_VALIDATED_RECOVERY_PENDING"
+
+
+@pytest.mark.parametrize("only", [CPU, NET, IF])
+def test_spec_2_single_gate2_pass_is_selected_immediately_even_if_noisy(only):
+    out = run_spec({only: 9, **{d: 0 for d in (CPU, NET, IF) if d != only}}, **{only: 100.0, **{d: None for d in (CPU, NET, IF) if d != only}})
+    assert out["outcome"] == f"SELECTED:{only}" and out["gate_results"]["gate3"]["used"] is False         # Gate 2만으로 결정 - 소음은 선택에 쓰지 않는다
+    assert out["gate_results"]["gate3"]["unnecessary_sum"][only] == 9                                        # 그래도 보고는 한다
+
+
+@pytest.mark.parametrize("perm", [(CPU, NET, IF), (NET, IF, CPU), (IF, CPU, NET), (IF, NET, CPU), (CPU, IF, NET), (NET, CPU, IF)])
+def test_spec_3_unnecessary_0_1_3_removes_only_the_3(perm):
+    zero, one, three = perm
+    out = run_spec({zero: 0, one: 1, three: 3}, **{d: 100.0 for d in (CPU, NET, IF)})
+    assert three not in out["gate_results"]["gate3"]["retained"] and set(out["gate_results"]["gate3"]["retained"]) == {zero, one}
+    assert out["gate_results"]["gate3"]["result"] == "equivalent"                                          # 0과 1은 동등 -> 다음 기준으로
+    assert out["outcome"] == f"SELECTED:{min((zero, one), key=nc.SIMPLICITY_ORDER.index)}"                 # 시각도 같아 단순성 순서
+
+
+def test_spec_3b_the_users_example_cpu0_net1_if3():
+    out = run_spec({CPU: 0, NET: 1, IF: 3}, **{d: 100.0 for d in (CPU, NET, IF)})
+    assert out["gate_results"]["gate3"]["retained"] == [CPU, NET] and out["outcome"] == f"SELECTED:{CPU}"
+
+
+@pytest.mark.parametrize("zero", [CPU, NET, IF])
+def test_spec_4_unnecessary_0_2_2_keeps_only_the_zero(zero):
+    others = {d: 2 for d in (CPU, NET, IF) if d != zero}
+    out = run_spec({zero: 0, **others}, **{d: 100.0 for d in (CPU, NET, IF)})
+    assert out["gate_results"]["gate3"]["retained"] == [zero] and out["outcome"] == f"SELECTED:{zero}"
+    assert out["gate_results"]["tiebreak_timing"]["used"] is False                                         # Gate 3에서 끝남
+
+
+def test_spec_5_equal_unnecessary_moves_on_to_timing():
+    out = run_spec({CPU: 1, NET: 1, IF: 1}, **{CPU: 140.0, NET: 100.0, IF: 100.0})
+    assert out["gate_results"]["gate3"]["result"] == "equivalent" and out["gate_results"]["tiebreak_timing"]["used"] is True
+    assert out["gate_results"]["tiebreak_timing"]["retained"] == [NET, IF] and out["outcome"] == f"SELECTED:{NET}"
+
+
+def test_spec_6_timing_100_120_140_removes_only_the_140():
+    for perm in ((CPU, NET, IF), (IF, NET, CPU), (NET, IF, CPU), (CPU, IF, NET)):
+        fast, mid, slow = perm
+        out = run_spec({}, **{fast: 100.0, mid: 120.0, slow: 140.0})
+        assert set(out["gate_results"]["tiebreak_timing"]["retained"]) == {fast, mid} and slow not in out["gate_results"]["tiebreak_timing"]["retained"]
+        assert out["outcome"] == f"SELECTED:{min((fast, mid), key=nc.SIMPLICITY_ORDER.index)}"            # 20 s 차이는 동등 -> 단순성
+
+
+def test_spec_6b_timing_boundary_is_best_plus_30_removed_and_just_below_kept():
+    assert run_spec({}, **{CPU: 100.0, NET: 130.0, IF: None})["outcome"] == f"SELECTED:{CPU}"                 # 정확히 30 s 느리면 제거(>=)
+    out = run_spec({}, **{CPU: 100.0, NET: 129.9, IF: None})
+    assert out["gate_results"]["tiebreak_timing"]["retained"] == [CPU, NET] and out["gate_results"]["tiebreak_simplicity"]["used"] is True
+
+
+def test_spec_7_all_timing_gaps_under_30_go_to_the_final_tiebreak():
+    out = run_spec({}, **{CPU: 120.0, NET: 100.0, IF: 110.0})                                                # 가장 빠른 것(NET)과 최대 20 s 차이
+    assert out["gate_results"]["tiebreak_timing"]["result"] == "equivalent" and out["gate_results"]["tiebreak_simplicity"]["used"] is True
+    assert out["outcome"] == f"SELECTED:{CPU}"                                                               # 시각이 가장 느려도 단순성 1순위가 이긴다(성능 순서가 아님)
+
+
+def test_spec_8_three_way_final_tie_is_cpu():
+    out = run_spec({}, **{d: 100.0 for d in (CPU, NET, IF)})
+    assert out["gate_results"]["tiebreak_simplicity"] == {"used": True, "order": [CPU, NET, IF], "result": CPU} and out["outcome"] == f"SELECTED:{CPU}"
+
+
+def test_spec_9_cpu_out_then_net_probe_before_if():
+    out = run_spec({}, **{CPU: None, NET: 100.0, IF: 100.0})
+    assert out["gate_results"]["gate2"]["eligible"] == [NET, IF] and out["outcome"] == f"SELECTED:{NET}"
+    out = run_spec({CPU: 0, NET: 3, IF: 0}, **{CPU: None, NET: 100.0, IF: 100.0})                              # CPU는 조용해도 Gate 2 탈락 / NET은 Gate 3에서 탈락
+    assert out["outcome"] == f"SELECTED:{IF}"
+
+
+@pytest.mark.parametrize("pair", [(CPU, IF), (CPU, NET), (NET, IF)])
+def test_spec_10_every_two_candidate_subset_matches_the_frozen_phase2_rule(pair):
+    """후보 2개만 남는 입력에서 Phase 2 동결 selection.select와 같은 결과. 쌍의 앞을 Phase 2의 CPU 자리, 뒤를 IF 자리로 옮겨 대조한다."""
+    a, b = pair
+    rng = random.Random(sum(map(ord, a + b)))
+    times = [None, 90.0, 110.0, 150.0, 200.0, 363.0, 363.5, 420.0]
+    for _ in range(300):
+        nu = {d: [rng.choice([0, 0, 1, 2, 3]) for _ in range(4)] for d in pair}
+        pt = {d: [rng.choice(times) for _ in range(5)] for d in pair}
+        mine = ns.select(inputs(nu, pt), detectors=pair, simplicity_order=pair)
+        theirs = p2sel.select(inputs({CPU: nu[a], IF: nu[b]}, {CPU: pt[a], IF: pt[b]}))
+        relabel = lambda o: o.replace(a, CPU).replace(b, IF) if o.startswith("SELECTED:") else o        # noqa: E731
+        assert relabel(mine["outcome"]) == theirs["outcome"], (pair, nu, pt)
+
+
+def test_invalid_pressure_session_is_not_a_detector_failure_in_gate2():
+    """유효 세션만 select 입력이 된다. 5개를 채우지 못하면 후보의 실패가 아니라 SELECTION_INCOMPLETE다."""
+    z = [0] * 4
+    pt = {CPU: FAIL, NET: [58.0] * 4, IF: FAIL}                                                                # 유효 세션 4개뿐(무효 1개는 입력에 없음)
+    out = ns.select(inputs({CPU: z, NET: z, IF: z}, pt, n_pressure=4))
+    assert out["outcome"] == ns.INCOMPLETE and out["gate_results"]["gate2"]["eligible"] is None            # Gate 2 판정 자체를 하지 않는다
+
+
 # ---------- (3) net_probe 판정 ----------
 def rec(v, ok=True, t="2026-10-17T10:00:00+00:00"):
     return {"status": "scored" if ok else "skipped", "net_probe": {"value": v}, "score_completed_at_utc": t}

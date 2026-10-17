@@ -226,6 +226,21 @@ def test_validity_drops_cpu_v3_and_transition_dependent_v5_but_keeps_isolation_a
     assert seen["frozen"]["stress_stages"] == list(nc.NETWORK_STAGES)
 
 
+def test_stage2_leakage_failure_is_labeled_session_invalid_and_is_not_a_recovery_or_detector_failure(tmp_path, monkeypatch):
+    import n2_session as ns2
+    leak = {"network_delivery_check": {"problems": ["stage-2-1000ms: vllm-serving-bbb222-y: unverifiable_in_stage(0/0 finite, need 3)"],
+                                       "container_records_present": True}}
+    s1, s2, _ = _validity_setup(tmp_path, monkeypatch, leak, [])
+    v = n2s2.validate_stage2_net(s1, s2, "n2s01", tmp_path, operator="none")
+    assert v["valid"] is False and v["invalid_reasons"][0].startswith(ns2.ISOLATION_INVALID) and any(r.startswith("N3_") for r in v["invalid_reasons"])
+    assert (v["isolation_not_established"], v["counts_as_detector_failure"], v["detector_gate_inclusion"]) == (True, False, "excluded")
+    ok = tmp_path / "ok"
+    ok.mkdir()
+    s1b, s2b, _ = _validity_setup(ok, monkeypatch, {"network_delivery_check": {"problems": [], "container_records_present": True}}, [])
+    v2 = n2s2.validate_stage2_net(s1b, s2b, "n2s01", ok, operator="none")
+    assert v2["valid"] is True and (v2["isolation_not_established"], v2["detector_gate_inclusion"]) == (False, "included")
+
+
 def test_validity_is_valid_with_clean_network_evidence_and_invalid_without_or_with_problems(tmp_path, monkeypatch):
     s1, s2, _ = _validity_setup(tmp_path, monkeypatch, {"network_delivery_check": {"problems": [], "container_records_present": False}},
                                 ["V3_stress_not_verified: None"])

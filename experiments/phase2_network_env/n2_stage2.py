@@ -166,9 +166,10 @@ def validate_stage2_net(s1, s2, run, d, *, operator: str, probe_dir=None) -> dic
     side = sidecar_path(d, rid)
     chk = (json.loads(side.read_text(encoding="utf-8")).get("network_delivery_check") if side.exists() else None) \
         or {"problems": ["network_delivery_check_missing"]}
-    reasons += [f"N3_{x}" for x in chk["problems"]]
+    reasons += ns2.isolation_reasons(chk["problems"]) + [f"N3_{x}" for x in chk["problems"]]
     reasons += [f"operator_intervention: {operator}"] if operator != "none" else []
     return {"run": run, "run_id": rid, "valid": not reasons, "invalid_reasons": reasons, "operator_intervention": operator,
+            **ns2.validity_flags(reasons),
             "network_delivery": {"container_records_present": chk.get("container_records_present"), "n_problems": len(chk["problems"])},
             "rule": "prereg §8.4 - §8.2 B 항목만(V5 전환 결과 의존 항목 제외) + 네트워크 전달 확인(N3), 성공 판정 전에 확정"}
 

@@ -101,6 +101,16 @@ def cmd_restore_check(a, reader, dirs) -> int:
     return 0 if not probs else 2
 
 
+def cmd_session_end_check(a, reader, dirs) -> int:
+    """세션 하나가 끝난 직후의 정리 확인(읽기 전용). **전체 원복 확인(restore-check)과 다르다**: 실험 block이 계속되는 동안에는 11 s 프로필을
+    유지해야 하므로 원래 상태와 같기를 요구하지 않고 오히려 11 s 프로필이 **유지**돼 있기를 요구한다. 요구하는 것: 이 세션의 지연 설정·표식이 남지 않았고,
+    정책 context/blocked/unresolved가 깨끗하며, 정책 mode가 지정값이고, canonical Healthy. 이것이 통과해야 다음 세션 시작 전 preflight 하위 명령으로 넘어간다."""
+    state, snap = current_state(reader, dirs)
+    probs = cl.session_end_problems(state, [], expect_tolerant=True, policy_mode=a.policy_mode) + canonical_problems(snap, BASE_DELAY_SEC)
+    print(json.dumps({"ok": not probs, "problems": probs, "scope": "session_end (not a full restore)"}, ensure_ascii=False))
+    return 0 if not probs else 2
+
+
 def cmd_preflight(a, reader, dirs) -> int:
     if a.stage == "1":
         loaded, mode = nc.load_profile(a.profile or ns1.NetConfig().selection_profile, stage="stage1"), "record_only"
@@ -230,6 +240,8 @@ def build_parser():
     s = sub.add_parser("restore-check")
     s.add_argument("--baseline", required=True, type=Path)
     s.add_argument("--wait-sec", type=float, default=0.0)
+    s = sub.add_parser("session-end-check")
+    s.add_argument("--policy-mode", choices=["record_only", "act"], default="record_only")
     s = sub.add_parser("preflight")
     s.add_argument("--stage", choices=["1", "2"], default="1")
     s.add_argument("--profile", type=Path, default=None)
@@ -268,9 +280,10 @@ def main(argv=None, *, verify_freeze=None, reader_factory=None, real_deps=None) 
     for name in ("profile", "selection_profile", "active_profile", "artifact_root", "selection_evidence"):
         if getattr(a, name, None):
             setattr(a, name, Path(getattr(a, name)).resolve())         # 실행기 subprocess(cwd 다름)에 같은 경로가 가도록
-    if a.cmd in ("capture-baseline", "restore-check", "preflight"):
+    if a.cmd in ("capture-baseline", "restore-check", "session-end-check", "preflight"):
         reader = reader_factory(a.policy_url, getattr(a, "profile", None) or ns1.NetConfig().selection_profile)
-        fn = {"capture-baseline": cmd_capture_baseline, "restore-check": cmd_restore_check, "preflight": cmd_preflight}[a.cmd]
+        fn = {"capture-baseline": cmd_capture_baseline, "restore-check": cmd_restore_check, "session-end-check": cmd_session_end_check,
+              "preflight": cmd_preflight}[a.cmd]
         return fn(a, reader, stage_dirs())
     if a.cmd == "select":
         if a.artifact_root is None:

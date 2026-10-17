@@ -779,6 +779,25 @@ def run_pressure_net(inst, run, *, deps, starter, art_hashes, profile_sha, resul
 
 
 # ---------------- 유효성(오프라인, 탐지기 결과 미사용) ----------------
+# 전달 증거 문제 중 "지연이 새(preview) Pod에 닿지 않았다"는 것을 확립하지 못한 것들(N3-3·N3-4). 이것은 감지기의 실패가 아니라 **세션 무효**다:
+# 유효성은 감지기 결과를 보기 전에 확정되고 무효 세션은 Gate 계산에서 빠지므로 어떤 감지기의 Gate 2·3에도 들어가지 않는다.
+ISOLATION_MARKERS = ("probe_duration_mean_max", "unverifiable_in_stage", "unobserved_gap_in_stage", "no_sample_after_stage_end",
+                     "protected_pods_changed_during_injection", "no_protected_pod_captured", "protected_pods_unobserved_in_stage")
+ISOLATION_INVALID = "SESSION INVALID — target isolation / new-Pod leakage exclusion not established"
+
+
+def isolation_reasons(problems) -> list:
+    """N3 문제 중 새 Pod 격리를 확립하지 못한 것이 있으면 무효 사유 한 줄(세부는 N3_ 사유에 그대로 남는다). 없으면 []."""
+    n = sum(1 for p in problems if any(m in p for m in ISOLATION_MARKERS))
+    return [f"{ISOLATION_INVALID} ({n}건)"] if n else []
+
+
+def validity_flags(reasons) -> dict:
+    """유효성 기록에 붙이는 분류. 무효 세션은 어떤 경우에도 감지기 실패로 세지 않는다(Gate 입력에서 제외될 뿐)."""
+    return {"isolation_not_established": any(ISOLATION_INVALID in r for r in reasons), "counts_as_detector_failure": False,
+            "detector_gate_inclusion": "excluded" if reasons else "included"}
+
+
 def validate_pressure_net(inst, run, d, *, operator: str, probe_dir=None) -> dict:
     """원본 run_validity(A arm 경로)를 그대로 쓰고 CPU 전용 V3만 네트워크 전달 확인으로 교체한다."""
     import guarded_ab_analysis as gab
@@ -791,9 +810,10 @@ def validate_pressure_net(inst, run, d, *, operator: str, probe_dir=None) -> dic
     v = gab.run_validity(dd, pressure_frozen(inst, pc.expected_if_hashes()), gab.primary(dd, probe_csv))
     base = [x for x in v["reasons"] if not x.startswith("V3_")]               # CPU 스트레스 전달 확인(V3)은 네트워크에 해당 없음
     chk = (dd.get("summary") or {}).get("network_delivery_check") or {"problems": ["network_delivery_check_missing"]}
-    reasons = base + [f"N3_{x}" for x in chk["problems"]] + post + ([f"operator_intervention: {operator}"] if operator != "none" else [])
+    reasons = base + isolation_reasons(chk["problems"]) + [f"N3_{x}" for x in chk["problems"]] + post \
+        + ([f"operator_intervention: {operator}"] if operator != "none" else [])
     return {"run": run, "run_id": rec["run_id"], "kind": "pressure", "status": "invalid" if reasons else "valid",
-            "valid": not reasons, "invalid_reasons": reasons,
+            "valid": not reasons, "invalid_reasons": reasons, **validity_flags(reasons),
             "t_injection_observed_utc": ((dd.get("summary") or {}).get("trial_outcome") or {}).get("t_injection_observed_utc"),
             "network_delivery": {"container_records_present": chk.get("container_records_present"), "n_problems": len(chk["problems"])},
             "evidence_file": rec["evidence_file"], "operator_intervention": operator,
