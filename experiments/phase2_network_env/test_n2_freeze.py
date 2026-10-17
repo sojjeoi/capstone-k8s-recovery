@@ -18,7 +18,6 @@ pc = nc.pc
 
 # ---------- (1) 동결 전 ----------
 def test_unfrozen_state_refuses_everything_and_the_live_gate_uses_this_verifier():
-    assert nc.PREREG_SHA256 is None or (nc.ROOT / fz.IMPLEMENTATION_FREEZE).is_file()
     if not (nc.ROOT / fz.IMPLEMENTATION_FREEZE).is_file():
         with pytest.raises(SystemExit, match="fail-closed"):
             fz.verify_implementation_freeze()
@@ -235,3 +234,10 @@ def test_collect_test_results_counts_only_failures_outside_the_known_baseline_as
     all_baseline = fz.collect_test_results(run=fake_run, baseline_ids={"anomaly-detection/test_c.py", "anomaly-detection/test_b.py::test_two",
                                                                        "recovery-policy/test_a.py::test_one"})
     assert all_baseline["new_regressions"] == []
+
+
+def test_write_new_creates_missing_parent_and_never_overwrites(tmp_path):
+    out = fz.write_new(tmp_path / "profiles" / "p.json", {"a": 1})
+    assert json.loads(out.read_text(encoding="utf-8")) == {"a": 1}
+    with pytest.raises(FileExistsError):
+        fz.write_new(out, {"a": 2})

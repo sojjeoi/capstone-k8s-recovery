@@ -241,6 +241,7 @@ def collect_test_results(root=nc.ROOT, run=None, baseline_ids=None) -> dict:
 
 
 def write_new(path: Path, obj: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "x", encoding="utf-8", newline="\n") as fh:      # 덮어쓰기 금지
         fh.write(json.dumps(obj, ensure_ascii=False, indent=2) + "\n")
     return path
