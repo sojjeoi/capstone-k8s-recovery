@@ -21,7 +21,7 @@ import n2_common as nc  # noqa: E402
 pc = nc.pc
 NET = "experiments/phase2_network_env"
 DESIGN_FREEZE = "docs/design/phase2-network-env-design-freeze.json"
-IMPLEMENTATION_FREEZE = f"{NET}/phase2-network-env-implementation-freeze-r1.json"          # n2_stage1.NetConfig.implementation_freeze와 같다
+IMPLEMENTATION_FREEZE = f"{NET}/phase2-network-env-implementation-freeze-r2.json"          # n2_stage1.NetConfig.implementation_freeze와 같다
 SELECTION_PROFILE_REL = f"{NET}/profiles/selection-profile-network-tolerant-vllm-qwen05b-v1.json"
 NET_CODE = ("n2_common.py", "n2_selection.py", "n2_executor.py", "n2_pressure.py", "n2_cleanup.py", "n2_preflight.py", "n2_session.py",
             "n2_stage1.py", "n2_stage2.py", "n2_select_offline.py", "n2_run.py", "n2_freeze.py", "restore-demo-state.ps1",
@@ -125,8 +125,14 @@ def build_design_freeze(prereg_commit: str, root=nc.ROOT, show=git_show) -> dict
             "supersedes": None}
 
 
-def build_implementation_freeze(test_results: Path, review_summary: Path, code_commit: str, root=nc.ROOT, files_fn=tracked_files) -> dict:
+def build_implementation_freeze(test_results: Path, review_summary: Path, code_commit: str, root=nc.ROOT, files_fn=tracked_files,
+                                supersedes: Path = None, reason: str = None) -> dict:
     root = Path(root)
+    old = None
+    if supersedes is not None:
+        if not reason:
+            raise SystemExit("IMPLEMENTATION FREEZE 거부: 교체 manifest는 사유(--reason)가 필요")
+        old = {"manifest_path": Path(supersedes).resolve().relative_to(root.resolve()).as_posix(), "manifest_sha256": text_sha256(supersedes), "reason": reason}
     tr = json.loads(Path(test_results).read_text(encoding="utf-8"))
     if (tr.get("network") or {}).get("failed") != 0 or (tr.get("phase2") or {}).get("failed") != 0 or tr.get("new_regressions") != []:
         raise SystemExit(f"IMPLEMENTATION FREEZE 거부: 시험 100%·새 regression 0 아님 - {tr.get('network')} {tr.get('phase2')} {tr.get('new_regressions')}")
@@ -140,7 +146,7 @@ def build_implementation_freeze(test_results: Path, review_summary: Path, code_c
     return {"status": "implementation_frozen", "version": "phase2-network-env-impl-r1", "plan_id": "capstone-phase2-network-env-v1",
             "design_freeze": {"manifest_path": DESIGN_FREEZE, "manifest_sha256": text_sha256(root / DESIGN_FREEZE),
                               "prereg_path": nc.PREREG_DOC, "prereg_sha256": nc.PREREG_SHA256},
-            "git_commit": code_commit, "frozen_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "supersedes": old, "git_commit": code_commit, "frozen_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "hash_basis": "LF-normalized file content (= committed git blob)", "files": files,
             "selection_profile": SELECTION_PROFILE_REL, "selection_profile_sha256": text_sha256(root / SELECTION_PROFILE_REL),
             "external_artifact_expected": pc.FROZEN_DETECTORS[pc.IF_ID]["artifact"], "cpu_rule_expected": pc.FROZEN_DETECTORS[pc.CPU_ID]["artifact"],
@@ -256,6 +262,8 @@ def main(argv=None) -> int:  # pragma: no cover - 동결 시점의 파일 쓰기
     s.add_argument("--test-results", required=True, type=Path)
     s.add_argument("--review-summary", required=True, type=Path)
     s.add_argument("--code-commit", required=True)
+    s.add_argument("--supersedes", type=Path, default=None)
+    s.add_argument("--reason", default=None)
     sub.add_parser("verify")
     sub.add_parser("profile")
     s = sub.add_parser("tests")
@@ -270,7 +278,7 @@ def main(argv=None) -> int:  # pragma: no cover - 동결 시점의 파일 쓰기
     elif a.cmd == "design":
         out = write_new(nc.ROOT / DESIGN_FREEZE, build_design_freeze(a.prereg_commit))
     elif a.cmd == "impl":
-        out = write_new(nc.ROOT / IMPLEMENTATION_FREEZE, build_implementation_freeze(a.test_results, a.review_summary, a.code_commit))
+        out = write_new(nc.ROOT / IMPLEMENTATION_FREEZE, build_implementation_freeze(a.test_results, a.review_summary, a.code_commit, supersedes=a.supersedes, reason=a.reason))
     else:
         print(json.dumps(verify_implementation_freeze(), ensure_ascii=False))
         return 0

@@ -27,7 +27,7 @@ class NetConfig:
     results_dir: Path = nc.EXP / "results" / "phase2_network_env"
     executor: Path = nc.HERE / "n2_executor.py"
     selection_profile: Path = nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v1.json"
-    implementation_freeze: str = "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r1.json"
+    implementation_freeze: str = "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r2.json"
     normal_runs: dict = field(default_factory=lambda: {f"n2n{i:02d}": (i, 6000 + i) for i in range(1, pc.MAX_ATTEMPTS["normal"] + 1)})
     pressure_runs: dict = field(default_factory=lambda: {f"n2p{i:02d}": (i, 6100 + i) for i in range(1, pc.MAX_ATTEMPTS["pressure"] + 1)})
 

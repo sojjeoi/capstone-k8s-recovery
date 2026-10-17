@@ -22,7 +22,7 @@ def test_unfrozen_state_refuses_everything_and_the_live_gate_uses_this_verifier(
         with pytest.raises(SystemExit, match="fail-closed"):
             fz.verify_implementation_freeze()
     assert run.default_verify_freeze() == fz.verify_implementation_freeze                  # 라이브 하위 명령의 동결 관문이 이 검증기에 연결돼 있다
-    assert fz.IMPLEMENTATION_FREEZE == nc.HERE.relative_to(nc.ROOT).as_posix() + "/phase2-network-env-implementation-freeze-r1.json"
+    assert fz.IMPLEMENTATION_FREEZE == nc.HERE.relative_to(nc.ROOT).as_posix() + "/phase2-network-env-implementation-freeze-r2.json"
     import n2_stage1 as ns1
     assert ns1.NetConfig().implementation_freeze == fz.IMPLEMENTATION_FREEZE               # 설정과 검증기가 같은 manifest 경로를 본다
 
@@ -249,3 +249,21 @@ def test_real_tracked_file_list_covers_every_required_file_except_the_two_produc
     missing = set(fz.FREEZE_REQUIRED) - got - {fz.IMPLEMENTATION_FREEZE}
     assert missing <= {fz.DESIGN_FREEZE, fz.SELECTION_PROFILE_REL}                                 # 이 둘은 동결 절차가 만든 뒤 추적된다
     assert fz.pc.IMPLEMENTATION_FREEZE in got                                                      # Phase 2 구현 동결 기록도 해시 대상
+
+
+def test_replacement_manifest_records_what_it_supersedes_and_requires_a_reason(root, monkeypatch):
+    monkeypatch.setattr(fz, "FREEZE_REQUIRED", ("x.py", fz.SELECTION_PROFILE_REL))
+    (root / fz.SELECTION_PROFILE_REL).parent.mkdir(parents=True, exist_ok=True)
+    (root / fz.SELECTION_PROFILE_REL).write_text("{}", encoding="utf-8")
+    old = root / "old-freeze.json"
+    old.write_text("{}", encoding="utf-8")
+    review = root / "review.json"
+    review.write_text("{}", encoding="utf-8")
+    res = root / "res.json"
+    res.write_text(json.dumps({"network": {"passed": 1, "failed": 0}, "phase2": {"passed": 1, "failed": 0}, "new_regressions": []}), encoding="utf-8")
+    files_fn = lambda r: ["x.py", fz.SELECTION_PROFILE_REL]                              # noqa: E731
+    assert fz.build_implementation_freeze(res, review, "c0ffee", root, files_fn=files_fn)["supersedes"] is None
+    with pytest.raises(SystemExit, match="사유"):
+        fz.build_implementation_freeze(res, review, "c0ffee", root, files_fn=files_fn, supersedes=old)
+    m = fz.build_implementation_freeze(res, review, "c0ffee", root, files_fn=files_fn, supersedes=old, reason="r")
+    assert m["supersedes"] == {"manifest_path": "old-freeze.json", "manifest_sha256": fz.text_sha256(old), "reason": "r"}

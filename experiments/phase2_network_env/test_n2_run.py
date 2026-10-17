@@ -206,10 +206,14 @@ def boom(*a, **k):
     raise AssertionError("클러스터 연결 조립이 호출됨")
 
 
+def unfrozen():
+    raise SystemExit("implementation freeze fail-closed: 시험용(동결 상태와 무관하게 검증 실패를 흉내)")
+
+
 def test_live_stage1_stops_before_assembling_cluster_connections_while_unfrozen(dirs, tmp_path, monkeypatch):
     monkeypatch.setenv("GUARDED_ADMIN_TOKEN", "dummy-token-xyz")
     with pytest.raises(SystemExit, match="fail-closed"):
-        run.main(["stage1", "--run", "n2n01", "--artifact-root", str(tmp_path)], real_deps=boom)
+        run.main(["stage1", "--run", "n2n01", "--artifact-root", str(tmp_path)], verify_freeze=unfrozen, real_deps=boom)
 
 
 def test_live_stage2_requires_a_selected_outcome_and_the_freeze_before_deps(dirs, tmp_path, monkeypatch):
@@ -222,7 +226,7 @@ def test_live_stage2_requires_a_selected_outcome_and_the_freeze_before_deps(dirs
         run.main(base, real_deps=boom)
     ev.write_text(json.dumps({"outcome": f"SELECTED:{nc.NET_ID}"}), encoding="utf-8")
     with pytest.raises(SystemExit, match="fail-closed"):
-        run.main(base, real_deps=boom)
+        run.main(base, verify_freeze=unfrozen, real_deps=boom)
 
 
 def test_live_commands_need_the_token_and_arguments(dirs, tmp_path, monkeypatch):
