@@ -1,0 +1,12 @@
+{
+  "freeze_revision": "r1",
+  "codex": "구현 단계 M1~M4에서 외부 검토(Codex)를 사용했다(M1 3라운드, M2~M4 각 1라운드). 지적 사항(적용 확인 누락, 생성 직후 값 재사용, 새 Pod 교체·공백 판정, 정리 중 경합, 기본 Rollout의 timeoutSeconds 부재 처리, 원복 확인에 canonical Healthy 포함, 원복 스크립트 재개·재조정 대기)은 모두 반영했다. 이 동결에 대한 마지막 변경(3후보 규칙 문구, 새 Pod 유출 무효 분류, session-end-check, 원복 구분)은 사용자 지시로 Codex를 쓰지 않고 Ponytail 기준으로만 검토했다. Codex 의견은 승인 근거로 쓰지 않았다.",
+  "ponytail": "마지막 변경분 검토: validity_flags가 격리 사유를 중복 계산하던 것을 한 줄로 줄이고 안 쓰는 인자를 제거했다. 그 밖의 중복·불필요 추상화 지적 없음(새 코드는 함수 3개와 CLI 하위 명령 1개).",
+  "correctness": "격리 표지 7개가 실제 발생 문구와 일치함을 코드에서 확인. 3후보 규칙은 Phase 2 동결 selection.select와 후보 쌍 3종 각각 무작위 입력에서 일치(Phase 2 불변). 무효 세션은 Gate 입력에서 제외됨을 시험으로 확인.",
+  "known_limits": [
+    "live 조립 경로는 가짜 의존성으로만 시험했고 실제 클러스터에서 실행한 적이 없다(첫 preflight에서 확인).",
+    "11 s 프로필 적용·전체 원복의 소요 시간은 측정한 적이 없다.",
+    "정책 mode를 record_only에서 act로 바꾸는 단계는 자동화하지 않았다(Stage 2 직전 수동).",
+    "net_probe 0.0064 s는 기본 1 s probe 프로필 자료로 정했고 11 s 프로필에서의 정상 분포는 확인되지 않았다(prereg §18)."
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "recorded_at_utc": "2026-10-17T05:07:10+00:00",
+  "network": {
+    "suite": "experiments/phase2_network_env",
+    "passed": 320,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0
+  },
+  "phase2": {
+    "suite": "experiments/phase2_detector_selection",
+    "passed": 106,
+    "failed": 0,
+    "skipped": 1,
+    "errors": 0
+  },
+  "existing": {
+    "suite": "recovery-policy + anomaly-detection",
+    "passed": 704,
+    "failed": 0,
+    "skipped": 0,
+    "errors": 0,
+    "failed_in_baseline": 0
+  },
+  "new_regressions": []
+}
