@@ -33,7 +33,7 @@ def setup(tmp_path, *, errors=ERRS, sleeps=(42, 506, 507), send_attempts=0, inte
            "runner_started_at_utc": "2026-10-17T14:14:05+00:00", "runner_ended_at_utc": "2026-10-17T15:24:05+00:00",
            "evidence_file": "ev.jsonl", "environment_profile_sha256": "p" * 64, "artifact_hashes": ARTS}
     summ = {"detector_started": True, "observation_started_at_utc": T0, "observation_ended_at_utc": T1,
-            "evidence_counts": {"send_attempts": send_attempts}, "old_policy_isolation": {"start": True, "end": iso_end},
+            "evidence_counts": {"send_attempts": send_attempts}, "old_policy_isolation": {"start": {"isolated": True, "reasons": [], "state": {}}, "end": {"isolated": iso_end, "reasons": []}},
             "trial_outcome": {"prober_stop_failed": None, "injector_cleanup_failed": None}}
     (d / f"p2-session-{RUN}.json").write_text(json.dumps(rec), encoding="utf-8")
     (d / f"summary-{RID}.json").write_text(json.dumps(summ), encoding="utf-8")

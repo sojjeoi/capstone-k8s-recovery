@@ -65,7 +65,7 @@ def make_resume_check(m, live_fn):
                  + int((s.get("evidence_counts") or {}).get("send_attempts") or 0),
                  "prober_stop_failed": to.get("prober_stop_failed"), "injector_cleanup_failed": to.get("injector_cleanup_failed"),
                  "postflight_invalid_reasons": list(rec.get("postflight_invalid_reasons") or []), "integrity": rec.get("integrity"),
-                 "old_policy_isolated": {"start": iso.get("start"), "end": iso.get("end")},
+                 "old_policy_isolated": {k: (iso.get(k) or {}).get("isolated") for k in ("start", "end")},   # 실제 기록: {"isolated": bool, "reasons": [...], ...}
                  "live_policy_mode": policy.get("mode"), "live_policy_context": policy.get("context"), "live_problems": live_problems}
         probs = []
         if rec.get("status") != "run" or v.get("valid") is not False:

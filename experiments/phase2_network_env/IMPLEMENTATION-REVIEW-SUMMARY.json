@@ -1,5 +1,6 @@
 {
-  "freeze_revision": "r3",
+  "freeze_revision": "r4",
+  "supersedes_r3_reason": "r3(f690106)로 동결한 직후 n2n01의 실제 기록으로 재개 조건 검사를 읽기 전용으로 돌려 보니 n2_resume.py가 old_policy_isolation의 start/end를 bool로 비교하고 있었다(실제 값은 {isolated: bool, ...}). 합성 시험 데이터도 같은 오해로 만들어져 있어 결함이 안 잡혔다. 코드와 시험 데이터를 실제 모양으로 고쳐 r4로 교체한다(사전등록 문서·규칙 변경 없음). 공식 세션 0개.",
   "supersedes_r2_reason": "r2(c782dff) 동결 뒤 첫 정상 시도 n2n01이 PC 절전(Windows 전원 이벤트 42·506·507)으로 61분째 중단되고 사전등록 rev1의 중단 규칙('정리 오류 1회')이 동결된 재개 절차(탐지기 시작 전 하네스 오류만 허용)와 맞물려 수집을 막았다. 사용자가 선택지 A를 승인(2026-10-18): 사전등록 rev2에 §9.1(호스트 중단 뒤 재개)을 추가하고 n2_resume.py·authorize-resume을 구현해 r3로 교체한다. 감지기별 점수·신호는 열람하지 않았다(안전 집계만). 규칙은 사고 뒤에 추가됐으며 보고서에 그대로 밝힌다. 완료된 공식 세션 0개.",
   "r3_review_notes": "Codex 미사용(사용자 지시). 자체 검토에서 selection profile 비교 함수가 selection.rule(문서 해시 필드)을 몰라 실제 v1/v2 profile을 다르다고 판정하는 결함을 발견해 고쳤고 실제 파일로 시험을 추가했다. 새 코드는 n2_resume.py(함수 5개)와 CLI 하위 명령 1개이고 원본(Phase 2 동결) 모듈은 바꾸지 않는다(로드한 인스턴스의 resume_check만 교체).",
   "codex": "구현 단계 M1~M4에서 외부 검토(Codex)를 사용했다(M1 3라운드, M2~M4 각 1라운드). 지적 사항(적용 확인 누락, 생성 직후 값 재사용, 새 Pod 교체·공백 판정, 정리 중 경합, 기본 Rollout의 timeoutSeconds 부재 처리, 원복 확인에 canonical Healthy 포함, 원복 스크립트 재개·재조정 대기)은 모두 반영했다. 이 동결에 대한 마지막 변경(3후보 규칙 문구, 새 Pod 유출 무효 분류, session-end-check, 원복 구분)은 사용자 지시로 Codex를 쓰지 않고 Ponytail 기준으로만 검토했다. Codex 의견은 승인 근거로 쓰지 않았다.",
