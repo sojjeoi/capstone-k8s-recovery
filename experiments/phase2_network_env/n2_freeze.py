@@ -89,9 +89,9 @@ def verify_implementation_freeze(manifest_rel: str = IMPLEMENTATION_FREEZE, root
 def tracked_files(root=nc.ROOT) -> list:
     import write_implementation_freeze as p2w                  # Phase 2 작성기의 추적 패턴(읽기만) + 네트워크 환경 패턴
     patterns = [*p2w.TRACKED, f"{NET}/*.py", f"{NET}/*.ps1", f"{NET}/profiles/*.json", nc.PREREG_DOC, nc.NET_CALIBRATION_REL,
-                "gitops/apps/vllm-serving/overlays/network-tolerant/*.yaml"]
+                "gitops/apps/vllm-serving/overlays/network-tolerant/*.yaml", DESIGN_FREEZE, pc.IMPLEMENTATION_FREEZE]
     out = subprocess.run(["git", "ls-files", "--", *patterns], cwd=root, capture_output=True, text=True, check=True).stdout
-    return sorted(f for f in out.splitlines() if f and f not in (IMPLEMENTATION_FREEZE, pc.IMPLEMENTATION_FREEZE))
+    return sorted(f for f in out.splitlines() if f and f != IMPLEMENTATION_FREEZE)
 
 
 def git_show(commit: str, rel: str, root=nc.ROOT) -> bytes:

@@ -241,3 +241,11 @@ def test_write_new_creates_missing_parent_and_never_overwrites(tmp_path):
     assert json.loads(out.read_text(encoding="utf-8")) == {"a": 1}
     with pytest.raises(FileExistsError):
         fz.write_new(out, {"a": 2})
+
+
+def test_real_tracked_file_list_covers_every_required_file_except_the_two_produced_by_the_freeze():
+    got = set(fz.tracked_files())
+    assert fz.IMPLEMENTATION_FREEZE not in got                                                     # 자기 자신은 해시하지 않는다
+    missing = set(fz.FREEZE_REQUIRED) - got - {fz.IMPLEMENTATION_FREEZE}
+    assert missing <= {fz.DESIGN_FREEZE, fz.SELECTION_PROFILE_REL}                                 # 이 둘은 동결 절차가 만든 뒤 추적된다
+    assert fz.pc.IMPLEMENTATION_FREEZE in got                                                      # Phase 2 구현 동결 기록도 해시 대상
