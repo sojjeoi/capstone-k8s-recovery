@@ -21,6 +21,14 @@ pc = nc.pc
 import guarded_live_detector_runner as gr  # noqa: E402
 import run_guarded_pilot as gp  # noqa: E402
 import run_stage2 as orig_s2  # noqa: E402  (Phase 2 동결 원본 - 읽기 전용 대조)
+
+
+def test_every_stage2_run_id_fits_the_kubernetes_label_limit():
+    """n2p01에서 압박 실행 ID(67자)가 라벨 한도(63자)를 넘어 거부된 것과 같은 결함이 Stage 2 ID(원본 64자)에도 있었다."""
+    s2 = n2s2.load_stage2(ns1.load_stage1())
+    ids = [s2.run_id_for(r) for r in s2.RUNS]
+    assert ids and all(len(i) <= 63 for i in ids) and len(set(ids)) == len(ids)
+    assert ids[0] == "guarded_pressure_act-n2s01-cap-p2-net-v1-stage2" and orig_s2.run_id_for("p2s01").startswith("guarded_pressure_act-")
 import test_run_guarded_pilot as tgp  # noqa: E402
 
 ACT_POLICY = {**CLEAN_POLICY, "mode": "act"}
@@ -167,7 +175,7 @@ def test_instance_has_network_ids_and_original_stage2_is_untouched(tmp_path):
              orig_s2.validate, orig_s2.s1, orig_s2.pc)
     assert before == after and all(k.startswith("p2s") for k in orig_s2.RUNS)
     assert list(s2.RUNS)[:2] == ["n2s01", "n2s02"] and len(s2.RUNS) == pc.MAX_ATTEMPTS["stage2"]
-    assert s2.run_id_for("n2s01") == "guarded_pressure_act-n2s01-capstone-phase2-network-env-v1-stage2"
+    assert s2.run_id_for("n2s01") == "guarded_pressure_act-n2s01-cap-p2-net-v1-stage2"        # 라벨 한도(63자) 때문에 짧은 태그(원본은 64자)
     assert s2.EXECUTOR.name == "n2_executor.py" and s2.RESULTS_DIR.name == "s2" and s2.s1 is s1 and s2.pc is s1.pc
     with pytest.raises(SystemExit, match="알 수 없는"):
         s2.schedule("p2s01", tmp_path / "s2")                                      # Phase 2 실행 ID는 이 인스턴스에서 거부

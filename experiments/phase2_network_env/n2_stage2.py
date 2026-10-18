@@ -41,7 +41,7 @@ def load_stage2(stage1, cfg: Net2Config = None):
     spec.loader.exec_module(m)                                   # 최상위는 원본 pc·s1로 실행된다(값은 아래에서 교체)
     m.pc, m.s1 = stage1.pc, stage1
     m.RESULTS_DIR, m.EXECUTOR = Path(cfg.results_dir), Path(cfg.executor)
-    m.STAGE2_PLAN_ID = f"{stage1.pc.PLAN_ID}-stage2"
+    m.STAGE2_PLAN_ID = f"{stage1.CONFIG.short_plan_tag}-stage2"   # 라벨 한도(63자): 원본 plan id로는 Stage 2 실행 ID가 64자(n2p01에서 확인). 다른 동결 모듈도 이 값에서 ID를 만들므로 plan id 자체를 줄인다
     m.RUNS = {f"n2s{i:02d}": (i, m.ARM, cfg.rep_base + i) for i in range(1, pc.MAX_ATTEMPTS["stage2"] + 1)}
     m._read, m._lines = stage1._read, stage1._lines
     m.CONFIG = cfg

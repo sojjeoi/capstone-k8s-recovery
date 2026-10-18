@@ -54,7 +54,7 @@ def test_instance_uses_network_config_and_ids():
     assert len(inst.PRESSURE_RUNS) == pc.MAX_ATTEMPTS["pressure"] and inst.RESULTS_DIR.name == "phase2_network_env"
     assert inst.EXECUTOR.name == "n2_executor.py" and inst.TARGET == {"normal": nc.N_NORMAL, "pressure": nc.N_PRESSURE}
     assert inst.run_id_for("n2n01") == "guarded_normal_record_only-n2n01-capstone-phase2-network-env-v1"
-    assert inst.run_id_for("n2p02") == "guarded_pressure_record_only-n2p02-capstone-phase2-network-env-v1"
+    assert inst.run_id_for("n2p02") == "guarded_pressure_record_only-n2p02-cap-p2-net-v1"        # 라벨 한도(63자) 때문에 압박 ID만 짧은 태그(n2p01 결함)
     assert inst.kind_of("n2n03") == "normal" and inst.kind_of("n2p01") == "pressure"
     with pytest.raises(SystemExit, match="알 수 없는"):
         inst.kind_of("p2n01")                                      # Phase 2 실행 ID는 이 인스턴스에서 거부

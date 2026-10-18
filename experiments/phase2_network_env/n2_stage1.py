@@ -23,6 +23,7 @@ STAGE1_SOURCE = nc.P2DIR / "run_stage1.py"
 @dataclass(frozen=True)
 class NetConfig:
     plan_id: str = "capstone-phase2-network-env-v1"
+    short_plan_tag: str = "cap-p2-net-v1"                  # 실행 ID가 쿠버네티스 라벨 한도(63자)를 넘을 때만 plan_id 대신 쓴다(압박 67자, Stage 2 64자; 정상 62자는 그대로)
     prereg_doc: str = nc.PREREG_DOC
     results_dir: Path = nc.EXP / "results" / "phase2_network_env"
     executor: Path = nc.HERE / "n2_executor.py"
@@ -60,6 +61,18 @@ class NetPC:
         return getattr(pc, name)
 
 
+LABEL_MAX = 63
+
+
+def fit_run_id(orig, cfg):
+    """실행 ID는 NetworkChaos 라벨('experiment-run-id')에 그대로 들어가므로 63자를 넘으면 쿠버네티스가 거부한다(n2p01에서 확인).
+    63자 이하면 원본 그대로(기존 기록과 같은 ID), 넘으면 plan_id 부분만 짧은 태그로 바꾼다. 같은 입력이면 같은 출력인 순수 함수."""
+    def run_id_for(run: str) -> str:
+        full = orig(run)
+        return full if len(full) <= LABEL_MAX else full.replace(cfg.plan_id, cfg.short_plan_tag)
+    return run_id_for
+
+
 def _unfrozen(*a, **k):
     raise SystemExit("implementation freeze fail-closed: 네트워크 환경 구현 동결 검증기가 연결되지 않음(동결 전)")
 
@@ -76,7 +89,8 @@ def load_stage1(cfg: NetConfig = None, verify_freeze=None, live_fn=None):
     m.TARGET = {"normal": nc.N_NORMAL, "pressure": nc.N_PRESSURE}
     m.CONFIG = cfg
     import n2_resume as rn                                       # 호스트 중단(절전) 뒤 재개 조건: 원본 resume_check 대신(rev2 §9.1)
-    tag = Path(cfg.implementation_freeze).stem.rsplit("-", 1)[-1]        # 구현 동결 revision(r5 등): 재개 기록은 revision마다 따로(덮어쓰기 금지, 이전 기록은 이력으로 남는다)
+    m.run_id_for = fit_run_id(m.run_id_for, cfg)                        # 라벨 한도(63자) 안에 들어가게(이미 들어가는 정상 세션 ID는 그대로)
+    tag = Path(cfg.implementation_freeze).stem.rsplit("-", 1)[-1]       # 구현 동결 revision(r5 등): 재개 기록은 revision마다 따로(덮어쓰기 금지, 이전 기록은 이력으로 남는다)
     m._auth_path = lambda d, run: Path(d) / f"p2-resume-authorization-{run}-{tag}.json"
     m.resume_check = rn.make_resume_check(m, live_fn)
     m.authorize_cleanup_resume = rn.make_authorize(m, live_fn, previous_profile=cfg.previous_selection_profile)

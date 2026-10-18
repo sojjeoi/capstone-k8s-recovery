@@ -478,6 +478,28 @@ def test_residual_chaos_after_session_keeps_marker_and_reports(tmp_path, monkeyp
     assert list(w.results.glob("running-*.json"))                                              # 정리가 안 끝나면 표식을 남겨 다음 세션을 막는다
 
 
+def test_a_resume_authorized_earlier_attempts_marker_is_not_a_cleanup_error_but_any_other_marker_is(tmp_path, monkeypatch, env):
+    """n2p01에서 확인한 결함: 이미 사람이 재개를 승인한 n2n01의 '실행 중 표시'가 압박 세션 끝 점검에서 정리 오류로 세졌다."""
+    w, net, inst, kw = session(tmp_path, monkeypatch, env)
+    kw["deps"].check_unresolved = lambda: inst.check_unresolved_stage1(w.results)       # 실제 실행(n2_run)과 같은 시작 관문: 재개 승인된 시도만 해소로 본다
+    (w.results / "running-guarded_normal_record_only-n2n01-x.json").write_text("{}", encoding="utf-8")
+    (w.results / "p2-session-n2n01.json").write_text(json.dumps({"run": "n2n01", "run_id": "guarded_normal_record_only-n2n01-x",
+                                                                  "attempt_number": 1, "kind": "normal", "cleanup_errors": ["x"]}), encoding="utf-8")
+    monkeypatch.setattr(inst, "resume_authorized", lambda d, r: r["run"] == "n2n01")        # 재개가 승인된 시도만 해소로 본다(승인 없는 표식은 세션 시작 단계에서 이미 거부된다)
+    s = ns2.run_pressure_net(inst, "n2p01", **kw)
+    assert not any("running_marker_left" in e for e in s["cleanup_errors"]), s["cleanup_errors"]
+
+
+def test_every_run_id_fits_the_kubernetes_label_limit_and_normal_ids_are_unchanged():
+    """n2p01 결함: 압박 실행 ID가 67자라 NetworkChaos 라벨('experiment-run-id', 63자 한도) 생성이 거부됐다."""
+    inst = ns1.load_stage1()
+    ids = [inst.run_id_for(r) for r in (*inst.NORMAL_RUNS, *inst.PRESSURE_RUNS)]
+    assert all(len(i) <= 63 for i in ids) and len(set(ids)) == len(ids)
+    assert inst.run_id_for("n2n01") == "guarded_normal_record_only-n2n01-capstone-phase2-network-env-v1"        # 이미 기록된 정상 세션 ID는 그대로
+    assert inst.run_id_for("n2p01") == "guarded_pressure_record_only-n2p01-cap-p2-net-v1"
+    assert all(c.isalnum() or c in "-_." for c in inst.run_id_for("n2p01"))
+
+
 def test_session_end_state_problems_are_reported(tmp_path, monkeypatch, env):
     w, net, inst, kw = session(tmp_path, monkeypatch, env)
     real_end = net.read_end_state

@@ -739,7 +739,8 @@ def run_pressure_net(inst, run, *, deps, starter, art_hashes, profile_sha, resul
                 cleanup_errors.append(f"probe_pod_check_failed: {type(e).__name__}: {e}")
         try:  # 세션 끝 상태(지연 설정 잔여·probe 설정 유지·정책·표식). 이 세션의 running 표식은 아직 있으므로 제외하고 본다
             end_state = net.read_end_state(results_dir)
-            end_state["running_markers"] = [m for m in end_state["running_markers"] if run_id not in m]
+            forgiven = [r["run_id"] for r in inst.attempts(results_dir) if inst.resume_authorized(results_dir, r)]      # 사람이 재개를 승인한 이전 시도(n2n01)의 표식은 증거로 남아 있는 것이 정상
+            end_state["running_markers"] = [m for m in end_state["running_markers"] if run_id not in m and not any(f in m for f in forgiven)]
             cleanup_errors += [f"network_session_end: {x}" for x in cl.session_end_problems(end_state, planned, policy_mode=inst.MODE)]
         except Exception as e:  # noqa: BLE001
             cleanup_errors.append(f"network_end_state_failed: {type(e).__name__}: {e}")
