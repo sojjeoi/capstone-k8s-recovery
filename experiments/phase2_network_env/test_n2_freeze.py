@@ -22,7 +22,7 @@ def test_unfrozen_state_refuses_everything_and_the_live_gate_uses_this_verifier(
         with pytest.raises(SystemExit, match="fail-closed"):
             fz.verify_implementation_freeze()
     assert run.default_verify_freeze() == fz.verify_implementation_freeze                  # 라이브 하위 명령의 동결 관문이 이 검증기에 연결돼 있다
-    assert fz.IMPLEMENTATION_FREEZE == nc.HERE.relative_to(nc.ROOT).as_posix() + "/phase2-network-env-implementation-freeze-r8.json"
+    assert fz.IMPLEMENTATION_FREEZE == nc.HERE.relative_to(nc.ROOT).as_posix() + "/phase2-network-env-implementation-freeze-r9.json"
     import n2_stage1 as ns1
     assert ns1.NetConfig().implementation_freeze == fz.IMPLEMENTATION_FREEZE               # 설정과 검증기가 같은 manifest 경로를 본다
 

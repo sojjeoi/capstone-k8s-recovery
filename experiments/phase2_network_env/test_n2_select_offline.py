@@ -241,6 +241,80 @@ def test_selected_net_probe_flows_into_active_profile_and_stage2_entry(tmp_path,
                              impl={"selection_profile_sha256": sha}, stage1_dir=d, collect_fn=lambda *a, **k: so.collect(s1, *a, **k))
 
 
+def _rev4_chain(tmp_path, env, *, rule4=nc.STAGE1_SELECTION_PREREG_REV4, evidence_rule=None, active_rule=None, profile_edit=None):
+    """Stage 1 선택이 rev4 사전등록 아래에서 끝난 상황(n2s02 preflight 거부의 원인)을 만든다: 현재(rev5) 선택 profile과 사전등록 해시 필드만 다른 이전 profile,
+    그 profile에서 파생된 선택 증거와 active profile. 반환: Stage 2 진입 검사 호출 인자."""
+    old_path = tmp_path / "rev4-profile.json"
+    s1, d, profile, sha = build_stage1(tmp_path, pressure_hot={NET}, previous_profiles=(old_path,))
+    ev = so.evidence_from(collect(s1, d, profile, env[1], sha))
+    out = tmp_path / "out"
+    so.write_outputs(ev, profile, out)
+    old = json.loads(Path(profile).read_text(encoding="utf-8"))
+    old["selection"]["rule"] = rule4
+    if profile_edit:
+        profile_edit(old)
+    old_path.write_text(json.dumps(old), encoding="utf-8")
+    old_sha = pc.text_sha256(old_path)
+    ev2 = {**json.loads((out / so.EVIDENCE_NAME).read_text(encoding="utf-8")), "rule": evidence_rule or rule4, "selection_profile_sha256": old_sha}
+    ev_path = tmp_path / "evidence-rev4.json"
+    ev_path.write_text(json.dumps(ev2), encoding="utf-8")
+    act = json.loads((out / "active-profile.json").read_text(encoding="utf-8"))
+    act["selection"].update(rule=active_rule or rule4, source_selection_profile_sha256=old_sha, selection_evidence_sha256=pc.sha256_bytes(ev_path))
+    act_path = tmp_path / "active-rev4.json"
+    act_path.write_text(json.dumps(act), encoding="utf-8")
+    s2 = n2s2.load_stage2(s1, n2s2.Net2Config(results_dir=tmp_path / "s2"))
+    return s2, dict(selection_profile_path=profile, active_profile_path=act_path, evidence_path=ev_path, artifact_root=env[1],
+                    snapshot_fn=lambda: {"template": template()}, impl={"selection_profile_sha256": sha}, stage1_dir=d,
+                    collect_fn=lambda *a, **k: so.collect(s1, *a, **k))
+
+
+def test_stage2_entry_accepts_a_selection_made_under_the_rev4_preregistration_and_nothing_else(tmp_path, env, fake_if_scores):
+    """n2s02 preflight 거부 뒤 연결 수정: Stage 1 선택을 실제 만든 rev4 해시(증거·active profile이 같은 해시, 같은 selection profile에서 파생)만 인정한다."""
+    s2, kw = _rev4_chain(tmp_path / "ok", env, )
+    entry = n2s2.entry_check_net(s2, **kw)
+    assert entry["selected"] == NET
+    s2, kw = _rev4_chain(tmp_path / "evmix", env, evidence_rule=nc.PREREG_SHA256)                       # 증거와 active profile이 같은 해시에서 파생되지 않음
+    with pytest.raises(SystemExit, match="selection_profile_chain_mismatch"):
+        n2s2.entry_check_net(s2, **kw)
+    s2, kw = _rev4_chain(tmp_path / "actmix", env, active_rule=nc.PREREG_SHA256)
+    with pytest.raises(SystemExit, match="selection_profile_chain_mismatch"):
+        n2s2.entry_check_net(s2, **kw)
+    older = "0" * 64                                                                                    # 임의의 과거 revision 해시는 인정하지 않는다
+    s2, kw = _rev4_chain(tmp_path / "other", env, rule4=older)
+    with pytest.raises(SystemExit, match="selection_evidence_not_reproducible|PROFILE_INVALID"):
+        n2s2.entry_check_net(s2, **kw)
+    s2, kw = _rev4_chain(tmp_path / "changed", env, profile_edit=lambda x: x["detectors"][1].__setitem__("threshold", 0.123))   # 내용이 다른 이전 profile
+    with pytest.raises(SystemExit, match="selection_profile_chain_mismatch"):
+        n2s2.entry_check_net(s2, **kw)
+
+
+def test_only_the_rev4_hash_is_added_for_stage2_profiles_and_stage1_stays_strict(tmp_path, env, fake_if_scores):
+    s1, d, profile, sha = build_stage1(tmp_path, pressure_hot={NET})
+    ev = so.evidence_from(collect(s1, d, profile, env[1], sha))
+    out = tmp_path / "out"
+    so.write_outputs(ev, profile, out)
+    act = json.loads((out / "active-profile.json").read_text(encoding="utf-8"))
+    for rule, ok in ((nc.PREREG_SHA256, True), (nc.STAGE1_SELECTION_PREREG_REV4, True), ("e34233be638d591564684cc911ffaa8b2ee15d41ecac5a610def6edf71b32804", False),
+                     ("1e80017b57183b15e089825b9fe5419fd91510e961035223caf83e2eac469b97", False), ("ff835c1810b1bf37057b8851e03b65230afb5738cc05e24d6b6ca29328f7848d", False)):
+        act["selection"]["rule"] = rule
+        if ok:
+            nc.validate_profile(act, stage="stage2")
+        else:
+            with pytest.raises(nc.ProfileInvalid, match="selection_rule_not_design_freeze"):
+                nc.validate_profile(act, stage="stage2")
+    sel = json.loads(Path(profile).read_text(encoding="utf-8"))
+    sel["selection"]["rule"] = nc.STAGE1_SELECTION_PREREG_REV4
+    with pytest.raises(nc.ProfileInvalid, match="selection_rule_not_design_freeze"):                    # Stage 1 profile은 현재 해시만
+        nc.validate_profile(sel, stage="stage1")
+
+
+def test_the_rev4_hash_constant_matches_the_real_rev4_profile_and_document(tmp_path):
+    prof = nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v4.json"
+    assert json.loads(prof.read_text(encoding="utf-8"))["selection"]["rule"] == nc.STAGE1_SELECTION_PREREG_REV4
+    doc4 = nc.ROOT / "docs" / "design" / "PHASE2-NETWORK-ENV-PREREG-v1-rev4.md"
+    assert doc4.is_file() and pc.text_sha256(doc4) == nc.STAGE1_SELECTION_PREREG_REV4
+
+
 @pytest.mark.parametrize("invalid_hot,valid_hot,want", [
     (set(), {NET}, f"SELECTED:{NET}"),                  # 무효 세션에서 net_probe가 못 잡았어도 net_probe의 실패로 세지 않는다(5/5 통과)
     ({NET}, {CPU}, f"SELECTED:{CPU}"),                  # 무효 세션에서 net_probe가 잡았어도 net_probe의 성공으로 세지 않는다(0/5)

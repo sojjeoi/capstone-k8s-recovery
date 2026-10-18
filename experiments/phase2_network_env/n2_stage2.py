@@ -58,7 +58,7 @@ def entry_check_net(s2, *, selection_profile_path, active_profile_path, evidence
     ev_sha = pc.sha256_bytes(evidence_path)
     out = s2.check_outcome(evidence_path)
     recomputed = nsel.select(ev.get("inputs") or {})
-    if ev.get("rule") != s2.pc.PREREG_SHA256 or ev.get("evidence_id") != f"{EVIDENCE_PREFIX}{pc.obj_sha256(ev.get('inputs') or {})[:16]}" \
+    if ev.get("rule") not in (s2.pc.PREREG_SHA256, nc.STAGE1_SELECTION_PREREG_REV4) or ev.get("evidence_id") != f"{EVIDENCE_PREFIX}{pc.obj_sha256(ev.get('inputs') or {})[:16]}" \
             or {k: ev.get(k) for k in ("outcome", "reason", "gate_results")} != recomputed:
         probs.append("selection_evidence_not_reproducible")
     if stage1_dir is not None:
@@ -70,6 +70,12 @@ def entry_check_net(s2, *, selection_profile_path, active_profile_path, evidence
     sel = nc.load_profile(selection_profile_path, stage="stage1")
     if sel["sha256"] != impl.get("selection_profile_sha256"):
         probs.append("selection_profile_not_implementation_frozen")
+    # 선택이 rev4 사전등록 아래에서 끝났으면(n2s02 preflight 거부 뒤 연결 수정) 그 selection profile(현재 것과 사전등록 해시 필드만 다름)을 같은 사슬로 인정한다.
+    # 증거와 active profile이 모두 그 rev4 해시여야 하고, 그 밖의 과거 revision은 인정하지 않는다.
+    import n2_resume as rn
+    chain = {sel["sha256"]} | {pc.text_sha256(p) for p in getattr(getattr(s2.s1, "CONFIG", None), "previous_selection_profiles", ())
+                               if Path(p).is_file() and rn.profiles_equal_except_prereg(p, selection_profile_path)
+                               and json.loads(Path(p).read_text(encoding="utf-8"))["selection"]["rule"] == nc.STAGE1_SELECTION_PREREG_REV4}
     try:
         act = nc.load_profile(active_profile_path, stage="stage2")
     except nc.ProfileInvalid as e:
@@ -78,7 +84,7 @@ def entry_check_net(s2, *, selection_profile_path, active_profile_path, evidence
     if diff:
         probs.append(f"active_profile_not_mechanical_derivation: {diff}")
     s = act["profile"]["selection"]
-    if s.get("source_selection_profile_sha256") != sel["sha256"] or ev.get("selection_profile_sha256") != sel["sha256"]:
+    if s.get("source_selection_profile_sha256") not in chain or s.get("source_selection_profile_sha256") != ev.get("selection_profile_sha256")             or s.get("rule") != ev.get("rule"):
         probs.append("selection_profile_chain_mismatch")
     if s.get("selection_evidence_sha256") != ev_sha or s.get("outcome") != out or s.get("gate_results") != ev.get("gate_results"):
         probs.append("selection_evidence_chain_mismatch")

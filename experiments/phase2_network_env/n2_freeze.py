@@ -21,7 +21,7 @@ import n2_common as nc  # noqa: E402
 pc = nc.pc
 NET = "experiments/phase2_network_env"
 DESIGN_FREEZE = "docs/design/phase2-network-env-design-freeze-rev5.json"
-IMPLEMENTATION_FREEZE = f"{NET}/phase2-network-env-implementation-freeze-r8.json"          # n2_stage1.NetConfig.implementation_freeze와 같다
+IMPLEMENTATION_FREEZE = f"{NET}/phase2-network-env-implementation-freeze-r9.json"          # n2_stage1.NetConfig.implementation_freeze와 같다
 SELECTION_PROFILE_REL = f"{NET}/profiles/selection-profile-network-tolerant-vllm-qwen05b-v5.json"
 NET_CODE = ("n2_common.py", "n2_selection.py", "n2_executor.py", "n2_pressure.py", "n2_cleanup.py", "n2_preflight.py", "n2_session.py",
             "n2_stage1.py", "n2_stage2.py", "n2_select_offline.py", "n2_run.py", "n2_freeze.py", "n2_resume.py", "restore-demo-state.ps1",
@@ -148,7 +148,7 @@ def build_implementation_freeze(test_results: Path, review_summary: Path, code_c
     dirty = subprocess.run(["git", "status", "--porcelain", "--", *files], cwd=root, capture_output=True, text=True).stdout
     if dirty.strip():
         raise SystemExit(f"IMPLEMENTATION FREEZE 거부: 커밋되지 않은 변경 {dirty.splitlines()[:5]}")
-    return {"status": "implementation_frozen", "version": "phase2-network-env-impl-r8", "plan_id": "capstone-phase2-network-env-v1",
+    return {"status": "implementation_frozen", "version": "phase2-network-env-impl-r9", "plan_id": "capstone-phase2-network-env-v1",
             "design_freeze": {"manifest_path": DESIGN_FREEZE, "manifest_sha256": text_sha256(root / DESIGN_FREEZE),
                               "prereg_path": nc.PREREG_DOC, "prereg_sha256": nc.PREREG_SHA256},
             "supersedes": old, "git_commit": code_commit, "frozen_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),

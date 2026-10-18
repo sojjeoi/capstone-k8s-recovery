@@ -145,7 +145,7 @@ def test_authorization_unblocks_only_that_attempt_and_is_invalidated_by_any_chan
     d, m, impl = authorize_setup(tmp_path)
     assert "정리 오류" in m.stop_reason(d)                                     # 재개 기록 전: 수집 중단
     out = m.authorize_cleanup_resume(d, RUN, authorized_by="tester", review_note="절전 확인", impl=impl, artifact_root=tmp_path)
-    assert Path(out).name == f"p2-resume-authorization-{RUN}-r8.json"            # 구현 동결 revision마다 따로 쓴다(이전 revision 기록은 이력으로 남는다)
+    assert Path(out).name == f"p2-resume-authorization-{RUN}-r9.json"            # 구현 동결 revision마다 따로 쓴다(이전 revision 기록은 이력으로 남는다)
     (d / f"p2-resume-authorization-{RUN}.json").write_text("{}", encoding="utf-8")   # 예전(r4) 기록이 있어도 새 revision 판정에는 영향이 없다
     a = json.loads(Path(out).read_text(encoding="utf-8"))
     assert a["user_authorized_resume"] is True and a["attempt_remains_invalid"] and a["attempt_consumed"]
@@ -271,7 +271,7 @@ def test_authorizing_a_pre_injection_defect_records_the_class_and_keeps_the_atte
     a = json.loads(Path(m.authorize_cleanup_resume(d, PRUN, authorized_by="t", review_note="n", impl=impl, artifact_root=tmp_path)).read_text(encoding="utf-8"))
     assert a["failure_classification"] == rn.CLASSIFICATION_DEFECT and a["no_injection_confirmed"] is True
     assert a["attempt_remains_invalid"] is True and a["attempt_consumed"] is True and a["detector_results_observed"] is False
-    assert Path(m._auth_path(d, PRUN)).name == f"p2-resume-authorization-{PRUN}-r8.json"
+    assert Path(m._auth_path(d, PRUN)).name == f"p2-resume-authorization-{PRUN}-r9.json"
     assert not m.kind_progress(d, "pressure")["valid"]                                    # 재개해도 유효 세션으로 세지 않는다(Gate 계산 제외)
 
 

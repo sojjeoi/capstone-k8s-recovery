@@ -42,6 +42,11 @@ GATE3_MIN_DIFF, TIMING_MIN_DIFF_SEC, DECISION_SEC = pc.GATE3_MIN_DIFF, pc.TIMING
 
 PREREG_DOC = "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev5.md"
 PREREG_SHA256 = "e662e04a8a7555012ff3f3aa0f635f5856159c83fd8c943d62d126d5985c9567"   # rev5 DESIGN FREEZE 2026-10-18, prereg commit d83682d (LF 정규화 blob 해시). rev1(dd3a74f)·rev2(42a3b46)·rev3(2209451)·rev4(34e7224, 31797ba8…)는 교체됐다.
+# Stage 1 선택(SELECTED:net-probe-readiness)은 rev4 사전등록(해시 아래) 때 생성됐다. rev5는 Stage 2의 N3(§6.2.1)만 바꿨고 Stage 1 선택에 쓰인 §3·§4·§5·§7은
+# rev4와 글자 그대로 같다(rev4/rev5 문서 비교). 그래서 Stage 2 진입은 이 rev4 해시 **하나만** 추가로 인정한다 - 임의의 과거 revision을 허용하지 않는다.
+# 인정 조건: 선택 증거와 active profile이 모두 이 해시이고, 같은 selection profile(현재 profile과 사전등록 해시 필드만 다른 것)에서 파생됐다(n2_stage2.entry_check_net).
+# n2s02 preflight 거부(2026-10-18) 뒤에 추가한 연결 수정이다.
+STAGE1_SELECTION_PREREG_REV4 = "31797ba892707a45a1654ebcc4863bb99949f290b9496e48a1fa39cb9f24bb0d"
 DEV_DRAFT = "docs/design/NETWORK-DETECTOR-PREREG-DRAFT-20261017.md"
 NET_CALIBRATION_REL = "experiments/results/network_detector_dev_20261017/probe-metric/result.json"
 
@@ -141,7 +146,7 @@ def validate_profile(p: dict, *, stage: str, prereg_sha256=None) -> dict:
         probs.append("environment.probe_profile != network_tolerant(11 s)")
     if env.get("pressure") != PRESSURE:
         probs.append("environment.pressure != 네트워크 지연 사전등록 정의")
-    if (p.get("selection") or {}).get("rule") != want_rule:
+    if (p.get("selection") or {}).get("rule") not in ({want_rule, STAGE1_SELECTION_PREREG_REV4} if stage == "stage2" else {want_rule}):
         probs.append("selection_rule_not_design_freeze")
     if probs:
         cls = ArtifactMismatch if any(x.startswith("detector_differs_from_frozen") for x in probs) else ProfileInvalid
