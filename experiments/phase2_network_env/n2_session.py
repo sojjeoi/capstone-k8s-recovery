@@ -309,20 +309,25 @@ def protected_coverage_problems(delivery, samples_by_pod, protected_pods, *, lim
     return probs
 
 
-def delivery_problems(delivery, protected_samples, protected_observations, *, namespace=NAMESPACE) -> dict:
+def delivery_problems(delivery, protected_samples, protected_observations, *, namespace=NAMESPACE, recovery_verified_at=None) -> dict:
     """전달 증거 판정(유효성 V3 대체). {"problems": [...], "container_records_present": bool}. 모두 읽은 값 기준이다.
     protected_samples = {pod: [[epoch, value], ...]} 보호(새) Pod의 probe 소요 시간(60 s 평균),
-    protected_observations = ProtectedWatch.obs(주입 중 보호 Pod 목록 관측 - 시각·빈 목록·조회 실패 포함)."""
+    protected_observations = ProtectedWatch.obs(주입 중 보호 Pod 목록 관측 - 시각·빈 목록·조회 실패 포함).
+    recovery_verified_at(rev5 §6.2.1, Stage 2 n2s02부터): 그 세션에서 승격과 Service 전환이 확인된 시각(ISO). 주어지면 (1) 주입한 단계는 계획 순서의
+    앞부분이면 되고 (2) 마지막으로 주입한 단계는 승격 확인 뒤 끝났다면 계획 시간보다 짧아도 되며 (3) 지연은 승격 확인 시각까지 유지돼야 한다.
+    없으면(승격이 없었으면) 기존 규칙 그대로 4단계 모두·모든 단계 계획 시간 유지를 요구한다. 새 Pod 유출·대상 1개·설정 검사는 둘 다 같다."""
     if not delivery or not delivery.get("crs"):
         return {"problems": ["no_delivery_record"], "container_records_present": False}
     crs = delivery["crs"]
+    early = recovery_verified_at is not None
     probs, protected = protected_observation_problems(delivery, protected_observations)
-    probs += pr.stage_windows_problems([{"name": c["stage"], "injected": c["injected_at"] is not None} for c in crs])
+    probs += (pr.stage_prefix_problems if early else pr.stage_windows_problems)(
+        [{"name": c["stage"], "injected": c["injected_at"] is not None} for c in crs])
     if len(delivery.get("targets") or []) != 1:
         probs.append(f"targets={delivery.get('targets')} (대상 Pod 1개여야 함)")
     stage_by_name = {s["name"]: s for s in nc.NETWORK_STAGES}
     records_present = False
-    for c in crs:
+    for ci, c in enumerate(crs):
         tgt, st = c["target_pod"], stage_by_name.get(c["stage"])
         probs += [f"{c['name']}: intended:{p}" for p in pr.cr_spec_problems(c["expected"], tgt, namespace=namespace, stage=st)]
         if c.get("created") is not None:                                     # 생성 직후 저장값도 맞아야 한다(적용 뒤 값과 별개)
@@ -344,15 +349,21 @@ def delivery_problems(delivery, protected_samples, protected_observations, *, na
             probs.append(f"{c['name']}: not_deleted_by_runner")
         elif st is not None and c.get("created_at"):
             held = _epoch(c["deleted_at"]) - _epoch(c["created_at"])
-            if held < st["duration_sec"] - STAGE_TOLERANCE_SEC:     # 정리(cleanup)가 대기를 끊었거나 중단된 단계
+            cut_after_recovery = early and ci == len(crs) - 1 and _epoch(c["deleted_at"]) >= _epoch(recovery_verified_at)      # rev5: 승격 확인 뒤 끝난 마지막 단계
+            if held < st["duration_sec"] - STAGE_TOLERANCE_SEC and not cut_after_recovery:     # 정리(cleanup)가 대기를 끊었거나 중단된 단계
                 probs.append(f"{c['name']}: stage_cut_short({held:.0f}s < planned {st['duration_sec']}s)")
+    if early:
+        ends = [_epoch(c["deleted_at"]) for c in crs if c.get("deleted_at")]
+        if not ends or max(ends) < _epoch(recovery_verified_at):
+            probs.append("delay_ended_before_promotion_verified(지연이 승격·Service 전환 확인 전에 끝남)")
     if protected:
         probs += protected_coverage_problems(delivery, protected_samples, protected)
     return {"problems": probs, "container_records_present": records_present}
 
 
-def collect_delivery_evidence(rec, watch, net) -> dict:
-    """주입이 끝난 뒤 전달 증거를 모아 판정한다(읽기 전용: Prometheus 조회). Stage 1·2 공용. 조회 실패 등 예외는 '확인 불가'(문제)로 남긴다."""
+def collect_delivery_evidence(rec, watch, net, recovery_verified_at=None) -> dict:
+    """주입이 끝난 뒤 전달 증거를 모아 판정한다(읽기 전용: Prometheus 조회). Stage 1·2 공용. 조회 실패 등 예외는 '확인 불가'(문제)로 남긴다.
+    recovery_verified_at은 rev5 Stage 2(n2s02부터, 승격 확인된 세션)에서만 주어진다. 어떤 규칙으로 판정했는지 n3_rule에 남긴다."""
     try:
         delivery = rec.record() if rec else None
         names = protected_observation_problems(delivery, watch.obs)[1] if delivery and delivery.get("crs") else []
@@ -362,11 +373,13 @@ def collect_delivery_evidence(rec, watch, net) -> dict:
         samples = net.protected_probe_seconds(names, q0, q1) if (q0 and q1 and names) else {}
         return {"network_delivery": delivery, "network_protected_probe_seconds": samples,
                 "network_protected_pod_observations": watch.obs,
-                "network_delivery_check": delivery_problems(delivery, samples, watch.obs)}
+                "network_delivery_check": delivery_problems(delivery, samples, watch.obs, recovery_verified_at=recovery_verified_at),
+                "n3_rule": "early_recovery_rev5" if recovery_verified_at else "strict", "recovery_verified_at": recovery_verified_at}
     except Exception as e:  # noqa: BLE001
         return {"network_delivery": None, "network_protected_pod_observations": watch.obs,
                 "network_delivery_check": {"problems": [f"delivery_check_error: {type(e).__name__}: {e}"],
-                                           "container_records_present": False}}
+                                           "container_records_present": False},
+                "n3_rule": "early_recovery_rev5" if recovery_verified_at else "strict", "recovery_verified_at": recovery_verified_at}
 
 
 def network_preflight(net, profile, *, policy_mode="record_only") -> dict:

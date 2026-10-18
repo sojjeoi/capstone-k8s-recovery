@@ -109,6 +109,18 @@ def test_rev4_pre_injection_defect_rule_in_the_document_matches_the_code():
     assert nc.MAX_ATTEMPTS == {"normal": 12, "pressure": 7, "stage2": 5} and (nc.N_NORMAL, nc.N_PRESSURE, nc.N_STAGE2) == (4, 5, 3)       # 상한·목표 불변
 
 
+def test_rev5_stage2_n3_early_recovery_rule_in_the_document_matches_the_code():
+    import n2_stage2 as s2m
+    for s in ("### 6.2.1 Stage 2의 N3: 승격이 확인되면 이후 지연 단계는 수행하지 않아도 된다", "`n2s02`부터", "`n2s01`은 소급해서 유효로 바꾸지 않는다",
+              "승격·Service 전환 확인 시각까지 유지", "앞부분 1개 이상", "마지막으로 주입한 단계만", "승격이 없었거나 확인되지 않은 세션",
+              "기존 규칙 그대로 **주입 스케줄 4단계 전부**", "새 Pod로 지연이 새지 않았다", "`n3_rule`", "`early_recovery_rev5`", "`strict`",
+              "이 규칙은 사후 규칙이다.", "규칙을 성공한 세션을 본 뒤에 고쳤다(rev5)", "rev5의 지위(예외를 밝힌다)", "`EARLY_RECOVERY_FROM = 2`",
+              "감지기 임계값, Stage 1 선택 결과, Recovery Policy 코드, 트래픽 검증 기준", "`n2s01` (Stage 2)", "새 Pod +63"):
+        assert s in TEXT, s
+    assert s2m.EARLY_RECOVERY_FROM == 2 and not s2m.early_recovery_applies("n2s01") and s2m.early_recovery_applies("n2s02")
+    assert nc.MAX_ATTEMPTS == {"normal": 12, "pressure": 7, "stage2": 5} and (nc.N_NORMAL, nc.N_PRESSURE, nc.N_STAGE2) == (4, 5, 3)       # 상한·목표 불변
+
+
 def test_document_does_not_use_any_forbidden_claim_phrase_and_states_its_limits():
     for phrase in FORBIDDEN:
         assert phrase not in TEXT, phrase

@@ -500,6 +500,64 @@ def test_every_run_id_fits_the_kubernetes_label_limit_and_normal_ids_are_unchang
     assert all(c.isalnum() or c in "-_." for c in inst.run_id_for("n2p01"))
 
 
+def _early(n=1, **over):
+    d = good_delivery()
+    d["crs"] = d["crs"][:n]
+    for k, v in over.items():
+        d["crs"][-1][k] = v
+    return d
+
+
+def test_early_recovery_rule_allows_stopping_after_a_verified_promotion_but_only_for_what_rev5_says():
+    """rev5 §6.2.1(Stage 2, 승격 확인된 세션): 지연이 승격 확인 시각까지 유지되면 이후 단계는 생략 가능. 승격이 없으면 기존 규칙(4단계 전부)."""
+    ok_t = iso_at(BASE + 50)                                                            # 승격·Service 전환 확인 시각(1단계 한가운데)
+    assert ns2.delivery_problems(_early(1), good_samples(), good_obs(), recovery_verified_at=ok_t) == {"problems": [], "container_records_present": True}
+    strict = ns2.delivery_problems(_early(1), good_samples(), good_obs())               # 승격이 없으면(None) 같은 증거도 무효 - 기존 규칙 불변
+    assert any("stages" in x for x in strict["problems"])
+    assert ns2.delivery_problems(_early(2), good_samples(), good_obs(), recovery_verified_at=ok_t)["problems"] == []      # 앞부분 2단계도 허용
+
+
+def test_early_recovery_rule_still_requires_the_delay_to_last_until_the_promotion_is_verified():
+    late = ns2.delivery_problems(_early(1), good_samples(), good_obs(), recovery_verified_at=iso_at(BASE + 95))["problems"]     # 삭제(BASE+90) 뒤에 확인됨
+    assert any("delay_ended_before_promotion_verified" in x for x in late)
+    cut_ok = _early(1, deleted_at=iso_at(BASE + 60))                                        # 마지막 단계가 계획(90 s)보다 짧게 끝났지만 확인(BASE+50) 뒤
+    assert ns2.delivery_problems(cut_ok, good_samples(), good_obs(), recovery_verified_at=iso_at(BASE + 50))["problems"] == []
+    cut_bad = ns2.delivery_problems(cut_ok, good_samples(), good_obs(), recovery_verified_at=iso_at(BASE + 75))["problems"]       # 확인 전에 끊김
+    assert any("stage_cut_short" in x for x in cut_bad) and any("delay_ended_before_promotion_verified" in x for x in cut_bad)
+
+
+def test_early_recovery_rule_does_not_excuse_skipped_reordered_or_cut_earlier_stages_or_leaks():
+    ok_t = iso_at(BASE + 50)
+    d = good_delivery()
+    skipped = {**d, "crs": d["crs"][1:2]}                                                # 1단계를 건너뛰고 2단계만
+    assert any("leading prefix" in x for x in ns2.delivery_problems(skipped, good_samples(), good_obs(), recovery_verified_at=ok_t)["problems"])
+    two = good_delivery()
+    two["crs"] = two["crs"][:2]
+    two["crs"][0]["deleted_at"] = iso_at(BASE + 40)                                      # 마지막이 아닌 단계는 계획 시간을 채워야 한다
+    assert any("stage_cut_short" in x for x in ns2.delivery_problems(two, good_samples(), good_obs(), recovery_verified_at=iso_at(BASE + 105))["problems"])
+    leak = ns2.delivery_problems(_early(1), good_samples(leak_at=15, value=0.5), good_obs(), recovery_verified_at=ok_t)["problems"]
+    assert any("probe_duration_mean_max" in x for x in leak)                              # 새 Pod 유출 검사는 완화되지 않는다
+    assert ns2.delivery_problems({"crs": [], "targets": []}, {}, [], recovery_verified_at=ok_t)["problems"] == ["no_delivery_record"]
+
+
+def test_collect_delivery_evidence_records_which_n3_rule_was_used():
+    class Rec:
+        def record(self):
+            d = _early(1)
+            return {**d, "first_created_at": d["crs"][0]["created_at"], "last_deleted_at": d["crs"][0]["deleted_at"]}
+
+    class Watch:
+        obs = good_obs()
+
+    class Net:
+        def protected_probe_seconds(self, names, q0, q1):
+            return good_samples()
+    strict = ns2.collect_delivery_evidence(Rec(), Watch(), Net())
+    early = ns2.collect_delivery_evidence(Rec(), Watch(), Net(), recovery_verified_at=iso_at(BASE + 50))
+    assert strict["n3_rule"] == "strict" and strict["recovery_verified_at"] is None and strict["network_delivery_check"]["problems"]
+    assert early["n3_rule"] == "early_recovery_rev5" and early["network_delivery_check"]["problems"] == []
+
+
 def test_session_end_state_problems_are_reported(tmp_path, monkeypatch, env):
     w, net, inst, kw = session(tmp_path, monkeypatch, env)
     real_end = net.read_end_state

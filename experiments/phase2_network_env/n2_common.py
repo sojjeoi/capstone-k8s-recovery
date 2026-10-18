@@ -40,8 +40,8 @@ MAX_ATTEMPTS = {**pc.MAX_ATTEMPTS, "normal": 12}
 GATE2_LIMIT_SEC, GATE2_MIN_PASS = pc.GATE2_LIMIT_SEC, pc.GATE2_MIN_PASS
 GATE3_MIN_DIFF, TIMING_MIN_DIFF_SEC, DECISION_SEC = pc.GATE3_MIN_DIFF, pc.TIMING_MIN_DIFF_SEC, pc.DECISION_SEC
 
-PREREG_DOC = "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev4.md"
-PREREG_SHA256 = "31797ba892707a45a1654ebcc4863bb99949f290b9496e48a1fa39cb9f24bb0d"   # rev4 DESIGN FREEZE 2026-10-18, prereg commit 34e7224 (LF 정규화 blob 해시). rev1(dd3a74f)·rev2(42a3b46)·rev3(2209451, ff835c18…)는 교체됐다.
+PREREG_DOC = "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev5.md"
+PREREG_SHA256 = None            # rev5 DESIGN FREEZE 때 채운다(LF 정규화 blob 해시). rev1(dd3a74f)·rev2(42a3b46)·rev3(2209451)·rev4(34e7224, 31797ba8…)는 교체됐다.
 DEV_DRAFT = "docs/design/NETWORK-DETECTOR-PREREG-DRAFT-20261017.md"
 NET_CALIBRATION_REL = "experiments/results/network_detector_dev_20261017/probe-metric/result.json"
 

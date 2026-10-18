@@ -117,6 +117,22 @@ def sidecar_path(results_dir, run_id) -> Path:
     return Path(results_dir) / f"net-delivery-{run_id}.json"
 
 
+EARLY_RECOVERY_FROM = 2          # rev5(사전등록 §6.2.1): n2s02부터 적용한다. n2s01은 소급하지 않는다(무효 + 성공 기록 그대로 보존).
+
+
+def early_recovery_applies(run: str) -> bool:
+    return int(run[len("n2s"):]) >= EARLY_RECOVERY_FROM
+
+
+def promotion_verified_at(summary, run_id):
+    """이 세션의 승격이 확인(selector·Service 전환)된 시각. 승격이 없었거나 확인되지 않았으면 None -> 기존 엄격한 N3 규칙."""
+    for a in (((summary or {}).get("policy_state_after") or {}).get("actions") or {}).values():
+        res = (a or {}).get("promote_result") or {}
+        if (a or {}).get("run_id") == run_id and a.get("status") == "verified" and res.get("verified") is True and res.get("verified_at"):
+            return res["verified_at"]
+    return None
+
+
 def run_session_net(s2, run, *, orig, deps, entry: dict, active_profile_path, artifact_root, approval_path, policy_url, audit_reader,
                     net, hooks=None, results_dir=None, preflight_only=False, code_provenance=None, starter_factory=None) -> dict:
     """[USER APPROVAL REQUIRED] 실제 deps면 act 압박·실제 승격. entry = entry_check_net 결과. orig = 설치 전 원본 run_session. 테스트는 가짜 deps·net."""
@@ -145,7 +161,8 @@ def run_session_net(s2, run, *, orig, deps, entry: dict, active_profile_path, ar
                  preflight_only=preflight_only, code_provenance=code_provenance, starter_factory=starter_factory)
     if preflight_only:
         return r
-    ev = ns2.collect_delivery_evidence(box.get("rec"), watch, net)
+    rv = promotion_verified_at(r.get("summary"), s2.run_id_for(run)) if early_recovery_applies(run) else None       # 승격이 없으면 기존 주입 스케줄 전체를 요구
+    ev = ns2.collect_delivery_evidence(box.get("rec"), watch, net, recovery_verified_at=rv)
     ev["network_preflight"] = {k: pf.get(k) for k in ("target", "net_probe")}
     pc.write_json_new(sidecar_path(d, s2.run_id_for(run)), ev)
     r["network_delivery_check"] = ev["network_delivery_check"]
@@ -171,6 +188,7 @@ def validate_stage2_net(s1, s2, run, d, *, operator: str, probe_dir=None) -> dic
     return {"run": run, "run_id": rid, "valid": not reasons, "invalid_reasons": reasons, "operator_intervention": operator,
             **ns2.validity_flags(reasons),
             "network_delivery": {"container_records_present": chk.get("container_records_present"), "n_problems": len(chk["problems"])},
+            "n3_rule": (json.loads(side.read_text(encoding="utf-8")).get("n3_rule") if side.exists() else None) or "strict",
             "rule": "prereg §8.4 - §8.2 B 항목만(V5 전환 결과 의존 항목 제외) + 네트워크 전달 확인(N3), 성공 판정 전에 확정"}
 
 

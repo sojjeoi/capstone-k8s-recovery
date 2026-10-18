@@ -108,3 +108,15 @@ def stage_windows_problems(windows: list) -> list:
         probs.append(f"stages {got} != {want}")
     probs += [f"stage_not_injected:{w.get('name')}" for w in windows or [] if not w.get("injected")]
     return probs
+
+
+def stage_prefix_problems(windows: list) -> list:
+    """rev5(사전등록 §6.2.1, Stage 2에서 승격이 확인된 세션에만): 승격이 확인되면 이후 예정된 지연 단계는 수행하지 않아도 되므로, 주입한 단계는
+    사전등록 단계 순서의 **앞부분(1개 이상)** 이면 된다. 건너뛰거나 순서가 다르면 문제다. 승격이 없으면 이 함수가 아니라 stage_windows_problems(전부)를 쓴다."""
+    want = [s["name"] for s in nc.NETWORK_STAGES]
+    got = [w.get("name") for w in windows or []]
+    probs = []
+    if not got or got != want[:len(got)]:
+        probs.append(f"stages {got} is not a leading prefix of {want}")
+    probs += [f"stage_not_injected:{w.get('name')}" for w in windows or [] if not w.get("injected")]
+    return probs

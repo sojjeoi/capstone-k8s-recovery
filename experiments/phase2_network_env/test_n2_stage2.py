@@ -23,6 +23,39 @@ import run_guarded_pilot as gp  # noqa: E402
 import run_stage2 as orig_s2  # noqa: E402  (Phase 2 동결 원본 - 읽기 전용 대조)
 
 
+def _summary(status="verified", verified=True, at="2026-10-18T12:46:21.915027+00:00", run_id="rid"):
+    return {"policy_state_after": {"actions": {
+        "old-session-action": {"status": "resolved", "run_id": "other", "promote_result": {"verified": True, "verified_at": "2020-01-01T00:00:00+00:00"}},
+        "k": {"status": status, "run_id": run_id, "promote_result": {"verified": verified, "verified_at": at}}}}}
+
+
+def test_promotion_verified_at_reads_only_this_runs_verified_action():
+    assert n2s2.promotion_verified_at(_summary(), "rid") == "2026-10-18T12:46:21.915027+00:00"
+    assert n2s2.promotion_verified_at(_summary(), "unknown-run") is None                              # 다른 run의 승격은 이 세션의 것이 아니다
+    assert n2s2.promotion_verified_at(_summary(status="failed"), "rid") is None                      # 확인되지 않은 승격 -> 기존 엄격한 규칙
+    assert n2s2.promotion_verified_at(_summary(verified=False), "rid") is None
+    assert n2s2.promotion_verified_at(_summary(at=None), "rid") is None
+    assert n2s2.promotion_verified_at({}, "rid") is None and n2s2.promotion_verified_at(None, "rid") is None
+    assert n2s2.promotion_verified_at({"policy_state_after": {"actions": {}}}, "rid") is None        # 승격 없음
+
+
+def test_rev5_early_recovery_applies_from_n2s02_and_never_retroactively_to_n2s01():
+    assert n2s2.EARLY_RECOVERY_FROM == 2 and [n2s2.early_recovery_applies(f"n2s0{i}") for i in range(1, 6)] == [False, True, True, True, True]
+
+
+def test_n2s01_as_recorded_stays_invalid_under_the_code_that_judges_validity():
+    """실제 n2s01 기록(복구 성공, 1단계만 주입)을 읽으면 기존 N3 문제가 그대로 남아 무효다(소급 없음). 기록이 없는 환경에서는 건너뛴다."""
+    side = nc.EXP / "results" / "phase2_network_env_stage2" / "net-delivery-guarded_pressure_act-n2s01-cap-p2-net-v1-stage2.json"
+    if not side.is_file():
+        pytest.skip("n2s01 기록이 없는 환경")
+    chk = json.loads(side.read_text(encoding="utf-8"))["network_delivery_check"]
+    assert "stages" in " ".join(chk["problems"])
+    assert json.loads(side.with_name("p2-s2-validity-n2s01.json").read_text(encoding="utf-8"))["valid"] is False
+    summ = json.loads(next(side.parent.glob("summary-*n2s01*.json")).read_text(encoding="utf-8"))
+    assert n2s2.promotion_verified_at(summ, summ["run_id"]) is not None                                # 승격은 확인됐지만 n2s01에는 새 규칙을 쓰지 않는다
+    assert not n2s2.early_recovery_applies("n2s01")
+
+
 def test_every_stage2_run_id_fits_the_kubernetes_label_limit():
     """n2p01에서 압박 실행 ID(67자)가 라벨 한도(63자)를 넘어 거부된 것과 같은 결함이 Stage 2 ID(원본 64자)에도 있었다."""
     s2 = n2s2.load_stage2(ns1.load_stage1())
