@@ -1,0 +1,73 @@
+{
+  "status": "design_frozen",
+  "version": "phase2-network-env-design-v1-rev5",
+  "plan_id": "capstone-phase2-network-env-v1",
+  "prereg_path": "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev5.md",
+  "prereg_sha256": "e662e04a8a7555012ff3f3aa0f635f5856159c83fd8c943d62d126d5985c9567",
+  "prereg_commit": "d83682de6ac11c7f0d617adf196207cffa7c7952",
+  "hash_basis": "LF-normalized file content (= committed git blob)",
+  "frozen_at_utc": "2026-10-18T13:28:16+00:00",
+  "candidates": {
+    "cpu-threshold-c": 1.6842544293089357,
+    "net-probe-readiness": 0.006401369666666786,
+    "c3-a-if": -0.1948341270493127
+  },
+  "net_probe": {
+    "definition_sha256": "46c95eed9920c8ddd59dc816960fc4a7c1c96b5a61c95cca2d19e27c6c0167a6",
+    "calibration_sha256": "c6ece5885bb97000f5a4df87ef135ad9a21e358e99b621e90f4b875e48c7af96",
+    "threshold": 0.006401369666666786,
+    "calibration_evidence": "experiments/results/network_detector_dev_20261017/probe-metric/result.json"
+  },
+  "counts": {
+    "normal": 4,
+    "pressure": 5,
+    "stage2": 3,
+    "max_attempts": {
+      "normal": 12,
+      "pressure": 7,
+      "stage2": 5
+    }
+  },
+  "stages": [
+    {
+      "name": "stage-1-500ms",
+      "latency": "500ms",
+      "jitter": "50ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-2-1000ms",
+      "latency": "1000ms",
+      "jitter": "100ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-3-2000ms",
+      "latency": "2000ms",
+      "jitter": "200ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-4-4000ms",
+      "latency": "4000ms",
+      "jitter": "400ms",
+      "duration_sec": 90
+    }
+  ],
+  "probe_profile": {
+    "name": "network_tolerant",
+    "readiness_timeout_sec": 11,
+    "liveness_timeout_sec": 11
+  },
+  "phase2_not_modified": {
+    "prereg_path": "docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md",
+    "prereg_sha256": "a6512ff03f33fb96b1d65031ff7c03f84c26fdfd74dd833e1516336110bad7d3",
+    "implementation_freeze": "experiments/phase2_detector_selection/phase2-detector-selection-implementation-freeze-r2.json",
+    "implementation_freeze_sha256": "06c3ecf8135e5a529924689b29518d569165b3aeaa774223516cfbbc24257df0"
+  },
+  "supersedes": {
+    "manifest_path": "docs/design/phase2-network-env-design-freeze-rev4.json",
+    "manifest_sha256": "90ba475c1bc455f9682635141907c69114eb5fa995b92e0adc1ac83d3c119bd8",
+    "reason": "Stage 2 첫 세션 n2s01이 복구에 성공했으나 지연이 1단계만 주입돼 기존 N3(4단계 전부)로 무효. 사용자 승인(선택지 A)으로 Stage 2의 N3 단계 조건만 승격 확인 시각까지 지연 유지로 바꾼 rev5로 교체(n2s02부터, n2s01 비소급). 감지기 임계값·Stage 1 선택·Recovery Policy·트래픽 검증 기준·유효성 기준·Gate·상한 불변."
+  }
+}
