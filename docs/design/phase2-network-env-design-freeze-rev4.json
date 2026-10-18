@@ -1,0 +1,73 @@
+{
+  "status": "design_frozen",
+  "version": "phase2-network-env-design-v1-rev4",
+  "plan_id": "capstone-phase2-network-env-v1",
+  "prereg_path": "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev4.md",
+  "prereg_sha256": "31797ba892707a45a1654ebcc4863bb99949f290b9496e48a1fa39cb9f24bb0d",
+  "prereg_commit": "34e722495f13258408258b2ecf672cd36c91400f",
+  "hash_basis": "LF-normalized file content (= committed git blob)",
+  "frozen_at_utc": "2026-10-18T09:52:13+00:00",
+  "candidates": {
+    "cpu-threshold-c": 1.6842544293089357,
+    "net-probe-readiness": 0.006401369666666786,
+    "c3-a-if": -0.1948341270493127
+  },
+  "net_probe": {
+    "definition_sha256": "46c95eed9920c8ddd59dc816960fc4a7c1c96b5a61c95cca2d19e27c6c0167a6",
+    "calibration_sha256": "c6ece5885bb97000f5a4df87ef135ad9a21e358e99b621e90f4b875e48c7af96",
+    "threshold": 0.006401369666666786,
+    "calibration_evidence": "experiments/results/network_detector_dev_20261017/probe-metric/result.json"
+  },
+  "counts": {
+    "normal": 4,
+    "pressure": 5,
+    "stage2": 3,
+    "max_attempts": {
+      "normal": 12,
+      "pressure": 7,
+      "stage2": 5
+    }
+  },
+  "stages": [
+    {
+      "name": "stage-1-500ms",
+      "latency": "500ms",
+      "jitter": "50ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-2-1000ms",
+      "latency": "1000ms",
+      "jitter": "100ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-3-2000ms",
+      "latency": "2000ms",
+      "jitter": "200ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-4-4000ms",
+      "latency": "4000ms",
+      "jitter": "400ms",
+      "duration_sec": 90
+    }
+  ],
+  "probe_profile": {
+    "name": "network_tolerant",
+    "readiness_timeout_sec": 11,
+    "liveness_timeout_sec": 11
+  },
+  "phase2_not_modified": {
+    "prereg_path": "docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md",
+    "prereg_sha256": "a6512ff03f33fb96b1d65031ff7c03f84c26fdfd74dd833e1516336110bad7d3",
+    "implementation_freeze": "experiments/phase2_detector_selection/phase2-detector-selection-implementation-freeze-r2.json",
+    "implementation_freeze_sha256": "06c3ecf8135e5a529924689b29518d569165b3aeaa774223516cfbbc24257df0"
+  },
+  "supersedes": {
+    "manifest_path": "docs/design/phase2-network-env-design-freeze-rev3.json",
+    "manifest_sha256": "3fb663955b7f22990ec5ce3e1915e0e4fcd933a396c57ed5a1f1d2047a5c1d6e",
+    "reason": "rev3 동결 뒤 정상 유효 4개를 모았고 첫 압박 시도 n2p01이 지연 주입 전 구현 결함(실행 ID 63자 한도 초과)으로 실패. 사용자 승인(선택지 A)으로 실제 압박 주입 이전의 구현 결함에만 한정한 재개 규칙 §9.4만 추가한 rev4로 교체. 검증 규칙·임계값·Gate·선택 규칙·상한·목표 수 불변. n2p01은 무효·1회 소진 보존."
+  }
+}
