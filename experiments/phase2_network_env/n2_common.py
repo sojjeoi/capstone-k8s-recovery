@@ -41,7 +41,7 @@ GATE2_LIMIT_SEC, GATE2_MIN_PASS = pc.GATE2_LIMIT_SEC, pc.GATE2_MIN_PASS
 GATE3_MIN_DIFF, TIMING_MIN_DIFF_SEC, DECISION_SEC = pc.GATE3_MIN_DIFF, pc.TIMING_MIN_DIFF_SEC, pc.DECISION_SEC
 
 PREREG_DOC = "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev3.md"
-PREREG_SHA256 = None            # rev3 DESIGN FREEZE 때 채운다(LF 정규화 blob 해시). rev1(dd3a74f)·rev2(42a3b46, 1e80017b…)는 교체됐다.
+PREREG_SHA256 = "ff835c1810b1bf37057b8851e03b65230afb5738cc05e24d6b6ca29328f7848d"   # rev3 DESIGN FREEZE 2026-10-18, prereg commit 2209451 (LF 정규화 blob 해시). rev1(dd3a74f)·rev2(42a3b46, 1e80017b…)는 교체됐다.
 DEV_DRAFT = "docs/design/NETWORK-DETECTOR-PREREG-DRAFT-20261017.md"
 NET_CALIBRATION_REL = "experiments/results/network_detector_dev_20261017/probe-metric/result.json"
 
