@@ -131,7 +131,7 @@ def authorize_setup(tmp_path, *, thr=0.5):
     prev, cur = tmp_path / "prev.json", tmp_path / "cur.json"
     prev.write_text(json.dumps({"prereg_sha256": "1", "thr": 0.5}), encoding="utf-8")
     cur.write_text(json.dumps({"prereg_sha256": "2", "thr": thr}), encoding="utf-8")
-    m = load(d, live_ok(), selection_profile=cur, previous_selection_profile=prev)
+    m = load(d, live_ok(), selection_profile=cur, previous_selection_profiles=(prev,))
     rec = json.loads((d / f"p2-session-{RUN}.json").read_text(encoding="utf-8"))
     rec["environment_profile_sha256"] = m.pc.text_sha256(prev)
     (d / f"p2-session-{RUN}.json").write_text(json.dumps(rec), encoding="utf-8")
@@ -145,7 +145,7 @@ def test_authorization_unblocks_only_that_attempt_and_is_invalidated_by_any_chan
     d, m, impl = authorize_setup(tmp_path)
     assert "정리 오류" in m.stop_reason(d)                                     # 재개 기록 전: 수집 중단
     out = m.authorize_cleanup_resume(d, RUN, authorized_by="tester", review_note="절전 확인", impl=impl, artifact_root=tmp_path)
-    assert Path(out).name == f"p2-resume-authorization-{RUN}-r5.json"            # 구현 동결 revision마다 따로 쓴다(이전 revision 기록은 이력으로 남는다)
+    assert Path(out).name == f"p2-resume-authorization-{RUN}-r6.json"            # 구현 동결 revision마다 따로 쓴다(이전 revision 기록은 이력으로 남는다)
     (d / f"p2-resume-authorization-{RUN}.json").write_text("{}", encoding="utf-8")   # 예전(r4) 기록이 있어도 새 revision 판정에는 영향이 없다
     a = json.loads(Path(out).read_text(encoding="utf-8"))
     assert a["user_authorized_resume"] is True and a["attempt_remains_invalid"] and a["attempt_consumed"]
@@ -169,7 +169,7 @@ def test_authorization_is_refused_when_conditions_fail_and_writes_nothing(tmp_pa
 
 def test_a_replaced_profile_that_differs_beyond_the_prereg_hash_is_refused(tmp_path):
     d, m, impl = authorize_setup(tmp_path, thr=0.9)
-    with pytest.raises(SystemExit, match="사전등록 해시만 다른 교체본도 아님"):
+    with pytest.raises(SystemExit, match="사전등록 해시만 다른 이전 revision profile도 아님"):
         m.authorize_cleanup_resume(d, RUN, authorized_by="t", review_note="n", impl=impl, artifact_root=tmp_path)
 
 
@@ -178,6 +178,122 @@ def test_artifact_mismatch_is_refused(tmp_path):
     m.pc.verify_artifacts = lambda root: {"hashes": {"model.pkl": "b" * 64}}
     with pytest.raises(SystemExit, match="artifact"):
         m.authorize_cleanup_resume(d, RUN, authorized_by="t", review_note="n", impl=impl, artifact_root=tmp_path)
+
+
+# ---------- rev4 §9.4: 실제 압박 주입 이전의 구현 결함 ----------
+PRUN, PRID = "n2p01", "guarded_pressure_record_only-n2p01-test"
+DEFECT_ERRS = ["trial_cleanup_incomplete: prober=None, injector=None", "harness_error: ApiException: (422) label too long",
+               f"network_session_end: running_marker_left:['running-{RID}.json']"]
+
+
+def setup_defect(tmp_path, *, kind="pressure", errors=DEFECT_ERRS, nd=None, trial=None, canonical_ok=True, stress=None, attempt_freeze="a" * 64,
+                 send_attempts=0, integrity=True, valid=False):
+    """n2p01 모양의 합성 기록: 압박 시도, 지연 주입 전에 NetworkChaos 생성이 거부돼 harness_error로 끝남."""
+    d = tmp_path / "res"
+    d.mkdir()
+    (d / "ev.jsonl").write_text("", encoding="utf-8")
+    rec = {"run": PRUN, "run_id": PRID, "kind": kind, "attempt_number": 8, "status": "run", "cleanup_errors": list(errors),
+           "integrity": {"ok": integrity, "problems": []}, "power_events": [], "postflight_invalid_reasons": [],
+           "runner_started_at_utc": "2026-10-18T09:19:40+00:00", "runner_ended_at_utc": "2026-10-18T09:26:05+00:00", "evidence_file": "ev.jsonl",
+           "environment_profile_sha256": "p" * 64, "artifact_hashes": ARTS, "code_provenance": {"manifest_sha256": attempt_freeze}}
+    summ = {"detector_started": True, "evidence_counts": {"send_attempts": send_attempts}, "canonical_end": {"ok": canonical_ok, "problems": []},
+            "old_policy_isolation": {"start": {"isolated": True}, "end": {"isolated": True}}, "trial_outcome": trial or {"status": "harness_error"},
+            "network_delivery": {"crs": [], "targets": [], "first_created_at": None, "last_deleted_at": None} if nd is None else nd,
+            "stress_delivery_record": stress}
+    (d / f"p2-session-{PRUN}.json").write_text(json.dumps(rec), encoding="utf-8")
+    (d / f"summary-{PRID}.json").write_text(json.dumps(summ), encoding="utf-8")
+    (d / f"p2-validity-{PRUN}.json").write_text(json.dumps({"run": PRUN, "status": "invalid", "valid": valid}), encoding="utf-8")
+    return d
+
+
+def defect_check(tmp_path, live_fn=None, **kw):
+    live_fn = live_fn or live_ok(problems=[])
+    d = setup_defect(tmp_path, **kw)
+    return rn.make_resume_check(load(d, live_fn), live_fn)(d, PRUN)
+
+
+def test_a_pre_injection_implementation_defect_is_resumable_when_every_condition_holds(tmp_path):
+    c = defect_check(tmp_path)
+    assert c["problems"] == [] and c["facts"]["classification"] == rn.CLASSIFICATION_DEFECT
+    assert c["facts"]["attempt_implementation_freeze_sha256"] != c["facts"]["current_implementation_freeze_sha256"]
+
+
+@pytest.mark.parametrize("kw,needle", [
+    ({"nd": {"crs": [{"stage": "s1"}], "first_created_at": None, "last_deleted_at": None}}, "injection_may_have_happened"),      # NetworkChaos가 하나라도 생성됨
+    ({"nd": {"crs": [], "first_created_at": "2026-10-18T09:20:00+00:00", "last_deleted_at": None}}, "injection_may_have_happened"),
+    ({"nd": {"crs": [], "first_created_at": None, "last_deleted_at": "2026-10-18T09:21:00+00:00"}}, "injection_may_have_happened"),
+    ({"trial": {"status": "harness_error", "t_injection_observed_utc": "2026-10-18T09:20:00+00:00"}}, "injection_may_have_happened"),
+    ({"stress": {"kind": "network_delay"}}, "injection_may_have_happened"),
+    ({"nd": False}, "network_delivery_record_missing"),
+    ({"kind": "normal"}, "applies_to_pressure_attempts_only"),                                      # 정상 시도에는 적용하지 않는다
+    ({"errors": DEFECT_ERRS + ["stress_chaos_residual: ['x']"]}, "cleanup_errors_not_pre_injection_defect_class"),
+    ({"errors": ["trial_cleanup_incomplete: prober=None, injector=None"]}, "cleanup_errors_not_pre_injection_defect_class"),   # harness_error 없음
+    ({"errors": DEFECT_ERRS + ["canonical_restore_failed: x"]}, "cleanup_errors_not_pre_injection_defect_class"),
+    ({"canonical_ok": False}, "canonical_end_not_ok"),
+    ({"attempt_freeze": "m" * 64}, "no_new_implementation_freeze_since_the_attempt"),               # 수정 뒤 새 구현 동결이 없다
+    ({"send_attempts": 1}, "signal_send_attempt_present"),                                          # 신호 0건
+    ({"integrity": False}, "integrity_failure"),
+    ({"valid": True}, "not_a_terminal_invalid_attempt")])
+def test_every_condition_of_the_defect_class_is_required(tmp_path, kw, needle):
+    if kw.get("nd") is False:
+        d = setup_defect(tmp_path)
+        s = json.loads((d / f"summary-{PRID}.json").read_text(encoding="utf-8"))
+        s.pop("network_delivery")
+        (d / f"summary-{PRID}.json").write_text(json.dumps(s), encoding="utf-8")
+        live = live_ok(problems=[])
+        c = rn.make_resume_check(load(d, live), live)(d, PRUN)
+    else:
+        c = defect_check(tmp_path, **kw)
+    assert any(needle in p for p in c["problems"]), c["problems"]
+
+
+def test_the_defect_class_needs_a_clean_live_state_with_no_leftover_network_chaos(tmp_path):
+    c = defect_check(tmp_path, live_fn=live_ok(problems=["network_chaos_residual:['netdelay-x']"]))
+    assert any("live_state_not_canonical" in p for p in c["problems"])
+    (tmp_path / "act").mkdir()
+    c = defect_check(tmp_path / "act", live_fn=live_ok(problems=[], policy={"mode": "act", "context": None}))
+    assert any("live_policy_not_clean_record_only" in p for p in c["problems"])
+
+
+def test_authorizing_a_pre_injection_defect_records_the_class_and_keeps_the_attempt_invalid(tmp_path):
+    d = setup_defect(tmp_path)
+    prev, cur = tmp_path / "prev.json", tmp_path / "cur.json"
+    prev.write_text(json.dumps({"prereg_sha256": "1", "thr": 0.5}), encoding="utf-8")
+    cur.write_text(json.dumps({"prereg_sha256": "2", "thr": 0.5}), encoding="utf-8")
+    live = live_ok(problems=[])
+    m = load(d, live, selection_profile=cur, previous_selection_profiles=(prev,))
+    rec = json.loads((d / f"p2-session-{PRUN}.json").read_text(encoding="utf-8"))
+    rec["environment_profile_sha256"] = m.pc.text_sha256(prev)
+    (d / f"p2-session-{PRUN}.json").write_text(json.dumps(rec), encoding="utf-8")
+    m.pc.load_profile = lambda *a, **k: None
+    m.pc.verify_artifacts = lambda root: {"hashes": ARTS}
+    impl = {"manifest": "m.json", "manifest_sha256": "m" * 64, "selection_profile_sha256": m.pc.text_sha256(cur)}
+    a = json.loads(Path(m.authorize_cleanup_resume(d, PRUN, authorized_by="t", review_note="n", impl=impl, artifact_root=tmp_path)).read_text(encoding="utf-8"))
+    assert a["failure_classification"] == rn.CLASSIFICATION_DEFECT and a["no_injection_confirmed"] is True
+    assert a["attempt_remains_invalid"] is True and a["attempt_consumed"] is True and a["detector_results_observed"] is False
+    assert Path(m._auth_path(d, PRUN)).name == f"p2-resume-authorization-{PRUN}-r6.json"
+    assert not m.kind_progress(d, "pressure")["valid"]                                    # 재개해도 유효 세션으로 세지 않는다(Gate 계산 제외)
+
+
+def test_two_attempts_waiting_for_resume_do_not_block_each_other_but_an_unrecorded_marker_does(tmp_path):
+    """n2n01과 n2p01이 함께 재개를 기다릴 때 서로의 'running 표시' 때문에 둘 다 거부되는 순환을 막는다. 시도 기록이 없는 표시는 계속 문제다."""
+    d = setup_defect(tmp_path)
+    (d / f"p2-session-{RUN}.json").write_text(json.dumps({"run": RUN, "run_id": RID, "kind": "normal", "attempt_number": 1, "status": "run"}), encoding="utf-8")
+    both = f"running_marker_left:['running-{RID}.json', 'running-{PRID}.json']"
+    live = live_ok(problems=[both])
+    assert rn.make_resume_check(load(d, live), live)(d, PRUN)["problems"] == []
+    live = live_ok(problems=[f"running_marker_left:['running-{RID}.json', 'running-unknown-run.json']"])
+    c = rn.make_resume_check(load(d, live), live)(d, PRUN)
+    assert any("live_state_not_canonical" in p and "unknown-run" in p and RID not in p for p in c["problems"]), c["problems"]
+
+
+def test_the_host_sleep_class_is_unchanged_and_the_two_classes_do_not_mix(tmp_path):
+    c = check(tmp_path)                                                                      # 호스트 절전 모양 -> 기존 종류
+    assert c["facts"]["classification"] == rn.CLASSIFICATION and c["problems"] == []
+    (tmp_path / "neither").mkdir()
+    c = check(tmp_path / "neither", sleeps=(), errors=["stress_chaos_residual: x"])           # 어느 종류도 아님 -> 두 종류의 사유가 모두 나온다
+    assert c["facts"]["classification"] == "none"
+    assert any("no_host_sleep_event" in p for p in c["problems"]) and any("pre_injection_defect_class:" in p for p in c["problems"])
 
 
 def test_cli_requires_every_argument_and_is_registered():

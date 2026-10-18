@@ -7,6 +7,7 @@
 재개해도 그 시도는 무효·시도 1회로 남고(ID 재사용 금지), running 표시·원자료는 지우지 않는다. 기록은 시도 기록·요약·유효성·표시 파일의
 해시와 현재 구현 동결에 묶여, 하나라도 바뀌면 효력을 잃는다(원본 resume_authorized를 그대로 쓴다).
 원본 모듈은 바꾸지 않는다: n2_stage1.load_stage1이 로드한 인스턴스의 resume_check만 이 구현으로 교체한다."""
+import ast
 import json
 import re
 from datetime import datetime, timezone
@@ -16,6 +17,10 @@ HOST_SLEEP_EVENT_IDS = (42, 506)          # Kernel-Power: 42 = 시스템이 절�
 # 절전으로 정책 서버·Prometheus 통로가 끊기면 생기는 정리 오류만. 잔여 자원·복원 실패·유예 변경 등은 재개 불가.
 RESUMABLE_PREFIXES = ("policy_state_after_failed", "preview_cleanup_held", "canonical_end_not_reached")
 CLASSIFICATION = "host_sleep_interruption_after_detector_start"
+# rev4 §9.4: 실제 압박 주입 이전의 구현 결함으로 중단된 압박 시도. 정리 오류는 이 종류뿐이어야 하고 harness_error가 하나 이상 있어야 한다
+# (주입 전 NetworkChaos 생성이 거부된 n2p01 형태). 잔여 자원·복원 실패·유예 변경 등은 불가.
+CLASSIFICATION_DEFECT = "pre_injection_implementation_defect"
+DEFECT_PREFIXES = ("trial_cleanup_incomplete", "harness_error", "network_session_end: running_marker_left")
 
 
 def _event_utc(e) -> datetime:
@@ -41,6 +46,28 @@ def sleep_events_in_window(rec: dict, summary: dict) -> list:
     return out
 
 
+MARKER_PROBLEM = "running_marker_left:"
+
+
+def _without_recorded_markers(problems, recorded) -> list:
+    """지금 서버 상태 확인(live)의 문제 목록에서, 시도 기록이 있는 시도의 'running 표시'만 뺀다. 그런 표시는 증거 파일로 남아 있는 것이 정상이고(재개 승인이
+    없으면 다음 세션 시작 관문이 따로 막는다), 두 시도가 동시에 재개를 기다릴 때 서로의 표시 때문에 둘 다 거부되는 순환을 막는다.
+    시도 기록이 없는 표시(알 수 없는 실행이 남긴 것)는 그대로 문제로 남긴다."""
+    out = []
+    for p in problems:
+        if p.startswith(MARKER_PROBLEM):
+            try:
+                left = [x for x in ast.literal_eval(p[len(MARKER_PROBLEM):]) if x not in recorded]
+            except (ValueError, SyntaxError):
+                out.append(p)
+                continue
+            if left:
+                out.append(f"{MARKER_PROBLEM}{left}")
+        else:
+            out.append(p)
+    return out
+
+
 def make_resume_check(m, live_fn):
     """m = n2_stage1.load_stage1이 돌려준 run_stage1 인스턴스. live_fn() -> {"policy": {mode, context, ...}, "problems": [...]}
     (지금의 서버 상태, 읽기 전용). live_fn이 없으면 재개 조건을 확인할 수 없으므로 거부(fail-closed)."""
@@ -55,8 +82,8 @@ def make_resume_check(m, live_fn):
         iso = s.get("old_policy_isolation") or {}
         to = s.get("trial_outcome") or {}
         live = live_fn() if live_fn else None
-        marker_only = f"running_marker_left:{[marker.name]}"
-        live_problems = [p for p in (live or {}).get("problems", []) if p != marker_only]       # 이 시도의 running 표시만 남은 것은 허용
+        recorded = {f"running-{a['run_id']}.json" for a in m.attempts(d)}                       # 시도 기록(p2-session)이 있는 시도의 running 표시
+        live_problems = _without_recorded_markers((live or {}).get("problems", []), recorded)
         policy = (live or {}).get("policy") or {}
         sleeps = sleep_events_in_window(rec, s)
         facts = {"classification": CLASSIFICATION, "host_sleep_event_ids": sleeps, "detector_started": s.get("detector_started"),
@@ -67,14 +94,10 @@ def make_resume_check(m, live_fn):
                  "postflight_invalid_reasons": list(rec.get("postflight_invalid_reasons") or []), "integrity": rec.get("integrity"),
                  "old_policy_isolated": {k: (iso.get(k) or {}).get("isolated") for k in ("start", "end")},   # 실제 기록: {"isolated": bool, "reasons": [...], ...}
                  "live_policy_mode": policy.get("mode"), "live_policy_context": policy.get("context"), "live_problems": live_problems}
+        # ---- 두 종류가 모두 요구하는 공통 조건 ----
         probs = []
         if rec.get("status") != "run" or v.get("valid") is not False:
             probs.append("not_a_terminal_invalid_attempt")
-        if not sleeps:
-            probs.append("no_host_sleep_event_in_observation_window")
-        errs = facts["cleanup_errors"]
-        if not errs or any(not str(e).startswith(RESUMABLE_PREFIXES) for e in errs):
-            probs.append(f"cleanup_errors_not_interruption_class: {errs}")
         if facts["prober_stop_failed"] or facts["injector_cleanup_failed"]:
             probs.append("prober_or_injector_cleanup_failed")
         if facts["postflight_invalid_reasons"]:
@@ -92,6 +115,43 @@ def make_resume_check(m, live_fn):
                 probs.append("live_policy_not_clean_record_only")
             if live_problems:
                 probs.append(f"live_state_not_canonical: {live_problems}")
+        errs = facts["cleanup_errors"]
+        # ---- 종류 1(§9.1): 호스트 절전 ----
+        host = []
+        if not sleeps:
+            host.append("no_host_sleep_event_in_observation_window")
+        if not errs or any(not str(e).startswith(RESUMABLE_PREFIXES) for e in errs):
+            host.append(f"cleanup_errors_not_interruption_class: {errs}")
+        # ---- 종류 2(§9.4, rev4): 실제 압박 주입 이전의 구현 결함 - 압박 시도에만 ----
+        nd = s.get("network_delivery")
+        try:
+            cur_freeze = m.pc.verify_implementation_freeze().get("manifest_sha256")
+        except SystemExit:
+            cur_freeze = None
+        attempt_freeze = ((rec.get("code_provenance") or s.get("code_provenance") or {}).get("manifest_sha256"))
+        facts.update({"kind": rec.get("kind"), "network_delivery": nd, "t_injection_observed_utc": to.get("t_injection_observed_utc"),
+                      "canonical_end_ok": (s.get("canonical_end") or {}).get("ok"), "attempt_implementation_freeze_sha256": attempt_freeze,
+                      "current_implementation_freeze_sha256": cur_freeze})
+        defect = []
+        if rec.get("kind") != "pressure":
+            defect.append("defect_class_applies_to_pressure_attempts_only")
+        if not isinstance(nd, dict):
+            defect.append("network_delivery_record_missing(주입 0회를 확인할 수 없음)")
+        elif nd.get("crs") or nd.get("first_created_at") or nd.get("last_deleted_at") or to.get("t_injection_observed_utc") or s.get("stress_delivery_record"):
+            defect.append("injection_may_have_happened(NetworkChaos 0회가 아님)")
+        if not errs or any(not str(e).startswith(DEFECT_PREFIXES) for e in errs) or not any(str(e).startswith("harness_error") for e in errs):
+            defect.append(f"cleanup_errors_not_pre_injection_defect_class: {errs}")
+        if facts["canonical_end_ok"] is not True:
+            defect.append("canonical_end_not_ok_in_the_attempt_record")
+        if not cur_freeze or not attempt_freeze or cur_freeze == attempt_freeze:
+            defect.append("no_new_implementation_freeze_since_the_attempt(수정 뒤 새 구현 동결이 없음)")
+        if not host:
+            facts["classification"] = CLASSIFICATION
+        elif not defect:
+            facts["classification"] = CLASSIFICATION_DEFECT
+        else:
+            facts["classification"] = "none"
+            probs += host + [f"pre_injection_defect_class: {x}" for x in defect]
         return {"run": run, "run_id": rid, "facts": facts, "problems": probs,
                 "session_record_sha256": m.pc.sha256_bytes(m._session_path(d, run)),
                 "summary_sha256": m.pc.sha256_bytes(d / f"summary-{rid}.json"),
@@ -111,9 +171,9 @@ def profiles_equal_except_prereg(old_path, new_path) -> bool:
     return strip(load(old_path)) == strip(load(new_path))
 
 
-def make_authorize(m, live_fn, *, previous_profile: Path = None):
+def make_authorize(m, live_fn, *, previous_profiles=()):
     """원본 authorize_cleanup_resume과 같은 절차이되 (1) 위의 재개 조건을 쓰고 (2) 실패한 시도의 profile 해시가 현재와 달라도
-    사전등록 해시 필드만 다르면(rev2 교체) 허용한다."""
+    이전 revision profile들 중 하나이고 사전등록 해시 필드만 다르면 허용한다."""
     check = make_resume_check(m, live_fn)
 
     def authorize(d, run, *, authorized_by: str, review_note: str, impl: dict, artifact_root):
@@ -127,16 +187,17 @@ def make_authorize(m, live_fn, *, previous_profile: Path = None):
         rec = m._read(m._session_path(d, run))
         old_sha = rec.get("environment_profile_sha256")
         if old_sha != impl.get("selection_profile_sha256"):
-            if previous_profile is None or m.pc.text_sha256(previous_profile) != old_sha \
-                    or not profiles_equal_except_prereg(previous_profile, m.pc.SELECTION_PROFILE):
-                raise SystemExit("재개 기록 거부: 실패한 시도의 profile이 현재 동결값과 다르고 사전등록 해시만 다른 교체본도 아님")
+            lineage = {m.pc.text_sha256(p) for p in previous_profiles if Path(p).is_file() and profiles_equal_except_prereg(p, m.pc.SELECTION_PROFILE)}
+            if old_sha not in lineage:
+                raise SystemExit("재개 기록 거부: 실패한 시도의 profile이 현재 동결값과 다르고 사전등록 해시만 다른 이전 revision profile도 아님")
         if rec.get("artifact_hashes") != art["hashes"]:
             raise SystemExit("재개 기록 거부: 실패한 시도의 artifact가 현재 동결값과 다름")
         return m.pc.write_json_new(m._auth_path(d, run), {
             "record_type": "p2_resume_authorization", "run": run, "run_id": c["run_id"], "attempt_number": rec["attempt_number"],
-            "failure_classification": CLASSIFICATION, "failure_recorded_at_utc": rec.get("runner_ended_at_utc"), **c,
+            "failure_classification": c["facts"]["classification"], "failure_recorded_at_utc": rec.get("runner_ended_at_utc"), **c,
             "attempt_remains_invalid": True, "attempt_consumed": True,
             "detector_results_observed": False, "detector_ran_before_interruption": bool(c["facts"]["detector_started"]),
+            "no_injection_confirmed": c["facts"]["classification"] == CLASSIFICATION_DEFECT or None,
             "attempt_profile_sha256": old_sha, "current_profile_sha256": impl.get("selection_profile_sha256"),
             "user_authorized_resume": True, "authorized_by": authorized_by, "review_note": review_note,
             "authorized_at_utc": datetime.now(timezone.utc).isoformat(),

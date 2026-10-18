@@ -97,6 +97,18 @@ def test_rev3_attempt_cap_and_reuse_rules_in_the_document_match_the_code():
     assert nc.MAX_ATTEMPTS["pressure"] == 7 and nc.MAX_ATTEMPTS["stage2"] == 5           # 압박·Stage 2 상한도 그대로
 
 
+def test_rev4_pre_injection_defect_rule_in_the_document_matches_the_code():
+    import n2_resume as rn
+    for s in ("### 9.4 실제 압박 주입 이전의 구현 결함 뒤 재개", "**NetworkChaos 0회:**", "**신호 0건:**", "**수정 뒤 새 구현 동결:**", "**깨끗한 상태:**",
+              "압박 시도**(`n2p`)", "정상 시도와 Stage 2에는 적용하지 않는다", "`n2p01`은 **무효이며 시도 1회 소진 상태로 그대로 보존**하고 Gate 계산에 포함하지 않는다",
+              "**이 규칙은 사후 규칙이다.**", "규칙을 사고 뒤에 추가했다(rev4)", "rev4의 지위(예외를 밝힌다)", "`n2p02`", "압박 시도 상한 7은 그대로다",
+              "trial_cleanup_incomplete", "harness_error", "network_session_end: running_marker_left", "HTTP 422"):
+        assert s in TEXT, s
+    assert rn.CLASSIFICATION_DEFECT == "pre_injection_implementation_defect"
+    assert rn.DEFECT_PREFIXES == ("trial_cleanup_incomplete", "harness_error", "network_session_end: running_marker_left")
+    assert nc.MAX_ATTEMPTS == {"normal": 12, "pressure": 7, "stage2": 5} and (nc.N_NORMAL, nc.N_PRESSURE, nc.N_STAGE2) == (4, 5, 3)       # 상한·목표 불변
+
+
 def test_document_does_not_use_any_forbidden_claim_phrase_and_states_its_limits():
     for phrase in FORBIDDEN:
         assert phrase not in TEXT, phrase

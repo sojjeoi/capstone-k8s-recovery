@@ -27,12 +27,11 @@ class NetConfig:
     prereg_doc: str = nc.PREREG_DOC
     results_dir: Path = nc.EXP / "results" / "phase2_network_env"
     executor: Path = nc.HERE / "n2_executor.py"
-    selection_profile: Path = nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v3.json"
-    previous_selection_profile: Path = nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v1.json"   # rev1(n2n01이 쓴 것): 재개 기록의 교체본 확인용
-    # 이전 revision들의 profile(사전등록 해시 필드만 다른 것). 이 profile로 실행된 유효 세션도 선택 분석에 재사용한다(rev3 §9.3: n2n03 = v2).
-    previous_selection_profiles: tuple = (nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v1.json",
-                                          nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v2.json")
-    implementation_freeze: str = "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r5.json"
+    selection_profile: Path = nc.HERE / "profiles" / "selection-profile-network-tolerant-vllm-qwen05b-v4.json"
+    # 이전 revision들의 profile(사전등록 해시 필드만 다른 것). 이 profile로 실행된 유효 세션은 선택 분석에 재사용하고(rev3 §9.3: n2n03 = v2),
+    # 재개 기록은 이 profile로 실행된 시도에 대해서도 쓸 수 있다(n2n01 = v1, n2p01 = v3).
+    previous_selection_profiles: tuple = tuple(nc.HERE / "profiles" / f"selection-profile-network-tolerant-vllm-qwen05b-v{i}.json" for i in (1, 2, 3))
+    implementation_freeze: str = "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r6.json"
     normal_runs: dict = field(default_factory=lambda: {f"n2n{i:02d}": (i, 6000 + i) for i in range(1, nc.MAX_ATTEMPTS["normal"] + 1)})
     pressure_runs: dict = field(default_factory=lambda: {f"n2p{i:02d}": (i, 6100 + i) for i in range(1, nc.MAX_ATTEMPTS["pressure"] + 1)})
 
@@ -93,5 +92,5 @@ def load_stage1(cfg: NetConfig = None, verify_freeze=None, live_fn=None):
     tag = Path(cfg.implementation_freeze).stem.rsplit("-", 1)[-1]       # 구현 동결 revision(r5 등): 재개 기록은 revision마다 따로(덮어쓰기 금지, 이전 기록은 이력으로 남는다)
     m._auth_path = lambda d, run: Path(d) / f"p2-resume-authorization-{run}-{tag}.json"
     m.resume_check = rn.make_resume_check(m, live_fn)
-    m.authorize_cleanup_resume = rn.make_authorize(m, live_fn, previous_profile=cfg.previous_selection_profile)
+    m.authorize_cleanup_resume = rn.make_authorize(m, live_fn, previous_profiles=cfg.previous_selection_profiles)
     return m
