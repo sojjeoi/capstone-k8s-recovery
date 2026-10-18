@@ -59,12 +59,12 @@ def live_reader(policy_url: str, profile_path):
     return ns2.RealNetLive(gcg.read_snapshot, profile_path, policy_state_fn=gp.PolicyClient(policy_url, token).state)
 
 
-def current_state(reader, result_dirs):
-    """지금 상태를 보존 형식(n2_cleanup.capture_state)으로 읽는다(읽기 전용). 실행 중 표식은 결과 폴더들에서 모은다.
+def current_state(reader, result_dirs, skip_markers=()):
+    """지금 상태를 보존 형식(n2_cleanup.capture_state)으로 읽는다(읽기 전용). 실행 중 표식은 결과 폴더들에서 모은다(skip_markers 제외).
     반환: (상태 기록, 같은 시점의 스냅샷) - 스냅샷은 canonical Healthy 검사에도 쓴다."""
     snap = reader.snapshot_fn() or {}
     s = reader.read_state(snap)
-    markers = sorted(p.name for d in result_dirs if Path(d).exists() for p in Path(d).glob("running-*.json"))
+    markers = sorted(p.name for d in result_dirs if Path(d).exists() for p in Path(d).glob("running-*.json") if p.name not in skip_markers)
     return cl.capture_state(s["template"], s["delay"], s["policy"] or {}, s["chaos_names"], markers), snap
 
 
@@ -101,11 +101,21 @@ def cmd_restore_check(a, reader, dirs) -> int:
     return 0 if not probs else 2
 
 
-def cmd_session_end_check(a, reader, dirs) -> int:
+def authorized_markers(verify_freeze) -> set:
+    """사람이 재개를 승인해 둔 이전 시도(n2n01·n2p01)의 running 표식 파일명. 표식은 증거로 보존하므로 정리 오류로 세지 않는다 - 세션 내부의
+    종료 점검(n2_session)과 같은 기준(승인 기록이 지금 구현 동결·시도 기록과 모두 맞을 때만). 동결 검증이 실패하면 아무것도 인정하지 않는다."""
+    try:
+        s1 = ns1.load_stage1(ns1.NetConfig(), verify_freeze)
+        return {f"running-{r['run_id']}.json" for r in s1.attempts(s1.RESULTS_DIR) if s1.resume_authorized(s1.RESULTS_DIR, r)}
+    except SystemExit:
+        return set()
+
+
+def cmd_session_end_check(a, reader, dirs, forgiven=()) -> int:
     """세션 하나가 끝난 직후의 정리 확인(읽기 전용). **전체 원복 확인(restore-check)과 다르다**: 실험 block이 계속되는 동안에는 11 s 프로필을
     유지해야 하므로 원래 상태와 같기를 요구하지 않고 오히려 11 s 프로필이 **유지**돼 있기를 요구한다. 요구하는 것: 이 세션의 지연 설정·표식이 남지 않았고,
     정책 context/blocked/unresolved가 깨끗하며, 정책 mode가 지정값이고, canonical Healthy. 이것이 통과해야 다음 세션 시작 전 preflight 하위 명령으로 넘어간다."""
-    state, snap = current_state(reader, dirs)
+    state, snap = current_state(reader, dirs, forgiven)
     probs = cl.session_end_problems(state, [], expect_tolerant=True, policy_mode=a.policy_mode) + canonical_problems(snap, BASE_DELAY_SEC)
     print(json.dumps({"ok": not probs, "problems": probs, "scope": "session_end (not a full restore)"}, ensure_ascii=False))
     return 0 if not probs else 2
@@ -307,8 +317,9 @@ def main(argv=None, *, verify_freeze=None, reader_factory=None, real_deps=None) 
             setattr(a, name, Path(getattr(a, name)).resolve())         # 실행기 subprocess(cwd 다름)에 같은 경로가 가도록
     if a.cmd in ("capture-baseline", "restore-check", "session-end-check", "preflight"):
         reader = reader_factory(a.policy_url, getattr(a, "profile", None) or ns1.NetConfig().selection_profile)
-        fn = {"capture-baseline": cmd_capture_baseline, "restore-check": cmd_restore_check, "session-end-check": cmd_session_end_check,
-              "preflight": cmd_preflight}[a.cmd]
+        if a.cmd == "session-end-check":
+            return cmd_session_end_check(a, reader, stage_dirs(), authorized_markers(verify_freeze))
+        fn = {"capture-baseline": cmd_capture_baseline, "restore-check": cmd_restore_check, "preflight": cmd_preflight}[a.cmd]
         return fn(a, reader, stage_dirs())
     if a.cmd == "authorize-resume":
         return cmd_authorize_resume(a, reader_factory(a.policy_url, ns1.NetConfig().selection_profile), stage_dirs(), verify_freeze)

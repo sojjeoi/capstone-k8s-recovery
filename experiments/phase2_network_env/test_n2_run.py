@@ -201,6 +201,49 @@ def test_session_end_check_marker_left_and_act_mode_expectation(dirs, capsys):
     assert call(["session-end-check", "--policy-mode", "act"], FakeReader(tpl=template(11, 11), policy={**CLEAN_POLICY, "mode": "act"})) == 0
 
 
+class FakeS1:
+    """load_stage1 자리: 재개 승인된 시도만 resume_authorized가 True."""
+
+    def __init__(self, d, authorized):
+        self.RESULTS_DIR = d
+        self._att = [{"run": r, "run_id": f"rid-{r}"} for r in ("n2n01", "n2n02", "n2p01")]
+        self._auth = authorized
+
+    def attempts(self, d):
+        return self._att
+
+    def resume_authorized(self, d, rec):
+        return rec["run"] in self._auth
+
+
+def test_session_end_check_does_not_count_markers_of_resume_authorized_attempts(dirs, capsys, monkeypatch):
+    """승인되어 증거로 보존 중인 n2n01·n2p01 표식은 독립 session-end-check에서도 정리 오류가 아니다. 승인되지 않은 표식은 그대로 오류."""
+    for rid in ("rid-n2n01", "rid-n2p01"):
+        (dirs / "s1" / f"running-{rid}.json").write_text("{}", encoding="utf-8")
+    reader = lambda: FakeReader(tpl=template(11, 11))
+    monkeypatch.setattr(ns1, "load_stage1", lambda cfg, vf: FakeS1(dirs / "s1", {"n2n01", "n2p01"}))
+    assert call(["session-end-check"], reader()) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    (dirs / "s1" / "running-rid-n2n02.json").write_text("{}", encoding="utf-8")                    # 승인 없는 시도의 표식
+    assert call(["session-end-check"], reader()) == 2
+    out = capsys.readouterr().out
+    assert "running-rid-n2n02.json" in out and "rid-n2n01" not in out and "rid-n2p01" not in out
+    (dirs / "s1" / "running-rid-n2n02.json").unlink()
+    monkeypatch.setattr(ns1, "load_stage1", lambda cfg, vf: FakeS1(dirs / "s1", {"n2n01"}))        # n2p01 승인이 효력을 잃으면(동결·기록 불일치) 다시 오류
+    assert call(["session-end-check"], reader()) == 2
+    assert "rid-n2p01" in capsys.readouterr().out
+
+
+def test_session_end_check_forgives_nothing_when_the_freeze_check_fails(dirs, capsys, monkeypatch):
+    (dirs / "s1" / "running-rid-n2n01.json").write_text("{}", encoding="utf-8")
+
+    def refuse(cfg, vf):
+        raise SystemExit("implementation freeze fail-closed")
+    monkeypatch.setattr(ns1, "load_stage1", refuse)
+    assert call(["session-end-check"], FakeReader(tpl=template(11, 11))) == 2
+    assert "rid-n2n01" in capsys.readouterr().out
+
+
 # ---------- (2) 라이브 하위 명령은 동결 전에는 멈춘다 ----------
 def boom(*a, **k):
     raise AssertionError("클러스터 연결 조립이 호출됨")

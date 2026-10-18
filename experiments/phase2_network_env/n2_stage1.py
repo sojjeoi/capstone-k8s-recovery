@@ -31,7 +31,7 @@ class NetConfig:
     # 이전 revision들의 profile(사전등록 해시 필드만 다른 것). 이 profile로 실행된 유효 세션은 선택 분석에 재사용하고(rev3 §9.3: n2n03 = v2),
     # 재개 기록은 이 profile로 실행된 시도에 대해서도 쓸 수 있다(n2n01 = v1, n2p01 = v3, n2p02~06·n2s01 = v4).
     previous_selection_profiles: tuple = tuple(nc.HERE / "profiles" / f"selection-profile-network-tolerant-vllm-qwen05b-v{i}.json" for i in (1, 2, 3, 4))
-    implementation_freeze: str = "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r7.json"
+    implementation_freeze: str = "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r8.json"
     normal_runs: dict = field(default_factory=lambda: {f"n2n{i:02d}": (i, 6000 + i) for i in range(1, nc.MAX_ATTEMPTS["normal"] + 1)})
     pressure_runs: dict = field(default_factory=lambda: {f"n2p{i:02d}": (i, 6100 + i) for i in range(1, nc.MAX_ATTEMPTS["pressure"] + 1)})
 
