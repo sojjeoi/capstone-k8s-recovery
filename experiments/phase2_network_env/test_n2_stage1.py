@@ -50,7 +50,7 @@ def test_run_stage1_source_hash_matches_phase2_implementation_freeze():
 def test_instance_uses_network_config_and_ids():
     inst = ns1.load_stage1()
     assert inst.pc.PLAN_ID == "capstone-phase2-network-env-v1" and inst.pc.DETECTOR_IDS == nc.DETECTOR_IDS
-    assert list(inst.NORMAL_RUNS)[:2] == ["n2n01", "n2n02"] and len(inst.NORMAL_RUNS) == pc.MAX_ATTEMPTS["normal"]
+    assert list(inst.NORMAL_RUNS)[:2] == ["n2n01", "n2n02"] and len(inst.NORMAL_RUNS) == nc.MAX_ATTEMPTS["normal"] == 12 and list(inst.NORMAL_RUNS)[-1] == "n2n12"
     assert len(inst.PRESSURE_RUNS) == pc.MAX_ATTEMPTS["pressure"] and inst.RESULTS_DIR.name == "phase2_network_env"
     assert inst.EXECUTOR.name == "n2_executor.py" and inst.TARGET == {"normal": nc.N_NORMAL, "pressure": nc.N_PRESSURE}
     assert inst.run_id_for("n2n01") == "guarded_normal_record_only-n2n01-capstone-phase2-network-env-v1"
@@ -105,7 +105,7 @@ def test_overrides_are_explicit_instance_attributes_and_rest_delegates():
     for name in ns1.NetPC.OVERRIDES:
         assert name in a.__dict__, name                               # 명시한 이름은 adapter 자신의 값
     assert a.sha256_bytes is pc.sha256_bytes and a.write_json_new is pc.write_json_new and a.SHADOW == pc.SHADOW   # 나머지는 위임
-    assert a.IF_THRESHOLD == pc.IF_THRESHOLD and a.N_NORMAL == nc.N_NORMAL and a.MAX_ATTEMPTS == pc.MAX_ATTEMPTS
+    assert a.IF_THRESHOLD == pc.IF_THRESHOLD and a.N_NORMAL == nc.N_NORMAL and a.MAX_ATTEMPTS == nc.MAX_ATTEMPTS and a.MAX_ATTEMPTS["pressure"] == pc.MAX_ATTEMPTS["pressure"] and a.MAX_ATTEMPTS["stage2"] == pc.MAX_ATTEMPTS["stage2"]
     assert a.DETECTOR_IDS != pc.DETECTOR_IDS and a.PLAN_ID != pc.PLAN_ID
 
 

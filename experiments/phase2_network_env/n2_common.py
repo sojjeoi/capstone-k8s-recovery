@@ -34,12 +34,14 @@ ACTIVE, SHADOW, NORMAL, ANOMALY, UNKNOWN = pc.ACTIVE, pc.SHADOW, pc.NORMAL, pc.A
 
 # 기존 Phase 2의 고정 값을 그대로 쓴다(§17 - 결과를 본 뒤 바꾸지 않음). 값을 여기서 다시 쓰지 않는다.
 N_NORMAL, N_PRESSURE, N_STAGE2 = pc.N_NORMAL, pc.N_PRESSURE, pc.N_STAGE2
-MAX_ATTEMPTS = dict(pc.MAX_ATTEMPTS)
+# rev3(2026-10-18): 정상 시도 상한만 6 -> 12로 늘린다(유효 정상 4개가 모일 때까지 추가 수집). 유효성 기준·임계값·Gate·선택 규칙·세션 목표 수·
+# 압박/Stage 2 상한은 그대로다. 근거: prereg rev3 §9.2.
+MAX_ATTEMPTS = {**pc.MAX_ATTEMPTS, "normal": 12}
 GATE2_LIMIT_SEC, GATE2_MIN_PASS = pc.GATE2_LIMIT_SEC, pc.GATE2_MIN_PASS
 GATE3_MIN_DIFF, TIMING_MIN_DIFF_SEC, DECISION_SEC = pc.GATE3_MIN_DIFF, pc.TIMING_MIN_DIFF_SEC, pc.DECISION_SEC
 
-PREREG_DOC = "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev2.md"
-PREREG_SHA256 = "1e80017b57183b15e089825b9fe5419fd91510e961035223caf83e2eac469b97"   # rev2 DESIGN FREEZE 2026-10-18, prereg commit 42a3b46 (LF 정규화 blob 해시). rev1은 dd3a74f / e34233be…32804였고 교체됐다.
+PREREG_DOC = "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev3.md"
+PREREG_SHA256 = None            # rev3 DESIGN FREEZE 때 채운다(LF 정규화 blob 해시). rev1(dd3a74f)·rev2(42a3b46, 1e80017b…)는 교체됐다.
 DEV_DRAFT = "docs/design/NETWORK-DETECTOR-PREREG-DRAFT-20261017.md"
 NET_CALIBRATION_REL = "experiments/results/network_detector_dev_20261017/probe-metric/result.json"
 

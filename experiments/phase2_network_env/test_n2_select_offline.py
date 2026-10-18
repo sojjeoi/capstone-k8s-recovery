@@ -47,10 +47,12 @@ def evals(rows):
     return out
 
 
-def build_stage1(tmp_path, *, pressure_hot, normal_hot_by_session=None, start_over=None, invalid_pressure=None):
-    """합성 Stage 1 폴더. pressure_hot = 압박 세션에서 주입 뒤 이상 값을 내는 후보 집합. normal_hot_by_session = {n(1~4): 후보 집합}(정상 세션 중간 3연속)."""
+def build_stage1(tmp_path, *, pressure_hot, normal_hot_by_session=None, start_over=None, invalid_pressure=None, old_profile_for=None,
+                 previous_profiles=()):
+    """합성 Stage 1 폴더. pressure_hot = 압박 세션에서 주입 뒤 이상 값을 내는 후보 집합. normal_hot_by_session = {n(1~4): 후보 집합}(정상 세션 중간 3연속).
+    old_profile_for = {run: 그 세션이 실행될 때의 이전 revision profile 해시}, previous_profiles = 선택 분석이 같은 계열로 인정할 이전 profile 파일들."""
     tmp_path.mkdir(parents=True, exist_ok=True)
-    s1 = ns1.load_stage1(ns1.NetConfig(results_dir=tmp_path / "stage1"))
+    s1 = ns1.load_stage1(ns1.NetConfig(results_dir=tmp_path / "stage1", previous_selection_profiles=tuple(previous_profiles)))
     d = tmp_path / "stage1"
     d.mkdir(parents=True)
     profile = write_profile(tmp_path, template())
@@ -72,13 +74,14 @@ def build_stage1(tmp_path, *, pressure_hot, normal_hot_by_session=None, start_ov
     for n, (run, rows, extra, status) in enumerate(plan, 1):
         rid = s1.run_id_for(run)
         ep = d / f"c1-live-evidence-{rid}.jsonl"
-        start = {"record_type": "c1_shadow_start", "run_id": rid, "environment_profile_sha256": sha, "active_detector": None,
+        psha = (old_profile_for or {}).get(run, sha)
+        start = {"record_type": "c1_shadow_start", "run_id": rid, "environment_profile_sha256": psha, "active_detector": None,
                  "net_probe_definition_sha256": nc.NET_DEFINITION_SHA256, "net_probe_calibration_sha256": nc.NET_CALIBRATION_SHA256,
                  **(start_over or {}).get(run, {})}
         ep.write_text("".join(json.dumps({**r, "run_id": rid}) + "\n" for r in [start, *evals(rows)]), encoding="utf-8")
         (d / f"p2-session-{run}.json").write_text(json.dumps(
             {"run": run, "run_id": rid, "kind": s1.kind_of(run), "attempt_number": n, "status": "run", "evidence_file": ep.name,
-             "evidence_sha256": pc.sha256_bytes(ep), "environment_profile_sha256": sha,
+             "evidence_sha256": pc.sha256_bytes(ep), "environment_profile_sha256": psha,
              "runner_ended_at_utc": f"2026-10-2{n % 10}T00:00:00+00:00", "cleanup_errors": []}), encoding="utf-8")
         (d / f"p2-validity-{run}.json").write_text(json.dumps({"status": status, "valid": True, **extra}), encoding="utf-8")
     return s1, d, profile, sha
@@ -135,6 +138,39 @@ def test_result_is_byte_deterministic(tmp_path, env, fake_if_scores):
 
 
 # ---------- (3) 무결성 ----------
+def _older_profile(tmp_path, profile, *, edit=None):
+    """현재 profile에서 사전등록 해시 필드(selection.rule)만 바꾼(edit가 있으면 다른 값도 바꾼) 이전 revision profile 파일."""
+    d = json.loads(Path(profile).read_text(encoding="utf-8"))
+    d["selection"]["rule"] = "0" * 64
+    if edit:
+        edit(d)
+    p = tmp_path / ("older-" + ("changed" if edit else "same") + ".json")
+    p.write_text(json.dumps(d), encoding="utf-8")
+    return p, pc.text_sha256(p)
+
+
+def test_a_valid_session_run_under_an_earlier_profile_revision_is_reused_but_a_changed_profile_is_not(tmp_path, env, fake_if_scores):
+    """rev3 §9.3: n2n03 같은 이전 revision(사전등록 해시 필드만 다른 profile)의 유효 세션은 같은 기준으로 재사용하고, 내용이 다른 profile은 거부한다."""
+    probe_dir = tmp_path / "probe"
+    probe_dir.mkdir()
+    s1, d, profile, sha = build_stage1(probe_dir, pressure_hot={NET})
+    older, older_sha = _older_profile(probe_dir, profile)
+    changed, changed_sha = _older_profile(probe_dir, profile, edit=lambda x: x["detectors"][1].__setitem__("threshold", 0.123))
+    ok_dir = tmp_path / "ok"
+    ok_dir.mkdir()
+    s1, d, profile, sha = build_stage1(ok_dir, pressure_hot={NET}, old_profile_for={"n2n01": older_sha}, previous_profiles=(older,))
+    c = collect(s1, d, profile, env[1], sha)
+    assert not [p for p in c["inputs"]["integrity_problems"] if "profile_changed" in p] and len(c["inputs"]["normal"]) == 4     # n2n01 포함
+    bad_dir = tmp_path / "bad"
+    bad_dir.mkdir()
+    s1, d, profile, sha = build_stage1(bad_dir, pressure_hot={NET}, old_profile_for={"n2n01": changed_sha}, previous_profiles=(changed,))
+    c = collect(s1, d, profile, env[1], sha)
+    assert any("profile_changed_or_not_shadow:n2n01" in p for p in c["inputs"]["integrity_problems"])                          # 내용이 다른 profile
+    s1, d, profile, sha = build_stage1(tmp_path / "unlisted", pressure_hot={NET}, old_profile_for={"n2n01": older_sha})          # 계열로 인정하지 않은 profile
+    c = collect(s1, d, profile, env[1], sha)
+    assert any("profile_changed_or_not_shadow:n2n01" in p for p in c["inputs"]["integrity_problems"])
+
+
 def test_other_net_probe_definition_or_calibration_in_a_session_is_integrity_failure(tmp_path, env, fake_if_scores):
     s1, d, profile, sha = build_stage1(tmp_path, pressure_hot={NET}, start_over={"n2p02": {"net_probe_calibration_sha256": "0" * 64}})
     c = collect(s1, d, profile, env[1], sha)

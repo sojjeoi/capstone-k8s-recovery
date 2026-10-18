@@ -40,8 +40,8 @@ def test_environment_stages_probe_profile_and_counts_match_the_code():
         assert s["name"] in TEXT and s["latency"].replace("ms", " ms") in TEXT and str(s["duration_sec"]) in TEXT
     assert nc.PROBE_PROFILE == {"name": "network_tolerant", "readiness_timeout_sec": 11, "liveness_timeout_sec": 11}
     assert "`network_tolerant`" in TEXT and "11 s" in TEXT
-    assert (nc.N_NORMAL, nc.N_PRESSURE, nc.N_STAGE2) == (4, 5, 3) and nc.MAX_ATTEMPTS == {"normal": 6, "pressure": 7, "stage2": 5}
-    for row in ("| Stage 1 정상 | record_only, SHADOW 3후보 | **4** | 6 |", "| Stage 1 압박 | record_only, 네트워크 지연 4단계 | **5** | 7 |",
+    assert (nc.N_NORMAL, nc.N_PRESSURE, nc.N_STAGE2) == (4, 5, 3) and nc.MAX_ATTEMPTS == {"normal": 12, "pressure": 7, "stage2": 5}      # rev3: 정상 시도 상한만 6 -> 12
+    for row in ("| Stage 1 정상 | record_only, SHADOW 3후보 | **4** | **12**(rev3: 6에서 증가, §9.2) |", "| Stage 1 압박 | record_only, 네트워크 지연 4단계 | **5** | 7 |",
                 "| Stage 2 복구 | act, 선택된 후보만 ACTIVE | **3** | 5 |"):
         assert row in TEXT
     for pfx in ("n2n01", "n2p01", "n2s01"):
@@ -84,6 +84,17 @@ def test_rev2_resume_rule_in_the_document_matches_the_code():
         assert s in TEXT, s
     assert rn.HOST_SLEEP_EVENT_IDS == (42, 506)
     assert all(p in TEXT for p in rn.RESUMABLE_PREFIXES)
+
+
+def test_rev3_attempt_cap_and_reuse_rules_in_the_document_match_the_code():
+    for s in ("### 9.2 정상 시도 상한과 수집 종료", "### 9.3 기존 정상 시도의 처리", "6 → **12**", "유효 정상 4개가 모이기 전에는 압박 세션을 시작하지 않는다",
+              "`n2n03`은 재사용한다", "삭제하거나 숨기지 않고 모두 기록한다", "`SELECTION_INCOMPLETE`로 보고한다", "사후 변경임을 밝힌다",
+              "rev3의 지위(예외를 밝힌다)", "규칙을 사고 뒤에 바꿨다(rev3)", "정상 시도 상한도 고정"):
+        assert s in TEXT, s
+    for run in ("`n2n01`", "`n2n02`", "`n2n03`", "`n2n04`"):
+        assert run in TEXT
+    assert (nc.N_NORMAL, nc.N_PRESSURE, nc.N_STAGE2) == (4, 5, 3)                       # 유효 목표 수는 그대로
+    assert nc.MAX_ATTEMPTS["pressure"] == 7 and nc.MAX_ATTEMPTS["stage2"] == 5           # 압박·Stage 2 상한도 그대로
 
 
 def test_document_does_not_use_any_forbidden_claim_phrase_and_states_its_limits():

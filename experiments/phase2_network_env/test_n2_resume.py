@@ -145,6 +145,8 @@ def test_authorization_unblocks_only_that_attempt_and_is_invalidated_by_any_chan
     d, m, impl = authorize_setup(tmp_path)
     assert "정리 오류" in m.stop_reason(d)                                     # 재개 기록 전: 수집 중단
     out = m.authorize_cleanup_resume(d, RUN, authorized_by="tester", review_note="절전 확인", impl=impl, artifact_root=tmp_path)
+    assert Path(out).name == f"p2-resume-authorization-{RUN}-r5.json"            # 구현 동결 revision마다 따로 쓴다(이전 revision 기록은 이력으로 남는다)
+    (d / f"p2-resume-authorization-{RUN}.json").write_text("{}", encoding="utf-8")   # 예전(r4) 기록이 있어도 새 revision 판정에는 영향이 없다
     a = json.loads(Path(out).read_text(encoding="utf-8"))
     assert a["user_authorized_resume"] is True and a["attempt_remains_invalid"] and a["attempt_consumed"]
     assert a["detector_results_observed"] is False and a["detector_ran_before_interruption"] is True
@@ -162,7 +164,7 @@ def test_authorization_is_refused_when_conditions_fail_and_writes_nothing(tmp_pa
     (d / f"p2-validity-{RUN}.json").write_text(json.dumps({"run": RUN, "status": "valid", "valid": True}), encoding="utf-8")
     with pytest.raises(SystemExit, match="재개 기록 거부"):
         m.authorize_cleanup_resume(d, RUN, authorized_by="t", review_note="n", impl=impl, artifact_root=tmp_path)
-    assert not (d / f"p2-resume-authorization-{RUN}.json").exists()
+    assert not m._auth_path(d, RUN).exists() and not (d / f"p2-resume-authorization-{RUN}.json").exists()
 
 
 def test_a_replaced_profile_that_differs_beyond_the_prereg_hash_is_refused(tmp_path):

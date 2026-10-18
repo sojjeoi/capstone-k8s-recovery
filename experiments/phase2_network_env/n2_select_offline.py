@@ -54,6 +54,10 @@ def collect(s1, results_dir, *, profile_path, artifact_root, verify_freeze=None)
         raise SystemExit(f"selection profile 무효 - 분석 거부: {e}") from e
     if impl is not None and loaded["sha256"] != impl.get("selection_profile_sha256"):
         integrity.append("selection_profile_not_implementation_frozen")
+    # rev3 §9.3: 이전 revision의 profile(사전등록 해시 필드만 다른 것)로 실행된 유효 세션도 같은 기준으로 재사용한다. 그 밖의 profile 변경은 그대로 거부.
+    import n2_resume as rn
+    accepted_profiles = {loaded["sha256"]} | {pc.text_sha256(p) for p in getattr(getattr(s1, "CONFIG", None), "previous_selection_profiles", ())
+                                              if Path(p).is_file() and rn.profiles_equal_except_prereg(p, profile_path)}
     try:
         pc.verify_rule_spec()
     except p2.ProfileInvalid as e:
@@ -92,8 +96,8 @@ def collect(s1, results_dir, *, profile_path, artifact_root, verify_freeze=None)
             continue
         starts = [r for r in map(json.loads, filter(str.strip, ep.read_text(encoding="utf-8").splitlines()))
                   if r.get("record_type") == "c1_shadow_start"]
-        if s.get("environment_profile_sha256") != loaded["sha256"] or not starts \
-                or any(r.get("environment_profile_sha256") != loaded["sha256"] or r.get("active_detector") is not None for r in starts):
+        if s.get("environment_profile_sha256") not in accepted_profiles or not starts \
+                or any(r.get("environment_profile_sha256") not in accepted_profiles or r.get("active_detector") is not None for r in starts):
             integrity.append(f"profile_changed_or_not_shadow:{s['run']}")
             continue
         if any(r.get("net_probe_definition_sha256") != nc.NET_DEFINITION_SHA256
