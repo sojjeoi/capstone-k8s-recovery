@@ -1,0 +1,67 @@
+{
+  "rollout_uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+  "original_present": true,
+  "original_value": 30,
+  "applied_value": 420,
+  "written_at": "2026-10-18T16:00:37.300855+00:00",
+  "before": {
+    "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+    "generation": 510,
+    "observed_generation": "510",
+    "delay_present": true,
+    "delay": 30,
+    "current_pod_hash": "5b659cb888",
+    "active_selector": "679c6dd8b8",
+    "abort": false,
+    "phase": "Paused",
+    "rs": {
+      "5877dd45bc": {
+        "desired": 0,
+        "current": 0
+      },
+      "5b659cb888": {
+        "desired": 1,
+        "current": 1
+      },
+      "65c6d5559d": {
+        "desired": 0,
+        "current": 0
+      },
+      "679c6dd8b8": {
+        "desired": 1,
+        "current": 1
+      }
+    }
+  },
+  "applied": true,
+  "verified": true,
+  "after": {
+    "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+    "generation": 511,
+    "observed_generation": "511",
+    "delay_present": true,
+    "delay": 420,
+    "current_pod_hash": "5b659cb888",
+    "active_selector": "679c6dd8b8",
+    "abort": false,
+    "phase": "Paused",
+    "rs": {
+      "5877dd45bc": {
+        "desired": 0,
+        "current": 0
+      },
+      "5b659cb888": {
+        "desired": 1,
+        "current": 1
+      },
+      "65c6d5559d": {
+        "desired": 0,
+        "current": 0
+      },
+      "679c6dd8b8": {
+        "desired": 1,
+        "current": 1
+      }
+    }
+  }
+}

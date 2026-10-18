@@ -11,3 +11,9 @@ experiments/results/capstone_guarded_ab_v1/summary-guarded_pressure_act-ab0[1-5]
 # 2026-10-17 development 증거(메모리 pilot, 네트워크 감지기) - 기록한 SHA-256과 clone한 파일이 일치하도록 byte-exact로 저장
 docs/design/evidence/memory-pressure-pilot-20261016/** -text
 experiments/results/network_detector_dev_20261017/** -text
+
+# 네트워크 지연 환경 추가 검증(2026-10-19) 결과 폴더는 원래 바이트 그대로 저장한다 - 선택 증거·active profile·세션 기록에 원본 바이트의
+# SHA-256이 서로 기록돼 있어(진입 검사가 다시 계산해 대조) clone 시 줄바꿈 변환(core.autocrlf=true)으로 해시가 달라지면 안 된다.
+experiments/results/phase2_network_env/** -text
+experiments/results/phase2_network_env_stage2/** -text
+experiments/results/phase2_network_env_selection/** -text

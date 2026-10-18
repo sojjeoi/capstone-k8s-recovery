@@ -1,0 +1,106 @@
+[
+  {
+    "type": "Normal",
+    "reason": "Killing",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-09d939d0",
+      "uid": "1b2cf948-dc81-4dd8-ac7b-f5cd7f092c9e"
+    },
+    "message": "Stopping container ramp-probe-09d939d0",
+    "first_timestamp": "2026-10-17T18:21:27Z",
+    "last_timestamp": "2026-10-17T18:21:27Z",
+    "count": 1
+  },
+  {
+    "type": "Warning",
+    "reason": "RolloutAborted",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout aborted update to revision 388",
+    "first_timestamp": "2026-10-17T18:22:02Z",
+    "last_timestamp": "2026-10-17T18:22:02Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Killing",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-5fd4f5c8fb-7cz7j",
+      "uid": "08f2e8de-931a-47df-827c-531eaa7b5e89"
+    },
+    "message": "Stopping container vllm",
+    "first_timestamp": "2026-10-17T18:22:32Z",
+    "last_timestamp": "2026-10-17T18:22:32Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SuccessfulDelete",
+    "involved_object": {
+      "kind": "ReplicaSet",
+      "name": "vllm-serving-5fd4f5c8fb",
+      "uid": "e63ac530-b2de-4db8-b5aa-f7c2fcac7e5c"
+    },
+    "message": "Deleted pod: vllm-serving-5fd4f5c8fb-7cz7j",
+    "first_timestamp": "2026-10-17T18:22:32Z",
+    "last_timestamp": "2026-10-17T18:22:32Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "ScalingReplicaSet",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Scaled down ReplicaSet vllm-serving-5fd4f5c8fb (revision 388) from 1 to 0",
+    "first_timestamp": "2026-10-17T18:22:32Z",
+    "last_timestamp": "2026-10-17T18:22:32Z",
+    "count": 1
+  },
+  {
+    "type": "Warning",
+    "reason": "Unhealthy",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-5fd4f5c8fb-7cz7j",
+      "uid": "08f2e8de-931a-47df-827c-531eaa7b5e89"
+    },
+    "message": "Readiness probe failed: Get \"http://10.244.224.254:8000/health\": dial tcp 10.244.224.254:8000: connect: connection refused",
+    "first_timestamp": "2026-10-17T18:22:34Z",
+    "last_timestamp": "2026-10-17T18:22:34Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "RolloutUpdated",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout updated to revision 389",
+    "first_timestamp": "2026-10-17T18:22:40Z",
+    "last_timestamp": "2026-10-17T18:22:40Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SwitchService",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Switched selector for service 'vllm-preview' from '5fd4f5c8fb' to '848f66bcb6'",
+    "first_timestamp": "2026-10-17T18:22:40Z",
+    "last_timestamp": "2026-10-17T18:22:40Z",
+    "count": 1
+  }
+]

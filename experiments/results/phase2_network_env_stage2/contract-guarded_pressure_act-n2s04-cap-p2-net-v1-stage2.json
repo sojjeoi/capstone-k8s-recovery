@@ -1,0 +1,162 @@
+{
+  "run_id": "guarded_pressure_act-n2s04-cap-p2-net-v1-stage2",
+  "run": "n2s04",
+  "plan_id": "cap-p2-net-v1-stage2",
+  "contract_doc": "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev5.md",
+  "comparison": {
+    "series": "cap-p2-net-v1-stage2",
+    "block": "bc04",
+    "block_number": 4,
+    "arm": "P2",
+    "arm_label": "phase2_active:net-probe-readiness",
+    "schedule": {
+      "block": 4,
+      "order": "P2",
+      "position": 1,
+      "required_before": [],
+      "attempt_number": 4
+    },
+    "counted_in_comparison": true,
+    "start_node_rule": "recorded_only"
+  },
+  "conditions": {
+    "stress_stages": [
+      {
+        "name": "stage-1-500ms",
+        "latency": "500ms",
+        "jitter": "50ms",
+        "duration_sec": 90
+      },
+      {
+        "name": "stage-2-1000ms",
+        "latency": "1000ms",
+        "jitter": "100ms",
+        "duration_sec": 90
+      },
+      {
+        "name": "stage-3-2000ms",
+        "latency": "2000ms",
+        "jitter": "200ms",
+        "duration_sec": 90
+      },
+      {
+        "name": "stage-4-4000ms",
+        "latency": "4000ms",
+        "jitter": "400ms",
+        "duration_sec": 90
+      }
+    ],
+    "probe_config": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\chaos\\probe-config.yaml",
+    "probe_config_sha256": "36ec46ee19a01ce348abb95b65c1b45dc6074ab43fddc07bbe2313deab777851",
+    "probe_image": "loadgen-runner:phase8-v4-forceclose-20261002",
+    "probe_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "detector_rule": {
+      "consecutive": 3,
+      "cooldown_sec": 60
+    },
+    "start_state_rule": "canonical_healthy_r2",
+    "common_evaluation": "c1_bck_live_detector: evaluate_once 1회/tick, 세 규칙 동시 판정·기록",
+    "rules": {
+      "B": {
+        "detector_id": "c1_bck_v1_if",
+        "model_version": "v3.3-c1",
+        "anomalous_if": "if_score < threshold",
+        "threshold": -0.07667538512242333
+      },
+      "C": {
+        "detector_id": "c1_bck_v1_fixed_cal",
+        "model_version": "fixed-cpu-gt-1.6842544293089357",
+        "anomalous_if": "cpu_mean > threshold",
+        "threshold": 1.6842544293089357
+      },
+      "K": {
+        "detector_id": "c1_bck_v1_fixed_legacy",
+        "model_version": "fixed-cpu-gt-2.7",
+        "anomalous_if": "cpu_mean > threshold",
+        "threshold": 2.7
+      }
+    },
+    "rule_spec_sha256": "b0113f174893173cbf208d4f587b541f5f4cfa21c6a362cc535ffd5d06ce4630",
+    "if_artifact_hashes": {
+      "feature-schema.json": "9d8ddb6eb45448361015f58c42c7189af59b649b5f52781c677b8f33a45fbc51",
+      "freeze.json": "3fa6c1696ab3dd2f0c1b1e1db8fd4398c9c7b2a5c8794a4e3e5431c828700e3c",
+      "model.pkl": "24cec78e658833dd24957ff49a8c39499403db2a7e8a0c7e752aff61ba3668cf",
+      "scaler.pkl": "7970aa165606bfca1d632af448ddbf502e1596a6fdcbb3d8eaa5393f7da1a67e",
+      "threshold.json": "47eb6ff2c9618586e788507f45b10c1bd5d78ac7a32ad3dc4d551b2abf2266dd"
+    },
+    "if_threshold": -0.1948341270493127
+  },
+  "kind": "pressure",
+  "mode": "act",
+  "arm": "P2",
+  "actuating_rule": "P2",
+  "signal_identity": {
+    "detector_id": "net-probe-readiness",
+    "model_version": "net-probe-gt-0.0064014",
+    "model_hash": "46c95eed9920c8ddd59dc816960fc4a7c1c96b5a61c95cca2d19e27c6c0167a6",
+    "artifact_manifest_hash": "03846174a13a1441d62e8398a773388744739002dcfa3dfd30a044ba2f737e3a",
+    "threshold": 0.006401369666666786
+  },
+  "detector": "net-probe-readiness",
+  "model": "net-probe-gt-0.0064014",
+  "threshold": 0.006401369666666786,
+  "artifact_hashes": {
+    "feature-schema.json": "9d8ddb6eb45448361015f58c42c7189af59b649b5f52781c677b8f33a45fbc51",
+    "freeze.json": "3fa6c1696ab3dd2f0c1b1e1db8fd4398c9c7b2a5c8794a4e3e5431c828700e3c",
+    "model.pkl": "24cec78e658833dd24957ff49a8c39499403db2a7e8a0c7e752aff61ba3668cf",
+    "scaler.pkl": "7970aa165606bfca1d632af448ddbf502e1596a6fdcbb3d8eaa5393f7da1a67e",
+    "threshold.json": "47eb6ff2c9618586e788507f45b10c1bd5d78ac7a32ad3dc4d551b2abf2266dd"
+  },
+  "observation_sec": 600.0,
+  "ready_timeout_sec": 300.0,
+  "scale_down_delay": {
+    "act": 420,
+    "base": 30,
+    "changed": true
+  },
+  "act_approval": {
+    "status": "final",
+    "run": "n2s04",
+    "runs": [
+      "n2s04"
+    ],
+    "run_id": "n2s04",
+    "launch_attempt": 1,
+    "scope": "네트워크 지연 Stage 2 act 세션 n2s04 1회 한정. 다른 세션 시작 금지. 다른 ID 재사용 불가",
+    "approved_by": "user (chat 2026-10-19: '[ACT 승인] n2s04 1회에 한해 진행해 주세요'; n2s02·n2s03과 동일 조건: 수동 승격·신호 재전송·결과를 위한 재실행 금지, 시계 확인 → 승인 기록 → 세션 → record_only 원복 → 유효성 기록 → session-end-check, 완료 후 다음 세션 시작 금지), approval scope 정확히 runs:[\"n2s04\"]",
+    "approved_at_utc": "2026-10-18T15:55:24.919511+00:00",
+    "contract_doc": "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev5.md",
+    "freeze": {
+      "version": "phase2-network-env-impl",
+      "manifest": "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r9.json",
+      "manifest_sha256": "68e3882646e9277f1777e7726acb79391cb1c68b50c47d4a3a106c64a848c7e2"
+    },
+    "inherits_values_from": "experiments/results/phase2_stage2/ops-p2s01/p2s01-act-approval-20261012T020158Z.json (gap01 사용자 확정값, 변경 없음)",
+    "timing_source": "gap01 승인값 재사용(A/B r2·B/C/K·Phase 2 Stage 2와 동일)",
+    "clock_measurement_file": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env_stage2\\ops-n2s04\\clock-offset-act-switch-n2s04.json",
+    "clock_bound_sec": 0.06489629999740422,
+    "timing": {
+      "max_signal_age_sec": 15.0,
+      "max_future_skew_sec": 2.0,
+      "max_window_to_decision_sec": 10.0
+    },
+    "service_wait_deadline_sec": 120.0,
+    "scale_down_wait_margin_sec": 180.0,
+    "execution_provenance_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env_stage2\\ops-n2s04\\execution-provenance-n2s04-20261018T155524Z.json",
+    "execution_provenance_sha256": "31d8b47b17bd577fc90805262791f80b8f967381edef4ca451a19c51bfc7827f",
+    "rules": [
+      "trigger 없음·정책 거부 시 수동 승격·재전송·재실행 금지 - 미승격 정리(D5→canonical 복원)로 종료(ITT)",
+      "결과 불명·실패: 자동 재승격·미검증 롤백·자동 재시도 금지",
+      "threshold·압박·관찰 변경 금지, 시작 전 실패 시 같은 ID 재시작 안 함(사용자 보고)"
+    ]
+  },
+  "service_check_note": "짧은 전환 직후 트래픽 확인 - 사용자 품질 개선 입증 아님",
+  "no_auto_repromotion_or_rollback": true,
+  "code_provenance": {
+    "manifest": "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r9.json",
+    "manifest_sha256": "68e3882646e9277f1777e7726acb79391cb1c68b50c47d4a3a106c64a848c7e2",
+    "verified_files": 305,
+    "selection_profile_sha256": "9346e19eee12e1221d72a87b273b68b0724ec8d46024dec3587040c8b6eb787b",
+    "status": "verified"
+  }
+}

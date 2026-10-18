@@ -1,0 +1,1762 @@
+{
+  "run_id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+  "run": "n2p02",
+  "kind": "pressure",
+  "mode": "record_only",
+  "outcome_status": "completed",
+  "outcome_reason": "전환 없음 대조 관찰 600초 완료",
+  "invalidity_reasons": [],
+  "detector_readiness": {
+    "timeout_sec": 300.0,
+    "wait_started_at_utc": "2026-10-18T10:13:57.795994+00:00",
+    "ready_at_utc": "2026-10-18T10:14:02.055940+00:00",
+    "waited_sec": 4.3,
+    "detail": {
+      "evaluations_seen": 1,
+      "skipped_seen": 0,
+      "last_skip_reason": null,
+      "ready_seq": 1
+    }
+  },
+  "evidence_counts": {
+    "scored": 30,
+    "skipped": 8,
+    "condition_met": 0,
+    "send_attempts": 0,
+    "send_results": {},
+    "parse_errors": 0
+  },
+  "watcher": {
+    "action": null
+  },
+  "context": null,
+  "rollout": {
+    "namespace": "vllm-serving",
+    "name": "vllm-serving",
+    "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+  },
+  "policy_state_after": {
+    "state_available": true,
+    "mode": "record_only",
+    "schema_version": "c1-signal-v2",
+    "context": null,
+    "blocked": null,
+    "unresolved": {},
+    "actions": {}
+  },
+  "scale_down_delay_before": 30,
+  "scale_down_delay_after": 30,
+  "session_start": {
+    "ok": true,
+    "problems": [],
+    "checked_at_utc": "2026-10-18T10:09:30.264138+00:00",
+    "session": {
+      "run": "n2p02",
+      "mode": "record_only",
+      "started_local": "2026-10-18T19:09:23.2254005+09:00",
+      "keep_awake": 29932,
+      "pf_prometheus": 7484,
+      "pf_policy": 27580,
+      "prometheus_url": "http://127.0.0.1:9090",
+      "policy_url": "http://127.0.0.1:18090"
+    }
+  },
+  "session_end": {
+    "ok": true,
+    "problems": [],
+    "checked_at_utc": "2026-10-18T10:25:59.718320+00:00",
+    "session": {
+      "run": "n2p02",
+      "mode": "record_only",
+      "started_local": "2026-10-18T19:09:23.2254005+09:00",
+      "keep_awake": 29932,
+      "pf_prometheus": 7484,
+      "pf_policy": 27580,
+      "prometheus_url": "http://127.0.0.1:9090",
+      "policy_url": "http://127.0.0.1:18090"
+    }
+  },
+  "pod_events_error": null,
+  "probe_image_runtime_check": {
+    "expected_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "checked_at": "2026-10-18T10:12:42.385077+00:00",
+    "pods": [
+      {
+        "name": "ramp-probe-f6250c67",
+        "node": "sj-worker2",
+        "terminating": false,
+        "image": "docker.io/library/loadgen-runner:phase8-v4-forceclose-20261002",
+        "image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b"
+      }
+    ],
+    "observed_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "verified": true
+  },
+  "start_active_node": "sj-worker",
+  "harness_error": null,
+  "cleanup_errors": [],
+  "observation_ended_at_utc": "2026-10-18T10:24:16.040327+00:00",
+  "old_policy_isolation": {
+    "start": {
+      "isolated": true,
+      "reasons": [],
+      "state": {
+        "read_at_utc": "2026-10-18T10:09:33.734855+00:00",
+        "errors": [],
+        "api_timeout_sec": 5.0,
+        "deployment": {
+          "uid": "ebdcfc7e-19e5-413c-9284-6fa8168d17be",
+          "replicas": 0,
+          "ready_replicas": 0,
+          "gitops_markers": []
+        },
+        "pods_present": 0,
+        "pods_terminating": 0,
+        "endpoints_ready": 0,
+        "endpoints_not_ready": 0,
+        "argocd": {
+          "installed": false,
+          "managing": []
+        }
+      }
+    },
+    "checks": {
+      "n": 120,
+      "last": {
+        "isolated": true,
+        "reasons": []
+      }
+    },
+    "end": {
+      "isolated": true,
+      "reasons": []
+    }
+  },
+  "trial_outcome": {
+    "status": "completed",
+    "reason": "전환 없음 대조 관찰 600초 완료",
+    "elapsed_sec": 979.9205370999989,
+    "prober_stop_failed": null,
+    "injector_cleanup_failed": null,
+    "sink_exit": {
+      "pid": 16828,
+      "returncode": 1,
+      "exited_cleanly": true
+    },
+    "score_server_exit": {
+      "pid": 14060,
+      "returncode": 1,
+      "exited_cleanly": true,
+      "exit_meaning": "terminated_or_unknown"
+    },
+    "injection_valid": true,
+    "t_injection_requested_utc": "2026-10-18T10:14:02.055950+00:00",
+    "t_injection_observed_utc": "2026-10-18T10:14:12.834398+00:00",
+    "observation_ended_at_utc": "2026-10-18T10:24:16.040327+00:00",
+    "probe_last_request_utc": "2026-10-18T10:24:14.224585+00:00",
+    "probe_data_gap_sec": 1.815742,
+    "probe_data_gap_detected": false,
+    "probe_max_internal_gap_sec": 1.98249,
+    "cleanup_status": "complete",
+    "invalidity_reasons": [],
+    "detector_readiness": {
+      "timeout_sec": 300.0,
+      "wait_started_at_utc": "2026-10-18T10:13:57.795994+00:00",
+      "ready_at_utc": "2026-10-18T10:14:02.055940+00:00",
+      "waited_sec": 4.3,
+      "detail": {
+        "evaluations_seen": 1,
+        "skipped_seen": 0,
+        "last_skip_reason": null,
+        "ready_seq": 1
+      }
+    }
+  },
+  "preview_cleanup_gate": [
+    {
+      "action": "cleanup_allowed",
+      "verdict": "not_promoted",
+      "reasons": [],
+      "attempt_evidence": [],
+      "assessed_at_utc": "2026-10-18T10:24:50.345741+00:00",
+      "cleanup_result": true,
+      "canonical_restore": {
+        "ok": true,
+        "problems": [],
+        "evidence": {
+          "patched": true,
+          "before": {
+            "t": "2026-10-18T10:25:25.706429+00:00",
+            "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+            "generation": 491,
+            "observed": "491",
+            "phase": "Degraded",
+            "abort": true,
+            "active": "848f66bcb6",
+            "preview": "665f5db456",
+            "stable": "848f66bcb6",
+            "current": "665f5db456",
+            "delay": 30,
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "experiment-prep-ts": "2026-10-18T10:09:37.332961+00:00",
+                  "promotion-verify-ts": "2026-09-06T10:14:52Z",
+                  "regime-test-ts": "2026-09-06T11:07:08Z",
+                  "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+                },
+                "labels": {
+                  "app": "vllm-serving"
+                }
+              },
+              "spec": {
+                "containers": [
+                  {
+                    "args": [
+                      "--model=Qwen/Qwen2.5-0.5B-Instruct",
+                      "--port=8000",
+                      "--gpu-memory-utilization=0.3",
+                      "--enforce-eager",
+                      "--max-model-len=2048"
+                    ],
+                    "image": "vllm-cpu-env:latest",
+                    "imagePullPolicy": "Never",
+                    "livenessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 11
+                    },
+                    "name": "vllm",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http",
+                        "protocol": "TCP"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 11
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "3",
+                        "memory": "6Gi"
+                      },
+                      "requests": {
+                        "cpu": "2",
+                        "memory": "4Gi"
+                      }
+                    },
+                    "startupProbe": {
+                      "exec": {
+                        "command": [
+                          "python3",
+                          "/opt/probes/warmup_probe.py"
+                        ]
+                      },
+                      "failureThreshold": 90,
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 65
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "dshm"
+                      },
+                      {
+                        "mountPath": "/root/.cache/huggingface",
+                        "name": "hf-cache"
+                      },
+                      {
+                        "mountPath": "/opt/probes",
+                        "name": "warmup-probe",
+                        "readOnly": true
+                      }
+                    ]
+                  }
+                ],
+                "volumes": [
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "1Gi"
+                    },
+                    "name": "dshm"
+                  },
+                  {
+                    "hostPath": {
+                      "path": "/home/ubuntu/hf-cache",
+                      "type": "DirectoryOrCreate"
+                    },
+                    "name": "hf-cache"
+                  },
+                  {
+                    "configMap": {
+                      "name": "vllm-warmup-probe"
+                    },
+                    "name": "warmup-probe"
+                  }
+                ]
+              }
+            },
+            "template_prep_ts": "2026-10-18T10:09:37.332961+00:00",
+            "rs": {
+              "558f4bb78f": {
+                "uid": "9baae673-3f41-421d-a598-4aa9ded0b5ed",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "400"
+              },
+              "665f5db456": {
+                "uid": "26155bdb-3893-46bf-ba4e-59ba23179f84",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "402"
+              },
+              "848f66bcb6": {
+                "uid": "354eba1a-5353-470b-bccf-1df21937509d",
+                "desired": 1,
+                "current": 1,
+                "ready": 1,
+                "revision": "401"
+              },
+              "9c4bc7d84": {
+                "uid": "90205a39-911b-4c4f-b3e0-341b5b37ef06",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "398"
+              }
+            },
+            "pods": [
+              {
+                "name": "vllm-serving-848f66bcb6-jfmrn",
+                "uid": "04a6afac-9cc3-4162-82d0-067478483386",
+                "ip": "10.244.36.36",
+                "hash": "848f66bcb6",
+                "deleting": false,
+                "ready": true,
+                "restarts": 0
+              }
+            ],
+            "svc_selectors": {
+              "vllm-active": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "848f66bcb6"
+              },
+              "vllm-preview": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "665f5db456"
+              }
+            },
+            "endpoints": {
+              "vllm-active": [
+                "10.244.36.36"
+              ],
+              "vllm-preview": []
+            },
+            "health_rc": 0
+          },
+          "template_diff": [
+            ".metadata.annotations.experiment-prep-ts"
+          ],
+          "stable_value": "2026-10-15T12:44:47.336834+00:00",
+          "previous_value": "2026-10-18T10:09:37.332961+00:00",
+          "allowed_deletions": [
+            "558f4bb78f",
+            "665f5db456",
+            "9c4bc7d84"
+          ],
+          "patched_at_utc": "2026-10-18T10:25:26.890066+00:00",
+          "timeline": [
+            {
+              "t": "2026-10-18T10:25:27.155994+00:00",
+              "phase": "Degraded",
+              "abort": true,
+              "bad": [],
+              "not_canonical": [
+                "not_reconciled: observed='491' generation=492",
+                "phase=Degraded",
+                "abort=true",
+                "hash_mismatch: active=848f66bcb6 stable=848f66bcb6 current=665f5db456 preview=665f5db456"
+              ]
+            },
+            {
+              "t": "2026-10-18T10:25:29.853448+00:00",
+              "phase": "Healthy",
+              "abort": null,
+              "bad": [],
+              "not_canonical": []
+            },
+            {
+              "t": "2026-10-18T10:25:32.697139+00:00",
+              "phase": "Healthy",
+              "abort": null,
+              "bad": [],
+              "not_canonical": []
+            },
+            {
+              "t": "2026-10-18T10:25:35.331074+00:00",
+              "phase": "Healthy",
+              "abort": null,
+              "bad": [],
+              "not_canonical": []
+            }
+          ],
+          "final": {
+            "t": "2026-10-18T10:25:55.858779+00:00",
+            "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+            "generation": 492,
+            "observed": "492",
+            "phase": "Healthy",
+            "abort": null,
+            "active": "848f66bcb6",
+            "preview": "848f66bcb6",
+            "stable": "848f66bcb6",
+            "current": "848f66bcb6",
+            "delay": 30,
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "experiment-prep-ts": "2026-10-15T12:44:47.336834+00:00",
+                  "promotion-verify-ts": "2026-09-06T10:14:52Z",
+                  "regime-test-ts": "2026-09-06T11:07:08Z",
+                  "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+                },
+                "labels": {
+                  "app": "vllm-serving"
+                }
+              },
+              "spec": {
+                "containers": [
+                  {
+                    "args": [
+                      "--model=Qwen/Qwen2.5-0.5B-Instruct",
+                      "--port=8000",
+                      "--gpu-memory-utilization=0.3",
+                      "--enforce-eager",
+                      "--max-model-len=2048"
+                    ],
+                    "image": "vllm-cpu-env:latest",
+                    "imagePullPolicy": "Never",
+                    "livenessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 11
+                    },
+                    "name": "vllm",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http",
+                        "protocol": "TCP"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 11
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "3",
+                        "memory": "6Gi"
+                      },
+                      "requests": {
+                        "cpu": "2",
+                        "memory": "4Gi"
+                      }
+                    },
+                    "startupProbe": {
+                      "exec": {
+                        "command": [
+                          "python3",
+                          "/opt/probes/warmup_probe.py"
+                        ]
+                      },
+                      "failureThreshold": 90,
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 65
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "dshm"
+                      },
+                      {
+                        "mountPath": "/root/.cache/huggingface",
+                        "name": "hf-cache"
+                      },
+                      {
+                        "mountPath": "/opt/probes",
+                        "name": "warmup-probe",
+                        "readOnly": true
+                      }
+                    ]
+                  }
+                ],
+                "volumes": [
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "1Gi"
+                    },
+                    "name": "dshm"
+                  },
+                  {
+                    "hostPath": {
+                      "path": "/home/ubuntu/hf-cache",
+                      "type": "DirectoryOrCreate"
+                    },
+                    "name": "hf-cache"
+                  },
+                  {
+                    "configMap": {
+                      "name": "vllm-warmup-probe"
+                    },
+                    "name": "warmup-probe"
+                  }
+                ]
+              }
+            },
+            "template_prep_ts": "2026-10-15T12:44:47.336834+00:00",
+            "rs": {
+              "558f4bb78f": {
+                "uid": "9baae673-3f41-421d-a598-4aa9ded0b5ed",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "400"
+              },
+              "665f5db456": {
+                "uid": "26155bdb-3893-46bf-ba4e-59ba23179f84",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "402"
+              },
+              "848f66bcb6": {
+                "uid": "354eba1a-5353-470b-bccf-1df21937509d",
+                "desired": 1,
+                "current": 1,
+                "ready": 1,
+                "revision": "403"
+              }
+            },
+            "pods": [
+              {
+                "name": "vllm-serving-848f66bcb6-jfmrn",
+                "uid": "04a6afac-9cc3-4162-82d0-067478483386",
+                "ip": "10.244.36.36",
+                "hash": "848f66bcb6",
+                "deleting": false,
+                "ready": true,
+                "restarts": 0
+              }
+            ],
+            "svc_selectors": {
+              "vllm-active": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "848f66bcb6"
+              },
+              "vllm-preview": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "848f66bcb6"
+              }
+            },
+            "endpoints": {
+              "vllm-active": [
+                "10.244.36.36"
+              ],
+              "vllm-preview": [
+                "10.244.36.36"
+              ]
+            },
+            "health_rc": 0
+          },
+          "bookkeeping": {
+            "active_rs_revision": [
+              "401",
+              "403"
+            ],
+            "deleted_rs": [
+              "9c4bc7d84"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "ssh_check_evidence": {
+    "dir": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env\\ssh-evidence-guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+    "index": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env\\ssh-evidence-guarded_pressure_record_only-n2p02-cap-p2-net-v1\\ssh-check-index.jsonl",
+    "session": "20261018T100930264169Z",
+    "checks": 27,
+    "by_observed": {
+      "exited_after_completion_marker": 27
+    },
+    "failed_checks": [],
+    "write_errors": [],
+    "note": "관측 분류이며 원인(네트워크·dmesg 등)을 단정하지 않는다. 판정은 기존 evaluate_node_disk_health 그대로."
+  },
+  "run_guard": {
+    "mem_drop_abort_gib": 1.0,
+    "disk_recheck_sec": 60.0,
+    "preview_actual_node": "sj-worker2",
+    "start_active_node": "sj-worker",
+    "preview_verified": true,
+    "pre_stress": {
+      "preview_node": "sj-worker2",
+      "min_available_gib": 1.5,
+      "checked_at": "2026-10-18T10:12:36.841972+00:00",
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      },
+      "calico": {
+        "pod": "calico-node-kkg75",
+        "ready": true,
+        "restarts": 0,
+        "working_set_gib": 2.085
+      },
+      "active_service": {
+        "endpoint_count": 1,
+        "pod": "vllm-serving-848f66bcb6-jfmrn",
+        "health_ok": true
+      },
+      "available_gib": 9.599,
+      "ok": true,
+      "failures": []
+    },
+    "read_failures": 0,
+    "mem_baseline_gib": {
+      "sj-worker": 3.121,
+      "sj-worker2": 9.571
+    },
+    "mem_min_gib": {
+      "sj-worker": 3.071,
+      "sj-worker2": 9.514
+    },
+    "disk_checks": 12
+  },
+  "comparison": {
+    "series": "capstone-phase2-network-env-v1",
+    "stage": "stage1",
+    "session": "n2p02",
+    "counted_in_comparison": true
+  },
+  "preflight_file": "preflight-guarded_pressure_record_only-n2p02-cap-p2-net-v1-run-20261018T100936170995Z.json",
+  "canonical_end": {
+    "ok": true,
+    "problems": []
+  },
+  "detector_started": true,
+  "network_preflight": {
+    "target": "vllm-serving-848f66bcb6-jfmrn",
+    "net_probe": {
+      "value": 0.00400406783333344,
+      "n_series": 1
+    }
+  },
+  "network_protected_pod_observations": [
+    {
+      "t": 1792318362.838575,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318394.1339402,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318425.3491652,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318459.7965336,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318490.937747,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318523.3787222,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318555.0516093,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318587.9334,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318619.6502945,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318651.931207,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318683.46035,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318718.1748068,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318749.9538198,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318783.6046512,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318817.101181,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318850.005396,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318883.4746609,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318915.3036408,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318947.4094756,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792318979.6585407,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792319013.3716443,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    },
+    {
+      "t": 1792319046.194683,
+      "pods": [
+        "vllm-serving-665f5db456-qmkmm"
+      ],
+      "error": null
+    }
+  ],
+  "network_delivery": {
+    "crs": [
+      {
+        "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s0-77f708",
+        "stage": "stage-1-500ms",
+        "stage_def": {
+          "name": "stage-1-500ms",
+          "latency": "500ms",
+          "jitter": "50ms",
+          "duration_sec": 90
+        },
+        "target_pod": "vllm-serving-848f66bcb6-jfmrn",
+        "duration": "150s",
+        "expected": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s0-77f708",
+            "namespace": "vllm-serving",
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            }
+          },
+          "spec": {
+            "action": "delay",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            },
+            "delay": {
+              "latency": "500ms",
+              "jitter": "50ms"
+            },
+            "duration": "150s"
+          }
+        },
+        "created_at": "2026-10-18T10:14:02.774016+00:00",
+        "injected_at": "2026-10-18T10:14:12.788258+00:00",
+        "deleted_at": "2026-10-18T10:15:33.103855+00:00",
+        "closed": true,
+        "created": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "creationTimestamp": "2026-10-18T10:14:02Z",
+            "generation": 1,
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            },
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s0-77f708",
+            "namespace": "vllm-serving",
+            "resourceVersion": "9353290",
+            "uid": "3edd1edb-2894-42a4-b52b-6090eeca0999"
+          },
+          "spec": {
+            "action": "delay",
+            "delay": {
+              "correlation": "0",
+              "jitter": "50ms",
+              "latency": "500ms"
+            },
+            "direction": "to",
+            "duration": "150s",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            }
+          },
+          "status": {
+            "experiment": {}
+          }
+        },
+        "actual": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "creationTimestamp": "2026-10-18T10:14:02Z",
+            "finalizers": [
+              "chaos-mesh/records"
+            ],
+            "generation": 7,
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            },
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s0-77f708",
+            "namespace": "vllm-serving",
+            "resourceVersion": "9353332",
+            "uid": "3edd1edb-2894-42a4-b52b-6090eeca0999"
+          },
+          "spec": {
+            "action": "delay",
+            "delay": {
+              "correlation": "0",
+              "jitter": "50ms",
+              "latency": "500ms"
+            },
+            "direction": "to",
+            "duration": "150s",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "True",
+                "type": "Selected"
+              },
+              {
+                "status": "True",
+                "type": "AllInjected"
+              },
+              {
+                "status": "False",
+                "type": "AllRecovered"
+              },
+              {
+                "status": "False",
+                "type": "Paused"
+              }
+            ],
+            "experiment": {
+              "containerRecords": [
+                {
+                  "events": [
+                    {
+                      "operation": "Apply",
+                      "timestamp": "2026-10-18T10:14:12Z",
+                      "type": "Succeeded"
+                    }
+                  ],
+                  "id": "vllm-serving/vllm-serving-848f66bcb6-jfmrn",
+                  "injectedCount": 1,
+                  "phase": "Injected",
+                  "recoveredCount": 0,
+                  "selectorKey": "."
+                }
+              ],
+              "desiredPhase": "Run"
+            },
+            "instances": {
+              "vllm-serving/vllm-serving-848f66bcb6-jfmrn": 1
+            }
+          }
+        },
+        "actual_at": "2026-10-18T10:15:33.006716+00:00",
+        "read_error": null,
+        "injected_check_error": null,
+        "violations": [],
+        "watcher_alive_at_delete": false,
+        "lifecycle_problems": []
+      },
+      {
+        "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s1-f55eac",
+        "stage": "stage-2-1000ms",
+        "stage_def": {
+          "name": "stage-2-1000ms",
+          "latency": "1000ms",
+          "jitter": "100ms",
+          "duration_sec": 90
+        },
+        "target_pod": "vllm-serving-848f66bcb6-jfmrn",
+        "duration": "150s",
+        "expected": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s1-f55eac",
+            "namespace": "vllm-serving",
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            }
+          },
+          "spec": {
+            "action": "delay",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            },
+            "delay": {
+              "latency": "1000ms",
+              "jitter": "100ms"
+            },
+            "duration": "150s"
+          }
+        },
+        "created_at": "2026-10-18T10:15:34.493395+00:00",
+        "injected_at": "2026-10-18T10:15:34.775148+00:00",
+        "deleted_at": "2026-10-18T10:17:04.975575+00:00",
+        "closed": true,
+        "created": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "creationTimestamp": "2026-10-18T10:15:34Z",
+            "finalizers": [
+              "chaos-mesh/records"
+            ],
+            "generation": 5,
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            },
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s1-f55eac",
+            "namespace": "vllm-serving",
+            "resourceVersion": "9353564",
+            "uid": "1324dfd3-1933-4421-8a1d-d7bbe907da35"
+          },
+          "spec": {
+            "action": "delay",
+            "delay": {
+              "correlation": "0",
+              "jitter": "100ms",
+              "latency": "1000ms"
+            },
+            "direction": "to",
+            "duration": "150s",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "True",
+                "type": "Selected"
+              },
+              {
+                "status": "False",
+                "type": "AllInjected"
+              },
+              {
+                "status": "False",
+                "type": "AllRecovered"
+              },
+              {
+                "status": "False",
+                "type": "Paused"
+              }
+            ],
+            "experiment": {
+              "containerRecords": [
+                {
+                  "id": "vllm-serving/vllm-serving-848f66bcb6-jfmrn",
+                  "injectedCount": 0,
+                  "phase": "Not Injected/Wait",
+                  "recoveredCount": 0,
+                  "selectorKey": "."
+                }
+              ],
+              "desiredPhase": "Run"
+            },
+            "instances": {
+              "vllm-serving/vllm-serving-848f66bcb6-jfmrn": 3
+            }
+          }
+        },
+        "actual": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "creationTimestamp": "2026-10-18T10:15:34Z",
+            "finalizers": [
+              "chaos-mesh/records"
+            ],
+            "generation": 7,
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            },
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s1-f55eac",
+            "namespace": "vllm-serving",
+            "resourceVersion": "9353570",
+            "uid": "1324dfd3-1933-4421-8a1d-d7bbe907da35"
+          },
+          "spec": {
+            "action": "delay",
+            "delay": {
+              "correlation": "0",
+              "jitter": "100ms",
+              "latency": "1000ms"
+            },
+            "direction": "to",
+            "duration": "150s",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "True",
+                "type": "Selected"
+              },
+              {
+                "status": "True",
+                "type": "AllInjected"
+              },
+              {
+                "status": "False",
+                "type": "AllRecovered"
+              },
+              {
+                "status": "False",
+                "type": "Paused"
+              }
+            ],
+            "experiment": {
+              "containerRecords": [
+                {
+                  "events": [
+                    {
+                      "operation": "Apply",
+                      "timestamp": "2026-10-18T10:15:34Z",
+                      "type": "Succeeded"
+                    }
+                  ],
+                  "id": "vllm-serving/vllm-serving-848f66bcb6-jfmrn",
+                  "injectedCount": 1,
+                  "phase": "Injected",
+                  "recoveredCount": 0,
+                  "selectorKey": "."
+                }
+              ],
+              "desiredPhase": "Run"
+            },
+            "instances": {
+              "vllm-serving/vllm-serving-848f66bcb6-jfmrn": 3
+            }
+          }
+        },
+        "actual_at": "2026-10-18T10:17:04.790630+00:00",
+        "read_error": null,
+        "injected_check_error": null,
+        "violations": [],
+        "watcher_alive_at_delete": false,
+        "lifecycle_problems": []
+      },
+      {
+        "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s2-833059",
+        "stage": "stage-3-2000ms",
+        "stage_def": {
+          "name": "stage-3-2000ms",
+          "latency": "2000ms",
+          "jitter": "200ms",
+          "duration_sec": 90
+        },
+        "target_pod": "vllm-serving-848f66bcb6-jfmrn",
+        "duration": "150s",
+        "expected": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s2-833059",
+            "namespace": "vllm-serving",
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            }
+          },
+          "spec": {
+            "action": "delay",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            },
+            "delay": {
+              "latency": "2000ms",
+              "jitter": "200ms"
+            },
+            "duration": "150s"
+          }
+        },
+        "created_at": "2026-10-18T10:17:06.391422+00:00",
+        "injected_at": "2026-10-18T10:17:07.760291+00:00",
+        "deleted_at": "2026-10-18T10:18:36.818931+00:00",
+        "closed": true,
+        "created": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "creationTimestamp": "2026-10-18T10:17:06Z",
+            "finalizers": [
+              "chaos-mesh/records"
+            ],
+            "generation": 3,
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            },
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s2-833059",
+            "namespace": "vllm-serving",
+            "resourceVersion": "9353828",
+            "uid": "ce07c675-0a6a-4e08-9571-f43ad92c410f"
+          },
+          "spec": {
+            "action": "delay",
+            "delay": {
+              "correlation": "0",
+              "jitter": "200ms",
+              "latency": "2000ms"
+            },
+            "direction": "to",
+            "duration": "150s",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "False",
+                "type": "AllInjected"
+              },
+              {
+                "status": "False",
+                "type": "AllRecovered"
+              },
+              {
+                "status": "False",
+                "type": "Paused"
+              },
+              {
+                "status": "False",
+                "type": "Selected"
+              }
+            ],
+            "experiment": {
+              "desiredPhase": "Run"
+            }
+          }
+        },
+        "actual": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "creationTimestamp": "2026-10-18T10:17:06Z",
+            "finalizers": [
+              "chaos-mesh/records"
+            ],
+            "generation": 7,
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            },
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s2-833059",
+            "namespace": "vllm-serving",
+            "resourceVersion": "9353838",
+            "uid": "ce07c675-0a6a-4e08-9571-f43ad92c410f"
+          },
+          "spec": {
+            "action": "delay",
+            "delay": {
+              "correlation": "0",
+              "jitter": "200ms",
+              "latency": "2000ms"
+            },
+            "direction": "to",
+            "duration": "150s",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "False",
+                "type": "AllRecovered"
+              },
+              {
+                "status": "False",
+                "type": "Paused"
+              },
+              {
+                "status": "True",
+                "type": "Selected"
+              },
+              {
+                "status": "True",
+                "type": "AllInjected"
+              }
+            ],
+            "experiment": {
+              "containerRecords": [
+                {
+                  "events": [
+                    {
+                      "operation": "Apply",
+                      "timestamp": "2026-10-18T10:17:06Z",
+                      "type": "Succeeded"
+                    }
+                  ],
+                  "id": "vllm-serving/vllm-serving-848f66bcb6-jfmrn",
+                  "injectedCount": 1,
+                  "phase": "Injected",
+                  "recoveredCount": 0,
+                  "selectorKey": "."
+                }
+              ],
+              "desiredPhase": "Run"
+            },
+            "instances": {
+              "vllm-serving/vllm-serving-848f66bcb6-jfmrn": 5
+            }
+          }
+        },
+        "actual_at": "2026-10-18T10:18:36.629485+00:00",
+        "read_error": null,
+        "injected_check_error": null,
+        "violations": [],
+        "watcher_alive_at_delete": false,
+        "lifecycle_problems": []
+      },
+      {
+        "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s3-9ba336",
+        "stage": "stage-4-4000ms",
+        "stage_def": {
+          "name": "stage-4-4000ms",
+          "latency": "4000ms",
+          "jitter": "400ms",
+          "duration_sec": 90
+        },
+        "target_pod": "vllm-serving-848f66bcb6-jfmrn",
+        "duration": "150s",
+        "expected": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s3-9ba336",
+            "namespace": "vllm-serving",
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            }
+          },
+          "spec": {
+            "action": "delay",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            },
+            "delay": {
+              "latency": "4000ms",
+              "jitter": "400ms"
+            },
+            "duration": "150s"
+          }
+        },
+        "created_at": "2026-10-18T10:18:38.153850+00:00",
+        "injected_at": "2026-10-18T10:18:39.385315+00:00",
+        "deleted_at": "2026-10-18T10:20:08.474401+00:00",
+        "closed": true,
+        "created": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "creationTimestamp": "2026-10-18T10:18:38Z",
+            "finalizers": [
+              "chaos-mesh/records"
+            ],
+            "generation": 3,
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            },
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s3-9ba336",
+            "namespace": "vllm-serving",
+            "resourceVersion": "9354088",
+            "uid": "3f71ec3a-0e69-484b-85cc-0a997751a4a4"
+          },
+          "spec": {
+            "action": "delay",
+            "delay": {
+              "correlation": "0",
+              "jitter": "400ms",
+              "latency": "4000ms"
+            },
+            "direction": "to",
+            "duration": "150s",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "False",
+                "type": "AllInjected"
+              },
+              {
+                "status": "False",
+                "type": "AllRecovered"
+              },
+              {
+                "status": "False",
+                "type": "Paused"
+              },
+              {
+                "status": "False",
+                "type": "Selected"
+              }
+            ],
+            "experiment": {
+              "desiredPhase": "Run"
+            }
+          }
+        },
+        "actual": {
+          "apiVersion": "chaos-mesh.org/v1alpha1",
+          "kind": "NetworkChaos",
+          "metadata": {
+            "creationTimestamp": "2026-10-18T10:18:38Z",
+            "finalizers": [
+              "chaos-mesh/records"
+            ],
+            "generation": 7,
+            "labels": {
+              "experiment-run-id": "guarded_pressure_record_only-n2p02-cap-p2-net-v1",
+              "phase8-arm": "proposed"
+            },
+            "name": "netdelay-guarded-pressure-record-only-n2p02-cap-p2-net-v1-s3-9ba336",
+            "namespace": "vllm-serving",
+            "resourceVersion": "9354098",
+            "uid": "3f71ec3a-0e69-484b-85cc-0a997751a4a4"
+          },
+          "spec": {
+            "action": "delay",
+            "delay": {
+              "correlation": "0",
+              "jitter": "400ms",
+              "latency": "4000ms"
+            },
+            "direction": "to",
+            "duration": "150s",
+            "mode": "one",
+            "selector": {
+              "namespaces": [
+                "vllm-serving"
+              ],
+              "pods": {
+                "vllm-serving": [
+                  "vllm-serving-848f66bcb6-jfmrn"
+                ]
+              }
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "status": "True",
+                "type": "Selected"
+              },
+              {
+                "status": "True",
+                "type": "AllInjected"
+              },
+              {
+                "status": "False",
+                "type": "AllRecovered"
+              },
+              {
+                "status": "False",
+                "type": "Paused"
+              }
+            ],
+            "experiment": {
+              "containerRecords": [
+                {
+                  "events": [
+                    {
+                      "operation": "Apply",
+                      "timestamp": "2026-10-18T10:18:38Z",
+                      "type": "Succeeded"
+                    }
+                  ],
+                  "id": "vllm-serving/vllm-serving-848f66bcb6-jfmrn",
+                  "injectedCount": 1,
+                  "phase": "Injected",
+                  "recoveredCount": 0,
+                  "selectorKey": "."
+                }
+              ],
+              "desiredPhase": "Run"
+            },
+            "instances": {
+              "vllm-serving/vllm-serving-848f66bcb6-jfmrn": 7
+            }
+          }
+        },
+        "actual_at": "2026-10-18T10:20:08.390532+00:00",
+        "read_error": null,
+        "injected_check_error": null,
+        "violations": [],
+        "watcher_alive_at_delete": false,
+        "lifecycle_problems": []
+      }
+    ],
+    "targets": [
+      "vllm-serving-848f66bcb6-jfmrn"
+    ],
+    "cr_duration_margin_sec": 60,
+    "first_created_at": "2026-10-18T10:14:02.774016+00:00",
+    "last_deleted_at": "2026-10-18T10:20:08.474401+00:00"
+  },
+  "network_protected_probe_seconds": {
+    "vllm-serving-665f5db456-qmkmm": [
+      [
+        1792318412.774,
+        0.003876867000000006
+      ],
+      [
+        1792318427.774,
+        0.005188819833333339
+      ],
+      [
+        1792318442.774,
+        0.005188819833333339
+      ],
+      [
+        1792318457.774,
+        0.004327717833333411
+      ],
+      [
+        1792318472.774,
+        0.004327717833333411
+      ],
+      [
+        1792318487.774,
+        0.002811685833333281
+      ],
+      [
+        1792318502.774,
+        0.002811685833333281
+      ],
+      [
+        1792318517.774,
+        0.004134556500000089
+      ],
+      [
+        1792318532.774,
+        0.004134556500000089
+      ],
+      [
+        1792318547.774,
+        0.004234660666666704
+      ],
+      [
+        1792318562.774,
+        0.004234660666666704
+      ],
+      [
+        1792318577.774,
+        0.0059465204999999965
+      ],
+      [
+        1792318592.774,
+        0.0059465204999999965
+      ],
+      [
+        1792318607.774,
+        0.0036232024999999593
+      ],
+      [
+        1792318622.774,
+        0.0036232024999999593
+      ],
+      [
+        1792318637.774,
+        0.003977993500000017
+      ],
+      [
+        1792318652.774,
+        0.003977993500000017
+      ],
+      [
+        1792318667.774,
+        0.004355938000000003
+      ],
+      [
+        1792318682.774,
+        0.004355938000000003
+      ],
+      [
+        1792318697.774,
+        0.00424639483333326
+      ],
+      [
+        1792318712.774,
+        0.00424639483333326
+      ],
+      [
+        1792318727.774,
+        0.0041785556666666945
+      ],
+      [
+        1792318742.774,
+        0.0041785556666666945
+      ],
+      [
+        1792318757.774,
+        0.003033463500000074
+      ],
+      [
+        1792318772.774,
+        0.003033463500000074
+      ],
+      [
+        1792318787.774,
+        0.0038542818333333617
+      ],
+      [
+        1792318802.774,
+        0.0038542818333333617
+      ],
+      [
+        1792318817.774,
+        0.003710733333333345
+      ],
+      [
+        1792318832.774,
+        0.003710733333333345
+      ],
+      [
+        1792318847.774,
+        0.005943023666666657
+      ]
+    ]
+  },
+  "network_delivery_check": {
+    "problems": [],
+    "container_records_present": true
+  },
+  "code_provenance": {
+    "manifest": "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r6.json",
+    "manifest_sha256": "331a8aad22d9e98c51914aa2aa0b3f0a69db598751b03260740260ff83ec0468",
+    "verified_files": 301,
+    "selection_profile_sha256": "ebf0850f7d08b748c7e07663fc6db813bdd8a9794dcba97e92850356ae337b5b",
+    "status": "verified"
+  }
+}

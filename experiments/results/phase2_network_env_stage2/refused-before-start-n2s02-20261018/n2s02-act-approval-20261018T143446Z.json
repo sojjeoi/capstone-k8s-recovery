@@ -1,0 +1,36 @@
+{
+ "status": "final",
+ "run": "n2s02",
+ "runs": [
+  "n2s02"
+ ],
+ "run_id": "n2s02",
+ "launch_attempt": 1,
+ "scope": "네트워크 지연 Stage 2 act 세션 n2s02 1회 한정. 다른 세션 시작 금지. 다른 ID 재사용 불가",
+ "approved_by": "user (chat 2026-10-18: '[ACT 승인] n2s02 1회에 한해 guarded-recovery-policy의 act 모드 사용과 실제 promotion 및 트래픽 전환 검증을 승인합니다. 조건은 n2s01과 동일하게 적용합니다. 시계 오차 확인 → 승인 기록 생성 → 세션 실행 → record_only 원복 → 유효성 기록 → session-end-check 순서로 진행해 주세요. 수동 promotion, 신호 재전송, 결과를 위한 재실행은 하지 마세요. n2s02 완료 후에는 n2s03을 시작하지 말고 결과만 보고해 주세요.'), approval scope 정확히 runs:[\"n2s02\"]",
+ "approved_at_utc": "2026-10-18T14:34:46.767202+00:00",
+ "contract_doc": "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev5.md",
+ "freeze": {
+  "version": "phase2-network-env-impl",
+  "manifest": "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r8.json",
+  "manifest_sha256": "4fc1ec53ea0769a93f852ae8e4887c2ec4d1b8017418e8456e061aff8e04c56a"
+ },
+ "inherits_values_from": "experiments/results/phase2_stage2/ops-p2s01/p2s01-act-approval-20261012T020158Z.json (gap01 사용자 확정값, 변경 없음)",
+ "timing_source": "gap01 승인값 재사용(A/B r2·B/C/K·Phase 2 Stage 2와 동일)",
+ "clock_measurement_file": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env_stage2\\ops-n2s02\\clock-offset-act-switch-n2s02.json",
+ "clock_bound_sec": 0.0937004999996433,
+ "timing": {
+  "max_signal_age_sec": 15.0,
+  "max_future_skew_sec": 2.0,
+  "max_window_to_decision_sec": 10.0
+ },
+ "service_wait_deadline_sec": 120.0,
+ "scale_down_wait_margin_sec": 180.0,
+ "execution_provenance_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env_stage2\\ops-n2s02\\execution-provenance-n2s02-20261018T143446Z.json",
+ "execution_provenance_sha256": "fe1496a06fea044c1760f95a1c9320c8149e4a0c813119357ec973ffc4d011a1",
+ "rules": [
+  "trigger 없음·정책 거부 시 수동 승격·재전송·재실행 금지 - 미승격 정리(D5→canonical 복원)로 종료(ITT)",
+  "결과 불명·실패: 자동 재승격·미검증 롤백·자동 재시도 금지",
+  "threshold·압박·관찰 변경 금지, 시작 전 실패 시 같은 ID 재시작 안 함(사용자 보고)"
+ ]
+}

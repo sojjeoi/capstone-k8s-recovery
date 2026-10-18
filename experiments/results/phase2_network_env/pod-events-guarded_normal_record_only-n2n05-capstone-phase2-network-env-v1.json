@@ -1,0 +1,106 @@
+[
+  {
+    "type": "Normal",
+    "reason": "Killing",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-6ff9f515",
+      "uid": "02cf2f53-04bf-489a-8d4f-228f6a9d3128"
+    },
+    "message": "Stopping container ramp-probe-6ff9f515",
+    "first_timestamp": "2026-10-18T06:39:56Z",
+    "last_timestamp": "2026-10-18T06:39:56Z",
+    "count": 1
+  },
+  {
+    "type": "Warning",
+    "reason": "RolloutAborted",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout aborted update to revision 394",
+    "first_timestamp": "2026-10-18T06:40:31Z",
+    "last_timestamp": "2026-10-18T06:40:31Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Killing",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-f7768df87-k5h2x",
+      "uid": "e264cda5-c5b7-49e3-b3d3-e582bf4087ce"
+    },
+    "message": "Stopping container vllm",
+    "first_timestamp": "2026-10-18T06:41:01Z",
+    "last_timestamp": "2026-10-18T06:41:01Z",
+    "count": 1
+  },
+  {
+    "type": "Warning",
+    "reason": "Unhealthy",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-f7768df87-k5h2x",
+      "uid": "e264cda5-c5b7-49e3-b3d3-e582bf4087ce"
+    },
+    "message": "Readiness probe failed: Get \"http://10.244.224.199:8000/health\": dial tcp 10.244.224.199:8000: connect: connection refused",
+    "first_timestamp": "2026-10-18T06:41:01Z",
+    "last_timestamp": "2026-10-18T06:41:01Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SuccessfulDelete",
+    "involved_object": {
+      "kind": "ReplicaSet",
+      "name": "vllm-serving-f7768df87",
+      "uid": "e4a295e7-90dc-4c08-af8c-a616223137f5"
+    },
+    "message": "Deleted pod: vllm-serving-f7768df87-k5h2x",
+    "first_timestamp": "2026-10-18T06:41:01Z",
+    "last_timestamp": "2026-10-18T06:41:01Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "ScalingReplicaSet",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Scaled down ReplicaSet vllm-serving-f7768df87 (revision 394) from 1 to 0",
+    "first_timestamp": "2026-10-18T06:41:01Z",
+    "last_timestamp": "2026-10-18T06:41:01Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "RolloutUpdated",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout updated to revision 395",
+    "first_timestamp": "2026-10-18T06:41:08Z",
+    "last_timestamp": "2026-10-18T06:41:08Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SwitchService",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Switched selector for service 'vllm-preview' from 'f7768df87' to '848f66bcb6'",
+    "first_timestamp": "2026-10-18T06:41:08Z",
+    "last_timestamp": "2026-10-18T06:41:08Z",
+    "count": 1
+  }
+]

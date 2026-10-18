@@ -1,0 +1,189 @@
+{
+  "checked_at": "2026-10-18T08:00:47.602833+00:00",
+  "reasons": [],
+  "disk": {
+    "ok": true,
+    "nodes": [
+      {
+        "node": "sj-control",
+        "ok": true,
+        "reasons": [],
+        "error_lines": [],
+        "coverage_start": "2026-09-02T06:54:53+00:00",
+        "node_now": "2026-10-18T08:00:49+00:00"
+      },
+      {
+        "node": "sj-worker",
+        "ok": true,
+        "reasons": [],
+        "error_lines": [],
+        "coverage_start": "2026-09-04T11:55:59.738449+00:00",
+        "node_now": "2026-10-18T08:00:54+00:00"
+      },
+      {
+        "node": "sj-worker2",
+        "ok": true,
+        "reasons": [],
+        "error_lines": [],
+        "coverage_start": "2026-10-02T04:13:34+00:00",
+        "node_now": "2026-10-18T08:00:56+00:00"
+      }
+    ],
+    "reasons": []
+  },
+  "request_counter": {
+    "pod": "vllm-serving-848f66bcb6-jfmrn",
+    "metric": "vllm:request_success_total",
+    "value": 8651.0
+  },
+  "ok": true,
+  "local_commit": {
+    "ok": true,
+    "commit_limit_gib": 55.08,
+    "commit_available_gib": 26.7,
+    "ram_available_gib": 2.97,
+    "commit_available_gib_raw": 26.698150634765625,
+    "min_required_gib": 4.0,
+    "reason": null
+  },
+  "canonical_start": {
+    "problems": [],
+    "start_pod": [
+      "vllm-serving-848f66bcb6-jfmrn",
+      "04a6afac-9cc3-4162-82d0-067478483386"
+    ],
+    "state": {
+      "phase": "Healthy",
+      "abort": null,
+      "active": "848f66bcb6",
+      "stable": "848f66bcb6",
+      "current": "848f66bcb6",
+      "preview": "848f66bcb6",
+      "delay": 30,
+      "pods": [
+        {
+          "name": "vllm-serving-848f66bcb6-jfmrn",
+          "uid": "04a6afac-9cc3-4162-82d0-067478483386",
+          "ip": "10.244.36.36",
+          "hash": "848f66bcb6",
+          "deleting": false,
+          "ready": true,
+          "restarts": 0
+        }
+      ],
+      "svc_selectors": {
+        "vllm-active": {
+          "app": "vllm-serving",
+          "rollouts-pod-template-hash": "848f66bcb6"
+        },
+        "vllm-preview": {
+          "app": "vllm-serving",
+          "rollouts-pod-template-hash": "848f66bcb6"
+        }
+      },
+      "endpoints": {
+        "vllm-active": [
+          "10.244.36.36"
+        ],
+        "vllm-preview": [
+          "10.244.36.36"
+        ]
+      },
+      "rs": {
+        "79c9d7b4d8": {
+          "uid": "c6078e15-736a-414c-8fd7-0a9ece4e4eec",
+          "desired": 0,
+          "current": 0,
+          "ready": null,
+          "revision": "396"
+        },
+        "848f66bcb6": {
+          "uid": "354eba1a-5353-470b-bccf-1df21937509d",
+          "desired": 1,
+          "current": 1,
+          "ready": 1,
+          "revision": "397"
+        },
+        "f7768df87": {
+          "uid": "e4a295e7-90dc-4c08-af8c-a616223137f5",
+          "desired": 0,
+          "current": 0,
+          "ready": null,
+          "revision": "394"
+        }
+      }
+    }
+  },
+  "policy": {
+    "identity": {
+      "role": "guarded-recovery-policy",
+      "version": "guarded-v1",
+      "mode": "record_only",
+      "timing": {
+        "max_signal_age_sec": 15.0,
+        "max_future_skew_sec": 2.0,
+        "max_window_to_decision_sec": 10.0
+      },
+      "actions_enabled": false
+    },
+    "state": {
+      "state_available": true,
+      "mode": "record_only",
+      "blocked": null,
+      "unresolved": {},
+      "context": null
+    },
+    "problems": []
+  },
+  "session": {
+    "ok": true,
+    "problems": [],
+    "checked_at_utc": "2026-10-18T08:00:47.602601+00:00",
+    "session": {
+      "run": "n2n07",
+      "mode": "record_only",
+      "started_local": "2026-10-18T17:00:37.3774467+09:00",
+      "keep_awake": 26300,
+      "pf_prometheus": 26280,
+      "pf_policy": 18476,
+      "prometheus_url": "http://127.0.0.1:9090",
+      "policy_url": "http://127.0.0.1:18090"
+    }
+  },
+  "scale_down_delay_before": 30,
+  "old_policy": {
+    "isolated": true,
+    "reasons": [],
+    "state": {
+      "read_at_utc": "2026-10-18T08:00:56.970404+00:00",
+      "errors": [],
+      "api_timeout_sec": 5.0,
+      "deployment": {
+        "uid": "ebdcfc7e-19e5-413c-9284-6fa8168d17be",
+        "replicas": 0,
+        "ready_replicas": 0,
+        "gitops_markers": []
+      },
+      "pods_present": 0,
+      "pods_terminating": 0,
+      "endpoints_ready": 0,
+      "endpoints_not_ready": 0,
+      "argocd": {
+        "installed": false,
+        "managing": []
+      }
+    }
+  },
+  "ssh_check_evidence": {
+    "dir": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env\\ssh-evidence-guarded_normal_record_only-n2n07-capstone-phase2-network-env-v1",
+    "index": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env\\ssh-evidence-guarded_normal_record_only-n2n07-capstone-phase2-network-env-v1\\ssh-check-index.jsonl",
+    "session": "20261018T080047602698Z",
+    "checks": 3,
+    "by_observed": {
+      "exited_after_completion_marker": 3
+    },
+    "failed_checks": [],
+    "write_errors": [],
+    "note": "관측 분류이며 원인(네트워크·dmesg 등)을 단정하지 않는다. 판정은 기존 evaluate_node_disk_health 그대로."
+  }
+}

@@ -1,0 +1,13 @@
+{
+ "what": "n2s02 첫 준비 시도(2026-10-18 23:35 KST)는 세션 시작 전에 Stage 2 진입 검사에서 거부됐다(PROFILE_INVALID: selection_rule_not_design_freeze). 원인은 rev5 전환 뒤 Stage 1 선택(rev4 해시)을 Stage 2 진입이 받아들이지 않은 구현 불일치다(구현 동결 r9로 수정, IMPLEMENTATION-REVIEW-SUMMARY.json supersedes_r8_reason).",
+ "treatment": "사용자 지시(chat 2026-10-18): 'n2s02는 세션 자체가 시작되지 않았으므로 Stage 2 시도 소진으로 처리하지 마세요.' 따라서 이 거부 기록은 삭제하지 않고 이 폴더로 옮겨 보존하며 Stage 2 시도 수(5회 상한)에서 제외한다. 사전등록은 '진입 거부도 시도로 센다'(§8)고 적었으므로 이는 사용자 지시에 의한 예외이며 최종 보고서에 밝힌다. 이 거부 때문에 서버 act 모드 전환(act-switch-n2s02.json)과 원복(revert-record-only-after-n2s02-preflight-refused.json) 기록이 ops-n2s02/에 남아 있다. 이 폴더의 승인·출처 기록은 구현 동결 r8 기준이라 폐기하고 r9 기준으로 새로 만든다.",
+ "session_started": false,
+ "network_chaos_applied": false,
+ "signals_sent": 0,
+ "files_sha256": {
+  "execution-provenance-n2s02-20261018T143446Z.json": "fe1496a06fea044c1760f95a1c9320c8149e4a0c813119357ec973ffc4d011a1",
+  "n2s02-act-approval-20261018T143446Z.json": "3ebf9aafb2dab0bc7d58ae13ce9181eff715d961a2102707706930c18058afaf",
+  "p2-s2-session-n2s02.json": "5bba52023d633bc1c06097f544cf52a0d108f5582bd0fe0bde93da622e931256",
+  "p2-s2-validity-n2s02.json": "a8f370297c56b21ba184ece90fbe1d4df58d993daff31246c364fb46e5f139da"
+ }
+}

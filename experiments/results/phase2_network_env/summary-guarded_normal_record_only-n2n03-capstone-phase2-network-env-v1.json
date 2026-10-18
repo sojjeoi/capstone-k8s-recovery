@@ -1,0 +1,697 @@
+{
+  "run_id": "guarded_normal_record_only-n2n03-capstone-phase2-network-env-v1",
+  "run": "n2n03",
+  "kind": "no_injection",
+  "mode": "record_only",
+  "outcome_status": "completed",
+  "outcome_reason": "무주입 관찰 4200초 완료",
+  "invalidity_reasons": [],
+  "detector_readiness": {
+    "timeout_sec": 300.0,
+    "wait_started_at_utc": "2026-10-17T17:11:11.923043+00:00",
+    "ready_at_utc": "2026-10-17T17:11:25.806384+00:00",
+    "waited_sec": 13.9,
+    "detail": {
+      "evaluations_seen": 1,
+      "skipped_seen": 0,
+      "last_skip_reason": null,
+      "ready_seq": 1
+    }
+  },
+  "evidence_counts": {
+    "scored": 253,
+    "skipped": 0,
+    "condition_met": 0,
+    "send_attempts": 0,
+    "send_results": {},
+    "parse_errors": 0
+  },
+  "observation_started_at_utc": "2026-10-17T17:11:25.806409+00:00",
+  "observation_ended_at_utc": "2026-10-17T18:21:26.841183+00:00",
+  "probe_data_gap_detected": false,
+  "probe_raw_csv": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\probe-guarded_normal_record_only-n2n03-capstone-phase2-network-env-v1-proposed-6003-raw.csv",
+  "rollout": {
+    "namespace": "vllm-serving",
+    "name": "vllm-serving",
+    "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+  },
+  "policy_state_after": {
+    "state_available": true,
+    "mode": "record_only",
+    "schema_version": "c1-signal-v2",
+    "context": null,
+    "blocked": null,
+    "unresolved": {},
+    "actions": {}
+  },
+  "scale_down_delay_before": 30,
+  "scale_down_delay_after": 30,
+  "session_start": {
+    "ok": true,
+    "problems": [],
+    "checked_at_utc": "2026-10-17T17:06:35.900481+00:00",
+    "session": {
+      "run": "n2n03",
+      "mode": "record_only",
+      "started_local": "2026-10-18T02:06:21.8453130+09:00",
+      "keep_awake": 25352,
+      "pf_prometheus": 16100,
+      "pf_policy": 18112,
+      "prometheus_url": "http://127.0.0.1:9090",
+      "policy_url": "http://127.0.0.1:18090"
+    }
+  },
+  "session_end": {
+    "ok": true,
+    "problems": [],
+    "checked_at_utc": "2026-10-17T18:23:10.908536+00:00",
+    "session": {
+      "run": "n2n03",
+      "mode": "record_only",
+      "started_local": "2026-10-18T02:06:21.8453130+09:00",
+      "keep_awake": 25352,
+      "pf_prometheus": 16100,
+      "pf_policy": 18112,
+      "prometheus_url": "http://127.0.0.1:9090",
+      "policy_url": "http://127.0.0.1:18090"
+    }
+  },
+  "pod_events_error": null,
+  "probe_image_runtime_check": {
+    "expected_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "checked_at": "2026-10-17T17:10:02.479030+00:00",
+    "pods": [
+      {
+        "name": "ramp-probe-09d939d0",
+        "node": "sj-worker2",
+        "terminating": false,
+        "image": "docker.io/library/loadgen-runner:phase8-v4-forceclose-20261002",
+        "image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b"
+      }
+    ],
+    "observed_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "verified": true
+  },
+  "start_active_node": "sj-worker",
+  "harness_error": null,
+  "cleanup_errors": [],
+  "old_policy_isolation": {
+    "start": {
+      "isolated": true,
+      "reasons": [],
+      "state": {
+        "read_at_utc": "2026-10-17T17:06:46.258200+00:00",
+        "errors": [],
+        "api_timeout_sec": 5.0,
+        "deployment": {
+          "uid": "ebdcfc7e-19e5-413c-9284-6fa8168d17be",
+          "replicas": 0,
+          "ready_replicas": 0,
+          "gitops_markers": []
+        },
+        "pods_present": 0,
+        "pods_terminating": 0,
+        "endpoints_ready": 0,
+        "endpoints_not_ready": 0,
+        "argocd": {
+          "installed": false,
+          "managing": []
+        }
+      }
+    },
+    "checks": {
+      "n": 700,
+      "last": {
+        "isolated": true,
+        "reasons": []
+      }
+    },
+    "end": {
+      "isolated": true,
+      "reasons": []
+    }
+  },
+  "trial_outcome": {
+    "status": "completed",
+    "reason": "무주입 관찰 4200초 완료",
+    "elapsed_sec": 4580.143677100001,
+    "prober_stop_failed": null,
+    "injector_cleanup_failed": null,
+    "sink_exit": {
+      "pid": 29444,
+      "returncode": 1,
+      "exited_cleanly": true
+    },
+    "score_server_exit": {
+      "detector": {
+        "pid": 27744,
+        "returncode": 1,
+        "exited_cleanly": true,
+        "exit_meaning": "terminated_or_unknown"
+      },
+      "sampler": {
+        "send": {
+          "status": "no_timer",
+          "planned_send_utc": null,
+          "attempted_utc": null,
+          "http_status": null,
+          "response": null,
+          "error": null
+        },
+        "samples": 685,
+        "threads_alive": []
+      }
+    },
+    "observation_ended_at_utc": "2026-10-17T18:21:26.841183+00:00",
+    "probe_last_request_utc": "2026-10-17T18:21:19.421737+00:00",
+    "probe_data_gap_sec": 7.419446,
+    "probe_data_gap_detected": false,
+    "probe_max_internal_gap_sec": 1.200569,
+    "cleanup_status": "complete",
+    "invalidity_reasons": [],
+    "detector_readiness": {
+      "timeout_sec": 300.0,
+      "wait_started_at_utc": "2026-10-17T17:11:11.923043+00:00",
+      "ready_at_utc": "2026-10-17T17:11:25.806384+00:00",
+      "waited_sec": 13.9,
+      "detail": {
+        "evaluations_seen": 1,
+        "skipped_seen": 0,
+        "last_skip_reason": null,
+        "ready_seq": 1
+      }
+    },
+    "observation_started_at_utc": "2026-10-17T17:11:25.806409+00:00"
+  },
+  "preview_cleanup_gate": [
+    {
+      "action": "cleanup_allowed",
+      "verdict": "not_promoted",
+      "reasons": [],
+      "attempt_evidence": [],
+      "assessed_at_utc": "2026-10-17T18:22:02.100035+00:00",
+      "cleanup_result": true,
+      "canonical_restore": {
+        "ok": true,
+        "problems": [],
+        "evidence": {
+          "patched": true,
+          "before": {
+            "t": "2026-10-17T18:22:38.990807+00:00",
+            "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+            "generation": 477,
+            "observed": "477",
+            "phase": "Degraded",
+            "abort": true,
+            "active": "848f66bcb6",
+            "preview": "5fd4f5c8fb",
+            "stable": "848f66bcb6",
+            "current": "5fd4f5c8fb",
+            "delay": 30,
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "experiment-prep-ts": "2026-10-17T17:06:49.105460+00:00",
+                  "promotion-verify-ts": "2026-09-06T10:14:52Z",
+                  "regime-test-ts": "2026-09-06T11:07:08Z",
+                  "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+                },
+                "labels": {
+                  "app": "vllm-serving"
+                }
+              },
+              "spec": {
+                "containers": [
+                  {
+                    "args": [
+                      "--model=Qwen/Qwen2.5-0.5B-Instruct",
+                      "--port=8000",
+                      "--gpu-memory-utilization=0.3",
+                      "--enforce-eager",
+                      "--max-model-len=2048"
+                    ],
+                    "image": "vllm-cpu-env:latest",
+                    "imagePullPolicy": "Never",
+                    "livenessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 11
+                    },
+                    "name": "vllm",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http",
+                        "protocol": "TCP"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 11
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "3",
+                        "memory": "6Gi"
+                      },
+                      "requests": {
+                        "cpu": "2",
+                        "memory": "4Gi"
+                      }
+                    },
+                    "startupProbe": {
+                      "exec": {
+                        "command": [
+                          "python3",
+                          "/opt/probes/warmup_probe.py"
+                        ]
+                      },
+                      "failureThreshold": 90,
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 65
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "dshm"
+                      },
+                      {
+                        "mountPath": "/root/.cache/huggingface",
+                        "name": "hf-cache"
+                      },
+                      {
+                        "mountPath": "/opt/probes",
+                        "name": "warmup-probe",
+                        "readOnly": true
+                      }
+                    ]
+                  }
+                ],
+                "volumes": [
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "1Gi"
+                    },
+                    "name": "dshm"
+                  },
+                  {
+                    "hostPath": {
+                      "path": "/home/ubuntu/hf-cache",
+                      "type": "DirectoryOrCreate"
+                    },
+                    "name": "hf-cache"
+                  },
+                  {
+                    "configMap": {
+                      "name": "vllm-warmup-probe"
+                    },
+                    "name": "warmup-probe"
+                  }
+                ]
+              }
+            },
+            "template_prep_ts": "2026-10-17T17:06:49.105460+00:00",
+            "rs": {
+              "5d4c87f5": {
+                "uid": "8d520864-54af-4906-9358-801a6745c914",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "386"
+              },
+              "5fd4f5c8fb": {
+                "uid": "e63ac530-b2de-4db8-b5aa-f7c2fcac7e5c",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "388"
+              },
+              "69b48cc497": {
+                "uid": "d1028110-9567-46bb-b618-036be4f683f1",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "384"
+              },
+              "848f66bcb6": {
+                "uid": "9d4efda2-1008-4b1c-ba51-d62cf5c4603e",
+                "desired": 1,
+                "current": 1,
+                "ready": 1,
+                "revision": "387"
+              }
+            },
+            "pods": [
+              {
+                "name": "vllm-serving-848f66bcb6-95qfz",
+                "uid": "603759cd-db31-43c2-96b3-1a3718b0ef65",
+                "ip": "10.244.36.41",
+                "hash": "848f66bcb6",
+                "deleting": false,
+                "ready": true,
+                "restarts": 0
+              }
+            ],
+            "svc_selectors": {
+              "vllm-active": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "848f66bcb6"
+              },
+              "vllm-preview": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "5fd4f5c8fb"
+              }
+            },
+            "endpoints": {
+              "vllm-active": [
+                "10.244.36.41"
+              ],
+              "vllm-preview": []
+            },
+            "health_rc": 0
+          },
+          "template_diff": [
+            ".metadata.annotations.experiment-prep-ts"
+          ],
+          "stable_value": "2026-10-15T12:44:47.336834+00:00",
+          "previous_value": "2026-10-17T17:06:49.105460+00:00",
+          "allowed_deletions": [
+            "5d4c87f5",
+            "5fd4f5c8fb",
+            "69b48cc497"
+          ],
+          "patched_at_utc": "2026-10-17T18:22:40.574367+00:00",
+          "timeline": [
+            {
+              "t": "2026-10-17T18:22:40.976872+00:00",
+              "phase": "Healthy",
+              "abort": null,
+              "bad": [],
+              "not_canonical": []
+            },
+            {
+              "t": "2026-10-17T18:22:43.801830+00:00",
+              "phase": "Healthy",
+              "abort": null,
+              "bad": [],
+              "not_canonical": []
+            },
+            {
+              "t": "2026-10-17T18:22:46.589141+00:00",
+              "phase": "Healthy",
+              "abort": null,
+              "bad": [],
+              "not_canonical": []
+            }
+          ],
+          "final": {
+            "t": "2026-10-17T18:23:07.419284+00:00",
+            "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a",
+            "generation": 478,
+            "observed": "478",
+            "phase": "Healthy",
+            "abort": null,
+            "active": "848f66bcb6",
+            "preview": "848f66bcb6",
+            "stable": "848f66bcb6",
+            "current": "848f66bcb6",
+            "delay": 30,
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "experiment-prep-ts": "2026-10-15T12:44:47.336834+00:00",
+                  "promotion-verify-ts": "2026-09-06T10:14:52Z",
+                  "regime-test-ts": "2026-09-06T11:07:08Z",
+                  "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+                },
+                "labels": {
+                  "app": "vllm-serving"
+                }
+              },
+              "spec": {
+                "containers": [
+                  {
+                    "args": [
+                      "--model=Qwen/Qwen2.5-0.5B-Instruct",
+                      "--port=8000",
+                      "--gpu-memory-utilization=0.3",
+                      "--enforce-eager",
+                      "--max-model-len=2048"
+                    ],
+                    "image": "vllm-cpu-env:latest",
+                    "imagePullPolicy": "Never",
+                    "livenessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 11
+                    },
+                    "name": "vllm",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http",
+                        "protocol": "TCP"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": 8000
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 11
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "3",
+                        "memory": "6Gi"
+                      },
+                      "requests": {
+                        "cpu": "2",
+                        "memory": "4Gi"
+                      }
+                    },
+                    "startupProbe": {
+                      "exec": {
+                        "command": [
+                          "python3",
+                          "/opt/probes/warmup_probe.py"
+                        ]
+                      },
+                      "failureThreshold": 90,
+                      "periodSeconds": 10,
+                      "timeoutSeconds": 65
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "dshm"
+                      },
+                      {
+                        "mountPath": "/root/.cache/huggingface",
+                        "name": "hf-cache"
+                      },
+                      {
+                        "mountPath": "/opt/probes",
+                        "name": "warmup-probe",
+                        "readOnly": true
+                      }
+                    ]
+                  }
+                ],
+                "volumes": [
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "1Gi"
+                    },
+                    "name": "dshm"
+                  },
+                  {
+                    "hostPath": {
+                      "path": "/home/ubuntu/hf-cache",
+                      "type": "DirectoryOrCreate"
+                    },
+                    "name": "hf-cache"
+                  },
+                  {
+                    "configMap": {
+                      "name": "vllm-warmup-probe"
+                    },
+                    "name": "warmup-probe"
+                  }
+                ]
+              }
+            },
+            "template_prep_ts": "2026-10-15T12:44:47.336834+00:00",
+            "rs": {
+              "5d4c87f5": {
+                "uid": "8d520864-54af-4906-9358-801a6745c914",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "386"
+              },
+              "5fd4f5c8fb": {
+                "uid": "e63ac530-b2de-4db8-b5aa-f7c2fcac7e5c",
+                "desired": 0,
+                "current": 0,
+                "ready": null,
+                "revision": "388"
+              },
+              "848f66bcb6": {
+                "uid": "9d4efda2-1008-4b1c-ba51-d62cf5c4603e",
+                "desired": 1,
+                "current": 1,
+                "ready": 1,
+                "revision": "389"
+              }
+            },
+            "pods": [
+              {
+                "name": "vllm-serving-848f66bcb6-95qfz",
+                "uid": "603759cd-db31-43c2-96b3-1a3718b0ef65",
+                "ip": "10.244.36.41",
+                "hash": "848f66bcb6",
+                "deleting": false,
+                "ready": true,
+                "restarts": 0
+              }
+            ],
+            "svc_selectors": {
+              "vllm-active": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "848f66bcb6"
+              },
+              "vllm-preview": {
+                "app": "vllm-serving",
+                "rollouts-pod-template-hash": "848f66bcb6"
+              }
+            },
+            "endpoints": {
+              "vllm-active": [
+                "10.244.36.41"
+              ],
+              "vllm-preview": [
+                "10.244.36.41"
+              ]
+            },
+            "health_rc": 0
+          },
+          "bookkeeping": {
+            "active_rs_revision": [
+              "387",
+              "389"
+            ],
+            "deleted_rs": [
+              "69b48cc497"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "ssh_check_evidence": {
+    "dir": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env\\ssh-evidence-guarded_normal_record_only-n2n03-capstone-phase2-network-env-v1",
+    "index": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env\\ssh-evidence-guarded_normal_record_only-n2n03-capstone-phase2-network-env-v1\\ssh-check-index.jsonl",
+    "session": "20261017T170635900556Z",
+    "checks": 141,
+    "by_observed": {
+      "exited_after_completion_marker": 141
+    },
+    "failed_checks": [],
+    "write_errors": [],
+    "note": "관측 분류이며 원인(네트워크·dmesg 등)을 단정하지 않는다. 판정은 기존 evaluate_node_disk_health 그대로."
+  },
+  "run_guard": {
+    "mem_drop_abort_gib": 1.0,
+    "disk_recheck_sec": 60.0,
+    "preview_actual_node": "sj-worker2",
+    "start_active_node": "sj-worker",
+    "preview_verified": true,
+    "pre_stress": {
+      "preview_node": "sj-worker2",
+      "min_available_gib": 1.5,
+      "checked_at": "2026-10-17T17:09:54.456780+00:00",
+      "node_conditions": {
+        "NetworkUnavailable": "False",
+        "MemoryPressure": "False",
+        "DiskPressure": "False",
+        "PIDPressure": "False",
+        "Ready": "True"
+      },
+      "calico": {
+        "pod": "calico-node-kkg75",
+        "ready": true,
+        "restarts": 0,
+        "working_set_gib": 1.788
+      },
+      "active_service": {
+        "endpoint_count": 1,
+        "pod": "vllm-serving-848f66bcb6-95qfz",
+        "health_ok": true
+      },
+      "available_gib": 9.7,
+      "ok": true,
+      "failures": []
+    },
+    "read_failures": 0,
+    "mem_baseline_gib": {
+      "sj-worker": 3.494,
+      "sj-worker2": 9.7
+    },
+    "mem_min_gib": {
+      "sj-worker": 3.438,
+      "sj-worker2": 9.607
+    },
+    "disk_checks": 69
+  },
+  "comparison": {
+    "series": "capstone-phase2-network-env-v1",
+    "session": "n2n03",
+    "session_number": 3,
+    "counted_in_comparison": true,
+    "schedule": {
+      "session": "n2n03",
+      "kind": "normal",
+      "attempt_number": 3,
+      "kind_attempt": 3,
+      "resume_ack": null,
+      "required_before": [],
+      "counted": true
+    },
+    "arms_compared": [
+      "B",
+      "C"
+    ],
+    "shadow_only": [
+      "K"
+    ],
+    "arm_order": null,
+    "start_node_rule": "recorded_only"
+  },
+  "preflight_file": "preflight-guarded_normal_record_only-n2n03-capstone-phase2-network-env-v1-run-20261017T170647855245Z.json",
+  "canonical_end": {
+    "ok": true,
+    "problems": []
+  },
+  "detector_started": true,
+  "code_provenance": {
+    "manifest": "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r4.json",
+    "manifest_sha256": "370dfa4b029d488a24b5ffd07e0bb4c55f999c1631a4e299fe8ef23095b797b4",
+    "verified_files": 299,
+    "selection_profile_sha256": "3ef9c224748c39e46fd317817b87a7260f369a530e6daa3f33732459c2790ecf",
+    "status": "verified"
+  }
+}

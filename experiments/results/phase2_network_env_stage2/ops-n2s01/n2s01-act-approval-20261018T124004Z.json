@@ -1,0 +1,36 @@
+{
+ "status": "final",
+ "run": "n2s01",
+ "runs": [
+  "n2s01"
+ ],
+ "run_id": "n2s01",
+ "launch_attempt": 1,
+ "scope": "네트워크 지연 Stage 2 act 세션 n2s01 1회 한정. 다른 세션 시작 금지. 다른 ID 재사용 불가",
+ "approved_by": "user (chat 2026-10-18: '네트워크 지연 Stage 2의 첫 번째 세션 n2s01 1회에 한해 guarded-recovery-policy를 act 모드로 전환하고, 사전등록된 절차에 따라 실제 promotion 및 트래픽 전환 검증을 수행하는 것을 승인합니다'), approval scope 정확히 runs:[\"n2s01\"]",
+ "approved_at_utc": "2026-10-18T12:40:04.060936+00:00",
+ "contract_doc": "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev4.md",
+ "freeze": {
+  "version": "phase2-network-env-impl",
+  "manifest": "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r6.json",
+  "manifest_sha256": "331a8aad22d9e98c51914aa2aa0b3f0a69db598751b03260740260ff83ec0468"
+ },
+ "inherits_values_from": "experiments/results/phase2_stage2/ops-p2s01/p2s01-act-approval-20261012T020158Z.json (gap01 사용자 확정값, 변경 없음)",
+ "timing_source": "gap01 승인값 재사용(A/B r2·B/C/K·Phase 2 Stage 2와 동일)",
+ "clock_measurement_file": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env_stage2\\ops-n2s01\\clock-offset-act-switch-n2s01.json",
+ "clock_bound_sec": 0.1524292499969988,
+ "timing": {
+  "max_signal_age_sec": 15.0,
+  "max_future_skew_sec": 2.0,
+  "max_window_to_decision_sec": 10.0
+ },
+ "service_wait_deadline_sec": 120.0,
+ "scale_down_wait_margin_sec": 180.0,
+ "execution_provenance_path": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env_stage2\\ops-n2s01\\execution-provenance-n2s01-20261018T124004Z.json",
+ "execution_provenance_sha256": "b5eca4a6cfd55f656026a83c51d75909cefe550eb37e4f78dbe7f005eef18e94",
+ "rules": [
+  "trigger 없음·정책 거부 시 수동 승격·재전송·재실행 금지 - 미승격 정리(D5→canonical 복원)로 종료(ITT)",
+  "결과 불명·실패: 자동 재승격·미검증 롤백·자동 재시도 금지",
+  "threshold·압박·관찰 변경 금지, 시작 전 실패 시 같은 ID 재시작 안 함(사용자 보고)"
+ ]
+}

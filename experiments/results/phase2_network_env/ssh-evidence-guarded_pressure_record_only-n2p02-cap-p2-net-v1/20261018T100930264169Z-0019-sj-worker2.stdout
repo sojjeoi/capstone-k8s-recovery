@@ -1,0 +1,913 @@
+2026-10-18T10:20:07+00:00
+---MOUNT
+rw,relatime,errors=continue
+---DMESG
+2026-10-02T04:13:34,000000+00:00 Linux version 5.4.0-216-generic (buildd@lcy02-amd64-014) (gcc version 9.4.0 (Ubuntu 9.4.0-1ubuntu1~20.04.2)) #236-Ubuntu SMP Fri Apr 11 19:53:21 UTC 2025 (Ubuntu 5.4.0-216.236-generic 5.4.291)
+2026-10-02T04:13:34,000000+00:00 Command line: BOOT_IMAGE=/boot/vmlinuz-5.4.0-216-generic root=LABEL=cloudimg-rootfs ro console=tty1 console=ttyS0
+2026-10-02T04:13:34,000000+00:00 KERNEL supported cpus:
+2026-10-02T04:13:34,000000+00:00   Intel GenuineIntel
+2026-10-02T04:13:34,000000+00:00   AMD AuthenticAMD
+2026-10-02T04:13:34,000000+00:00   Hygon HygonGenuine
+2026-10-02T04:13:34,000000+00:00   Centaur CentaurHauls
+2026-10-02T04:13:34,000000+00:00   zhaoxin   Shanghai  
+2026-10-02T04:13:34,000000+00:00 BIOS-provided physical RAM map:
+2026-10-02T04:13:34,000000+00:00 BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+2026-10-02T04:13:34,000000+00:00 BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved
+2026-10-02T04:13:34,000000+00:00 BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved
+2026-10-02T04:13:34,000000+00:00 BIOS-e820: [mem 0x0000000000100000-0x00000000bffdcfff] usable
+2026-10-02T04:13:34,000000+00:00 BIOS-e820: [mem 0x00000000bffdd000-0x00000000bfffffff] reserved
+2026-10-02T04:13:34,000000+00:00 BIOS-e820: [mem 0x00000000feffc000-0x00000000feffffff] reserved
+2026-10-02T04:13:34,000000+00:00 BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved
+2026-10-02T04:13:34,000000+00:00 BIOS-e820: [mem 0x0000000100000000-0x000000043fffffff] usable
+2026-10-02T04:13:34,000000+00:00 NX (Execute Disable) protection: active
+2026-10-02T04:13:34,000000+00:00 SMBIOS 2.8 present.
+2026-10-02T04:13:34,000000+00:00 DMI: OpenStack Foundation OpenStack Nova, BIOS 1.15.0-1 04/01/2014
+2026-10-02T04:13:34,000000+00:00 Hypervisor detected: KVM
+2026-10-02T04:13:34,000000+00:00 kvm-clock: Using msrs 4b564d01 and 4b564d00
+2026-10-02T04:13:34,000000+00:00 kvm-clock: cpu 0, msr 21a601001, primary cpu clock
+2026-10-02T04:13:34,000000+00:00 kvm-clock: using sched offset of 12969079111 cycles
+2026-10-02T04:13:34,000006+00:00 clocksource: kvm-clock: mask: 0xffffffffffffffff max_cycles: 0x1cd42e4dffb, max_idle_ns: 881590591483 ns
+2026-10-02T04:13:34,000013+00:00 tsc: Detected 2294.732 MHz processor
+2026-10-02T04:13:34,001944+00:00 e820: update [mem 0x00000000-0x00000fff] usable ==> reserved
+2026-10-02T04:13:34,001945+00:00 e820: remove [mem 0x000a0000-0x000fffff] usable
+2026-10-02T04:13:34,001948+00:00 last_pfn = 0x440000 max_arch_pfn = 0x400000000
+2026-10-02T04:13:34,001996+00:00 MTRR default type: write-back
+2026-10-02T04:13:34,001996+00:00 MTRR fixed ranges enabled:
+2026-10-02T04:13:34,001997+00:00   00000-9FFFF write-back
+2026-10-02T04:13:34,001998+00:00   A0000-BFFFF uncachable
+2026-10-02T04:13:34,001998+00:00   C0000-FFFFF write-protect
+2026-10-02T04:13:34,001999+00:00 MTRR variable ranges enabled:
+2026-10-02T04:13:34,002000+00:00   0 base 0000C0000000 mask 3FFFC0000000 uncachable
+2026-10-02T04:13:34,002000+00:00   1 disabled
+2026-10-02T04:13:34,002000+00:00   2 disabled
+2026-10-02T04:13:34,002001+00:00   3 disabled
+2026-10-02T04:13:34,002001+00:00   4 disabled
+2026-10-02T04:13:34,002001+00:00   5 disabled
+2026-10-02T04:13:34,002002+00:00   6 disabled
+2026-10-02T04:13:34,002002+00:00   7 disabled
+2026-10-02T04:13:34,002015+00:00 x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT  
+2026-10-02T04:13:34,002025+00:00 last_pfn = 0xbffdd max_arch_pfn = 0x400000000
+2026-10-02T04:13:34,008487+00:00 found SMP MP-table at [mem 0x000f5af0-0x000f5aff]
+2026-10-02T04:13:34,008640+00:00 check: Scanning 1 areas for low memory corruption
+2026-10-02T04:13:34,008726+00:00 Using GB pages for direct mapping
+2026-10-02T04:13:34,008808+00:00 RAMDISK: [mem 0x34b35000-0x36591fff]
+2026-10-02T04:13:34,008820+00:00 ACPI: Early table checksum verification disabled
+2026-10-02T04:13:34,008839+00:00 ACPI: RSDP 0x00000000000F5AB0 000014 (v00 BOCHS )
+2026-10-02T04:13:34,008842+00:00 ACPI: RSDT 0x00000000BFFE16BD 000030 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-10-02T04:13:34,008847+00:00 ACPI: FACP 0x00000000BFFE1571 000074 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-10-02T04:13:34,008853+00:00 ACPI: DSDT 0x00000000BFFDFC80 0018F1 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-10-02T04:13:34,008856+00:00 ACPI: FACS 0x00000000BFFDFC40 000040
+2026-10-02T04:13:34,008859+00:00 ACPI: APIC 0x00000000BFFE15E5 0000B0 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-10-02T04:13:34,008862+00:00 ACPI: WAET 0x00000000BFFE1695 000028 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-10-02T04:13:34,008864+00:00 ACPI: Reserving FACP table memory at [mem 0xbffe1571-0xbffe15e4]
+2026-10-02T04:13:34,008865+00:00 ACPI: Reserving DSDT table memory at [mem 0xbffdfc80-0xbffe1570]
+2026-10-02T04:13:34,008866+00:00 ACPI: Reserving FACS table memory at [mem 0xbffdfc40-0xbffdfc7f]
+2026-10-02T04:13:34,008866+00:00 ACPI: Reserving APIC table memory at [mem 0xbffe15e5-0xbffe1694]
+2026-10-02T04:13:34,008867+00:00 ACPI: Reserving WAET table memory at [mem 0xbffe1695-0xbffe16bc]
+2026-10-02T04:13:34,008902+00:00 ACPI: Local APIC address 0xfee00000
+2026-10-02T04:13:34,009567+00:00 No NUMA configuration found
+2026-10-02T04:13:34,009569+00:00 Faking a node at [mem 0x0000000000000000-0x000000043fffffff]
+2026-10-02T04:13:34,009585+00:00 NODE_DATA(0) allocated [mem 0x43ffd5000-0x43fffffff]
+2026-10-02T04:13:34,010983+00:00 Zone ranges:
+2026-10-02T04:13:34,010984+00:00   DMA      [mem 0x0000000000001000-0x0000000000ffffff]
+2026-10-02T04:13:34,010985+00:00   DMA32    [mem 0x0000000001000000-0x00000000ffffffff]
+2026-10-02T04:13:34,010986+00:00   Normal   [mem 0x0000000100000000-0x000000043fffffff]
+2026-10-02T04:13:34,010986+00:00   Device   empty
+2026-10-02T04:13:34,010987+00:00 Movable zone start for each node
+2026-10-02T04:13:34,010990+00:00 Early memory node ranges
+2026-10-02T04:13:34,010990+00:00   node   0: [mem 0x0000000000001000-0x000000000009efff]
+2026-10-02T04:13:34,010991+00:00   node   0: [mem 0x0000000000100000-0x00000000bffdcfff]
+2026-10-02T04:13:34,010992+00:00   node   0: [mem 0x0000000100000000-0x000000043fffffff]
+2026-10-02T04:13:34,012232+00:00 Zeroed struct page in unavailable ranges: 133 pages
+2026-10-02T04:13:34,012233+00:00 Initmem setup node 0 [mem 0x0000000000001000-0x000000043fffffff]
+2026-10-02T04:13:34,012234+00:00 On node 0 totalpages: 4194171
+2026-10-02T04:13:34,012239+00:00   DMA zone: 64 pages used for memmap
+2026-10-02T04:13:34,012239+00:00   DMA zone: 21 pages reserved
+2026-10-02T04:13:34,012240+00:00   DMA zone: 3998 pages, LIFO batch:0
+2026-10-02T04:13:34,012276+00:00   DMA32 zone: 12224 pages used for memmap
+2026-10-02T04:13:34,012277+00:00   DMA32 zone: 782301 pages, LIFO batch:63
+2026-10-02T04:13:34,032088+00:00   Normal zone: 53248 pages used for memmap
+2026-10-02T04:13:34,032089+00:00   Normal zone: 3407872 pages, LIFO batch:63
+2026-10-02T04:13:34,120710+00:00 ACPI: PM-Timer IO Port: 0x608
+2026-10-02T04:13:34,120715+00:00 ACPI: Local APIC address 0xfee00000
+2026-10-02T04:13:34,120746+00:00 ACPI: LAPIC_NMI (acpi_id[0xff] dfl dfl lint[0x1])
+2026-10-02T04:13:34,120802+00:00 IOAPIC[0]: apic_id 0, version 17, address 0xfec00000, GSI 0-23
+2026-10-02T04:13:34,120805+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 0 global_irq 2 dfl dfl)
+2026-10-02T04:13:34,120806+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 5 global_irq 5 high level)
+2026-10-02T04:13:34,120807+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 9 global_irq 9 high level)
+2026-10-02T04:13:34,120813+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 10 global_irq 10 high level)
+2026-10-02T04:13:34,120814+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 11 global_irq 11 high level)
+2026-10-02T04:13:34,120815+00:00 ACPI: IRQ0 used by override.
+2026-10-02T04:13:34,120816+00:00 ACPI: IRQ5 used by override.
+2026-10-02T04:13:34,120816+00:00 ACPI: IRQ9 used by override.
+2026-10-02T04:13:34,120817+00:00 ACPI: IRQ10 used by override.
+2026-10-02T04:13:34,120817+00:00 ACPI: IRQ11 used by override.
+2026-10-02T04:13:34,120819+00:00 Using ACPI (MADT) for SMP configuration information
+2026-10-02T04:13:34,120827+00:00 TSC deadline timer available
+2026-10-02T04:13:34,120828+00:00 smpboot: Allowing 8 CPUs, 0 hotplug CPUs
+2026-10-02T04:13:34,120851+00:00 KVM setup pv sched yield
+2026-10-02T04:13:34,120868+00:00 PM: Registered nosave memory: [mem 0x00000000-0x00000fff]
+2026-10-02T04:13:34,120869+00:00 PM: Registered nosave memory: [mem 0x0009f000-0x0009ffff]
+2026-10-02T04:13:34,120870+00:00 PM: Registered nosave memory: [mem 0x000a0000-0x000effff]
+2026-10-02T04:13:34,120870+00:00 PM: Registered nosave memory: [mem 0x000f0000-0x000fffff]
+2026-10-02T04:13:34,120871+00:00 PM: Registered nosave memory: [mem 0xbffdd000-0xbfffffff]
+2026-10-02T04:13:34,120872+00:00 PM: Registered nosave memory: [mem 0xc0000000-0xfeffbfff]
+2026-10-02T04:13:34,120873+00:00 PM: Registered nosave memory: [mem 0xfeffc000-0xfeffffff]
+2026-10-02T04:13:34,120873+00:00 PM: Registered nosave memory: [mem 0xff000000-0xfffbffff]
+2026-10-02T04:13:34,120874+00:00 PM: Registered nosave memory: [mem 0xfffc0000-0xffffffff]
+2026-10-02T04:13:34,120876+00:00 [mem 0xc0000000-0xfeffbfff] available for PCI devices
+2026-10-02T04:13:34,120877+00:00 Booting paravirtualized kernel on KVM
+2026-10-02T04:13:34,120884+00:00 clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645519600211568 ns
+2026-10-02T04:13:34,120888+00:00 setup_percpu: NR_CPUS:8192 nr_cpumask_bits:8 nr_cpu_ids:8 nr_node_ids:1
+2026-10-02T04:13:34,121743+00:00 percpu: Embedded 60 pages/cpu s208896 r8192 d28672 u262144
+2026-10-02T04:13:34,121747+00:00 pcpu-alloc: s208896 r8192 d28672 u262144 alloc=1*2097152
+2026-10-02T04:13:34,121748+00:00 pcpu-alloc: [0] 0 1 2 3 4 5 6 7 
+2026-10-02T04:13:34,121776+00:00 setup async PF for cpu 0
+2026-10-02T04:13:34,121782+00:00 kvm-stealtime: cpu 0, msr 42fa32040
+2026-10-02T04:13:34,121788+00:00 PV qspinlock hash table entries: 256 (order: 0, 4096 bytes, linear)
+2026-10-02T04:13:34,121796+00:00 Built 1 zonelists, mobility grouping on.  Total pages: 4128614
+2026-10-02T04:13:34,121797+00:00 Policy zone: Normal
+2026-10-02T04:13:34,121798+00:00 Kernel command line: BOOT_IMAGE=/boot/vmlinuz-5.4.0-216-generic root=LABEL=cloudimg-rootfs ro console=tty1 console=ttyS0
+2026-10-02T04:13:34,127237+00:00 Dentry cache hash table entries: 2097152 (order: 12, 16777216 bytes, linear)
+2026-10-02T04:13:34,130002+00:00 Inode-cache hash table entries: 1048576 (order: 11, 8388608 bytes, linear)
+2026-10-02T04:13:34,130151+00:00 mem auto-init: stack:off, heap alloc:on, heap free:off
+2026-10-02T04:13:34,148736+00:00 Calgary: detecting Calgary via BIOS EBDA area
+2026-10-02T04:13:34,148738+00:00 Calgary: Unable to locate Rio Grande table in EBDA - bailing!
+2026-10-02T04:13:34,187943+00:00 Memory: 16345540K/16776684K available (14339K kernel code, 2400K rwdata, 9324K rodata, 2772K init, 17216K bss, 431144K reserved, 0K cma-reserved)
+2026-10-02T04:13:34,188815+00:00 SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=8, Nodes=1
+2026-10-02T04:13:34,188841+00:00 Kernel/User page tables isolation: enabled
+2026-10-02T04:13:34,188882+00:00 ftrace: allocating 44784 entries in 175 pages
+2026-10-02T04:13:34,205522+00:00 ftrace: allocated 175 pages with 6 groups
+2026-10-02T04:13:34,206263+00:00 rcu: Hierarchical RCU implementation.
+2026-10-02T04:13:34,206265+00:00 rcu: 	RCU restricting CPUs from NR_CPUS=8192 to nr_cpu_ids=8.
+2026-10-02T04:13:34,206266+00:00 	Tasks RCU enabled.
+2026-10-02T04:13:34,206267+00:00 rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+2026-10-02T04:13:34,206267+00:00 rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=8
+2026-10-02T04:13:34,208370+00:00 NR_IRQS: 524544, nr_irqs: 488, preallocated irqs: 16
+2026-10-02T04:13:34,208564+00:00 random: crng init done
+2026-10-02T04:13:34,232423+00:00 Console: colour VGA+ 80x25
+2026-10-02T04:13:34,282676+00:00 printk: console [tty1] enabled
+2026-10-02T04:13:34,468284+00:00 printk: console [ttyS0] enabled
+2026-10-02T04:13:34,469850+00:00 ACPI: Core revision 20190816
+2026-10-02T04:13:34,471308+00:00 APIC: Switch to symmetric I/O mode setup
+2026-10-02T04:13:34,473457+00:00 x2apic enabled
+2026-10-02T04:13:34,474860+00:00 Switched APIC routing to physical x2apic.
+2026-10-02T04:13:34,476664+00:00 KVM setup pv IPIs
+2026-10-02T04:13:34,479095+00:00 clocksource: tsc-early: mask: 0xffffffffffffffff max_cycles: 0x2113c49ac05, max_idle_ns: 440795285125 ns
+2026-10-02T04:13:34,482970+00:00 Calibrating delay loop (skipped) preset value.. 4589.46 BogoMIPS (lpj=9178928)
+2026-10-02T04:13:34,486122+00:00 x86/cpu: User Mode Instruction Prevention (UMIP) activated
+2026-10-02T04:13:34,486968+00:00 Last level iTLB entries: 4KB 0, 2MB 0, 4MB 0
+2026-10-02T04:13:34,486968+00:00 Last level dTLB entries: 4KB 0, 2MB 0, 4MB 0, 1GB 0
+2026-10-02T04:13:34,486968+00:00 Spectre V1 : Mitigation: usercopy/swapgs barriers and __user pointer sanitization
+2026-10-02T04:13:34,486968+00:00 Spectre V2 : Mitigation: Retpolines
+2026-10-02T04:13:34,486968+00:00 Spectre V2 : Spectre v2 / SpectreRSB mitigation: Filling RSB on context switch
+2026-10-02T04:13:34,486968+00:00 Spectre V2 : Spectre v2 / SpectreRSB : Filling RSB on VMEXIT
+2026-10-02T04:13:34,486968+00:00 Spectre V2 : Enabling Restricted Speculation for firmware calls
+2026-10-02T04:13:34,486968+00:00 Spectre V2 : mitigation: Enabling conditional Indirect Branch Prediction Barrier
+2026-10-02T04:13:34,486968+00:00 Speculative Store Bypass: Mitigation: Speculative Store Bypass disabled via prctl and seccomp
+2026-10-02T04:13:34,486968+00:00 MDS: Mitigation: Clear CPU buffers
+2026-10-02T04:13:34,486968+00:00 TAA: Mitigation: Clear CPU buffers
+2026-10-02T04:13:34,486968+00:00 MMIO Stale Data: Vulnerable: Clear CPU buffers attempted, no microcode
+2026-10-02T04:13:34,486968+00:00 x86/fpu: Supporting XSAVE feature 0x001: 'x87 floating point registers'
+2026-10-02T04:13:34,486968+00:00 x86/fpu: Supporting XSAVE feature 0x002: 'SSE registers'
+2026-10-02T04:13:34,486968+00:00 x86/fpu: Supporting XSAVE feature 0x004: 'AVX registers'
+2026-10-02T04:13:34,486968+00:00 x86/fpu: xstate_offset[2]:  576, xstate_sizes[2]:  256
+2026-10-02T04:13:34,486968+00:00 x86/fpu: Enabled xstate features 0x7, context size is 832 bytes, using 'standard' format.
+2026-10-02T04:13:34,486968+00:00 Freeing SMP alternatives memory: 40K
+2026-10-02T04:13:34,486968+00:00 pid_max: default: 32768 minimum: 301
+2026-10-02T04:13:34,486968+00:00 LSM: Security Framework initializing
+2026-10-02T04:13:34,486968+00:00 Yama: becoming mindful.
+2026-10-02T04:13:34,486968+00:00 AppArmor: AppArmor initialized
+2026-10-02T04:13:34,486968+00:00 Mount-cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+2026-10-02T04:13:34,486968+00:00 Mountpoint-cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+2026-10-02T04:13:34,486968+00:00 *** VALIDATE tmpfs ***
+2026-10-02T04:13:34,486968+00:00 *** VALIDATE proc ***
+2026-10-02T04:13:34,486968+00:00 *** VALIDATE cgroup1 ***
+2026-10-02T04:13:34,486968+00:00 *** VALIDATE cgroup2 ***
+2026-10-02T04:13:34,486968+00:00 smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2697 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
+2026-10-02T04:13:34,486968+00:00 Performance Events: Broadwell events, full-width counters, Intel PMU driver.
+2026-10-02T04:13:34,486976+00:00 ... version:                2
+2026-10-02T04:13:34,488406+00:00 ... bit width:              48
+2026-10-02T04:13:34,489867+00:00 ... generic registers:      4
+2026-10-02T04:13:34,490972+00:00 ... value mask:             0000ffffffffffff
+2026-10-02T04:13:34,492809+00:00 ... max period:             00007fffffffffff
+2026-10-02T04:13:34,494827+00:00 ... fixed-purpose events:   3
+2026-10-02T04:13:34,494972+00:00 ... event mask:             000000070000000f
+2026-10-02T04:13:34,496947+00:00 rcu: Hierarchical SRCU implementation.
+2026-10-02T04:13:34,499149+00:00 smp: Bringing up secondary CPUs ...
+2026-10-02T04:13:34,500893+00:00 x86: Booting SMP configuration:
+2026-10-02T04:13:34,502381+00:00 .... node  #0, CPUs:      #1
+2026-10-02T04:13:34,278414+00:00 kvm-clock: cpu 1, msr 21a601041, secondary cpu clock
+2026-10-02T04:13:34,278414+00:00 smpboot: CPU 1 Converting physical 0 to logical die 1
+2026-10-02T04:13:34,519029+00:00 setup async PF for cpu 1
+2026-10-02T04:13:34,522831+00:00 kvm-stealtime: cpu 1, msr 42fa72040
+2026-10-02T04:13:34,527093+00:00  #2
+2026-10-02T04:13:34,278414+00:00 kvm-clock: cpu 2, msr 21a601081, secondary cpu clock
+2026-10-02T04:13:34,278414+00:00 smpboot: CPU 2 Converting physical 0 to logical die 2
+2026-10-02T04:13:34,539002+00:00 setup async PF for cpu 2
+2026-10-02T04:13:34,541952+00:00 kvm-stealtime: cpu 2, msr 42fab2040
+2026-10-02T04:13:34,543072+00:00  #3
+2026-10-02T04:13:34,278414+00:00 kvm-clock: cpu 3, msr 21a6010c1, secondary cpu clock
+2026-10-02T04:13:34,278414+00:00 smpboot: CPU 3 Converting physical 0 to logical die 3
+2026-10-02T04:13:34,563010+00:00 setup async PF for cpu 3
+2026-10-02T04:13:34,566968+00:00 kvm-stealtime: cpu 3, msr 42faf2040
+2026-10-02T04:13:34,595068+00:00  #4
+2026-10-02T04:13:34,278414+00:00 kvm-clock: cpu 4, msr 21a601101, secondary cpu clock
+2026-10-02T04:13:34,278414+00:00 smpboot: CPU 4 Converting physical 0 to logical die 4
+2026-10-02T04:13:34,611009+00:00 setup async PF for cpu 4
+2026-10-02T04:13:34,614818+00:00 kvm-stealtime: cpu 4, msr 42fb32040
+2026-10-02T04:13:34,619077+00:00  #5
+2026-10-02T04:13:34,278414+00:00 kvm-clock: cpu 5, msr 21a601141, secondary cpu clock
+2026-10-02T04:13:34,278414+00:00 smpboot: CPU 5 Converting physical 0 to logical die 5
+2026-10-02T04:13:34,631009+00:00 setup async PF for cpu 5
+2026-10-02T04:13:34,634847+00:00 kvm-stealtime: cpu 5, msr 42fb72040
+2026-10-02T04:13:34,639695+00:00  #6
+2026-10-02T04:13:34,278414+00:00 kvm-clock: cpu 6, msr 21a601181, secondary cpu clock
+2026-10-02T04:13:34,278414+00:00 smpboot: CPU 6 Converting physical 0 to logical die 6
+2026-10-02T04:13:34,646986+00:00 setup async PF for cpu 6
+2026-10-02T04:13:34,648394+00:00 kvm-stealtime: cpu 6, msr 42fbb2040
+2026-10-02T04:13:34,650141+00:00  #7
+2026-10-02T04:13:34,278414+00:00 kvm-clock: cpu 7, msr 21a6011c1, secondary cpu clock
+2026-10-02T04:13:34,278414+00:00 smpboot: CPU 7 Converting physical 0 to logical die 7
+2026-10-02T04:13:34,663009+00:00 setup async PF for cpu 7
+2026-10-02T04:13:34,666769+00:00 kvm-stealtime: cpu 7, msr 42fbf2040
+2026-10-02T04:13:34,671127+00:00 smp: Brought up 1 node, 8 CPUs
+2026-10-02T04:13:34,672736+00:00 smpboot: Max logical packages: 8
+2026-10-02T04:13:34,674376+00:00 smpboot: Total of 8 processors activated (36715.71 BogoMIPS)
+2026-10-02T04:13:34,675984+00:00 devtmpfs: initialized
+2026-10-02T04:13:34,676322+00:00 x86/mm: Memory block size: 128MB
+2026-10-02T04:13:34,680450+00:00 clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+2026-10-02T04:13:34,682990+00:00 futex hash table entries: 2048 (order: 5, 131072 bytes, linear)
+2026-10-02T04:13:34,685748+00:00 pinctrl core: initialized pinctrl subsystem
+2026-10-02T04:13:34,687165+00:00 PM: RTC time: 04:13:33, date: 2026-10-02
+2026-10-02T04:13:34,689377+00:00 NET: Registered protocol family 16
+2026-10-02T04:13:34,691041+00:00 audit: initializing netlink subsys (disabled)
+2026-10-02T04:13:34,693035+00:00 audit: type=2000 audit(1790914414.379:1): state=initialized audit_enabled=0 res=1
+2026-10-02T04:13:34,693035+00:00 EISA bus registered
+2026-10-02T04:13:34,696168+00:00 cpuidle: using governor ladder
+2026-10-02T04:13:34,697762+00:00 cpuidle: using governor menu
+2026-10-02T04:13:34,699161+00:00 KVM setup pv remote TLB flush
+2026-10-02T04:13:34,700894+00:00 ACPI: bus type PCI registered
+2026-10-02T04:13:34,702489+00:00 acpiphp: ACPI Hot Plug PCI Controller Driver version: 0.5
+2026-10-02T04:13:34,703242+00:00 PCI: Using configuration type 1 for base access
+2026-10-02T04:13:34,708045+00:00 HugeTLB registered 1.00 GiB page size, pre-allocated 0 pages
+2026-10-02T04:13:34,709505+00:00 HugeTLB registered 2.00 MiB page size, pre-allocated 0 pages
+2026-10-02T04:13:34,711037+00:00 ACPI: Added _OSI(Module Device)
+2026-10-02T04:13:34,712697+00:00 ACPI: Added _OSI(Processor Device)
+2026-10-02T04:13:34,714980+00:00 ACPI: Added _OSI(3.0 _SCP Extensions)
+2026-10-02T04:13:34,717066+00:00 ACPI: Added _OSI(Processor Aggregator Device)
+2026-10-02T04:13:34,718913+00:00 ACPI: Added _OSI(Linux-Dell-Video)
+2026-10-02T04:13:34,718973+00:00 ACPI: Added _OSI(Linux-Lenovo-NV-HDMI-Audio)
+2026-10-02T04:13:34,720779+00:00 ACPI: Added _OSI(Linux-HPI-Hybrid-Graphics)
+2026-10-02T04:13:34,723404+00:00 ACPI: 1 ACPI AML tables successfully acquired and loaded
+2026-10-02T04:13:34,727120+00:00 ACPI: Interpreter enabled
+2026-10-02T04:13:34,728496+00:00 ACPI: (supports S0 S3 S4 S5)
+2026-10-02T04:13:34,730065+00:00 ACPI: Using IOAPIC for interrupt routing
+2026-10-02T04:13:34,730984+00:00 PCI: Using host bridge windows from ACPI; if necessary, use "pci=nocrs" and report a bug
+2026-10-02T04:13:34,734564+00:00 ACPI: Enabled 2 GPEs in block 00 to 0F
+2026-10-02T04:13:34,738073+00:00 ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-ff])
+2026-10-02T04:13:34,738977+00:00 acpi PNP0A03:00: _OSC: OS supports [ASPM ClockPM Segments MSI HPX-Type3]
+2026-10-02T04:13:34,741824+00:00 acpi PNP0A03:00: fail to add MMCONFIG information, can't access extended PCI configuration space under this bridge.
+2026-10-02T04:13:34,743264+00:00 acpiphp: Slot [3] registered
+2026-10-02T04:13:34,744936+00:00 acpiphp: Slot [4] registered
+2026-10-02T04:13:34,746362+00:00 acpiphp: Slot [5] registered
+2026-10-02T04:13:34,747002+00:00 acpiphp: Slot [6] registered
+2026-10-02T04:13:34,748457+00:00 acpiphp: Slot [7] registered
+2026-10-02T04:13:34,750010+00:00 acpiphp: Slot [8] registered
+2026-10-02T04:13:34,751001+00:00 acpiphp: Slot [9] registered
+2026-10-02T04:13:34,752434+00:00 acpiphp: Slot [10] registered
+2026-10-02T04:13:34,754138+00:00 acpiphp: Slot [11] registered
+2026-10-02T04:13:34,755001+00:00 acpiphp: Slot [12] registered
+2026-10-02T04:13:34,756709+00:00 acpiphp: Slot [13] registered
+2026-10-02T04:13:34,758607+00:00 acpiphp: Slot [14] registered
+2026-10-02T04:13:34,759003+00:00 acpiphp: Slot [15] registered
+2026-10-02T04:13:34,760749+00:00 acpiphp: Slot [16] registered
+2026-10-02T04:13:34,762334+00:00 acpiphp: Slot [17] registered
+2026-10-02T04:13:34,763001+00:00 acpiphp: Slot [18] registered
+2026-10-02T04:13:34,764826+00:00 acpiphp: Slot [19] registered
+2026-10-02T04:13:34,766313+00:00 acpiphp: Slot [20] registered
+2026-10-02T04:13:34,767001+00:00 acpiphp: Slot [21] registered
+2026-10-02T04:13:34,768534+00:00 acpiphp: Slot [22] registered
+2026-10-02T04:13:34,770155+00:00 acpiphp: Slot [23] registered
+2026-10-02T04:13:34,771001+00:00 acpiphp: Slot [24] registered
+2026-10-02T04:13:34,772523+00:00 acpiphp: Slot [25] registered
+2026-10-02T04:13:34,774250+00:00 acpiphp: Slot [26] registered
+2026-10-02T04:13:34,775004+00:00 acpiphp: Slot [27] registered
+2026-10-02T04:13:34,776844+00:00 acpiphp: Slot [28] registered
+2026-10-02T04:13:34,778618+00:00 acpiphp: Slot [29] registered
+2026-10-02T04:13:34,779001+00:00 acpiphp: Slot [30] registered
+2026-10-02T04:13:34,780763+00:00 acpiphp: Slot [31] registered
+2026-10-02T04:13:34,782266+00:00 PCI host bridge to bus 0000:00
+2026-10-02T04:13:34,782974+00:00 pci_bus 0000:00: root bus resource [io  0x0000-0x0cf7 window]
+2026-10-02T04:13:34,785548+00:00 pci_bus 0000:00: root bus resource [io  0x0d00-0xffff window]
+2026-10-02T04:13:34,786973+00:00 pci_bus 0000:00: root bus resource [mem 0x000a0000-0x000bffff window]
+2026-10-02T04:13:34,789847+00:00 pci_bus 0000:00: root bus resource [mem 0xc0000000-0xfebfffff window]
+2026-10-02T04:13:34,790973+00:00 pci_bus 0000:00: root bus resource [mem 0x440000000-0x4bfffffff window]
+2026-10-02T04:13:34,793817+00:00 pci_bus 0000:00: root bus resource [bus 00-ff]
+2026-10-02T04:13:34,795083+00:00 pci 0000:00:00.0: [8086:1237] type 00 class 0x060000
+2026-10-02T04:13:34,798725+00:00 pci 0000:00:01.0: [8086:7000] type 00 class 0x060100
+2026-10-02T04:13:34,800377+00:00 pci 0000:00:01.1: [8086:7010] type 00 class 0x010180
+2026-10-02T04:13:34,806038+00:00 pci 0000:00:01.1: reg 0x20: [io  0xc120-0xc12f]
+2026-10-02T04:13:34,808069+00:00 pci 0000:00:01.1: legacy IDE quirk: reg 0x10: [io  0x01f0-0x01f7]
+2026-10-02T04:13:34,810815+00:00 pci 0000:00:01.1: legacy IDE quirk: reg 0x14: [io  0x03f6]
+2026-10-02T04:13:34,810973+00:00 pci 0000:00:01.1: legacy IDE quirk: reg 0x18: [io  0x0170-0x0177]
+2026-10-02T04:13:34,813369+00:00 pci 0000:00:01.1: legacy IDE quirk: reg 0x1c: [io  0x0376]
+2026-10-02T04:13:34,815261+00:00 pci 0000:00:01.3: [8086:7113] type 00 class 0x068000
+2026-10-02T04:13:34,818591+00:00 pci 0000:00:01.3: quirk: [io  0x0600-0x063f] claimed by PIIX4 ACPI
+2026-10-02T04:13:34,819008+00:00 pci 0000:00:01.3: quirk: [io  0x0700-0x070f] claimed by PIIX4 SMB
+2026-10-02T04:13:34,822958+00:00 pci 0000:00:02.0: [1af4:1050] type 00 class 0x030000
+2026-10-02T04:13:34,828012+00:00 pci 0000:00:02.0: reg 0x10: [mem 0xfe000000-0xfe7fffff pref]
+2026-10-02T04:13:34,834310+00:00 pci 0000:00:02.0: reg 0x18: [mem 0xfe800000-0xfe803fff 64bit pref]
+2026-10-02T04:13:34,836470+00:00 pci 0000:00:02.0: reg 0x20: [mem 0xfeb90000-0xfeb90fff]
+2026-10-02T04:13:34,841867+00:00 pci 0000:00:02.0: reg 0x30: [mem 0xfeb80000-0xfeb8ffff pref]
+2026-10-02T04:13:34,845194+00:00 pci 0000:00:03.0: [1af4:1000] type 00 class 0x020000
+2026-10-02T04:13:34,848261+00:00 pci 0000:00:03.0: reg 0x10: [io  0xc080-0xc0bf]
+2026-10-02T04:13:34,850979+00:00 pci 0000:00:03.0: reg 0x14: [mem 0xfeb91000-0xfeb91fff]
+2026-10-02T04:13:34,856045+00:00 pci 0000:00:03.0: reg 0x20: [mem 0xfe804000-0xfe807fff 64bit pref]
+2026-10-02T04:13:34,860774+00:00 pci 0000:00:03.0: reg 0x30: [mem 0xfeb00000-0xfeb7ffff pref]
+2026-10-02T04:13:34,865020+00:00 pci 0000:00:04.0: [1af4:1001] type 00 class 0x010000
+2026-10-02T04:13:34,868515+00:00 pci 0000:00:04.0: reg 0x10: [io  0xc000-0xc07f]
+2026-10-02T04:13:34,871643+00:00 pci 0000:00:04.0: reg 0x14: [mem 0xfeb92000-0xfeb92fff]
+2026-10-02T04:13:34,877651+00:00 pci 0000:00:04.0: reg 0x20: [mem 0xfe808000-0xfe80bfff 64bit pref]
+2026-10-02T04:13:34,881787+00:00 pci 0000:00:05.0: [1af4:1002] type 00 class 0x00ff00
+2026-10-02T04:13:34,883843+00:00 pci 0000:00:05.0: reg 0x10: [io  0xc0c0-0xc0ff]
+2026-10-02T04:13:34,889502+00:00 pci 0000:00:05.0: reg 0x20: [mem 0xfe80c000-0xfe80ffff 64bit pref]
+2026-10-02T04:13:34,893352+00:00 pci 0000:00:06.0: [1af4:1005] type 00 class 0x00ff00
+2026-10-02T04:13:34,895890+00:00 pci 0000:00:06.0: reg 0x10: [io  0xc100-0xc11f]
+2026-10-02T04:13:34,901044+00:00 pci 0000:00:06.0: reg 0x20: [mem 0xfe810000-0xfe813fff 64bit pref]
+2026-10-02T04:13:34,914914+00:00 ACPI: PCI Interrupt Link [LNKA] (IRQs 5 *10 11)
+2026-10-02T04:13:34,915253+00:00 ACPI: PCI Interrupt Link [LNKB] (IRQs 5 *10 11)
+2026-10-02T04:13:34,917369+00:00 ACPI: PCI Interrupt Link [LNKC] (IRQs 5 10 *11)
+2026-10-02T04:13:34,919225+00:00 ACPI: PCI Interrupt Link [LNKD] (IRQs 5 10 *11)
+2026-10-02T04:13:34,921437+00:00 ACPI: PCI Interrupt Link [LNKS] (IRQs *9)
+2026-10-02T04:13:34,923751+00:00 iommu: Default domain type: Translated 
+2026-10-02T04:13:34,924950+00:00 SCSI subsystem initialized
+2026-10-02T04:13:34,927020+00:00 libata version 3.00 loaded.
+2026-10-02T04:13:34,927082+00:00 pci 0000:00:02.0: vgaarb: setting as boot VGA device
+2026-10-02T04:13:34,929127+00:00 pci 0000:00:02.0: vgaarb: VGA device added: decodes=io+mem,owns=io+mem,locks=none
+2026-10-02T04:13:34,931002+00:00 pci 0000:00:02.0: vgaarb: bridge control possible
+2026-10-02T04:13:34,933272+00:00 vgaarb: loaded
+2026-10-02T04:13:34,934426+00:00 ACPI: bus type USB registered
+2026-10-02T04:13:34,935005+00:00 usbcore: registered new interface driver usbfs
+2026-10-02T04:13:34,937142+00:00 usbcore: registered new interface driver hub
+2026-10-02T04:13:34,938900+00:00 usbcore: registered new device driver usb
+2026-10-02T04:13:34,939007+00:00 pps_core: LinuxPPS API ver. 1 registered
+2026-10-02T04:13:34,940670+00:00 pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+2026-10-02T04:13:34,942976+00:00 PTP clock support registered
+2026-10-02T04:13:34,944428+00:00 EDAC MC: Ver: 3.0.0
+2026-10-02T04:13:34,944680+00:00 PCI: Using ACPI for IRQ routing
+2026-10-02T04:13:34,946977+00:00 PCI: pci_cache_line_size set to 64 bytes
+2026-10-02T04:13:34,947322+00:00 e820: reserve RAM buffer [mem 0x0009fc00-0x0009ffff]
+2026-10-02T04:13:34,947327+00:00 e820: reserve RAM buffer [mem 0xbffdd000-0xbfffffff]
+2026-10-02T04:13:34,947525+00:00 NetLabel: Initializing
+2026-10-02T04:13:34,949322+00:00 NetLabel:  domain hash size = 128
+2026-10-02T04:13:34,950796+00:00 NetLabel:  protocols = UNLABELED CIPSOv4 CALIPSO
+2026-10-02T04:13:34,950993+00:00 NetLabel:  unlabeled traffic allowed by default
+2026-10-02T04:13:34,952963+00:00 clocksource: Switched to clocksource kvm-clock
+2026-10-02T04:13:34,966673+00:00 *** VALIDATE bpf ***
+2026-10-02T04:13:34,968117+00:00 VFS: Disk quotas dquot_6.6.0
+2026-10-02T04:13:34,969726+00:00 VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+2026-10-02T04:13:34,972223+00:00 *** VALIDATE ramfs ***
+2026-10-02T04:13:34,973494+00:00 *** VALIDATE hugetlbfs ***
+2026-10-02T04:13:34,975026+00:00 AppArmor: AppArmor Filesystem Enabled
+2026-10-02T04:13:34,976740+00:00 pnp: PnP ACPI init
+2026-10-02T04:13:34,977939+00:00 pnp 00:00: Plug and Play ACPI device, IDs PNP0501 (active)
+2026-10-02T04:13:34,977957+00:00 pnp 00:01: Plug and Play ACPI device, IDs PNP0303 (active)
+2026-10-02T04:13:34,977971+00:00 pnp 00:02: Plug and Play ACPI device, IDs PNP0f13 (active)
+2026-10-02T04:13:34,977978+00:00 pnp 00:03: [dma 2]
+2026-10-02T04:13:34,977987+00:00 pnp 00:03: Plug and Play ACPI device, IDs PNP0700 (active)
+2026-10-02T04:13:34,978001+00:00 pnp 00:04: Plug and Play ACPI device, IDs PNP0b00 (active)
+2026-10-02T04:13:34,978190+00:00 pnp: PnP ACPI: found 5 devices
+2026-10-02T04:13:34,982454+00:00 thermal_sys: Registered thermal governor 'fair_share'
+2026-10-02T04:13:34,982454+00:00 thermal_sys: Registered thermal governor 'bang_bang'
+2026-10-02T04:13:34,984766+00:00 thermal_sys: Registered thermal governor 'step_wise'
+2026-10-02T04:13:34,986744+00:00 thermal_sys: Registered thermal governor 'user_space'
+2026-10-02T04:13:34,988965+00:00 thermal_sys: Registered thermal governor 'power_allocator'
+2026-10-02T04:13:34,995934+00:00 clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns
+2026-10-02T04:13:35,001911+00:00 pci_bus 0000:00: resource 4 [io  0x0000-0x0cf7 window]
+2026-10-02T04:13:35,004283+00:00 pci_bus 0000:00: resource 5 [io  0x0d00-0xffff window]
+2026-10-02T04:13:35,006558+00:00 pci_bus 0000:00: resource 6 [mem 0x000a0000-0x000bffff window]
+2026-10-02T04:13:35,009128+00:00 pci_bus 0000:00: resource 7 [mem 0xc0000000-0xfebfffff window]
+2026-10-02T04:13:35,011786+00:00 pci_bus 0000:00: resource 8 [mem 0x440000000-0x4bfffffff window]
+2026-10-02T04:13:35,014285+00:00 NET: Registered protocol family 2
+2026-10-02T04:13:35,016842+00:00 IP idents hash table entries: 262144 (order: 9, 2097152 bytes, linear)
+2026-10-02T04:13:35,021880+00:00 tcp_listen_portaddr_hash hash table entries: 8192 (order: 5, 131072 bytes, linear)
+2026-10-02T04:13:35,025137+00:00 TCP established hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+2026-10-02T04:13:35,039578+00:00 TCP bind hash table entries: 65536 (order: 8, 1048576 bytes, linear)
+2026-10-02T04:13:35,042209+00:00 TCP: Hash tables configured (established 131072 bind 65536)
+2026-10-02T04:13:35,044617+00:00 UDP hash table entries: 8192 (order: 6, 262144 bytes, linear)
+2026-10-02T04:13:35,047082+00:00 UDP-Lite hash table entries: 8192 (order: 6, 262144 bytes, linear)
+2026-10-02T04:13:35,049613+00:00 NET: Registered protocol family 1
+2026-10-02T04:13:35,051531+00:00 NET: Registered protocol family 44
+2026-10-02T04:13:35,053228+00:00 pci 0000:00:01.0: PIIX3: Enabling Passive Release
+2026-10-02T04:13:35,055458+00:00 pci 0000:00:00.0: Limiting direct PCI/PCI transfers
+2026-10-02T04:13:35,057756+00:00 pci 0000:00:01.0: Activating ISA DMA hang workarounds
+2026-10-02T04:13:35,060227+00:00 pci 0000:00:02.0: Video device with shadowed ROM at [mem 0x000c0000-0x000dffff]
+2026-10-02T04:13:35,063383+00:00 PCI: CLS 0 bytes, default 64
+2026-10-02T04:13:35,064991+00:00 Trying to unpack rootfs image as initramfs...
+2026-10-02T04:13:35,139561+00:00 Freeing initrd memory: 26996K
+2026-10-02T04:13:35,141163+00:00 PCI-DMA: Using software bounce buffering for IO (SWIOTLB)
+2026-10-02T04:13:35,143656+00:00 software IO TLB: mapped [mem 0xbbfdd000-0xbffdd000] (64MB)
+2026-10-02T04:13:35,146143+00:00 clocksource: tsc: mask: 0xffffffffffffffff max_cycles: 0x2113c49ac05, max_idle_ns: 440795285125 ns
+2026-10-02T04:13:35,149914+00:00 check: Scanning for low memory corruption every 60 seconds
+2026-10-02T04:13:35,153101+00:00 Initialise system trusted keyrings
+2026-10-02T04:13:35,154837+00:00 Key type blacklist registered
+2026-10-02T04:13:35,156598+00:00 workingset: timestamp_bits=36 max_order=22 bucket_order=0
+2026-10-02T04:13:35,160124+00:00 zbud: loaded
+2026-10-02T04:13:35,161539+00:00 squashfs: version 4.0 (2009/01/31) Phillip Lougher
+2026-10-02T04:13:35,164191+00:00 fuse: init (API version 7.31)
+2026-10-02T04:13:35,165883+00:00 *** VALIDATE fuse ***
+2026-10-02T04:13:35,167364+00:00 *** VALIDATE fuse ***
+2026-10-02T04:13:35,168847+00:00 Platform Keyring initialized
+2026-10-02T04:13:35,173393+00:00 Key type asymmetric registered
+2026-10-02T04:13:35,175372+00:00 Asymmetric key parser 'x509' registered
+2026-10-02T04:13:35,177438+00:00 Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+2026-10-02T04:13:35,180402+00:00 io scheduler mq-deadline registered
+2026-10-02T04:13:35,182910+00:00 shpchp: Standard Hot Plug PCI Controller Driver version: 0.4
+2026-10-02T04:13:35,185309+00:00 intel_idle: Please enable MWAIT in BIOS SETUP
+2026-10-02T04:13:35,185423+00:00 input: Power Button as /devices/LNXSYSTM:00/LNXPWRBN:00/input/input0
+2026-10-02T04:13:35,188264+00:00 ACPI: Power Button [PWRF]
+2026-10-02T04:13:35,211588+00:00 PCI Interrupt Link [LNKB] enabled at IRQ 10
+2026-10-02T04:13:35,236797+00:00 PCI Interrupt Link [LNKC] enabled at IRQ 11
+2026-10-02T04:13:35,261563+00:00 PCI Interrupt Link [LNKD] enabled at IRQ 11
+2026-10-02T04:13:35,286346+00:00 PCI Interrupt Link [LNKA] enabled at IRQ 10
+2026-10-02T04:13:35,313995+00:00 Serial: 8250/16550 driver, 32 ports, IRQ sharing enabled
+2026-10-02T04:13:35,347059+00:00 00:00: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200) is a 16550A
+2026-10-02T04:13:35,351988+00:00 Linux agpgart interface v0.103
+2026-10-02T04:13:35,486571+00:00 loop: module loaded
+2026-10-02T04:13:35,490480+00:00 ata_piix 0000:00:01.1: version 2.13
+2026-10-02T04:13:35,492858+00:00 scsi host0: ata_piix
+2026-10-02T04:13:35,497009+00:00 scsi host1: ata_piix
+2026-10-02T04:13:35,500596+00:00 ata1: PATA max MWDMA2 cmd 0x1f0 ctl 0x3f6 bmdma 0xc120 irq 14
+2026-10-02T04:13:35,507142+00:00 ata2: PATA max MWDMA2 cmd 0x170 ctl 0x376 bmdma 0xc128 irq 15
+2026-10-02T04:13:35,513925+00:00 tun: Universal TUN/TAP device driver, 1.6
+2026-10-02T04:13:35,519405+00:00 PPP generic driver version 2.4.2
+2026-10-02T04:13:35,524278+00:00 VFIO - User Level meta-driver version: 0.3
+2026-10-02T04:13:35,529777+00:00 ehci_hcd: USB 2.0 'Enhanced' Host Controller (EHCI) Driver
+2026-10-02T04:13:35,536155+00:00 ehci-pci: EHCI PCI platform driver
+2026-10-02T04:13:35,540696+00:00 ehci-platform: EHCI generic platform driver
+2026-10-02T04:13:35,545444+00:00 ohci_hcd: USB 1.1 'Open' Host Controller (OHCI) Driver
+2026-10-02T04:13:35,550667+00:00 ohci-pci: OHCI PCI platform driver
+2026-10-02T04:13:35,554665+00:00 ohci-platform: OHCI generic platform driver
+2026-10-02T04:13:35,558985+00:00 uhci_hcd: USB Universal Host Controller Interface driver
+2026-10-02T04:13:35,563818+00:00 i8042: PNP: PS/2 Controller [PNP0303:KBD,PNP0f13:MOU] at 0x60,0x64 irq 1,12
+2026-10-02T04:13:35,571160+00:00 serio: i8042 KBD port at 0x60,0x64 irq 1
+2026-10-02T04:13:35,574236+00:00 serio: i8042 AUX port at 0x60,0x64 irq 12
+2026-10-02T04:13:35,577670+00:00 mousedev: PS/2 mouse device common for all mice
+2026-10-02T04:13:35,581698+00:00 rtc_cmos 00:04: RTC can wake from S4
+2026-10-02T04:13:35,585815+00:00 input: AT Translated Set 2 keyboard as /devices/platform/i8042/serio0/input/input1
+2026-10-02T04:13:35,586694+00:00 rtc_cmos 00:04: registered as rtc0
+2026-10-02T04:13:35,595779+00:00 rtc_cmos 00:04: alarms up to one day, y3k, 242 bytes nvram
+2026-10-02T04:13:35,602162+00:00 i2c /dev entries driver
+2026-10-02T04:13:35,606187+00:00 device-mapper: uevent: version 1.0.3
+2026-10-02T04:13:35,611246+00:00 device-mapper: ioctl: 4.41.0-ioctl (2019-09-16) initialised: dm-devel@redhat.com
+2026-10-02T04:13:35,619586+00:00 platform eisa.0: Probing EISA bus 0
+2026-10-02T04:13:35,624381+00:00 platform eisa.0: EISA: Cannot allocate resource for mainboard
+2026-10-02T04:13:35,631102+00:00 platform eisa.0: Cannot allocate resource for EISA slot 1
+2026-10-02T04:13:35,637454+00:00 platform eisa.0: Cannot allocate resource for EISA slot 2
+2026-10-02T04:13:35,643539+00:00 platform eisa.0: Cannot allocate resource for EISA slot 3
+2026-10-02T04:13:35,648959+00:00 platform eisa.0: Cannot allocate resource for EISA slot 4
+2026-10-02T04:13:35,653822+00:00 platform eisa.0: Cannot allocate resource for EISA slot 5
+2026-10-02T04:13:35,658349+00:00 platform eisa.0: Cannot allocate resource for EISA slot 6
+2026-10-02T04:13:35,662560+00:00 platform eisa.0: Cannot allocate resource for EISA slot 7
+2026-10-02T04:13:35,666636+00:00 platform eisa.0: Cannot allocate resource for EISA slot 8
+2026-10-02T04:13:35,670448+00:00 platform eisa.0: EISA: Detected 0 cards
+2026-10-02T04:13:35,673502+00:00 intel_pstate: CPU model not supported
+2026-10-02T04:13:35,677340+00:00 ledtrig-cpu: registered to indicate activity on CPUs
+2026-10-02T04:13:35,681846+00:00 drop_monitor: Initializing network drop monitor service
+2026-10-02T04:13:35,686517+00:00 NET: Registered protocol family 10
+2026-10-02T04:13:35,705359+00:00 Segment Routing with IPv6
+2026-10-02T04:13:35,708180+00:00 NET: Registered protocol family 17
+2026-10-02T04:13:35,711691+00:00 Key type dns_resolver registered
+2026-10-02T04:13:35,717605+00:00 RAS: Correctable Errors collector initialized.
+2026-10-02T04:13:35,722122+00:00 IPI shorthand broadcast: enabled
+2026-10-02T04:13:35,725840+00:00 sched_clock: Marking stable (1451388322, 274414141)->(2011708318, -285905855)
+2026-10-02T04:13:35,732155+00:00 registered taskstats version 1
+2026-10-02T04:13:35,735222+00:00 Loading compiled-in X.509 certificates
+2026-10-02T04:13:35,740104+00:00 Loaded X.509 cert 'Build time autogenerated kernel key: 14c36717ad359583ee32ae03fbd4065176a861b3'
+2026-10-02T04:13:35,747542+00:00 Loaded X.509 cert 'Canonical Ltd. Live Patch Signing: 14df34d1a87cf37625abec039ef2bf521249b969'
+2026-10-02T04:13:35,754396+00:00 Loaded X.509 cert 'Canonical Ltd. Kernel Module Signing: 88f752e560a1e0737e31163a466ad7b70a850c19'
+2026-10-02T04:13:35,760047+00:00 blacklist: Loading compiled-in revocation X.509 certificates
+2026-10-02T04:13:35,763646+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing: 61482aa2830d0ab2ad5af10b7250da9033ddcef0'
+2026-10-02T04:13:35,768820+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2017): 242ade75ac4a15e50d50c84b0d45ff3eae707a03'
+2026-10-02T04:13:35,774218+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (ESM 2018): 365188c1d374d6b07c3c8f240f8ef722433d6a8b'
+2026-10-02T04:13:35,779804+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2019): c0746fd6c5da3ae827864651ad66ae47fe24b3e8'
+2026-10-02T04:13:35,785197+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v1): a8d54bbb3825cfb94fa13c9f8a594a195c107b8d'
+2026-10-02T04:13:35,790680+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v2): 4cf046892d6fd3c9a5b03f98d845f90851dc6a8c'
+2026-10-02T04:13:35,796169+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v3): 100437bb6de6e469b581e61cd66bce3ef4ed53af'
+2026-10-02T04:13:35,801702+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (Ubuntu Core 2019): c1d57b8f6b743f23ee41f4f7ee292f06eecadfb9'
+2026-10-02T04:13:35,807653+00:00 zswap: loaded using pool lzo/zbud
+2026-10-02T04:13:35,810388+00:00 Key type ._fscrypt registered
+2026-10-02T04:13:35,812665+00:00 Key type .fscrypt registered
+2026-10-02T04:13:35,827178+00:00 Key type big_key registered
+2026-10-02T04:13:35,835171+00:00 Key type encrypted registered
+2026-10-02T04:13:35,837439+00:00 AppArmor: AppArmor sha1 policy hashing enabled
+2026-10-02T04:13:35,840381+00:00 ima: No TPM chip found, activating TPM-bypass!
+2026-10-02T04:13:35,843315+00:00 ima: Allocated hash algorithm: sha1
+2026-10-02T04:13:35,845797+00:00 ima: No architecture policies found
+2026-10-02T04:13:35,848286+00:00 evm: Initialising EVM extended attributes:
+2026-10-02T04:13:35,851065+00:00 evm: security.selinux
+2026-10-02T04:13:35,852996+00:00 evm: security.SMACK64
+2026-10-02T04:13:35,854934+00:00 evm: security.SMACK64EXEC
+2026-10-02T04:13:35,857004+00:00 evm: security.SMACK64TRANSMUTE
+2026-10-02T04:13:35,859306+00:00 evm: security.SMACK64MMAP
+2026-10-02T04:13:35,861384+00:00 evm: security.apparmor
+2026-10-02T04:13:35,863355+00:00 evm: security.ima
+2026-10-02T04:13:35,865123+00:00 evm: security.capability
+2026-10-02T04:13:35,867187+00:00 evm: HMAC attrs: 0x1
+2026-10-02T04:13:35,870351+00:00 PM:   Magic number: 14:762:210
+2026-10-02T04:13:35,872962+00:00 rtc_cmos 00:04: setting system clock to 2026-10-02T04:13:35 UTC (1790914415)
+2026-10-02T04:13:35,878328+00:00 clk: Disabling unused clocks
+2026-10-02T04:13:35,882842+00:00 Freeing unused decrypted memory: 2040K
+2026-10-02T04:13:35,887229+00:00 Freeing unused kernel image memory: 2772K
+2026-10-02T04:13:35,910624+00:00 Write protecting the kernel read-only data: 26624k
+2026-10-02T04:13:35,916201+00:00 Freeing unused kernel image memory: 2036K
+2026-10-02T04:13:35,919536+00:00 Freeing unused kernel image memory: 916K
+2026-10-02T04:13:35,932995+00:00 x86/mm: Checked W+X mappings: passed, no W+X pages found.
+2026-10-02T04:13:35,936363+00:00 x86/mm: Checking user space page tables
+2026-10-02T04:13:35,949525+00:00 x86/mm: Checked W+X mappings: passed, no W+X pages found.
+2026-10-02T04:13:35,952915+00:00 Run /init as init process
+2026-10-02T04:13:36,093771+00:00 input: VirtualPS/2 VMware VMMouse as /devices/platform/i8042/serio1/input/input4
+2026-10-02T04:13:36,106460+00:00 input: VirtualPS/2 VMware VMMouse as /devices/platform/i8042/serio1/input/input3
+2026-10-02T04:13:36,119770+00:00 cryptd: max_cpu_qlen set to 1000
+2026-10-02T04:13:36,129810+00:00 AVX2 version of gcm_enc/dec engaged.
+2026-10-02T04:13:36,132416+00:00 AES CTR mode by8 optimization enabled
+2026-10-02T04:13:36,139696+00:00 virtio_blk virtio2: [vda] 335544320 512-byte logical blocks (172 GB/160 GiB)
+2026-10-02T04:13:36,140414+00:00 FDC 0 is a S82078B
+2026-10-02T04:13:36,157673+00:00 virtio_net virtio1 ens3: renamed from eth0
+2026-10-02T04:13:36,166654+00:00 [drm] pci: virtio-vga detected at 0000:00:02.0
+2026-10-02T04:13:36,170841+00:00 virtio-pci 0000:00:02.0: remove_conflicting_pci_framebuffers: bar 0: 0xfe000000 -> 0xfe7fffff
+2026-10-02T04:13:36,177593+00:00 virtio-pci 0000:00:02.0: remove_conflicting_pci_framebuffers: bar 2: 0xfe800000 -> 0xfe803fff
+2026-10-02T04:13:36,184327+00:00 virtio-pci 0000:00:02.0: remove_conflicting_pci_framebuffers: bar 4: 0xfeb90000 -> 0xfeb90fff
+2026-10-02T04:13:36,190903+00:00 virtio-pci 0000:00:02.0: vgaarb: deactivate vga console
+2026-10-02T04:13:36,212020+00:00 Console: switching to colour dummy device 80x25
+2026-10-02T04:13:36,214729+00:00 [drm] virgl 3d acceleration not supported by host
+2026-10-02T04:13:36,217283+00:00 [drm] EDID support available.
+2026-10-02T04:13:36,221224+00:00 [TTM] Zone  kernel: Available graphics memory: 8190170 KiB
+2026-10-02T04:13:36,224017+00:00 [TTM] Zone   dma32: Available graphics memory: 2097152 KiB
+2026-10-02T04:13:36,226788+00:00 [TTM] Initializing pool allocator
+2026-10-02T04:13:36,228646+00:00 [TTM] Initializing DMA pool allocator
+2026-10-02T04:13:36,230725+00:00 [drm] number of scanouts: 1
+2026-10-02T04:13:36,232341+00:00 [drm] number of cap sets: 0
+2026-10-02T04:13:36,234634+00:00 [drm] Initialized virtio_gpu 0.1.0 0 for virtio0 on minor 0
+2026-10-02T04:13:36,240757+00:00 Console: switching to colour frame buffer device 128x48
+2026-10-02T04:13:36,250522+00:00 virtio_gpu virtio0: fb0: virtio_gpudrmfb frame buffer device
+2026-10-02T04:13:36,278382+00:00  vda: vda1 vda14 vda15
+2026-10-02T04:13:37,598502+00:00 raid6: avx2x4   gen() 11212 MB/s
+2026-10-02T04:13:37,646477+00:00 raid6: avx2x4   xor() 10759 MB/s
+2026-10-02T04:13:37,694501+00:00 raid6: avx2x2   gen() 17433 MB/s
+2026-10-02T04:13:37,742503+00:00 raid6: avx2x2   xor() 10489 MB/s
+2026-10-02T04:13:37,790473+00:00 raid6: avx2x1   gen() 14949 MB/s
+2026-10-02T04:13:37,838476+00:00 raid6: avx2x1   xor()  9880 MB/s
+2026-10-02T04:13:37,886503+00:00 raid6: sse2x4   gen() 10721 MB/s
+2026-10-02T04:13:37,934500+00:00 raid6: sse2x4   xor()  6739 MB/s
+2026-10-02T04:13:37,982504+00:00 raid6: sse2x2   gen()  9204 MB/s
+2026-10-02T04:13:38,030529+00:00 raid6: sse2x2   xor()  7999 MB/s
+2026-10-02T04:13:38,078495+00:00 raid6: sse2x1   gen() 10775 MB/s
+2026-10-02T04:13:38,126527+00:00 raid6: sse2x1   xor()  7824 MB/s
+2026-10-02T04:13:38,127950+00:00 raid6: using algorithm avx2x2 gen() 17433 MB/s
+2026-10-02T04:13:38,129566+00:00 raid6: .... xor() 10489 MB/s, rmw enabled
+2026-10-02T04:13:38,131110+00:00 raid6: using avx2x2 recovery algorithm
+2026-10-02T04:13:38,134823+00:00 xor: automatically using best checksumming function   avx       
+2026-10-02T04:13:38,142615+00:00 async_tx: api initialized (async)
+2026-10-02T04:13:38,264588+00:00 Btrfs loaded, crc32c=crc32c-intel
+2026-10-02T04:13:40,479478+00:00 EXT4-fs (vda1): mounted filesystem with ordered data mode. Opts: (null)
+2026-10-02T04:13:43,821656+00:00 systemd[1]: Inserted module 'autofs4'
+2026-10-02T04:13:44,033245+00:00 systemd[1]: systemd 245.4-4ubuntu3.24 running in system mode. (+PAM +AUDIT +SELINUX +IMA +APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ +LZ4 +SECCOMP +BLKID +ELFUTILS +KMOD +IDN2 -IDN +PCRE2 default-hierarchy=hybrid)
+2026-10-02T04:13:44,054782+00:00 systemd[1]: Detected virtualization kvm.
+2026-10-02T04:13:44,061873+00:00 systemd[1]: Detected architecture x86-64.
+2026-10-02T04:13:44,179332+00:00 systemd[1]: Set hostname to <sj-worker2>.
+2026-10-02T04:13:46,735586+00:00 systemd[1]: Configuration file /run/systemd/system/netplan-ovs-cleanup.service is marked world-inaccessible. This has no effect as configuration data is accessible via APIs without restrictions. Proceeding anyway.
+2026-10-02T04:13:46,940007+00:00 systemd[1]: /lib/systemd/system/snapd.service:23: Unknown key name 'RestartMode' in section 'Service', ignoring.
+2026-10-02T04:13:47,415128+00:00 systemd[1]: Created slice system-modprobe.slice.
+2026-10-02T04:13:47,426957+00:00 systemd[1]: Created slice system-serial\x2dgetty.slice.
+2026-10-02T04:13:47,439240+00:00 systemd[1]: Created slice system-systemd\x2dfsck.slice.
+2026-10-02T04:13:47,461387+00:00 systemd[1]: Created slice User and Session Slice.
+2026-10-02T04:13:47,471669+00:00 systemd[1]: Started Forward Password Requests to Wall Directory Watch.
+2026-10-02T04:13:47,485952+00:00 systemd[1]: Set up automount Arbitrary Executable File Formats File System Automount Point.
+2026-10-02T04:13:47,501852+00:00 systemd[1]: Reached target User and Group Name Lookups.
+2026-10-02T04:13:47,514233+00:00 systemd[1]: Reached target Slices.
+2026-10-02T04:13:47,524216+00:00 systemd[1]: Reached target Mounting snaps.
+2026-10-02T04:13:47,535202+00:00 systemd[1]: Reached target Swap.
+2026-10-02T04:13:47,545215+00:00 systemd[1]: Listening on Device-mapper event daemon FIFOs.
+2026-10-02T04:13:47,558627+00:00 systemd[1]: Listening on LVM2 poll daemon socket.
+2026-10-02T04:13:47,570602+00:00 systemd[1]: Listening on multipathd control socket.
+2026-10-02T04:13:47,582800+00:00 systemd[1]: Listening on Syslog Socket.
+2026-10-02T04:13:47,593552+00:00 systemd[1]: Listening on fsck to fsckd communication Socket.
+2026-10-02T04:13:47,605570+00:00 systemd[1]: Listening on initctl Compatibility Named Pipe.
+2026-10-02T04:13:47,618108+00:00 systemd[1]: Listening on Journal Audit Socket.
+2026-10-02T04:13:47,628680+00:00 systemd[1]: Listening on Journal Socket (/dev/log).
+2026-10-02T04:13:47,639864+00:00 systemd[1]: Listening on Journal Socket.
+2026-10-02T04:13:47,649715+00:00 systemd[1]: Listening on Network Service Netlink Socket.
+2026-10-02T04:13:47,661430+00:00 systemd[1]: Listening on udev Control Socket.
+2026-10-02T04:13:47,671815+00:00 systemd[1]: Listening on udev Kernel Socket.
+2026-10-02T04:13:47,684709+00:00 systemd[1]: Mounting Huge Pages File System...
+2026-10-02T04:13:47,697469+00:00 systemd[1]: Mounting POSIX Message Queue File System...
+2026-10-02T04:13:47,712205+00:00 systemd[1]: Mounting Kernel Debug File System...
+2026-10-02T04:13:47,725157+00:00 systemd[1]: Mounting Kernel Trace File System...
+2026-10-02T04:13:47,740291+00:00 systemd[1]: Starting Journal Service...
+2026-10-02T04:13:47,753469+00:00 systemd[1]: Starting Set the console keyboard layout...
+2026-10-02T04:13:47,768325+00:00 systemd[1]: Starting Create list of static device nodes for the current kernel...
+2026-10-02T04:13:47,785208+00:00 systemd[1]: Starting Monitoring of LVM2 mirrors, snapshots etc. using dmeventd or progress polling...
+2026-10-02T04:13:47,803657+00:00 systemd[1]: Starting Load Kernel Module chromeos_pstore...
+2026-10-02T04:13:47,817050+00:00 systemd[1]: Condition check resulted in Load Kernel Module drm being skipped.
+2026-10-02T04:13:47,828769+00:00 systemd[1]: Starting Load Kernel Module efi_pstore...
+2026-10-02T04:13:47,842185+00:00 systemd[1]: Starting Load Kernel Module pstore_blk...
+2026-10-02T04:13:47,854854+00:00 systemd[1]: Starting Load Kernel Module pstore_zone...
+2026-10-02T04:13:47,867847+00:00 systemd[1]: Starting Load Kernel Module ramoops...
+2026-10-02T04:13:47,876533+00:00 systemd[1]: Condition check resulted in OpenVSwitch configuration for cleanup being skipped.
+2026-10-02T04:13:47,896694+00:00 systemd[1]: Condition check resulted in Set Up Additional Binary Formats being skipped.
+2026-10-02T04:13:47,905120+00:00 systemd[1]: Starting File System Check on Root Device...
+2026-10-02T04:13:47,919385+00:00 systemd[1]: Starting Load Kernel Modules...
+2026-10-02T04:13:47,929910+00:00 systemd[1]: Starting udev Coldplug all Devices...
+2026-10-02T04:13:47,937495+00:00 systemd[1]: Starting Uncomplicated firewall...
+2026-10-02T04:13:47,946635+00:00 systemd[1]: Started Journal Service.
+2026-10-02T04:13:48,114119+00:00 EXT4-fs (vda1): re-mounted. Opts: (null)
+2026-10-02T04:13:48,154015+00:00 systemd-journald[404]: Received client request to flush runtime journal.
+2026-10-02T04:13:48,183613+00:00 systemd-journald[404]: File /var/log/journal/74088cfd3abb4aa4af72036cd3347996/system.journal corrupted or uncleanly shut down, renaming and replacing.
+2026-10-02T04:13:48,199173+00:00 bridge: filtering via arp/ip/ip6tables is no longer available by default. Update your scripts to load br_netfilter if you need this.
+2026-10-02T04:13:48,285609+00:00 Bridge firewalling registered
+2026-10-02T04:13:57,911595+00:00 alua: device handler registered
+2026-10-02T04:13:57,915793+00:00 emc: device handler registered
+2026-10-02T04:13:57,947979+00:00 rdac: device handler registered
+2026-10-02T04:14:01,622051+00:00 audit: type=1400 audit(1790914441.244:2): apparmor="STATUS" operation="profile_load" profile="unconfined" name="nvidia_modprobe" pid=600 comm="apparmor_parser"
+2026-10-02T04:14:01,622058+00:00 audit: type=1400 audit(1790914441.244:3): apparmor="STATUS" operation="profile_load" profile="unconfined" name="nvidia_modprobe//kmod" pid=600 comm="apparmor_parser"
+2026-10-02T04:14:01,622815+00:00 audit: type=1400 audit(1790914441.248:4): apparmor="STATUS" operation="profile_load" profile="unconfined" name="lsb_release" pid=598 comm="apparmor_parser"
+2026-10-02T04:14:01,623270+00:00 audit: type=1400 audit(1790914441.248:5): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/usr/bin/man" pid=597 comm="apparmor_parser"
+2026-10-02T04:14:01,623278+00:00 audit: type=1400 audit(1790914441.248:6): apparmor="STATUS" operation="profile_load" profile="unconfined" name="man_filter" pid=597 comm="apparmor_parser"
+2026-10-02T04:14:01,623292+00:00 audit: type=1400 audit(1790914441.248:7): apparmor="STATUS" operation="profile_load" profile="unconfined" name="man_groff" pid=597 comm="apparmor_parser"
+2026-10-02T04:14:01,641683+00:00 audit: type=1400 audit(1790914441.264:8): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/usr/lib/snapd/snap-confine" pid=596 comm="apparmor_parser"
+2026-10-02T04:14:01,641691+00:00 audit: type=1400 audit(1790914441.264:9): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/usr/lib/snapd/snap-confine//mount-namespace-capture-helper" pid=596 comm="apparmor_parser"
+2026-10-02T04:14:01,650848+00:00 audit: type=1400 audit(1790914441.276:10): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/usr/sbin/tcpdump" pid=601 comm="apparmor_parser"
+2026-10-02T04:14:01,652351+00:00 audit: type=1400 audit(1790914441.276:11): apparmor="STATUS" operation="profile_load" profile="unconfined" name="ubuntu_pro_apt_news" pid=599 comm="apparmor_parser"
+2026-10-02T04:14:48,527533+00:00 aufs 5.4.3-20200302
+2026-10-02T04:15:13,013948+00:00 systemd-journald[404]: File /var/log/journal/74088cfd3abb4aa4af72036cd3347996/user-1000.journal corrupted or uncleanly shut down, renaming and replacing.
+2026-10-02T04:15:14,170484+00:00 bpfilter: Loaded bpfilter_umh pid 1175
+2026-10-02T04:15:14,171253+00:00 Started bpfilter
+2026-10-02T04:15:42,516795+00:00 cgroup: cgroup: disabling cgroup2 socket matching due to net_prio or net_cls activation
+2026-10-02T04:15:50,669705+00:00 kauditd_printk_skb: 29 callbacks suppressed
+2026-10-02T04:15:50,669708+00:00 audit: type=1400 audit(1790914550.869:41): apparmor="STATUS" operation="profile_load" profile="unconfined" name="cri-containerd.apparmor.d" pid=1751 comm="apparmor_parser"
+2026-10-02T04:16:32,834223+00:00 Initializing XFRM netlink socket
+2026-10-02T04:16:32,943568+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): eth0: link becomes ready
+2026-10-02T04:16:32,943680+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9b07e804bca: link becomes ready
+2026-10-02T04:16:57,308420+00:00 wireguard: WireGuard 1.0.20201112 loaded. See www.wireguard.com for information.
+2026-10-02T04:16:57,308422+00:00 wireguard: Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+2026-10-02T04:17:10,556522+00:00 ipip: IPv4 and MPLS over IPv4 tunneling driver
+2026-10-02T04:32:20,919757+00:00 tee (170673): drop_caches: 3
+2026-10-02T05:22:30,438469+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali11679eaad63: link becomes ready
+2026-10-02T06:07:23,336878+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2c1a276a2f6: link becomes ready
+2026-10-02T06:14:27,396472+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali18e2ac5c62f: link becomes ready
+2026-10-02T06:38:33,686699+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0a2f89ee860: link becomes ready
+2026-10-02T06:40:20,431184+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali1b4a021027e: link becomes ready
+2026-10-02T08:05:59,033204+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali05a5b3e7af1: link becomes ready
+2026-10-02T08:08:02,567001+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali4cdb5bfdc38: link becomes ready
+2026-10-02T13:36:29,350338+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali15ced7d3a76: link becomes ready
+2026-10-02T13:38:23,296121+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali8843ade89ab: link becomes ready
+2026-10-02T14:09:22,763847+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0e87a868961: link becomes ready
+2026-10-02T14:11:20,622429+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib43640ebb31: link becomes ready
+2026-10-02T14:27:59,231332+00:00 hrtimer: interrupt took 180804 ns
+2026-10-02T15:01:32,664417+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali560637356ab: link becomes ready
+2026-10-02T17:29:42,392653+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali8f2c25176b9: link becomes ready
+2026-10-02T18:01:21,088912+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali1a4c8b19539: link becomes ready
+2026-10-02T18:03:53,323716+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9f15300492e: link becomes ready
+2026-10-03T16:07:46,795338+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia396d31b294: link becomes ready
+2026-10-03T16:10:20,266351+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali5e4bd162820: link becomes ready
+2026-10-03T16:46:09,936360+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliccb1437c4b2: link becomes ready
+2026-10-03T16:48:38,857095+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliab3d712ea0c: link becomes ready
+2026-10-04T00:45:01,556804+00:00 audit: type=1400 audit(1791074705.162:42): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/28254/usr/lib/snapd/snap-confine" pid=3753470 comm="apparmor_parser"
+2026-10-04T00:45:01,802475+00:00 audit: type=1400 audit(1791074705.406:43): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.buginfo" pid=3753580 comm="apparmor_parser"
+2026-10-04T00:45:01,813119+00:00 audit: type=1400 audit(1791074705.418:44): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.check-kernel" pid=3753582 comm="apparmor_parser"
+2026-10-04T00:45:01,813309+00:00 audit: type=1400 audit(1791074705.418:45): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.benchmark" pid=3753579 comm="apparmor_parser"
+2026-10-04T00:45:01,842860+00:00 audit: type=1400 audit(1791074705.446:46): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.activate" pid=3753578 comm="apparmor_parser"
+2026-10-04T00:45:01,844774+00:00 audit: type=1400 audit(1791074705.450:47): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.daemon" pid=3753583 comm="apparmor_parser"
+2026-10-04T00:45:01,865257+00:00 audit: type=1400 audit(1791074705.470:48): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.configure" pid=3753584 comm="apparmor_parser"
+2026-10-04T00:45:01,976376+00:00 audit: type=1400 audit(1791074705.582:49): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.install" pid=3753662 comm="apparmor_parser"
+2026-10-04T00:45:02,028434+00:00 audit: type=1400 audit(1791074705.634:50): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.lxc" pid=3753670 comm="apparmor_parser"
+2026-10-04T00:45:02,031508+00:00 audit: type=1400 audit(1791074705.634:51): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.lxd" pid=3753682 comm="apparmor_parser"
+2026-10-04T03:25:56,227221+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2750a0cd4dd: link becomes ready
+2026-10-04T05:45:00,714664+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali5de29166927: link becomes ready
+2026-10-04T07:45:01,832805+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali76ab4d7c81f: link becomes ready
+2026-10-04T07:47:56,599854+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali101e1e281a9: link becomes ready
+2026-10-04T11:52:32,555577+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali37073474121: link becomes ready
+2026-10-04T11:54:55,296037+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali3eb0d711fef: link becomes ready
+2026-10-04T13:27:55,561887+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali20ee8a19a19: link becomes ready
+2026-10-04T13:29:45,299870+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliaef1368be27: link becomes ready
+2026-10-04T14:14:13,754364+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali13550803748: link becomes ready
+2026-10-04T14:16:01,702152+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali451f69ac0d4: link becomes ready
+2026-10-04T15:00:32,224911+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali5ad83487479: link becomes ready
+2026-10-04T15:02:36,148995+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali7fd1d905848: link becomes ready
+2026-10-04T15:45:27,709811+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calibee9cfdbad5: link becomes ready
+2026-10-04T15:47:34,128440+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie2b62952321: link becomes ready
+2026-10-04T16:26:34,687250+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali36953507140: link becomes ready
+2026-10-04T16:28:27,801189+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali67911475904: link becomes ready
+2026-10-04T17:53:13,411133+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali7ba02b1d27d: link becomes ready
+2026-10-04T17:55:07,639306+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali63a34b9c673: link becomes ready
+2026-10-04T18:33:48,322404+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calid08e1eba33b: link becomes ready
+2026-10-04T18:35:38,470649+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib42aaf88c9d: link becomes ready
+2026-10-04T19:14:27,321262+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib4bb6acb8fe: link becomes ready
+2026-10-04T19:16:26,835149+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calidfd055205e7: link becomes ready
+2026-10-04T19:54:54,078620+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia91338022e4: link becomes ready
+2026-10-04T19:56:46,025968+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calid97592cc4f9: link becomes ready
+2026-10-04T20:35:11,009696+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali53cb2b3e3ea: link becomes ready
+2026-10-04T20:36:59,173123+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliac61c0e5485: link becomes ready
+2026-10-04T21:15:28,675913+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie562a585a72: link becomes ready
+2026-10-04T21:17:14,439792+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali132a9b8f3ff: link becomes ready
+2026-10-05T06:18:51,052382+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali3fe00a8eeb4: link becomes ready
+2026-10-05T06:21:06,817349+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0ade27bc267: link becomes ready
+2026-10-05T06:44:57,105713+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali31a4f8f0de1: link becomes ready
+2026-10-05T06:46:45,830487+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9a3666e0d3c: link becomes ready
+2026-10-05T07:31:11,498512+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali71e20f25405: link becomes ready
+2026-10-05T07:33:08,057139+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali275e65df5d5: link becomes ready
+2026-10-05T10:09:13,234231+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali7e8060f7ac0: link becomes ready
+2026-10-05T10:11:06,464011+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali46582bb319c: link becomes ready
+2026-10-05T10:33:51,148448+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9511ffa4b9b: link becomes ready
+2026-10-05T10:35:38,583858+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali99a32d45b05: link becomes ready
+2026-10-05T11:03:33,438444+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali5935dc3103d: link becomes ready
+2026-10-05T11:05:23,500526+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calidd8dd1318b5: link becomes ready
+2026-10-05T12:39:43,669456+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali39813517b4e: link becomes ready
+2026-10-05T12:41:30,837783+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib9ccfb183f6: link becomes ready
+2026-10-05T12:59:51,793298+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali65178ed2f45: link becomes ready
+2026-10-05T13:01:44,734867+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali3bd5585b0f5: link becomes ready
+2026-10-05T13:19:19,467011+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calid6014e8e6bb: link becomes ready
+2026-10-05T13:21:13,932282+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali96183bcce3a: link becomes ready
+2026-10-05T14:39:27,710875+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calid079212c068: link becomes ready
+2026-10-05T16:07:11,607970+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali1cb90978e9c: link becomes ready
+2026-10-05T16:09:05,137910+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9499b4bcc39: link becomes ready
+2026-10-05T17:24:01,706713+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali676c016b814: link becomes ready
+2026-10-05T17:25:55,634018+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliafab53b3423: link becomes ready
+2026-10-05T18:39:19,433437+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali984476c17b4: link becomes ready
+2026-10-05T18:41:07,592627+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali97260d0a2c8: link becomes ready
+2026-10-05T18:59:50,112540+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calif07344dad13: link becomes ready
+2026-10-05T19:01:37,741001+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie58626edba8: link becomes ready
+2026-10-05T19:19:16,442733+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib3ea2114244: link becomes ready
+2026-10-05T19:21:14,620127+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali39586224278: link becomes ready
+2026-10-05T19:39:07,525319+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia6ce5ed60f9: link becomes ready
+2026-10-05T19:40:53,337504+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali1e5c7c0dd88: link becomes ready
+2026-10-05T20:00:23,581321+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia68749cf3f0: link becomes ready
+2026-10-05T20:02:11,971624+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliac2511b1186: link becomes ready
+2026-10-05T20:20:15,118343+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali020a7e871b4: link becomes ready
+2026-10-05T20:22:13,180928+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali01d4fa168b2: link becomes ready
+2026-10-06T02:49:02,124104+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali665717c8db2: link becomes ready
+2026-10-06T02:50:50,319917+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali12199a28636: link becomes ready
+2026-10-06T08:40:52,700409+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie525ae80d73: link becomes ready
+2026-10-06T08:42:56,663485+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali227aa8ce0fe: link becomes ready
+2026-10-06T09:02:31,258836+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calic75fdac4fbb: link becomes ready
+2026-10-06T09:04:27,770614+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9fc2030fa64: link becomes ready
+2026-10-06T09:38:23,562785+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali905d5a6b1fb: link becomes ready
+2026-10-06T09:40:14,602284+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali6d9107be399: link becomes ready
+2026-10-06T12:09:54,036093+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2da32366a6c: link becomes ready
+2026-10-06T12:11:41,593696+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie7dc069d908: link becomes ready
+2026-10-06T13:58:09,263829+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calidc85b6e4766: link becomes ready
+2026-10-06T14:00:04,291134+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali973ea0172e3: link becomes ready
+2026-10-06T15:29:48,215149+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliaead7f26e97: link becomes ready
+2026-10-07T02:29:37,773247+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2ad5d1d230c: link becomes ready
+2026-10-07T02:31:31,308418+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali4c96fb16f83: link becomes ready
+2026-10-07T04:54:06,815382+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calid5ef31f189f: link becomes ready
+2026-10-07T05:29:36,362957+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia83d6550b1a: link becomes ready
+2026-10-07T05:31:24,124314+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali008f0bdf0bb: link becomes ready
+2026-10-07T05:56:34,639577+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali5a2f5f961f1: link becomes ready
+2026-10-07T05:58:29,087512+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calid566f45c915: link becomes ready
+2026-10-07T07:17:52,016703+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali5779982bf0f: link becomes ready
+2026-10-07T07:38:23,294623+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie2365574408: link becomes ready
+2026-10-07T08:05:58,889079+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calideab97ae6bd: link becomes ready
+2026-10-07T08:07:52,366629+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali20724729202: link becomes ready
+2026-10-07T08:25:01,019801+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali84f9b42368b: link becomes ready
+2026-10-07T08:26:54,583253+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali23409b3088e: link becomes ready
+2026-10-07T09:17:12,850651+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali393fd199af2: link becomes ready
+2026-10-07T09:36:29,537774+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calieab5cd76875: link becomes ready
+2026-10-07T10:09:48,162153+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib5ba065b23d: link becomes ready
+2026-10-07T10:11:41,524431+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali396eacd08cf: link becomes ready
+2026-10-07T10:29:16,925820+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calid25f0feacf2: link becomes ready
+2026-10-07T10:31:12,092398+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali4f9938e6919: link becomes ready
+2026-10-07T12:27:23,747503+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calic62cd07314d: link becomes ready
+2026-10-07T12:46:33,470899+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali23f88585912: link becomes ready
+2026-10-07T16:15:32,341925+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2a47795a069: link becomes ready
+2026-10-07T16:17:31,749588+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0c0bd077e5b: link becomes ready
+2026-10-07T16:37:00,358370+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2c857c95c7a: link becomes ready
+2026-10-07T16:52:59,398359+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali71ecc28aa70: link becomes ready
+2026-10-07T16:55:00,867996+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali1a42173f385: link becomes ready
+2026-10-07T17:19:15,626687+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calicfd8a3e00de: link becomes ready
+2026-10-07T17:35:01,305104+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali3253dd66584: link becomes ready
+2026-10-07T17:36:54,258573+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali4f1159f2554: link becomes ready
+2026-10-07T17:55:15,311763+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali3e93ae0cf13: link becomes ready
+2026-10-08T02:26:29,211241+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9c79efa483e: link becomes ready
+2026-10-08T02:28:39,154636+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali943c64d90ff: link becomes ready
+2026-10-08T02:48:03,624164+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali62b39a35199: link becomes ready
+2026-10-08T03:03:45,240305+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib256af63679: link becomes ready
+2026-10-08T03:05:35,546698+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia671eba4cfb: link becomes ready
+2026-10-08T05:09:50,107851+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali8b3c4268ba6: link becomes ready
+2026-10-08T05:53:35,227575+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calicc5351ec8d8: link becomes ready
+2026-10-08T05:55:39,416175+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calibbb4c88fb14: link becomes ready
+2026-10-08T06:15:02,368837+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali06ca2142d67: link becomes ready
+2026-10-08T06:48:14,700645+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali91428de320b: link becomes ready
+2026-10-08T06:50:40,756565+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calicde88b72bc3: link becomes ready
+2026-10-08T07:09:30,939023+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliaa18d233d90: link becomes ready
+2026-10-08T07:25:44,294604+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calif50417701d2: link becomes ready
+2026-10-08T07:27:50,102260+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali27a202fbc85: link becomes ready
+2026-10-08T09:26:22,858929+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali70f8358487f: link becomes ready
+2026-10-08T09:42:12,119223+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliae423c02d92: link becomes ready
+2026-10-08T09:44:10,699559+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali055c2ca2db3: link becomes ready
+2026-10-08T10:25:39,564121+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali68d8cda94da: link becomes ready
+2026-10-08T10:41:25,489152+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie144e83b686: link becomes ready
+2026-10-08T10:43:42,777597+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali16220ac7fc1: link becomes ready
+2026-10-08T11:01:51,117760+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali309bafca78d: link becomes ready
+2026-10-08T13:04:29,430191+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali6f8ef74e14e: link becomes ready
+2026-10-08T13:06:33,580224+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali379af7d488f: link becomes ready
+2026-10-08T13:56:24,055635+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali66d67d08cec: link becomes ready
+2026-10-08T13:58:27,610772+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calif0fb2695cfb: link becomes ready
+2026-10-08T14:32:51,529345+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliee1e4607893: link becomes ready
+2026-10-08T14:34:53,925639+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali093557a84bb: link becomes ready
+2026-10-08T15:56:07,900451+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali84fb48ada23: link becomes ready
+2026-10-08T15:58:08,412573+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie510d8f7a7c: link becomes ready
+2026-10-08T17:26:37,174551+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali8b49d346d7d: link becomes ready
+2026-10-08T17:28:40,972791+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali10c68dc83d3: link becomes ready
+2026-10-08T18:47:18,130661+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib9b22deabb5: link becomes ready
+2026-10-08T18:49:09,013624+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali81fde732aa6: link becomes ready
+2026-10-08T20:06:31,570113+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0456ee7f843: link becomes ready
+2026-10-08T20:08:40,752719+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali6474cd68a92: link becomes ready
+2026-10-09T02:54:04,255672+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali4c41c8b4d76: link becomes ready
+2026-10-09T02:56:18,760654+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0a658856213: link becomes ready
+2026-10-09T04:14:28,306116+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calief09f03e643: link becomes ready
+2026-10-09T04:16:39,745292+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali6fab1a6d659: link becomes ready
+2026-10-09T06:08:54,220414+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2d9a4163f01: link becomes ready
+2026-10-09T06:11:19,238338+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali20ab7233805: link becomes ready
+2026-10-09T09:21:16,352625+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliad8ec161f4f: link becomes ready
+2026-10-09T09:29:06,092861+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali781c21c6cb9: link becomes ready
+2026-10-09T09:55:15,569239+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali537c1908a5f: link becomes ready
+2026-10-09T10:02:26,467668+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0b6b38fedf9: link becomes ready
+2026-10-09T12:45:57,651566+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali903397e1c74: link becomes ready
+2026-10-09T15:02:57,683633+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib91e69f7fe9: link becomes ready
+2026-10-09T16:43:35,093321+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali38a2aa40f6d: link becomes ready
+2026-10-10T08:29:48,412053+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali83e379db1c2: link becomes ready
+2026-10-10T09:54:37,839304+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): eth0: link becomes ready
+2026-10-10T09:54:37,839436+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali7c6e5292ee8: link becomes ready
+2026-10-10T11:17:19,197037+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9fe7c1aa484: link becomes ready
+2026-10-10T13:03:11,265055+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calif980972c004: link becomes ready
+2026-10-10T13:06:35,034971+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calidebce3b8785: link becomes ready
+2026-10-10T14:25:42,240785+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali4e74ef19a24: link becomes ready
+2026-10-10T14:28:24,436735+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali6f5e2ca3580: link becomes ready
+2026-10-10T15:08:28,258478+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali820c9367eca: link becomes ready
+2026-10-10T15:10:27,064185+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calibe43e940d6e: link becomes ready
+2026-10-10T16:28:31,906595+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali250b5187fe8: link becomes ready
+2026-10-10T16:30:25,129985+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali95cdb3d7a82: link becomes ready
+2026-10-10T17:56:05,076855+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0e1054073e4: link becomes ready
+2026-10-10T18:02:36,374556+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calife68612f86b: link becomes ready
+2026-10-10T19:21:09,604605+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali3e5b35e3528: link becomes ready
+2026-10-11T00:05:10,934195+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali309131df5f0: link becomes ready
+2026-10-11T01:23:23,996114+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2d6aba87d94: link becomes ready
+2026-10-11T09:00:49,181449+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2feaa574ad0: link becomes ready
+2026-10-11T09:52:13,268301+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali7873c120d66: link becomes ready
+2026-10-11T12:06:36,041408+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali2df837c5dfd: link becomes ready
+2026-10-11T13:26:03,063941+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia54813c3245: link becomes ready
+2026-10-11T14:51:42,688602+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali01679dbcd6a: link becomes ready
+2026-10-11T16:14:32,222673+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia24aff76070: link becomes ready
+2026-10-11T17:42:55,685261+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali7a5ad5098fd: link becomes ready
+2026-10-11T18:01:35,415883+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0de78f3d1b4: link becomes ready
+2026-10-11T18:19:32,755919+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9490eee5bd1: link becomes ready
+2026-10-11T18:37:34,391830+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calic601672a7de: link becomes ready
+2026-10-11T18:55:03,947779+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali61b6012b8c6: link becomes ready
+2026-10-12T02:06:57,451547+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib75f4c81f1a: link becomes ready
+2026-10-12T03:16:03,319416+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali25f02f2360e: link becomes ready
+2026-10-12T03:21:18,740163+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliee388a5fd53: link becomes ready
+2026-10-12T03:40:48,625004+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie6638653f52: link becomes ready
+2026-10-12T10:42:26,716036+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0dab5e4c714: link becomes ready
+2026-10-12T10:46:44,021766+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali90234a282ac: link becomes ready
+2026-10-12T13:50:17,512306+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali496846c9f44: link becomes ready
+2026-10-13T08:56:34,459994+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali84724de8cae: link becomes ready
+2026-10-13T09:00:48,461419+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali0ea2826acc3: link becomes ready
+2026-10-13T09:42:37,144977+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali03c81c8148c: link becomes ready
+2026-10-13T09:46:12,882215+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali34696637d74: link becomes ready
+2026-10-13T11:59:20,909598+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliaa45aa3dfc2: link becomes ready
+2026-10-13T13:14:41,475028+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali33307ed252d: link becomes ready
+2026-10-13T14:09:18,742359+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia262cd7ad7d: link becomes ready
+2026-10-13T14:13:01,249996+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calif286bdbbf85: link becomes ready
+2026-10-13T15:27:07,626998+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali6d856c01776: link becomes ready
+2026-10-13T15:30:59,701363+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali7c0e4c986d5: link becomes ready
+2026-10-14T16:52:59,714480+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calid50efc68064: link becomes ready
+2026-10-14T17:16:36,453812+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali22ce3a68d7b: link becomes ready
+2026-10-15T12:44:27,913162+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali527cd7c820b: link becomes ready
+2026-10-15T12:50:24,142099+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali8de28a5133a: link becomes ready
+2026-10-17T13:44:18,456561+00:00 kauditd_printk_skb: 4 callbacks suppressed
+2026-10-17T13:44:18,456577+00:00 audit: type=1400 audit(1792244686.744:56): apparmor="DENIED" operation="signal" profile="cri-containerd.apparmor.d" pid=603446 comm="vllm" requested_mask="send" denied_mask="send" signal=term peer="unconfined"
+2026-10-17T13:44:18,456587+00:00 audit: type=1400 audit(1792244686.744:57): apparmor="DENIED" operation="signal" profile="cri-containerd.apparmor.d" pid=603446 comm="vllm" requested_mask="send" denied_mask="send" signal=term peer="unconfined"
+2026-10-17T13:44:18,456595+00:00 audit: type=1400 audit(1792244686.744:58): apparmor="DENIED" operation="signal" profile="cri-containerd.apparmor.d" pid=603446 comm="vllm" requested_mask="send" denied_mask="send" signal=term peer="unconfined"
+2026-10-17T13:44:18,456602+00:00 audit: type=1400 audit(1792244686.744:59): apparmor="DENIED" operation="signal" profile="cri-containerd.apparmor.d" pid=603446 comm="vllm" requested_mask="send" denied_mask="send" signal=term peer="unconfined"
+2026-10-17T14:13:50,420353+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie21a37f83dd: link becomes ready
+2026-10-17T14:17:09,995286+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali4d2a05e4f4a: link becomes ready
+2026-10-17T16:04:29,725031+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calid32a861876b: link becomes ready
+2026-10-17T16:06:30,596770+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali877b160e3d7: link becomes ready
+2026-10-17T17:06:22,481795+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia82d39e8ab3: link becomes ready
+2026-10-17T17:08:17,525446+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia294b0f45aa: link becomes ready
+2026-10-17T18:52:35,751836+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali7a0db666fe6: link becomes ready
+2026-10-17T18:54:39,970694+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calib9410bc327a: link becomes ready
+2026-10-17T19:36:36,459883+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calic3507dfe0e3: link becomes ready
+2026-10-18T05:24:33,762583+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9afc3295e84: link becomes ready
+2026-10-18T05:26:45,975195+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): caliaf111b0d618: link becomes ready
+2026-10-18T06:42:42,351091+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calic300be769ae: link becomes ready
+2026-10-18T06:44:42,233406+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali91170af8d12: link becomes ready
+2026-10-18T08:00:32,369453+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9447c4e3311: link becomes ready
+2026-10-18T08:02:20,149918+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali77f9b0f5c08: link becomes ready
+2026-10-18T09:19:30,696662+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calic01e2fccbea: link becomes ready
+2026-10-18T09:21:26,279030+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calia1db65b6595: link becomes ready
+2026-10-18T10:09:09,885799+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calie81a0487e6c: link becomes ready
+2026-10-18T10:11:01,249671+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali91aca29d3ed: link becomes ready

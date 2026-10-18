@@ -1,0 +1,314 @@
+[
+  {
+    "type": "Normal",
+    "reason": "RolloutUpdated",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout updated to revision 400",
+    "first_timestamp": "2026-10-18T09:19:58Z",
+    "last_timestamp": "2026-10-18T09:19:58Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "RolloutNotCompleted",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout not completed, started update to revision 401 (558f4bb78f)",
+    "first_timestamp": "2026-10-18T09:19:58Z",
+    "last_timestamp": "2026-10-18T09:19:58Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SwitchService",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Switched selector for service 'vllm-preview' from '848f66bcb6' to '558f4bb78f'",
+    "first_timestamp": "2026-10-18T09:19:58Z",
+    "last_timestamp": "2026-10-18T09:19:58Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "NewReplicaSetCreated",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Created ReplicaSet vllm-serving-558f4bb78f (revision 400)",
+    "first_timestamp": "2026-10-18T09:19:58Z",
+    "last_timestamp": "2026-10-18T09:19:58Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "ScalingReplicaSet",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Scaled up ReplicaSet vllm-serving-558f4bb78f (revision 400) from 0 to 1",
+    "first_timestamp": "2026-10-18T09:19:59Z",
+    "last_timestamp": "2026-10-18T09:19:59Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SuccessfulCreate",
+    "involved_object": {
+      "kind": "ReplicaSet",
+      "name": "vllm-serving-558f4bb78f",
+      "uid": "9baae673-3f41-421d-a598-4aa9ded0b5ed"
+    },
+    "message": "Created pod: vllm-serving-558f4bb78f-zk4td",
+    "first_timestamp": "2026-10-18T09:19:59Z",
+    "last_timestamp": "2026-10-18T09:19:59Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Scheduled",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-558f4bb78f-zk4td",
+      "uid": "3bb695ce-c5fb-4865-9d54-6f124dedc3ad"
+    },
+    "message": "Successfully assigned vllm-serving/vllm-serving-558f4bb78f-zk4td to sj-worker2",
+    "first_timestamp": "2026-10-18T09:19:59Z",
+    "last_timestamp": "2026-10-18T09:19:59Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Pulled",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-558f4bb78f-zk4td",
+      "uid": "3bb695ce-c5fb-4865-9d54-6f124dedc3ad"
+    },
+    "message": "Container image \"vllm-cpu-env:latest\" already present on machine",
+    "first_timestamp": "2026-10-18T09:20:01Z",
+    "last_timestamp": "2026-10-18T09:20:01Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Started",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-558f4bb78f-zk4td",
+      "uid": "3bb695ce-c5fb-4865-9d54-6f124dedc3ad"
+    },
+    "message": "Started container vllm",
+    "first_timestamp": "2026-10-18T09:20:03Z",
+    "last_timestamp": "2026-10-18T09:20:03Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Created",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-558f4bb78f-zk4td",
+      "uid": "3bb695ce-c5fb-4865-9d54-6f124dedc3ad"
+    },
+    "message": "Created container: vllm",
+    "first_timestamp": "2026-10-18T09:20:03Z",
+    "last_timestamp": "2026-10-18T09:20:03Z",
+    "count": 1
+  },
+  {
+    "type": "Warning",
+    "reason": "Unhealthy",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-558f4bb78f-zk4td",
+      "uid": "3bb695ce-c5fb-4865-9d54-6f124dedc3ad"
+    },
+    "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+    "first_timestamp": "2026-10-18T09:20:09Z",
+    "last_timestamp": "2026-10-18T09:21:19Z",
+    "count": 8
+  },
+  {
+    "type": "Normal",
+    "reason": "RolloutPaused",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout is paused (BlueGreenPause)",
+    "first_timestamp": "2026-09-30T13:21:01Z",
+    "last_timestamp": "2026-10-18T09:21:46Z",
+    "count": 153
+  },
+  {
+    "type": "Normal",
+    "reason": "Scheduled",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-01f49c02",
+      "uid": "8019ef88-18d1-4d2f-8d57-1178afc992c8"
+    },
+    "message": "Successfully assigned vllm-serving/ramp-probe-01f49c02 to sj-worker2",
+    "first_timestamp": "2026-10-18T09:21:52Z",
+    "last_timestamp": "2026-10-18T09:21:52Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Pulled",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-01f49c02",
+      "uid": "8019ef88-18d1-4d2f-8d57-1178afc992c8"
+    },
+    "message": "Container image \"loadgen-runner:phase8-v4-forceclose-20261002\" already present on machine",
+    "first_timestamp": "2026-10-18T09:21:56Z",
+    "last_timestamp": "2026-10-18T09:21:56Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Created",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-01f49c02",
+      "uid": "8019ef88-18d1-4d2f-8d57-1178afc992c8"
+    },
+    "message": "Created container: ramp-probe-01f49c02",
+    "first_timestamp": "2026-10-18T09:21:57Z",
+    "last_timestamp": "2026-10-18T09:21:57Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Started",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-01f49c02",
+      "uid": "8019ef88-18d1-4d2f-8d57-1178afc992c8"
+    },
+    "message": "Started container ramp-probe-01f49c02",
+    "first_timestamp": "2026-10-18T09:21:58Z",
+    "last_timestamp": "2026-10-18T09:21:58Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Killing",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-01f49c02",
+      "uid": "8019ef88-18d1-4d2f-8d57-1178afc992c8"
+    },
+    "message": "Stopping container ramp-probe-01f49c02",
+    "first_timestamp": "2026-10-18T09:24:24Z",
+    "last_timestamp": "2026-10-18T09:24:24Z",
+    "count": 1
+  },
+  {
+    "type": "Warning",
+    "reason": "RolloutAborted",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout aborted update to revision 400",
+    "first_timestamp": "2026-10-18T09:24:59Z",
+    "last_timestamp": "2026-10-18T09:24:59Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SuccessfulDelete",
+    "involved_object": {
+      "kind": "ReplicaSet",
+      "name": "vllm-serving-558f4bb78f",
+      "uid": "9baae673-3f41-421d-a598-4aa9ded0b5ed"
+    },
+    "message": "Deleted pod: vllm-serving-558f4bb78f-zk4td",
+    "first_timestamp": "2026-10-18T09:25:29Z",
+    "last_timestamp": "2026-10-18T09:25:29Z",
+    "count": 1
+  },
+  {
+    "type": "Warning",
+    "reason": "Unhealthy",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-558f4bb78f-zk4td",
+      "uid": "3bb695ce-c5fb-4865-9d54-6f124dedc3ad"
+    },
+    "message": "Readiness probe failed: Get \"http://10.244.224.202:8000/health\": dial tcp 10.244.224.202:8000: connect: connection refused",
+    "first_timestamp": "2026-10-18T09:25:29Z",
+    "last_timestamp": "2026-10-18T09:25:29Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Killing",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-558f4bb78f-zk4td",
+      "uid": "3bb695ce-c5fb-4865-9d54-6f124dedc3ad"
+    },
+    "message": "Stopping container vllm",
+    "first_timestamp": "2026-10-18T09:25:29Z",
+    "last_timestamp": "2026-10-18T09:25:29Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "ScalingReplicaSet",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Scaled down ReplicaSet vllm-serving-558f4bb78f (revision 400) from 1 to 0",
+    "first_timestamp": "2026-10-18T09:25:29Z",
+    "last_timestamp": "2026-10-18T09:25:29Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "RolloutUpdated",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout updated to revision 401",
+    "first_timestamp": "2026-10-18T09:25:35Z",
+    "last_timestamp": "2026-10-18T09:25:35Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SwitchService",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Switched selector for service 'vllm-preview' from '558f4bb78f' to '848f66bcb6'",
+    "first_timestamp": "2026-10-18T09:25:35Z",
+    "last_timestamp": "2026-10-18T09:25:35Z",
+    "count": 1
+  }
+]

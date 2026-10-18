@@ -1,0 +1,35 @@
+{
+ "seq": 103,
+ "node": "sj-worker2",
+ "ssh_host": "capstone-worker2",
+ "started_utc": "2026-10-17T15:10:12.310203+00:00",
+ "timeout_sec": 40.0,
+ "stages_remote": {
+  "T0": "1792249813.757327186",
+  "T1": "1792249813.766143785",
+  "T2": "rc=0 1792249813.792401503"
+ },
+ "stages_local_rel_sec": {
+  "T0": 1.361,
+  "T1": 1.361,
+  "T2": 1.378
+ },
+ "first_stdout_rel_sec": 1.361,
+ "last_stdout_rel_sec": 1.378,
+ "timed_out": false,
+ "returncode": 0,
+ "ended_utc": "2026-10-17T15:10:13.693387+00:00",
+ "elapsed_sec": 1.383,
+ "observed": "exited_after_completion_marker",
+ "last_stage": "T2",
+ "reader_errors": [],
+ "readers_alive_after_join": [
+  false,
+  false
+ ],
+ "stdout_bytes": 80486,
+ "stderr_bytes": 125,
+ "stdout_file": "20261017T141408690588Z-0103-sj-worker2.stdout",
+ "stderr_file": "20261017T141408690588Z-0103-sj-worker2.stderr",
+ "judged_returncode": 0
+}

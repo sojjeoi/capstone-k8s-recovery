@@ -1,0 +1,509 @@
+[
+  {
+    "type": "Normal",
+    "reason": "Scheduled",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-65c6d5559d-zr5qx",
+      "uid": "436924aa-9763-460a-8fa4-c9101b18c7ae"
+    },
+    "message": "Successfully assigned vllm-serving/vllm-serving-65c6d5559d-zr5qx to sj-worker",
+    "first_timestamp": "2026-10-18T14:49:20Z",
+    "last_timestamp": "2026-10-18T14:49:20Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "ScalingReplicaSet",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Scaled up ReplicaSet vllm-serving-65c6d5559d (revision 413) from 0 to 1",
+    "first_timestamp": "2026-10-18T14:49:20Z",
+    "last_timestamp": "2026-10-18T14:49:20Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "RolloutNotCompleted",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout not completed, started update to revision 414 (65c6d5559d)",
+    "first_timestamp": "2026-10-18T14:49:20Z",
+    "last_timestamp": "2026-10-18T14:49:20Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SwitchService",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Switched selector for service 'vllm-preview' from '5877dd45bc' to '65c6d5559d'",
+    "first_timestamp": "2026-10-18T14:49:20Z",
+    "last_timestamp": "2026-10-18T14:49:20Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "NewReplicaSetCreated",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Created ReplicaSet vllm-serving-65c6d5559d (revision 413)",
+    "first_timestamp": "2026-10-18T14:49:20Z",
+    "last_timestamp": "2026-10-18T14:49:20Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "RolloutUpdated",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout updated to revision 413",
+    "first_timestamp": "2026-10-18T14:49:20Z",
+    "last_timestamp": "2026-10-18T14:49:20Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SuccessfulCreate",
+    "involved_object": {
+      "kind": "ReplicaSet",
+      "name": "vllm-serving-65c6d5559d",
+      "uid": "e77141f3-770a-4245-9fb5-48304a0024eb"
+    },
+    "message": "Created pod: vllm-serving-65c6d5559d-zr5qx",
+    "first_timestamp": "2026-10-18T14:49:20Z",
+    "last_timestamp": "2026-10-18T14:49:20Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Pulled",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-65c6d5559d-zr5qx",
+      "uid": "436924aa-9763-460a-8fa4-c9101b18c7ae"
+    },
+    "message": "Container image \"vllm-cpu-env:latest\" already present on machine",
+    "first_timestamp": "2026-10-18T14:49:22Z",
+    "last_timestamp": "2026-10-18T14:49:22Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Created",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-65c6d5559d-zr5qx",
+      "uid": "436924aa-9763-460a-8fa4-c9101b18c7ae"
+    },
+    "message": "Created container: vllm",
+    "first_timestamp": "2026-10-18T14:49:23Z",
+    "last_timestamp": "2026-10-18T14:49:23Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Started",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-65c6d5559d-zr5qx",
+      "uid": "436924aa-9763-460a-8fa4-c9101b18c7ae"
+    },
+    "message": "Started container vllm",
+    "first_timestamp": "2026-10-18T14:49:24Z",
+    "last_timestamp": "2026-10-18T14:49:24Z",
+    "count": 1
+  },
+  {
+    "type": "Warning",
+    "reason": "Unhealthy",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-65c6d5559d-zr5qx",
+      "uid": "436924aa-9763-460a-8fa4-c9101b18c7ae"
+    },
+    "message": "Startup probe failed: 서버 연결 실패: [Errno 111] Connection refused\n",
+    "first_timestamp": "2026-10-18T14:49:32Z",
+    "last_timestamp": "2026-10-18T14:53:03Z",
+    "count": 22
+  },
+  {
+    "type": "Normal",
+    "reason": "RolloutPaused",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout is paused (BlueGreenPause)",
+    "first_timestamp": "2026-09-30T13:21:01Z",
+    "last_timestamp": "2026-10-18T14:54:25Z",
+    "count": 160
+  },
+  {
+    "type": "Normal",
+    "reason": "Scheduled",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-7879fe36",
+      "uid": "49618a81-d582-466e-a6b8-30520c66d079"
+    },
+    "message": "Successfully assigned vllm-serving/ramp-probe-7879fe36 to sj-worker2",
+    "first_timestamp": "2026-10-18T14:54:26Z",
+    "last_timestamp": "2026-10-18T14:54:26Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Pulled",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-7879fe36",
+      "uid": "49618a81-d582-466e-a6b8-30520c66d079"
+    },
+    "message": "Container image \"loadgen-runner:phase8-v4-forceclose-20261002\" already present on machine",
+    "first_timestamp": "2026-10-18T14:54:29Z",
+    "last_timestamp": "2026-10-18T14:54:29Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Started",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-7879fe36",
+      "uid": "49618a81-d582-466e-a6b8-30520c66d079"
+    },
+    "message": "Started container ramp-probe-7879fe36",
+    "first_timestamp": "2026-10-18T14:54:30Z",
+    "last_timestamp": "2026-10-18T14:54:30Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Created",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-7879fe36",
+      "uid": "49618a81-d582-466e-a6b8-30520c66d079"
+    },
+    "message": "Created container: ramp-probe-7879fe36",
+    "first_timestamp": "2026-10-18T14:54:30Z",
+    "last_timestamp": "2026-10-18T14:54:30Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Started",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Experiment has started",
+    "first_timestamp": "2026-10-18T14:56:56Z",
+    "last_timestamp": "2026-10-18T14:56:56Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully update finalizer of resource",
+    "first_timestamp": "2026-10-18T14:56:56Z",
+    "last_timestamp": "2026-10-18T14:56:56Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "FinalizerInited",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Finalizer has been inited",
+    "first_timestamp": "2026-10-18T14:56:56Z",
+    "last_timestamp": "2026-10-18T14:56:56Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully update records of resource",
+    "first_timestamp": "2026-10-18T14:56:57Z",
+    "last_timestamp": "2026-10-18T14:56:57Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully update desiredPhase of resource",
+    "first_timestamp": "2026-10-18T14:56:57Z",
+    "last_timestamp": "2026-10-18T14:56:57Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Applied",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully apply chaos for vllm-serving/vllm-serving-5877dd45bc-h6qqf",
+    "first_timestamp": "2026-10-18T14:57:02Z",
+    "last_timestamp": "2026-10-18T14:57:02Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully update records of resource",
+    "first_timestamp": "2026-10-18T14:57:02Z",
+    "last_timestamp": "2026-10-18T14:57:02Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "PodNetworkChaos",
+      "name": "vllm-serving-5877dd45bc-h6qqf",
+      "uid": "7e84df2c-3ab6-4b30-a422-b85ca69e3f98"
+    },
+    "message": "Successfully update ObservedGeneration and FailedMessage of resource",
+    "first_timestamp": "2026-10-18T14:57:02Z",
+    "last_timestamp": "2026-10-18T14:57:02Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "RolloutCompleted",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Rollout completed update to revision 413 (65c6d5559d): Completed blue-green update",
+    "first_timestamp": "2026-10-18T14:58:11Z",
+    "last_timestamp": "2026-10-18T14:58:11Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SwitchService",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Switched selector for service 'vllm-active' from '5877dd45bc' to '65c6d5559d'",
+    "first_timestamp": "2026-10-18T14:58:11Z",
+    "last_timestamp": "2026-10-18T14:58:11Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Recovered",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully recover chaos for vllm-serving/vllm-serving-5877dd45bc-h6qqf",
+    "first_timestamp": "2026-10-18T14:58:27Z",
+    "last_timestamp": "2026-10-18T14:58:27Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Deleted",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Experiment has been deleted",
+    "first_timestamp": "2026-10-18T14:58:27Z",
+    "last_timestamp": "2026-10-18T14:58:27Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "PodNetworkChaos",
+      "name": "vllm-serving-5877dd45bc-h6qqf",
+      "uid": "7e84df2c-3ab6-4b30-a422-b85ca69e3f98"
+    },
+    "message": "Successfully update ObservedGeneration and FailedMessage of resource",
+    "first_timestamp": "2026-10-18T14:58:27Z",
+    "last_timestamp": "2026-10-18T14:58:27Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully update desiredPhase of resource",
+    "first_timestamp": "2026-10-18T14:58:27Z",
+    "last_timestamp": "2026-10-18T14:58:27Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully update records of resource",
+    "first_timestamp": "2026-10-18T14:58:27Z",
+    "last_timestamp": "2026-10-18T14:58:27Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully update finalizer of resource",
+    "first_timestamp": "2026-10-18T14:58:27Z",
+    "last_timestamp": "2026-10-18T14:58:27Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "FinalizerInited",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Finalizer has been removed",
+    "first_timestamp": "2026-10-18T14:58:27Z",
+    "last_timestamp": "2026-10-18T14:58:27Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Updated",
+    "involved_object": {
+      "kind": "NetworkChaos",
+      "name": "netdelay-guarded-pressure-act-n2s02-cap-p2-net-v1-stage2-s0-434e85",
+      "uid": "704f3686-851b-4339-ac7d-4c655fd63f9a"
+    },
+    "message": "Successfully update records of resource",
+    "first_timestamp": "2026-10-18T14:58:27Z",
+    "last_timestamp": "2026-10-18T14:58:27Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Killing",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-5877dd45bc-h6qqf",
+      "uid": "a1017d43-e441-4489-94d4-cd255547cd9d"
+    },
+    "message": "Stopping container vllm",
+    "first_timestamp": "2026-10-18T15:05:11Z",
+    "last_timestamp": "2026-10-18T15:05:11Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "SuccessfulDelete",
+    "involved_object": {
+      "kind": "ReplicaSet",
+      "name": "vllm-serving-5877dd45bc",
+      "uid": "ba1d1c3d-72a2-48d5-b9da-cf03d8f85566"
+    },
+    "message": "Deleted pod: vllm-serving-5877dd45bc-h6qqf",
+    "first_timestamp": "2026-10-18T15:05:11Z",
+    "last_timestamp": "2026-10-18T15:05:11Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "ScalingReplicaSet",
+    "involved_object": {
+      "kind": "Rollout",
+      "name": "vllm-serving",
+      "uid": "8e07240c-6cad-44b5-9990-1c76c19a174a"
+    },
+    "message": "Scaled down ReplicaSet vllm-serving-5877dd45bc (revision 412) from 1 to 0",
+    "first_timestamp": "2026-10-18T15:05:11Z",
+    "last_timestamp": "2026-10-18T15:05:11Z",
+    "count": 1
+  },
+  {
+    "type": "Warning",
+    "reason": "Unhealthy",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "vllm-serving-5877dd45bc-h6qqf",
+      "uid": "a1017d43-e441-4489-94d4-cd255547cd9d"
+    },
+    "message": "Readiness probe failed: Get \"http://10.244.224.216:8000/health\": dial tcp 10.244.224.216:8000: connect: connection refused",
+    "first_timestamp": "2026-10-18T15:05:13Z",
+    "last_timestamp": "2026-10-18T15:05:13Z",
+    "count": 1
+  },
+  {
+    "type": "Normal",
+    "reason": "Killing",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-7879fe36",
+      "uid": "49618a81-d582-466e-a6b8-30520c66d079"
+    },
+    "message": "Stopping container ramp-probe-7879fe36",
+    "first_timestamp": "2026-10-18T15:07:04Z",
+    "last_timestamp": "2026-10-18T15:07:04Z",
+    "count": 1
+  }
+]

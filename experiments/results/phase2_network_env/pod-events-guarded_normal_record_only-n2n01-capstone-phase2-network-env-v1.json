@@ -1,0 +1,15 @@
+[
+  {
+    "type": "Normal",
+    "reason": "Killing",
+    "involved_object": {
+      "kind": "Pod",
+      "name": "ramp-probe-c03b72fc",
+      "uid": "3fa5aa16-3288-4c65-90a2-d1c8ff3358f1"
+    },
+    "message": "Stopping container ramp-probe-c03b72fc",
+    "first_timestamp": "2026-10-17T15:21:50Z",
+    "last_timestamp": "2026-10-17T15:21:50Z",
+    "count": 1
+  }
+]

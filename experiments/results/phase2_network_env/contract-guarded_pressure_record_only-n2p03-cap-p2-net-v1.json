@@ -1,0 +1,93 @@
+{
+  "run_id": "guarded_pressure_record_only-n2p03-cap-p2-net-v1",
+  "run": "n2p03",
+  "plan_id": "capstone-phase2-network-env-v1",
+  "contract_doc": "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev4.md",
+  "comparison": {
+    "series": "capstone-phase2-network-env-v1",
+    "stage": "stage1",
+    "session": "n2p03",
+    "counted_in_comparison": true
+  },
+  "conditions": {
+    "stress_stages": [
+      {
+        "name": "stage-1-500ms",
+        "latency": "500ms",
+        "jitter": "50ms",
+        "duration_sec": 90
+      },
+      {
+        "name": "stage-2-1000ms",
+        "latency": "1000ms",
+        "jitter": "100ms",
+        "duration_sec": 90
+      },
+      {
+        "name": "stage-3-2000ms",
+        "latency": "2000ms",
+        "jitter": "200ms",
+        "duration_sec": 90
+      },
+      {
+        "name": "stage-4-4000ms",
+        "latency": "4000ms",
+        "jitter": "400ms",
+        "duration_sec": 90
+      }
+    ],
+    "probe_config": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\chaos\\probe-config.yaml",
+    "probe_config_sha256": "36ec46ee19a01ce348abb95b65c1b45dc6074ab43fddc07bbe2313deab777851",
+    "probe_image": "loadgen-runner:phase8-v4-forceclose-20261002",
+    "probe_image_id": "sha256:266c266476641d1d16dda4777905a2dbe1ee2155d45f0fa2e2ce9b881ae2048b",
+    "detector_rule": {
+      "consecutive": 3,
+      "cooldown_sec": 60
+    },
+    "start_state_rule": "canonical_healthy_r2",
+    "probe_profile": {
+      "name": "network_tolerant",
+      "readiness_timeout_sec": 11,
+      "liveness_timeout_sec": 11
+    },
+    "network_target": "active Pod 1개(이름 지정, preview·새 Pod 제외)",
+    "cr_duration_margin_sec": 60
+  },
+  "kind": "pressure",
+  "mode": "record_only",
+  "actuating_rule": null,
+  "signal_send": false,
+  "detector": "phase2_network_same_tick_v1",
+  "threshold": {
+    "cpu-threshold-c": 1.6842544293089357,
+    "net-probe-readiness": 0.006401369666666786,
+    "c3-a-if": -0.1948341270493127
+  },
+  "artifact_hashes": {
+    "feature-schema.json": "9d8ddb6eb45448361015f58c42c7189af59b649b5f52781c677b8f33a45fbc51",
+    "freeze.json": "3fa6c1696ab3dd2f0c1b1e1db8fd4398c9c7b2a5c8794a4e3e5431c828700e3c",
+    "model.pkl": "24cec78e658833dd24957ff49a8c39499403db2a7e8a0c7e752aff61ba3668cf",
+    "scaler.pkl": "7970aa165606bfca1d632af448ddbf502e1596a6fdcbb3d8eaa5393f7da1a67e",
+    "threshold.json": "47eb6ff2c9618586e788507f45b10c1bd5d78ac7a32ad3dc4d551b2abf2266dd"
+  },
+  "observation_sec": 600.0,
+  "ready_timeout_sec": 300.0,
+  "scale_down_delay": {
+    "base": 30,
+    "changed": false
+  },
+  "act_approval": null,
+  "no_promotion_path": true,
+  "environment_profile_sha256": "ebf0850f7d08b748c7e07663fc6db813bdd8a9794dcba97e92850356ae337b5b",
+  "net_probe": {
+    "definition_sha256": "46c95eed9920c8ddd59dc816960fc4a7c1c96b5a61c95cca2d19e27c6c0167a6",
+    "threshold": 0.006401369666666786
+  },
+  "code_provenance": {
+    "manifest": "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r6.json",
+    "manifest_sha256": "331a8aad22d9e98c51914aa2aa0b3f0a69db598751b03260740260ff83ec0468",
+    "verified_files": 301,
+    "selection_profile_sha256": "ebf0850f7d08b748c7e07663fc6db813bdd8a9794dcba97e92850356ae337b5b",
+    "status": "verified"
+  }
+}

@@ -1,0 +1,35 @@
+{
+ "seq": 1,
+ "node": "sj-control",
+ "ssh_host": "capstone-control",
+ "started_utc": "2026-10-18T10:08:58.573409+00:00",
+ "timeout_sec": 40.0,
+ "stages_remote": {
+  "T0": "1792318140.069853067",
+  "T1": "1792318140.080550525",
+  "T2": "rc=0 1792318140.124170744"
+ },
+ "stages_local_rel_sec": {
+  "T0": 1.445,
+  "T1": 1.445,
+  "T2": 1.465
+ },
+ "first_stdout_rel_sec": 1.445,
+ "last_stdout_rel_sec": 1.465,
+ "timed_out": false,
+ "returncode": 0,
+ "ended_utc": "2026-10-18T10:09:00.042130+00:00",
+ "elapsed_sec": 1.469,
+ "observed": "exited_after_completion_marker",
+ "last_stage": "T2",
+ "reader_errors": [],
+ "readers_alive_after_join": [
+  false,
+  false
+ ],
+ "stdout_bytes": 80132,
+ "stderr_bytes": 125,
+ "stdout_file": "20261018T100858439905Z-0001-sj-control.stdout",
+ "stderr_file": "20261018T100858439905Z-0001-sj-control.stderr",
+ "judged_returncode": 0
+}

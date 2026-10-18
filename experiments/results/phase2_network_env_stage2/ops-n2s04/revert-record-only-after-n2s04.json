@@ -1,0 +1,41 @@
+{
+ "label": "revert-record-only-after-n2s04",
+ "mode": "record_only",
+ "started_utc": "2026-10-18T16:13:55.192521+00:00",
+ "procedure": "kubectl set env + rollout status + identity/state 확인(Phase 2 bc90_switch와 같은 단계)",
+ "set_env": {
+  "rc": 0,
+  "out": "deployment.apps/guarded-recovery-policy env updated",
+  "err": "",
+  "at_utc": "2026-10-18T16:13:55.363102+00:00"
+ },
+ "rollout": {
+  "rc": 0,
+  "out": "Waiting for deployment \"guarded-recovery-policy\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"guarded-recovery-policy\" rollout to finish: 0 out of 1 new replicas have been updated...\nWaiting for deployment \"guarded-recovery-policy\" rollout to finish: 0 of 1 updated replicas are available...\ndeployment \"guarded-recovery-policy\" successfully rolled out",
+  "err": "",
+  "at_utc": "2026-10-18T16:14:23.375140+00:00"
+ },
+ "identity": {
+  "role": "guarded-recovery-policy",
+  "version": "guarded-v1",
+  "mode": "record_only",
+  "timing": {
+   "max_signal_age_sec": 15.0,
+   "max_future_skew_sec": 2.0,
+   "max_window_to_decision_sec": 10.0
+  },
+  "actions_enabled": false
+ },
+ "state": {
+  "state_available": true,
+  "mode": "record_only",
+  "schema_version": "c1-signal-v2",
+  "context": null,
+  "blocked": null,
+  "unresolved": {},
+  "actions": {}
+ },
+ "ok": true,
+ "problems": [],
+ "ended_utc": "2026-10-18T16:14:32.394835+00:00"
+}

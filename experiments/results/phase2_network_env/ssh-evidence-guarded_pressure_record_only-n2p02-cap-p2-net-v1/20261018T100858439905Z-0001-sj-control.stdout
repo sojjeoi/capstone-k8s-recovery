@@ -1,0 +1,771 @@
+2026-10-18T10:09:00+00:00
+---MOUNT
+rw,relatime
+---DMESG
+2026-09-02T06:54:53,000000+00:00 Linux version 5.4.0-216-generic (buildd@lcy02-amd64-014) (gcc version 9.4.0 (Ubuntu 9.4.0-1ubuntu1~20.04.2)) #236-Ubuntu SMP Fri Apr 11 19:53:21 UTC 2025 (Ubuntu 5.4.0-216.236-generic 5.4.291)
+2026-09-02T06:54:53,000000+00:00 Command line: BOOT_IMAGE=/boot/vmlinuz-5.4.0-216-generic root=LABEL=cloudimg-rootfs ro console=tty1 console=ttyS0
+2026-09-02T06:54:53,000000+00:00 KERNEL supported cpus:
+2026-09-02T06:54:53,000000+00:00   Intel GenuineIntel
+2026-09-02T06:54:53,000000+00:00   AMD AuthenticAMD
+2026-09-02T06:54:53,000000+00:00   Hygon HygonGenuine
+2026-09-02T06:54:53,000000+00:00   Centaur CentaurHauls
+2026-09-02T06:54:53,000000+00:00   zhaoxin   Shanghai  
+2026-09-02T06:54:53,000000+00:00 BIOS-provided physical RAM map:
+2026-09-02T06:54:53,000000+00:00 BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable
+2026-09-02T06:54:53,000000+00:00 BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved
+2026-09-02T06:54:53,000000+00:00 BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved
+2026-09-02T06:54:53,000000+00:00 BIOS-e820: [mem 0x0000000000100000-0x00000000bffdcfff] usable
+2026-09-02T06:54:53,000000+00:00 BIOS-e820: [mem 0x00000000bffdd000-0x00000000bfffffff] reserved
+2026-09-02T06:54:53,000000+00:00 BIOS-e820: [mem 0x00000000feffc000-0x00000000feffffff] reserved
+2026-09-02T06:54:53,000000+00:00 BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved
+2026-09-02T06:54:53,000000+00:00 BIOS-e820: [mem 0x0000000100000000-0x000000043fffffff] usable
+2026-09-02T06:54:53,000000+00:00 NX (Execute Disable) protection: active
+2026-09-02T06:54:53,000000+00:00 SMBIOS 2.8 present.
+2026-09-02T06:54:53,000000+00:00 DMI: OpenStack Foundation OpenStack Nova, BIOS 1.15.0-1 04/01/2014
+2026-09-02T06:54:53,000000+00:00 Hypervisor detected: KVM
+2026-09-02T06:54:53,000000+00:00 kvm-clock: Using msrs 4b564d01 and 4b564d00
+2026-09-02T06:54:53,000000+00:00 kvm-clock: cpu 0, msr 3faa01001, primary cpu clock
+2026-09-02T06:54:53,000000+00:00 kvm-clock: using sched offset of 9617125479 cycles
+2026-09-02T06:54:53,000006+00:00 clocksource: kvm-clock: mask: 0xffffffffffffffff max_cycles: 0x1cd42e4dffb, max_idle_ns: 881590591483 ns
+2026-09-02T06:54:53,000011+00:00 tsc: Detected 2294.686 MHz processor
+2026-09-02T06:54:53,002444+00:00 e820: update [mem 0x00000000-0x00000fff] usable ==> reserved
+2026-09-02T06:54:53,002445+00:00 e820: remove [mem 0x000a0000-0x000fffff] usable
+2026-09-02T06:54:53,002449+00:00 last_pfn = 0x440000 max_arch_pfn = 0x400000000
+2026-09-02T06:54:53,002502+00:00 MTRR default type: write-back
+2026-09-02T06:54:53,002503+00:00 MTRR fixed ranges enabled:
+2026-09-02T06:54:53,002504+00:00   00000-9FFFF write-back
+2026-09-02T06:54:53,002505+00:00   A0000-BFFFF uncachable
+2026-09-02T06:54:53,002505+00:00   C0000-FFFFF write-protect
+2026-09-02T06:54:53,002506+00:00 MTRR variable ranges enabled:
+2026-09-02T06:54:53,002507+00:00   0 base 00C0000000 mask FFC0000000 uncachable
+2026-09-02T06:54:53,002508+00:00   1 disabled
+2026-09-02T06:54:53,002508+00:00   2 disabled
+2026-09-02T06:54:53,002509+00:00   3 disabled
+2026-09-02T06:54:53,002509+00:00   4 disabled
+2026-09-02T06:54:53,002509+00:00   5 disabled
+2026-09-02T06:54:53,002510+00:00   6 disabled
+2026-09-02T06:54:53,002510+00:00   7 disabled
+2026-09-02T06:54:53,002525+00:00 x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT  
+2026-09-02T06:54:53,002536+00:00 last_pfn = 0xbffdd max_arch_pfn = 0x400000000
+2026-09-02T06:54:53,010683+00:00 found SMP MP-table at [mem 0x000f5af0-0x000f5aff]
+2026-09-02T06:54:53,010834+00:00 check: Scanning 1 areas for low memory corruption
+2026-09-02T06:54:53,011716+00:00 RAMDISK: [mem 0x34b35000-0x36591fff]
+2026-09-02T06:54:53,011723+00:00 ACPI: Early table checksum verification disabled
+2026-09-02T06:54:53,011738+00:00 ACPI: RSDP 0x00000000000F5AB0 000014 (v00 BOCHS )
+2026-09-02T06:54:53,011742+00:00 ACPI: RSDT 0x00000000BFFE16BD 000030 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-09-02T06:54:53,011747+00:00 ACPI: FACP 0x00000000BFFE1571 000074 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-09-02T06:54:53,011756+00:00 ACPI: DSDT 0x00000000BFFDFC80 0018F1 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-09-02T06:54:53,011760+00:00 ACPI: FACS 0x00000000BFFDFC40 000040
+2026-09-02T06:54:53,011763+00:00 ACPI: APIC 0x00000000BFFE15E5 0000B0 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-09-02T06:54:53,011766+00:00 ACPI: WAET 0x00000000BFFE1695 000028 (v01 BOCHS  BXPC     00000001 BXPC 00000001)
+2026-09-02T06:54:53,011769+00:00 ACPI: Reserving FACP table memory at [mem 0xbffe1571-0xbffe15e4]
+2026-09-02T06:54:53,011770+00:00 ACPI: Reserving DSDT table memory at [mem 0xbffdfc80-0xbffe1570]
+2026-09-02T06:54:53,011771+00:00 ACPI: Reserving FACS table memory at [mem 0xbffdfc40-0xbffdfc7f]
+2026-09-02T06:54:53,011772+00:00 ACPI: Reserving APIC table memory at [mem 0xbffe15e5-0xbffe1694]
+2026-09-02T06:54:53,011773+00:00 ACPI: Reserving WAET table memory at [mem 0xbffe1695-0xbffe16bc]
+2026-09-02T06:54:53,011808+00:00 ACPI: Local APIC address 0xfee00000
+2026-09-02T06:54:53,012572+00:00 No NUMA configuration found
+2026-09-02T06:54:53,012574+00:00 Faking a node at [mem 0x0000000000000000-0x000000043fffffff]
+2026-09-02T06:54:53,012589+00:00 NODE_DATA(0) allocated [mem 0x43ffc9000-0x43fff3fff]
+2026-09-02T06:54:53,013357+00:00 Zone ranges:
+2026-09-02T06:54:53,013358+00:00   DMA      [mem 0x0000000000001000-0x0000000000ffffff]
+2026-09-02T06:54:53,013360+00:00   DMA32    [mem 0x0000000001000000-0x00000000ffffffff]
+2026-09-02T06:54:53,013361+00:00   Normal   [mem 0x0000000100000000-0x000000043fffffff]
+2026-09-02T06:54:53,013362+00:00   Device   empty
+2026-09-02T06:54:53,013363+00:00 Movable zone start for each node
+2026-09-02T06:54:53,013366+00:00 Early memory node ranges
+2026-09-02T06:54:53,013367+00:00   node   0: [mem 0x0000000000001000-0x000000000009efff]
+2026-09-02T06:54:53,013368+00:00   node   0: [mem 0x0000000000100000-0x00000000bffdcfff]
+2026-09-02T06:54:53,013369+00:00   node   0: [mem 0x0000000100000000-0x000000043fffffff]
+2026-09-02T06:54:53,014461+00:00 Zeroed struct page in unavailable ranges: 133 pages
+2026-09-02T06:54:53,014462+00:00 Initmem setup node 0 [mem 0x0000000000001000-0x000000043fffffff]
+2026-09-02T06:54:53,014464+00:00 On node 0 totalpages: 4194171
+2026-09-02T06:54:53,014467+00:00   DMA zone: 64 pages used for memmap
+2026-09-02T06:54:53,014468+00:00   DMA zone: 21 pages reserved
+2026-09-02T06:54:53,014469+00:00   DMA zone: 3998 pages, LIFO batch:0
+2026-09-02T06:54:53,014512+00:00   DMA32 zone: 12224 pages used for memmap
+2026-09-02T06:54:53,014513+00:00   DMA32 zone: 782301 pages, LIFO batch:63
+2026-09-02T06:54:53,034487+00:00   Normal zone: 53248 pages used for memmap
+2026-09-02T06:54:53,034488+00:00   Normal zone: 3407872 pages, LIFO batch:63
+2026-09-02T06:54:53,123153+00:00 ACPI: PM-Timer IO Port: 0x608
+2026-09-02T06:54:53,123158+00:00 ACPI: Local APIC address 0xfee00000
+2026-09-02T06:54:53,123187+00:00 ACPI: LAPIC_NMI (acpi_id[0xff] dfl dfl lint[0x1])
+2026-09-02T06:54:53,123250+00:00 IOAPIC[0]: apic_id 0, version 17, address 0xfec00000, GSI 0-23
+2026-09-02T06:54:53,123253+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 0 global_irq 2 dfl dfl)
+2026-09-02T06:54:53,123254+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 5 global_irq 5 high level)
+2026-09-02T06:54:53,123255+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 9 global_irq 9 high level)
+2026-09-02T06:54:53,123257+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 10 global_irq 10 high level)
+2026-09-02T06:54:53,123257+00:00 ACPI: INT_SRC_OVR (bus 0 bus_irq 11 global_irq 11 high level)
+2026-09-02T06:54:53,123259+00:00 ACPI: IRQ0 used by override.
+2026-09-02T06:54:53,123260+00:00 ACPI: IRQ5 used by override.
+2026-09-02T06:54:53,123260+00:00 ACPI: IRQ9 used by override.
+2026-09-02T06:54:53,123261+00:00 ACPI: IRQ10 used by override.
+2026-09-02T06:54:53,123261+00:00 ACPI: IRQ11 used by override.
+2026-09-02T06:54:53,123263+00:00 Using ACPI (MADT) for SMP configuration information
+2026-09-02T06:54:53,123272+00:00 smpboot: Allowing 8 CPUs, 0 hotplug CPUs
+2026-09-02T06:54:53,123307+00:00 PM: Registered nosave memory: [mem 0x00000000-0x00000fff]
+2026-09-02T06:54:53,123308+00:00 PM: Registered nosave memory: [mem 0x0009f000-0x0009ffff]
+2026-09-02T06:54:53,123309+00:00 PM: Registered nosave memory: [mem 0x000a0000-0x000effff]
+2026-09-02T06:54:53,123310+00:00 PM: Registered nosave memory: [mem 0x000f0000-0x000fffff]
+2026-09-02T06:54:53,123311+00:00 PM: Registered nosave memory: [mem 0xbffdd000-0xbfffffff]
+2026-09-02T06:54:53,123312+00:00 PM: Registered nosave memory: [mem 0xc0000000-0xfeffbfff]
+2026-09-02T06:54:53,123313+00:00 PM: Registered nosave memory: [mem 0xfeffc000-0xfeffffff]
+2026-09-02T06:54:53,123313+00:00 PM: Registered nosave memory: [mem 0xff000000-0xfffbffff]
+2026-09-02T06:54:53,123314+00:00 PM: Registered nosave memory: [mem 0xfffc0000-0xffffffff]
+2026-09-02T06:54:53,123316+00:00 [mem 0xc0000000-0xfeffbfff] available for PCI devices
+2026-09-02T06:54:53,123317+00:00 Booting paravirtualized kernel on KVM
+2026-09-02T06:54:53,123320+00:00 clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645519600211568 ns
+2026-09-02T06:54:53,123325+00:00 setup_percpu: NR_CPUS:8192 nr_cpumask_bits:8 nr_cpu_ids:8 nr_node_ids:1
+2026-09-02T06:54:53,124144+00:00 percpu: Embedded 60 pages/cpu s208896 r8192 d28672 u262144
+2026-09-02T06:54:53,124149+00:00 pcpu-alloc: s208896 r8192 d28672 u262144 alloc=1*2097152
+2026-09-02T06:54:53,124150+00:00 pcpu-alloc: [0] 0 1 2 3 4 5 6 7 
+2026-09-02T06:54:53,124175+00:00 setup async PF for cpu 0
+2026-09-02T06:54:53,124182+00:00 kvm-stealtime: cpu 0, msr 42fa32040
+2026-09-02T06:54:53,124189+00:00 Built 1 zonelists, mobility grouping on.  Total pages: 4128614
+2026-09-02T06:54:53,124190+00:00 Policy zone: Normal
+2026-09-02T06:54:53,124191+00:00 Kernel command line: BOOT_IMAGE=/boot/vmlinuz-5.4.0-216-generic root=LABEL=cloudimg-rootfs ro console=tty1 console=ttyS0
+2026-09-02T06:54:53,129330+00:00 Dentry cache hash table entries: 2097152 (order: 12, 16777216 bytes, linear)
+2026-09-02T06:54:53,131871+00:00 Inode-cache hash table entries: 1048576 (order: 11, 8388608 bytes, linear)
+2026-09-02T06:54:53,132032+00:00 mem auto-init: stack:off, heap alloc:on, heap free:off
+2026-09-02T06:54:53,148750+00:00 Calgary: detecting Calgary via BIOS EBDA area
+2026-09-02T06:54:53,148752+00:00 Calgary: Unable to locate Rio Grande table in EBDA - bailing!
+2026-09-02T06:54:53,192166+00:00 Memory: 16345504K/16776684K available (14339K kernel code, 2400K rwdata, 9324K rodata, 2772K init, 17216K bss, 431180K reserved, 0K cma-reserved)
+2026-09-02T06:54:53,192960+00:00 SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=8, Nodes=1
+2026-09-02T06:54:53,192986+00:00 Kernel/User page tables isolation: enabled
+2026-09-02T06:54:53,193028+00:00 ftrace: allocating 44784 entries in 175 pages
+2026-09-02T06:54:53,212118+00:00 ftrace: allocated 175 pages with 6 groups
+2026-09-02T06:54:53,212814+00:00 rcu: Hierarchical RCU implementation.
+2026-09-02T06:54:53,212816+00:00 rcu: 	RCU restricting CPUs from NR_CPUS=8192 to nr_cpu_ids=8.
+2026-09-02T06:54:53,212817+00:00 	Tasks RCU enabled.
+2026-09-02T06:54:53,212818+00:00 rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+2026-09-02T06:54:53,212819+00:00 rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=8
+2026-09-02T06:54:53,215464+00:00 NR_IRQS: 524544, nr_irqs: 488, preallocated irqs: 16
+2026-09-02T06:54:53,244922+00:00 Console: colour VGA+ 80x25
+2026-09-02T06:54:53,305038+00:00 printk: console [tty1] enabled
+2026-09-02T06:54:53,514145+00:00 printk: console [ttyS0] enabled
+2026-09-02T06:54:53,516013+00:00 ACPI: Core revision 20190816
+2026-09-02T06:54:53,517830+00:00 APIC: Switch to symmetric I/O mode setup
+2026-09-02T06:54:53,520313+00:00 x2apic enabled
+2026-09-02T06:54:53,522049+00:00 Switched APIC routing to physical x2apic.
+2026-09-02T06:54:53,525792+00:00 ..TIMER: vector=0x30 apic1=0 pin1=2 apic2=-1 pin2=-1
+2026-09-02T06:54:53,528308+00:00 clocksource: tsc-early: mask: 0xffffffffffffffff max_cycles: 0x211399552f8, max_idle_ns: 440795292447 ns
+2026-09-02T06:54:53,532514+00:00 Calibrating delay loop (skipped) preset value.. 4589.37 BogoMIPS (lpj=9178744)
+2026-09-02T06:54:53,536701+00:00 Last level iTLB entries: 4KB 0, 2MB 0, 4MB 0
+2026-09-02T06:54:53,540514+00:00 Last level dTLB entries: 4KB 0, 2MB 0, 4MB 0, 1GB 0
+2026-09-02T06:54:53,542962+00:00 Spectre V1 : Mitigation: usercopy/swapgs barriers and __user pointer sanitization
+2026-09-02T06:54:53,544515+00:00 Spectre V2 : Mitigation: Retpolines
+2026-09-02T06:54:53,548514+00:00 Spectre V2 : Spectre v2 / SpectreRSB mitigation: Filling RSB on context switch
+2026-09-02T06:54:53,551894+00:00 Spectre V2 : Spectre v2 / SpectreRSB : Filling RSB on VMEXIT
+2026-09-02T06:54:53,552515+00:00 Speculative Store Bypass: Vulnerable
+2026-09-02T06:54:53,556517+00:00 MDS: Vulnerable: Clear CPU buffers attempted, no microcode
+2026-09-02T06:54:53,559174+00:00 MMIO Stale Data: Unknown: No mitigations
+2026-09-02T06:54:53,560516+00:00 x86/fpu: x87 FPU will use FXSAVE
+2026-09-02T06:54:53,562511+00:00 Freeing SMP alternatives memory: 40K
+2026-09-02T06:54:53,566286+00:00 pid_max: default: 32768 minimum: 301
+2026-09-02T06:54:53,568587+00:00 LSM: Security Framework initializing
+2026-09-02T06:54:53,570574+00:00 Yama: becoming mindful.
+2026-09-02T06:54:53,572554+00:00 AppArmor: AppArmor initialized
+2026-09-02T06:54:53,574975+00:00 Mount-cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+2026-09-02T06:54:53,576528+00:00 Mountpoint-cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+2026-09-02T06:54:53,580537+00:00 *** VALIDATE tmpfs ***
+2026-09-02T06:54:53,582228+00:00 *** VALIDATE proc ***
+2026-09-02T06:54:53,584577+00:00 *** VALIDATE cgroup1 ***
+2026-09-02T06:54:53,586199+00:00 *** VALIDATE cgroup2 ***
+2026-09-02T06:54:53,696939+00:00 smpboot: CPU0: Intel Core i7 9xx (Nehalem Class Core i7) (family: 0x6, model: 0x1a, stepping: 0x3)
+2026-09-02T06:54:53,700600+00:00 Performance Events: unsupported p6 CPU model 26 no PMU driver, software events only.
+2026-09-02T06:54:53,704200+00:00 rcu: Hierarchical SRCU implementation.
+2026-09-02T06:54:53,705105+00:00 NMI watchdog: Perf NMI watchdog permanently disabled
+2026-09-02T06:54:53,708632+00:00 smp: Bringing up secondary CPUs ...
+2026-09-02T06:54:53,710676+00:00 x86: Booting SMP configuration:
+2026-09-02T06:54:53,712517+00:00 .... node  #0, CPUs:      #1
+2026-09-02T06:54:53,308877+00:00 kvm-clock: cpu 1, msr 3faa01041, secondary cpu clock
+2026-09-02T06:54:53,308877+00:00 smpboot: CPU 1 Converting physical 0 to logical die 1
+2026-09-02T06:54:53,728572+00:00 setup async PF for cpu 1
+2026-09-02T06:54:53,732261+00:00 kvm-stealtime: cpu 1, msr 42fa72040
+2026-09-02T06:54:53,736647+00:00  #2
+2026-09-02T06:54:53,308877+00:00 kvm-clock: cpu 2, msr 3faa01081, secondary cpu clock
+2026-09-02T06:54:53,308877+00:00 smpboot: CPU 2 Converting physical 0 to logical die 2
+2026-09-02T06:54:53,744535+00:00 setup async PF for cpu 2
+2026-09-02T06:54:53,746532+00:00 kvm-stealtime: cpu 2, msr 42fab2040
+2026-09-02T06:54:53,748629+00:00  #3
+2026-09-02T06:54:53,308877+00:00 kvm-clock: cpu 3, msr 3faa010c1, secondary cpu clock
+2026-09-02T06:54:53,308877+00:00 smpboot: CPU 3 Converting physical 0 to logical die 3
+2026-09-02T06:54:53,760534+00:00 setup async PF for cpu 3
+2026-09-02T06:54:53,762437+00:00 kvm-stealtime: cpu 3, msr 42faf2040
+2026-09-02T06:54:53,764634+00:00  #4
+2026-09-02T06:54:53,308877+00:00 kvm-clock: cpu 4, msr 3faa01101, secondary cpu clock
+2026-09-02T06:54:53,308877+00:00 smpboot: CPU 4 Converting physical 0 to logical die 4
+2026-09-02T06:54:53,780551+00:00 setup async PF for cpu 4
+2026-09-02T06:54:53,784268+00:00 kvm-stealtime: cpu 4, msr 42fb32040
+2026-09-02T06:54:53,788643+00:00  #5
+2026-09-02T06:54:53,308877+00:00 kvm-clock: cpu 5, msr 3faa01141, secondary cpu clock
+2026-09-02T06:54:53,308877+00:00 smpboot: CPU 5 Converting physical 0 to logical die 5
+2026-09-02T06:54:53,804552+00:00 setup async PF for cpu 5
+2026-09-02T06:54:53,808292+00:00 kvm-stealtime: cpu 5, msr 42fb72040
+2026-09-02T06:54:53,813200+00:00  #6
+2026-09-02T06:54:53,308877+00:00 kvm-clock: cpu 6, msr 3faa01181, secondary cpu clock
+2026-09-02T06:54:53,308877+00:00 smpboot: CPU 6 Converting physical 0 to logical die 6
+2026-09-02T06:54:53,824551+00:00 setup async PF for cpu 6
+2026-09-02T06:54:53,828286+00:00 kvm-stealtime: cpu 6, msr 42fbb2040
+2026-09-02T06:54:53,836637+00:00  #7
+2026-09-02T06:54:53,308877+00:00 kvm-clock: cpu 7, msr 3faa011c1, secondary cpu clock
+2026-09-02T06:54:53,308877+00:00 smpboot: CPU 7 Converting physical 0 to logical die 7
+2026-09-02T06:54:53,852551+00:00 setup async PF for cpu 7
+2026-09-02T06:54:53,856511+00:00 kvm-stealtime: cpu 7, msr 42fbf2040
+2026-09-02T06:54:53,860623+00:00 smp: Brought up 1 node, 8 CPUs
+2026-09-02T06:54:53,864515+00:00 smpboot: Max logical packages: 8
+2026-09-02T06:54:53,866362+00:00 smpboot: Total of 8 processors activated (36714.97 BogoMIPS)
+2026-09-02T06:54:53,872514+00:00 devtmpfs: initialized
+2026-09-02T06:54:53,874081+00:00 x86/mm: Memory block size: 128MB
+2026-09-02T06:54:53,877695+00:00 clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+2026-09-02T06:54:53,880526+00:00 futex hash table entries: 2048 (order: 5, 131072 bytes, linear)
+2026-09-02T06:54:53,884596+00:00 pinctrl core: initialized pinctrl subsystem
+2026-09-02T06:54:53,887009+00:00 PM: RTC time: 06:54:54, date: 2026-09-02
+2026-09-02T06:54:53,888774+00:00 NET: Registered protocol family 16
+2026-09-02T06:54:53,890787+00:00 audit: initializing netlink subsys (disabled)
+2026-09-02T06:54:53,892546+00:00 audit: type=2000 audit(1788332094.243:1): state=initialized audit_enabled=0 res=1
+2026-09-02T06:54:53,892649+00:00 EISA bus registered
+2026-09-02T06:54:53,897981+00:00 cpuidle: using governor ladder
+2026-09-02T06:54:53,900521+00:00 cpuidle: using governor menu
+2026-09-02T06:54:53,904614+00:00 ACPI: bus type PCI registered
+2026-09-02T06:54:53,906388+00:00 acpiphp: ACPI Hot Plug PCI Controller Driver version: 0.5
+2026-09-02T06:54:53,908744+00:00 PCI: Using configuration type 1 for base access
+2026-09-02T06:54:53,914789+00:00 HugeTLB registered 2.00 MiB page size, pre-allocated 0 pages
+2026-09-02T06:54:53,920604+00:00 ACPI: Added _OSI(Module Device)
+2026-09-02T06:54:53,922431+00:00 ACPI: Added _OSI(Processor Device)
+2026-09-02T06:54:53,924348+00:00 ACPI: Added _OSI(3.0 _SCP Extensions)
+2026-09-02T06:54:53,924521+00:00 ACPI: Added _OSI(Processor Aggregator Device)
+2026-09-02T06:54:53,928523+00:00 ACPI: Added _OSI(Linux-Dell-Video)
+2026-09-02T06:54:53,930441+00:00 ACPI: Added _OSI(Linux-Lenovo-NV-HDMI-Audio)
+2026-09-02T06:54:53,932515+00:00 ACPI: Added _OSI(Linux-HPI-Hybrid-Graphics)
+2026-09-02T06:54:53,935655+00:00 ACPI: 1 ACPI AML tables successfully acquired and loaded
+2026-09-02T06:54:53,938032+00:00 ACPI: Interpreter enabled
+2026-09-02T06:54:53,940529+00:00 ACPI: (supports S0 S3 S4 S5)
+2026-09-02T06:54:53,942254+00:00 ACPI: Using IOAPIC for interrupt routing
+2026-09-02T06:54:53,944528+00:00 PCI: Using host bridge windows from ACPI; if necessary, use "pci=nocrs" and report a bug
+2026-09-02T06:54:53,948657+00:00 ACPI: Enabled 2 GPEs in block 00 to 0F
+2026-09-02T06:54:53,954808+00:00 ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-ff])
+2026-09-02T06:54:53,956521+00:00 acpi PNP0A03:00: _OSC: OS supports [ASPM ClockPM Segments MSI HPX-Type3]
+2026-09-02T06:54:53,960527+00:00 acpi PNP0A03:00: fail to add MMCONFIG information, can't access extended PCI configuration space under this bridge.
+2026-09-02T06:54:53,964843+00:00 acpiphp: Slot [3] registered
+2026-09-02T06:54:53,966618+00:00 acpiphp: Slot [4] registered
+2026-09-02T06:54:53,968551+00:00 acpiphp: Slot [5] registered
+2026-09-02T06:54:53,970321+00:00 acpiphp: Slot [6] registered
+2026-09-02T06:54:53,972078+00:00 acpiphp: Slot [7] registered
+2026-09-02T06:54:53,972550+00:00 acpiphp: Slot [8] registered
+2026-09-02T06:54:53,974318+00:00 acpiphp: Slot [9] registered
+2026-09-02T06:54:53,976554+00:00 acpiphp: Slot [10] registered
+2026-09-02T06:54:53,978341+00:00 acpiphp: Slot [11] registered
+2026-09-02T06:54:53,980550+00:00 acpiphp: Slot [12] registered
+2026-09-02T06:54:53,982339+00:00 acpiphp: Slot [13] registered
+2026-09-02T06:54:53,984550+00:00 acpiphp: Slot [14] registered
+2026-09-02T06:54:53,986357+00:00 acpiphp: Slot [15] registered
+2026-09-02T06:54:53,988554+00:00 acpiphp: Slot [16] registered
+2026-09-02T06:54:53,990490+00:00 acpiphp: Slot [17] registered
+2026-09-02T06:54:53,992248+00:00 acpiphp: Slot [18] registered
+2026-09-02T06:54:53,992550+00:00 acpiphp: Slot [19] registered
+2026-09-02T06:54:53,994353+00:00 acpiphp: Slot [20] registered
+2026-09-02T06:54:53,996550+00:00 acpiphp: Slot [21] registered
+2026-09-02T06:54:53,998344+00:00 acpiphp: Slot [22] registered
+2026-09-02T06:54:54,000550+00:00 acpiphp: Slot [23] registered
+2026-09-02T06:54:54,002334+00:00 acpiphp: Slot [24] registered
+2026-09-02T06:54:54,004550+00:00 acpiphp: Slot [25] registered
+2026-09-02T06:54:54,006358+00:00 acpiphp: Slot [26] registered
+2026-09-02T06:54:54,008550+00:00 acpiphp: Slot [27] registered
+2026-09-02T06:54:54,010347+00:00 acpiphp: Slot [28] registered
+2026-09-02T06:54:54,012135+00:00 acpiphp: Slot [29] registered
+2026-09-02T06:54:54,012550+00:00 acpiphp: Slot [30] registered
+2026-09-02T06:54:54,014348+00:00 acpiphp: Slot [31] registered
+2026-09-02T06:54:54,016548+00:00 PCI host bridge to bus 0000:00
+2026-09-02T06:54:54,018332+00:00 pci_bus 0000:00: root bus resource [io  0x0000-0x0cf7 window]
+2026-09-02T06:54:54,020516+00:00 pci_bus 0000:00: root bus resource [io  0x0d00-0xffff window]
+2026-09-02T06:54:54,024515+00:00 pci_bus 0000:00: root bus resource [mem 0x000a0000-0x000bffff window]
+2026-09-02T06:54:54,027618+00:00 pci_bus 0000:00: root bus resource [mem 0xc0000000-0xfebfffff window]
+2026-09-02T06:54:54,028515+00:00 pci_bus 0000:00: root bus resource [mem 0x440000000-0x4bfffffff window]
+2026-09-02T06:54:54,032516+00:00 pci_bus 0000:00: root bus resource [bus 00-ff]
+2026-09-02T06:54:54,036615+00:00 pci 0000:00:00.0: [8086:1237] type 00 class 0x060000
+2026-09-02T06:54:54,040715+00:00 pci 0000:00:01.0: [8086:7000] type 00 class 0x060100
+2026-09-02T06:54:54,044711+00:00 pci 0000:00:01.1: [8086:7010] type 00 class 0x010180
+2026-09-02T06:54:54,050547+00:00 pci 0000:00:01.1: reg 0x20: [io  0xc120-0xc12f]
+2026-09-02T06:54:54,054096+00:00 pci 0000:00:01.1: legacy IDE quirk: reg 0x10: [io  0x01f0-0x01f7]
+2026-09-02T06:54:54,056515+00:00 pci 0000:00:01.1: legacy IDE quirk: reg 0x14: [io  0x03f6]
+2026-09-02T06:54:54,059165+00:00 pci 0000:00:01.1: legacy IDE quirk: reg 0x18: [io  0x0170-0x0177]
+2026-09-02T06:54:54,060515+00:00 pci 0000:00:01.1: legacy IDE quirk: reg 0x1c: [io  0x0376]
+2026-09-02T06:54:54,064871+00:00 pci 0000:00:01.3: [8086:7113] type 00 class 0x068000
+2026-09-02T06:54:54,069752+00:00 pci 0000:00:01.3: quirk: [io  0x0600-0x063f] claimed by PIIX4 ACPI
+2026-09-02T06:54:54,072546+00:00 pci 0000:00:01.3: quirk: [io  0x0700-0x070f] claimed by PIIX4 SMB
+2026-09-02T06:54:54,077071+00:00 pci 0000:00:02.0: [1af4:1050] type 00 class 0x030000
+2026-09-02T06:54:54,081344+00:00 pci 0000:00:02.0: reg 0x10: [mem 0xfe000000-0xfe7fffff pref]
+2026-09-02T06:54:54,088039+00:00 pci 0000:00:02.0: reg 0x18: [mem 0xfe800000-0xfe803fff 64bit pref]
+2026-09-02T06:54:54,092544+00:00 pci 0000:00:02.0: reg 0x20: [mem 0xfeb90000-0xfeb90fff]
+2026-09-02T06:54:54,098979+00:00 pci 0000:00:02.0: reg 0x30: [mem 0xfeb80000-0xfeb8ffff pref]
+2026-09-02T06:54:54,102888+00:00 pci 0000:00:03.0: [1af4:1000] type 00 class 0x020000
+2026-09-02T06:54:54,105815+00:00 pci 0000:00:03.0: reg 0x10: [io  0xc080-0xc0bf]
+2026-09-02T06:54:54,109519+00:00 pci 0000:00:03.0: reg 0x14: [mem 0xfeb91000-0xfeb91fff]
+2026-09-02T06:54:54,118354+00:00 pci 0000:00:03.0: reg 0x20: [mem 0xfe804000-0xfe807fff 64bit pref]
+2026-09-02T06:54:54,121475+00:00 pci 0000:00:03.0: reg 0x30: [mem 0xfeb00000-0xfeb7ffff pref]
+2026-09-02T06:54:54,126635+00:00 pci 0000:00:04.0: [1af4:1001] type 00 class 0x010000
+2026-09-02T06:54:54,132516+00:00 pci 0000:00:04.0: reg 0x10: [io  0xc000-0xc07f]
+2026-09-02T06:54:54,136525+00:00 pci 0000:00:04.0: reg 0x14: [mem 0xfeb92000-0xfeb92fff]
+2026-09-02T06:54:54,144067+00:00 pci 0000:00:04.0: reg 0x20: [mem 0xfe808000-0xfe80bfff 64bit pref]
+2026-09-02T06:54:54,150619+00:00 pci 0000:00:05.0: [1af4:1002] type 00 class 0x00ff00
+2026-09-02T06:54:54,153531+00:00 pci 0000:00:05.0: reg 0x10: [io  0xc0c0-0xc0ff]
+2026-09-02T06:54:54,159470+00:00 pci 0000:00:05.0: reg 0x20: [mem 0xfe80c000-0xfe80ffff 64bit pref]
+2026-09-02T06:54:54,163211+00:00 pci 0000:00:06.0: [1af4:1005] type 00 class 0x00ff00
+2026-09-02T06:54:54,165495+00:00 pci 0000:00:06.0: reg 0x10: [io  0xc100-0xc11f]
+2026-09-02T06:54:54,172958+00:00 pci 0000:00:06.0: reg 0x20: [mem 0xfe810000-0xfe813fff 64bit pref]
+2026-09-02T06:54:54,189170+00:00 ACPI: PCI Interrupt Link [LNKA] (IRQs 5 *10 11)
+2026-09-02T06:54:54,191705+00:00 ACPI: PCI Interrupt Link [LNKB] (IRQs 5 *10 11)
+2026-09-02T06:54:54,192717+00:00 ACPI: PCI Interrupt Link [LNKC] (IRQs 5 10 *11)
+2026-09-02T06:54:54,196726+00:00 ACPI: PCI Interrupt Link [LNKD] (IRQs 5 10 *11)
+2026-09-02T06:54:54,199165+00:00 ACPI: PCI Interrupt Link [LNKS] (IRQs *9)
+2026-09-02T06:54:54,201457+00:00 iommu: Default domain type: Translated 
+2026-09-02T06:54:54,204746+00:00 SCSI subsystem initialized
+2026-09-02T06:54:54,206473+00:00 libata version 3.00 loaded.
+2026-09-02T06:54:54,206473+00:00 pci 0000:00:02.0: vgaarb: setting as boot VGA device
+2026-09-02T06:54:54,207035+00:00 pci 0000:00:02.0: vgaarb: VGA device added: decodes=io+mem,owns=io+mem,locks=none
+2026-09-02T06:54:54,208517+00:00 pci 0000:00:02.0: vgaarb: bridge control possible
+2026-09-02T06:54:54,210902+00:00 vgaarb: loaded
+2026-09-02T06:54:54,212253+00:00 ACPI: bus type USB registered
+2026-09-02T06:54:54,212550+00:00 usbcore: registered new interface driver usbfs
+2026-09-02T06:54:54,216534+00:00 usbcore: registered new interface driver hub
+2026-09-02T06:54:54,218762+00:00 usbcore: registered new device driver usb
+2026-09-02T06:54:54,220560+00:00 pps_core: LinuxPPS API ver. 1 registered
+2026-09-02T06:54:54,222667+00:00 pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+2026-09-02T06:54:54,224523+00:00 PTP clock support registered
+2026-09-02T06:54:54,228561+00:00 EDAC MC: Ver: 3.0.0
+2026-09-02T06:54:54,230700+00:00 PCI: Using ACPI for IRQ routing
+2026-09-02T06:54:54,232521+00:00 PCI: pci_cache_line_size set to 64 bytes
+2026-09-02T06:54:54,232911+00:00 e820: reserve RAM buffer [mem 0x0009fc00-0x0009ffff]
+2026-09-02T06:54:54,232916+00:00 e820: reserve RAM buffer [mem 0xbffdd000-0xbfffffff]
+2026-09-02T06:54:54,233132+00:00 NetLabel: Initializing
+2026-09-02T06:54:54,234675+00:00 NetLabel:  domain hash size = 128
+2026-09-02T06:54:54,236514+00:00 NetLabel:  protocols = UNLABELED CIPSOv4 CALIPSO
+2026-09-02T06:54:54,238895+00:00 NetLabel:  unlabeled traffic allowed by default
+2026-09-02T06:54:54,240680+00:00 clocksource: Switched to clocksource kvm-clock
+2026-09-02T06:54:54,258009+00:00 *** VALIDATE bpf ***
+2026-09-02T06:54:54,259598+00:00 VFS: Disk quotas dquot_6.6.0
+2026-09-02T06:54:54,261372+00:00 VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+2026-09-02T06:54:54,264168+00:00 *** VALIDATE ramfs ***
+2026-09-02T06:54:54,265727+00:00 *** VALIDATE hugetlbfs ***
+2026-09-02T06:54:54,267521+00:00 AppArmor: AppArmor Filesystem Enabled
+2026-09-02T06:54:54,269575+00:00 pnp: PnP ACPI init
+2026-09-02T06:54:54,271079+00:00 pnp 00:00: Plug and Play ACPI device, IDs PNP0501 (active)
+2026-09-02T06:54:54,271100+00:00 pnp 00:01: Plug and Play ACPI device, IDs PNP0303 (active)
+2026-09-02T06:54:54,271120+00:00 pnp 00:02: Plug and Play ACPI device, IDs PNP0f13 (active)
+2026-09-02T06:54:54,271146+00:00 pnp 00:03: [dma 2]
+2026-09-02T06:54:54,271159+00:00 pnp 00:03: Plug and Play ACPI device, IDs PNP0700 (active)
+2026-09-02T06:54:54,271175+00:00 pnp 00:04: Plug and Play ACPI device, IDs PNP0b00 (active)
+2026-09-02T06:54:54,271404+00:00 pnp: PnP ACPI: found 5 devices
+2026-09-02T06:54:54,276696+00:00 thermal_sys: Registered thermal governor 'fair_share'
+2026-09-02T06:54:54,276697+00:00 thermal_sys: Registered thermal governor 'bang_bang'
+2026-09-02T06:54:54,279217+00:00 thermal_sys: Registered thermal governor 'step_wise'
+2026-09-02T06:54:54,281705+00:00 thermal_sys: Registered thermal governor 'user_space'
+2026-09-02T06:54:54,284194+00:00 thermal_sys: Registered thermal governor 'power_allocator'
+2026-09-02T06:54:54,291402+00:00 clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns
+2026-09-02T06:54:54,297707+00:00 pci_bus 0000:00: resource 4 [io  0x0000-0x0cf7 window]
+2026-09-02T06:54:54,300247+00:00 pci_bus 0000:00: resource 5 [io  0x0d00-0xffff window]
+2026-09-02T06:54:54,302787+00:00 pci_bus 0000:00: resource 6 [mem 0x000a0000-0x000bffff window]
+2026-09-02T06:54:54,305582+00:00 pci_bus 0000:00: resource 7 [mem 0xc0000000-0xfebfffff window]
+2026-09-02T06:54:54,308356+00:00 pci_bus 0000:00: resource 8 [mem 0x440000000-0x4bfffffff window]
+2026-09-02T06:54:54,311278+00:00 NET: Registered protocol family 2
+2026-09-02T06:54:54,313867+00:00 IP idents hash table entries: 262144 (order: 9, 2097152 bytes, linear)
+2026-09-02T06:54:54,319644+00:00 tcp_listen_portaddr_hash hash table entries: 8192 (order: 5, 131072 bytes, linear)
+2026-09-02T06:54:54,323251+00:00 TCP established hash table entries: 131072 (order: 8, 1048576 bytes, linear)
+2026-09-02T06:54:54,327280+00:00 TCP bind hash table entries: 65536 (order: 8, 1048576 bytes, linear)
+2026-09-02T06:54:54,330418+00:00 TCP: Hash tables configured (established 131072 bind 65536)
+2026-09-02T06:54:54,333188+00:00 UDP hash table entries: 8192 (order: 6, 262144 bytes, linear)
+2026-09-02T06:54:54,335989+00:00 UDP-Lite hash table entries: 8192 (order: 6, 262144 bytes, linear)
+2026-09-02T06:54:54,339083+00:00 NET: Registered protocol family 1
+2026-09-02T06:54:54,340999+00:00 NET: Registered protocol family 44
+2026-09-02T06:54:54,342957+00:00 pci 0000:00:01.0: PIIX3: Enabling Passive Release
+2026-09-02T06:54:54,345384+00:00 pci 0000:00:00.0: Limiting direct PCI/PCI transfers
+2026-09-02T06:54:54,347854+00:00 pci 0000:00:01.0: Activating ISA DMA hang workarounds
+2026-09-02T06:54:54,350502+00:00 pci 0000:00:02.0: Video device with shadowed ROM at [mem 0x000c0000-0x000dffff]
+2026-09-02T06:54:54,354016+00:00 PCI: CLS 0 bytes, default 64
+2026-09-02T06:54:54,355825+00:00 Trying to unpack rootfs image as initramfs...
+2026-09-02T06:54:54,435131+00:00 Freeing initrd memory: 26996K
+2026-09-02T06:54:54,436991+00:00 PCI-DMA: Using software bounce buffering for IO (SWIOTLB)
+2026-09-02T06:54:54,439597+00:00 software IO TLB: mapped [mem 0xbbfdd000-0xbffdd000] (64MB)
+2026-09-02T06:54:54,442329+00:00 clocksource: tsc: mask: 0xffffffffffffffff max_cycles: 0x211399552f8, max_idle_ns: 440795292447 ns
+2026-09-02T06:54:54,446417+00:00 check: Scanning for low memory corruption every 60 seconds
+2026-09-02T06:54:54,449775+00:00 Initialise system trusted keyrings
+2026-09-02T06:54:54,451729+00:00 Key type blacklist registered
+2026-09-02T06:54:54,453620+00:00 workingset: timestamp_bits=36 max_order=22 bucket_order=0
+2026-09-02T06:54:54,457686+00:00 zbud: loaded
+2026-09-02T06:54:54,459379+00:00 squashfs: version 4.0 (2009/01/31) Phillip Lougher
+2026-09-02T06:54:54,464068+00:00 fuse: init (API version 7.31)
+2026-09-02T06:54:54,465867+00:00 *** VALIDATE fuse ***
+2026-09-02T06:54:54,467423+00:00 *** VALIDATE fuse ***
+2026-09-02T06:54:54,469109+00:00 Platform Keyring initialized
+2026-09-02T06:54:54,474445+00:00 Key type asymmetric registered
+2026-09-02T06:54:54,476245+00:00 Asymmetric key parser 'x509' registered
+2026-09-02T06:54:54,478339+00:00 Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+2026-09-02T06:54:54,481579+00:00 io scheduler mq-deadline registered
+2026-09-02T06:54:54,484061+00:00 shpchp: Standard Hot Plug PCI Controller Driver version: 0.4
+2026-09-02T06:54:54,486829+00:00 intel_idle: Please enable MWAIT in BIOS SETUP
+2026-09-02T06:54:54,486933+00:00 input: Power Button as /devices/LNXSYSTM:00/LNXPWRBN:00/input/input0
+2026-09-02T06:54:54,490029+00:00 ACPI: Power Button [PWRF]
+2026-09-02T06:54:54,517160+00:00 PCI Interrupt Link [LNKB] enabled at IRQ 10
+2026-09-02T06:54:54,547178+00:00 PCI Interrupt Link [LNKC] enabled at IRQ 11
+2026-09-02T06:54:54,576518+00:00 PCI Interrupt Link [LNKD] enabled at IRQ 11
+2026-09-02T06:54:54,605803+00:00 PCI Interrupt Link [LNKA] enabled at IRQ 10
+2026-09-02T06:54:54,637962+00:00 Serial: 8250/16550 driver, 32 ports, IRQ sharing enabled
+2026-09-02T06:54:54,670599+00:00 00:00: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200) is a 16550A
+2026-09-02T06:54:54,676118+00:00 Linux agpgart interface v0.103
+2026-09-02T06:54:54,808978+00:00 loop: module loaded
+2026-09-02T06:54:54,810661+00:00 ata_piix 0000:00:01.1: version 2.13
+2026-09-02T06:54:54,811946+00:00 scsi host0: ata_piix
+2026-09-02T06:54:54,813837+00:00 scsi host1: ata_piix
+2026-09-02T06:54:54,815406+00:00 ata1: PATA max MWDMA2 cmd 0x1f0 ctl 0x3f6 bmdma 0xc120 irq 14
+2026-09-02T06:54:54,818202+00:00 ata2: PATA max MWDMA2 cmd 0x170 ctl 0x376 bmdma 0xc128 irq 15
+2026-09-02T06:54:54,821152+00:00 tun: Universal TUN/TAP device driver, 1.6
+2026-09-02T06:54:54,823610+00:00 PPP generic driver version 2.4.2
+2026-09-02T06:54:54,825758+00:00 VFIO - User Level meta-driver version: 0.3
+2026-09-02T06:54:54,828108+00:00 ehci_hcd: USB 2.0 'Enhanced' Host Controller (EHCI) Driver
+2026-09-02T06:54:54,830811+00:00 ehci-pci: EHCI PCI platform driver
+2026-09-02T06:54:54,832780+00:00 ehci-platform: EHCI generic platform driver
+2026-09-02T06:54:54,835004+00:00 ohci_hcd: USB 1.1 'Open' Host Controller (OHCI) Driver
+2026-09-02T06:54:54,837581+00:00 ohci-pci: OHCI PCI platform driver
+2026-09-02T06:54:54,839555+00:00 ohci-platform: OHCI generic platform driver
+2026-09-02T06:54:54,841757+00:00 uhci_hcd: USB Universal Host Controller Interface driver
+2026-09-02T06:54:54,844455+00:00 i8042: PNP: PS/2 Controller [PNP0303:KBD,PNP0f13:MOU] at 0x60,0x64 irq 1,12
+2026-09-02T06:54:54,849191+00:00 serio: i8042 KBD port at 0x60,0x64 irq 1
+2026-09-02T06:54:54,851318+00:00 serio: i8042 AUX port at 0x60,0x64 irq 12
+2026-09-02T06:54:54,853642+00:00 mousedev: PS/2 mouse device common for all mice
+2026-09-02T06:54:54,856328+00:00 rtc_cmos 00:04: RTC can wake from S4
+2026-09-02T06:54:54,859251+00:00 rtc_cmos 00:04: registered as rtc0
+2026-09-02T06:54:54,861251+00:00 input: AT Translated Set 2 keyboard as /devices/platform/i8042/serio0/input/input1
+2026-09-02T06:54:54,864839+00:00 rtc_cmos 00:04: alarms up to one day, y3k, 242 bytes nvram
+2026-09-02T06:54:54,867603+00:00 i2c /dev entries driver
+2026-09-02T06:54:54,869462+00:00 device-mapper: uevent: version 1.0.3
+2026-09-02T06:54:54,871563+00:00 device-mapper: ioctl: 4.41.0-ioctl (2019-09-16) initialised: dm-devel@redhat.com
+2026-09-02T06:54:54,874981+00:00 platform eisa.0: Probing EISA bus 0
+2026-09-02T06:54:54,876947+00:00 platform eisa.0: EISA: Cannot allocate resource for mainboard
+2026-09-02T06:54:54,879706+00:00 platform eisa.0: Cannot allocate resource for EISA slot 1
+2026-09-02T06:54:54,882298+00:00 platform eisa.0: Cannot allocate resource for EISA slot 2
+2026-09-02T06:54:54,884909+00:00 platform eisa.0: Cannot allocate resource for EISA slot 3
+2026-09-02T06:54:54,887509+00:00 platform eisa.0: Cannot allocate resource for EISA slot 4
+2026-09-02T06:54:54,890117+00:00 platform eisa.0: Cannot allocate resource for EISA slot 5
+2026-09-02T06:54:54,892723+00:00 platform eisa.0: Cannot allocate resource for EISA slot 6
+2026-09-02T06:54:54,895330+00:00 platform eisa.0: Cannot allocate resource for EISA slot 7
+2026-09-02T06:54:54,897929+00:00 platform eisa.0: Cannot allocate resource for EISA slot 8
+2026-09-02T06:54:54,900548+00:00 platform eisa.0: EISA: Detected 0 cards
+2026-09-02T06:54:54,902598+00:00 intel_pstate: CPU model not supported
+2026-09-02T06:54:54,905004+00:00 ledtrig-cpu: registered to indicate activity on CPUs
+2026-09-02T06:54:54,907504+00:00 drop_monitor: Initializing network drop monitor service
+2026-09-02T06:54:54,910253+00:00 NET: Registered protocol family 10
+2026-09-02T06:54:54,928368+00:00 Segment Routing with IPv6
+2026-09-02T06:54:54,930029+00:00 NET: Registered protocol family 17
+2026-09-02T06:54:54,932073+00:00 Key type dns_resolver registered
+2026-09-02T06:54:54,935162+00:00 RAS: Correctable Errors collector initialized.
+2026-09-02T06:54:54,937449+00:00 IPI shorthand broadcast: enabled
+2026-09-02T06:54:54,939309+00:00 sched_clock: Marking stable (1632548765, 304877841)->(2061271688, -123845082)
+2026-09-02T06:54:54,942802+00:00 registered taskstats version 1
+2026-09-02T06:54:54,944607+00:00 Loading compiled-in X.509 certificates
+2026-09-02T06:54:54,947520+00:00 Loaded X.509 cert 'Build time autogenerated kernel key: 14c36717ad359583ee32ae03fbd4065176a861b3'
+2026-09-02T06:54:54,951998+00:00 Loaded X.509 cert 'Canonical Ltd. Live Patch Signing: 14df34d1a87cf37625abec039ef2bf521249b969'
+2026-09-02T06:54:54,956445+00:00 Loaded X.509 cert 'Canonical Ltd. Kernel Module Signing: 88f752e560a1e0737e31163a466ad7b70a850c19'
+2026-09-02T06:54:54,960383+00:00 blacklist: Loading compiled-in revocation X.509 certificates
+2026-09-02T06:54:54,963080+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing: 61482aa2830d0ab2ad5af10b7250da9033ddcef0'
+2026-09-02T06:54:54,966983+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2017): 242ade75ac4a15e50d50c84b0d45ff3eae707a03'
+2026-09-02T06:54:54,971125+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (ESM 2018): 365188c1d374d6b07c3c8f240f8ef722433d6a8b'
+2026-09-02T06:54:54,975356+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2019): c0746fd6c5da3ae827864651ad66ae47fe24b3e8'
+2026-09-02T06:54:54,979483+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v1): a8d54bbb3825cfb94fa13c9f8a594a195c107b8d'
+2026-09-02T06:54:54,983689+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v2): 4cf046892d6fd3c9a5b03f98d845f90851dc6a8c'
+2026-09-02T06:54:54,988130+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v3): 100437bb6de6e469b581e61cd66bce3ef4ed53af'
+2026-09-02T06:54:54,992365+00:00 Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (Ubuntu Core 2019): c1d57b8f6b743f23ee41f4f7ee292f06eecadfb9'
+2026-09-02T06:54:54,996894+00:00 zswap: loaded using pool lzo/zbud
+2026-09-02T06:54:54,998928+00:00 Key type ._fscrypt registered
+2026-09-02T06:54:55,000684+00:00 Key type .fscrypt registered
+2026-09-02T06:54:55,016049+00:00 Key type big_key registered
+2026-09-02T06:54:55,024045+00:00 Key type encrypted registered
+2026-09-02T06:54:55,025796+00:00 AppArmor: AppArmor sha1 policy hashing enabled
+2026-09-02T06:54:55,028076+00:00 ima: No TPM chip found, activating TPM-bypass!
+2026-09-02T06:54:55,030357+00:00 ima: Allocated hash algorithm: sha1
+2026-09-02T06:54:55,032294+00:00 ima: No architecture policies found
+2026-09-02T06:54:55,034232+00:00 evm: Initialising EVM extended attributes:
+2026-09-02T06:54:55,036381+00:00 evm: security.selinux
+2026-09-02T06:54:55,037892+00:00 evm: security.SMACK64
+2026-09-02T06:54:55,039399+00:00 evm: security.SMACK64EXEC
+2026-09-02T06:54:55,041023+00:00 evm: security.SMACK64TRANSMUTE
+2026-09-02T06:54:55,042799+00:00 evm: security.SMACK64MMAP
+2026-09-02T06:54:55,044431+00:00 evm: security.apparmor
+2026-09-02T06:54:55,045958+00:00 evm: security.ima
+2026-09-02T06:54:55,047347+00:00 evm: security.capability
+2026-09-02T06:54:55,048951+00:00 evm: HMAC attrs: 0x1
+2026-09-02T06:54:55,051503+00:00 PM:   Magic number: 10:692:922
+2026-09-02T06:54:55,053296+00:00 PM:   hash matches drivers/base/power/main.c:1521
+2026-09-02T06:54:55,055872+00:00 rtc_cmos 00:04: setting system clock to 2026-09-02T06:54:55 UTC (1788332095)
+2026-09-02T06:54:55,059394+00:00 clk: Disabling unused clocks
+2026-09-02T06:54:55,063225+00:00 Freeing unused decrypted memory: 2040K
+2026-09-02T06:54:55,066697+00:00 Freeing unused kernel image memory: 2772K
+2026-09-02T06:54:55,076967+00:00 Write protecting the kernel read-only data: 26624k
+2026-09-02T06:54:55,081309+00:00 Freeing unused kernel image memory: 2036K
+2026-09-02T06:54:55,083846+00:00 Freeing unused kernel image memory: 916K
+2026-09-02T06:54:55,094721+00:00 x86/mm: Checked W+X mappings: passed, no W+X pages found.
+2026-09-02T06:54:55,097387+00:00 x86/mm: Checking user space page tables
+2026-09-02T06:54:55,108039+00:00 x86/mm: Checked W+X mappings: passed, no W+X pages found.
+2026-09-02T06:54:55,110637+00:00 Run /init as init process
+2026-09-02T06:54:55,260816+00:00 input: VirtualPS/2 VMware VMMouse as /devices/platform/i8042/serio1/input/input4
+2026-09-02T06:54:55,271064+00:00 input: VirtualPS/2 VMware VMMouse as /devices/platform/i8042/serio1/input/input3
+2026-09-02T06:54:55,276940+00:00 FDC 0 is a S82078B
+2026-09-02T06:54:55,278364+00:00 virtio_blk virtio2: [vda] 335544320 512-byte logical blocks (172 GB/160 GiB)
+2026-09-02T06:54:55,293458+00:00 virtio_net virtio1 ens3: renamed from eth0
+2026-09-02T06:54:55,320201+00:00 [drm] pci: virtio-vga detected at 0000:00:02.0
+2026-09-02T06:54:55,324877+00:00 virtio-pci 0000:00:02.0: remove_conflicting_pci_framebuffers: bar 0: 0xfe000000 -> 0xfe7fffff
+2026-09-02T06:54:55,332084+00:00 virtio-pci 0000:00:02.0: remove_conflicting_pci_framebuffers: bar 2: 0xfe800000 -> 0xfe803fff
+2026-09-02T06:54:55,339306+00:00 virtio-pci 0000:00:02.0: remove_conflicting_pci_framebuffers: bar 4: 0xfeb90000 -> 0xfeb90fff
+2026-09-02T06:54:55,345251+00:00 GPT:Primary header thinks Alt. header is not at the end of the disk.
+2026-09-02T06:54:55,346774+00:00 virtio-pci 0000:00:02.0: vgaarb: deactivate vga console
+2026-09-02T06:54:55,353345+00:00 GPT:4612095 != 335544319
+2026-09-02T06:54:55,361259+00:00 GPT:Alternate GPT header not at the end of the disk.
+2026-09-02T06:54:55,361260+00:00 GPT:4612095 != 335544319
+2026-09-02T06:54:55,361261+00:00 GPT: Use GNU Parted to correct GPT errors.
+2026-09-02T06:54:55,361273+00:00  vda: vda1 vda14 vda15
+2026-09-02T06:54:55,363871+00:00 Console: switching to colour dummy device 80x25
+2026-09-02T06:54:55,375966+00:00 [drm] virgl 3d acceleration not supported by host
+2026-09-02T06:54:55,378728+00:00 [drm] EDID support available.
+2026-09-02T06:54:55,383871+00:00 [TTM] Zone  kernel: Available graphics memory: 8190152 KiB
+2026-09-02T06:54:55,387748+00:00 [TTM] Zone   dma32: Available graphics memory: 2097152 KiB
+2026-09-02T06:54:55,391476+00:00 [TTM] Initializing pool allocator
+2026-09-02T06:54:55,393621+00:00 [TTM] Initializing DMA pool allocator
+2026-09-02T06:54:55,395938+00:00 [drm] number of scanouts: 1
+2026-09-02T06:54:55,397753+00:00 [drm] number of cap sets: 0
+2026-09-02T06:54:55,400133+00:00 [drm] Initialized virtio_gpu 0.1.0 0 for virtio0 on minor 0
+2026-09-02T06:54:55,406976+00:00 Console: switching to colour frame buffer device 128x48
+2026-09-02T06:54:55,416934+00:00 virtio_gpu virtio0: fb0: virtio_gpudrmfb frame buffer device
+2026-09-02T06:54:55,744888+00:00 raid6: sse2x4   gen() 11025 MB/s
+2026-09-02T06:54:55,792890+00:00 raid6: sse2x4   xor()  7179 MB/s
+2026-09-02T06:54:55,840891+00:00 raid6: sse2x2   gen()  9321 MB/s
+2026-09-02T06:54:55,888892+00:00 raid6: sse2x2   xor()  5947 MB/s
+2026-09-02T06:54:55,936892+00:00 raid6: sse2x1   gen()  7908 MB/s
+2026-09-02T06:54:55,984892+00:00 raid6: sse2x1   xor()  5422 MB/s
+2026-09-02T06:54:55,986579+00:00 raid6: using algorithm sse2x4 gen() 11025 MB/s
+2026-09-02T06:54:55,988753+00:00 raid6: .... xor() 7179 MB/s, rmw enabled
+2026-09-02T06:54:55,990739+00:00 raid6: using ssse3x2 recovery algorithm
+2026-09-02T06:54:55,995029+00:00 xor: measuring software checksum speed
+2026-09-02T06:54:56,036911+00:00    prefetch64-sse:  6487.000 MB/sec
+2026-09-02T06:54:56,080891+00:00    generic_sse:  9215.000 MB/sec
+2026-09-02T06:54:56,083186+00:00 xor: using function: generic_sse (9215.000 MB/sec)
+2026-09-02T06:54:56,088560+00:00 async_tx: api initialized (async)
+2026-09-02T06:54:56,209278+00:00 Btrfs loaded, crc32c=crc32c-intel
+2026-09-02T06:54:57,430080+00:00 EXT4-fs (vda1): mounted filesystem with ordered data mode. Opts: (null)
+2026-09-02T06:55:00,494712+00:00 systemd[1]: Inserted module 'autofs4'
+2026-09-02T06:55:01,044240+00:00 random: crng init done
+2026-09-02T06:55:01,420754+00:00 systemd[1]: systemd 245.4-4ubuntu3.24 running in system mode. (+PAM +AUDIT +SELINUX +IMA +APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ +LZ4 +SECCOMP +BLKID +ELFUTILS +KMOD +IDN2 -IDN +PCRE2 default-hierarchy=hybrid)
+2026-09-02T06:55:01,438089+00:00 systemd[1]: Detected virtualization kvm.
+2026-09-02T06:55:01,444731+00:00 systemd[1]: Detected architecture x86-64.
+2026-09-02T06:55:01,737033+00:00 systemd[1]: Set hostname to <ubuntu>.
+2026-09-02T06:55:01,947731+00:00 systemd[1]: Initializing machine ID from KVM UUID.
+2026-09-02T06:55:01,954727+00:00 systemd[1]: Installed transient /etc/machine-id file.
+2026-09-02T06:55:03,720067+00:00 systemd[1]: Configuration file /run/systemd/system/netplan-ovs-cleanup.service is marked world-inaccessible. This has no effect as configuration data is accessible via APIs without restrictions. Proceeding anyway.
+2026-09-02T06:55:03,928153+00:00 systemd[1]: /lib/systemd/system/snapd.service:23: Unknown key name 'RestartMode' in section 'Service', ignoring.
+2026-09-02T06:55:04,114661+00:00 systemd[1]: Created slice system-modprobe.slice.
+2026-09-02T06:55:04,126765+00:00 systemd[1]: Created slice system-serial\x2dgetty.slice.
+2026-09-02T06:55:04,139114+00:00 systemd[1]: Created slice system-systemd\x2dfsck.slice.
+2026-09-02T06:55:04,152459+00:00 systemd[1]: Created slice User and Session Slice.
+2026-09-02T06:55:04,164399+00:00 systemd[1]: Started Forward Password Requests to Wall Directory Watch.
+2026-09-02T06:55:04,179093+00:00 systemd[1]: Set up automount Arbitrary Executable File Formats File System Automount Point.
+2026-09-02T06:55:04,194867+00:00 systemd[1]: Reached target User and Group Name Lookups.
+2026-09-02T06:55:04,207348+00:00 systemd[1]: Reached target Slices.
+2026-09-02T06:55:04,217404+00:00 systemd[1]: Reached target Mounting snaps.
+2026-09-02T06:55:04,228429+00:00 systemd[1]: Reached target Swap.
+2026-09-02T06:55:04,238362+00:00 systemd[1]: Listening on Device-mapper event daemon FIFOs.
+2026-09-02T06:55:04,250772+00:00 systemd[1]: Listening on LVM2 poll daemon socket.
+2026-09-02T06:55:04,261483+00:00 systemd[1]: Listening on multipathd control socket.
+2026-09-02T06:55:04,272028+00:00 systemd[1]: Listening on Syslog Socket.
+2026-09-02T06:55:04,281254+00:00 systemd[1]: Listening on fsck to fsckd communication Socket.
+2026-09-02T06:55:04,292606+00:00 systemd[1]: Listening on initctl Compatibility Named Pipe.
+2026-09-02T06:55:04,309260+00:00 systemd[1]: Listening on Journal Audit Socket.
+2026-09-02T06:55:04,320941+00:00 systemd[1]: Listening on Journal Socket (/dev/log).
+2026-09-02T06:55:04,332823+00:00 systemd[1]: Listening on Journal Socket.
+2026-09-02T06:55:04,343494+00:00 systemd[1]: Listening on Network Service Netlink Socket.
+2026-09-02T06:55:04,355657+00:00 systemd[1]: Listening on udev Control Socket.
+2026-09-02T06:55:04,366797+00:00 systemd[1]: Listening on udev Kernel Socket.
+2026-09-02T06:55:04,380237+00:00 systemd[1]: Mounting Huge Pages File System...
+2026-09-02T06:55:04,394227+00:00 systemd[1]: Mounting POSIX Message Queue File System...
+2026-09-02T06:55:04,408095+00:00 systemd[1]: Mounting Kernel Debug File System...
+2026-09-02T06:55:04,421582+00:00 systemd[1]: Mounting Kernel Trace File System...
+2026-09-02T06:55:04,436331+00:00 systemd[1]: Starting Journal Service...
+2026-09-02T06:55:04,450032+00:00 systemd[1]: Starting Set the console keyboard layout...
+2026-09-02T06:55:04,464643+00:00 systemd[1]: Starting Create list of static device nodes for the current kernel...
+2026-09-02T06:55:04,481079+00:00 systemd[1]: Starting Monitoring of LVM2 mirrors, snapshots etc. using dmeventd or progress polling...
+2026-09-02T06:55:04,499599+00:00 systemd[1]: Starting Load Kernel Module chromeos_pstore...
+2026-09-02T06:55:04,512113+00:00 systemd[1]: Condition check resulted in Load Kernel Module drm being skipped.
+2026-09-02T06:55:04,523403+00:00 systemd[1]: Starting Load Kernel Module efi_pstore...
+2026-09-02T06:55:04,537325+00:00 systemd[1]: Starting Load Kernel Module pstore_blk...
+2026-09-02T06:55:04,551352+00:00 systemd[1]: Starting Load Kernel Module pstore_zone...
+2026-09-02T06:55:04,565715+00:00 systemd[1]: Starting Load Kernel Module ramoops...
+2026-09-02T06:55:04,577269+00:00 systemd[1]: Condition check resulted in OpenVSwitch configuration for cleanup being skipped.
+2026-09-02T06:55:04,633792+00:00 systemd[1]: Condition check resulted in Set Up Additional Binary Formats being skipped.
+2026-09-02T06:55:04,645883+00:00 systemd[1]: Starting File System Check on Root Device...
+2026-09-02T06:55:04,718526+00:00 systemd[1]: Starting Load Kernel Modules...
+2026-09-02T06:55:04,731324+00:00 systemd[1]: Starting udev Coldplug all Devices...
+2026-09-02T06:55:04,741785+00:00 systemd[1]: Starting Uncomplicated firewall...
+2026-09-02T06:55:04,755628+00:00 systemd[1]: Started Journal Service.
+2026-09-02T06:55:05,583457+00:00 EXT4-fs (vda1): re-mounted. Opts: (null)
+2026-09-02T06:55:05,709972+00:00 systemd-journald[380]: Received client request to flush runtime journal.
+2026-09-02T06:55:14,773918+00:00 alua: device handler registered
+2026-09-02T06:55:14,776654+00:00 emc: device handler registered
+2026-09-02T06:55:14,803769+00:00 rdac: device handler registered
+2026-09-02T06:55:18,020694+00:00 audit: type=1400 audit(1788332118.460:2): apparmor="STATUS" operation="profile_load" profile="unconfined" name="lsb_release" pid=577 comm="apparmor_parser"
+2026-09-02T06:55:18,026495+00:00 audit: type=1400 audit(1788332118.468:3): apparmor="STATUS" operation="profile_load" profile="unconfined" name="nvidia_modprobe" pid=579 comm="apparmor_parser"
+2026-09-02T06:55:18,027213+00:00 audit: type=1400 audit(1788332118.468:4): apparmor="STATUS" operation="profile_load" profile="unconfined" name="nvidia_modprobe//kmod" pid=579 comm="apparmor_parser"
+2026-09-02T06:55:18,063077+00:00 audit: type=1400 audit(1788332118.504:5): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/usr/bin/man" pid=576 comm="apparmor_parser"
+2026-09-02T06:55:18,063694+00:00 audit: type=1400 audit(1788332118.504:6): apparmor="STATUS" operation="profile_load" profile="unconfined" name="man_filter" pid=576 comm="apparmor_parser"
+2026-09-02T06:55:18,064377+00:00 audit: type=1400 audit(1788332118.504:7): apparmor="STATUS" operation="profile_load" profile="unconfined" name="man_groff" pid=576 comm="apparmor_parser"
+2026-09-02T06:55:18,213661+00:00 audit: type=1400 audit(1788332118.656:8): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/usr/lib/snapd/snap-confine" pid=575 comm="apparmor_parser"
+2026-09-02T06:55:18,213961+00:00 audit: type=1400 audit(1788332118.656:9): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/usr/lib/snapd/snap-confine//mount-namespace-capture-helper" pid=575 comm="apparmor_parser"
+2026-09-02T06:55:18,221366+00:00 audit: type=1400 audit(1788332118.664:10): apparmor="STATUS" operation="profile_load" profile="unconfined" name="ubuntu_pro_apt_news" pid=578 comm="apparmor_parser"
+2026-09-02T06:55:18,286257+00:00 audit: type=1400 audit(1788332118.728:11): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/usr/sbin/tcpdump" pid=580 comm="apparmor_parser"
+2026-09-02T06:55:23,332055+00:00 kauditd_printk_skb: 28 callbacks suppressed
+2026-09-02T06:55:23,332065+00:00 audit: type=1400 audit(1788332123.772:40): apparmor="DENIED" operation="exec" profile="/{,usr/}sbin/dhclient" name="/usr/bin/true" pid=624 comm="dhclient" requested_mask="x" denied_mask="x" fsuid=0 ouid=0
+2026-09-02T06:55:23,374341+00:00 audit: type=1400 audit(1788332123.816:41): apparmor="DENIED" operation="exec" profile="/{,usr/}sbin/dhclient" name="/usr/bin/true" pid=625 comm="isc-worker0000" requested_mask="x" denied_mask="x" fsuid=0 ouid=0
+2026-09-02T06:55:34,902452+00:00 EXT4-fs (vda1): resizing filesystem from 548091 to 41914619 blocks
+2026-09-02T06:55:37,999252+00:00 EXT4-fs (vda1): resized filesystem to 41914619
+2026-09-02T07:16:37,692788+00:00 bridge: filtering via arp/ip/ip6tables is no longer available by default. Update your scripts to load br_netfilter if you need this.
+2026-09-02T07:16:37,708833+00:00 Bridge firewalling registered
+2026-09-02T07:22:07,068998+00:00 aufs 5.4.3-20200302
+2026-09-02T07:30:06,894874+00:00 bpfilter: Loaded bpfilter_umh pid 20000
+2026-09-02T07:30:06,895489+00:00 Started bpfilter
+2026-09-02T07:30:25,190249+00:00 cgroup: cgroup: disabling cgroup2 socket matching due to net_prio or net_cls activation
+2026-09-02T07:30:32,221093+00:00 audit: type=1400 audit(1788334233.026:42): apparmor="STATUS" operation="profile_load" profile="unconfined" name="cri-containerd.apparmor.d" pid=20231 comm="apparmor_parser"
+2026-09-02T07:37:56,825225+00:00 wireguard: WireGuard 1.0.20201112 loaded. See www.wireguard.com for information.
+2026-09-02T07:37:56,825228+00:00 wireguard: Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+2026-09-02T07:39:25,233441+00:00 Initializing XFRM netlink socket
+2026-09-02T07:39:25,375744+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): eth0: link becomes ready
+2026-09-02T07:39:25,375839+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): calic9d2b859fde: link becomes ready
+2026-09-02T07:39:35,920296+00:00 ipip: IPv4 and MPLS over IPv4 tunneling driver
+2026-09-02T07:39:36,014224+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): eth0: link becomes ready
+2026-09-02T07:39:36,014319+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali45abfac1f42: link becomes ready
+2026-09-02T07:39:37,711987+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali4c342a92b6c: link becomes ready
+2026-09-02T08:17:35,893682+00:00 systemd-udevd[26023]: ethtool: autonegotiation is unset or enabled, the speed and duplex are not writable.
+2026-09-02T08:17:35,893685+00:00 systemd-udevd[167966]: ethtool: autonegotiation is unset or enabled, the speed and duplex are not writable.
+2026-09-02T08:19:07,799876+00:00 systemd-udevd[167966]: ethtool: autonegotiation is unset or enabled, the speed and duplex are not writable.
+2026-09-02T08:19:07,799897+00:00 systemd-udevd[26023]: ethtool: autonegotiation is unset or enabled, the speed and duplex are not writable.
+2026-09-02T08:19:18,040004+00:00 systemd-udevd[26023]: ethtool: could not get ethtool features for calico_tmp_B
+2026-09-02T08:19:18,040015+00:00 systemd-udevd[167966]: ethtool: could not get ethtool features for calico_tmp_A
+2026-09-02T14:48:23,088987+00:00 audit: type=1400 audit(1788360504.125:43): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/24671/usr/lib/snapd/snap-confine" pid=667746 comm="apparmor_parser"
+2026-09-02T14:48:23,088996+00:00 audit: type=1400 audit(1788360504.125:44): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/24671/usr/lib/snapd/snap-confine//mount-namespace-capture-helper" pid=667746 comm="apparmor_parser"
+2026-09-02T14:48:23,290109+00:00 audit: type=1400 audit(1788360504.325:45): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.buginfo" pid=667753 comm="apparmor_parser"
+2026-09-02T14:48:23,306563+00:00 audit: type=1400 audit(1788360504.341:46): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.activate" pid=667751 comm="apparmor_parser"
+2026-09-02T14:48:23,312123+00:00 audit: type=1400 audit(1788360504.349:47): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.check-kernel" pid=667754 comm="apparmor_parser"
+2026-09-02T14:48:23,322614+00:00 audit: type=1400 audit(1788360504.357:48): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.benchmark" pid=667752 comm="apparmor_parser"
+2026-09-02T14:48:23,350501+00:00 audit: type=1400 audit(1788360504.385:49): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.configure" pid=667756 comm="apparmor_parser"
+2026-09-02T14:48:23,398613+00:00 audit: type=1400 audit(1788360504.433:50): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.daemon" pid=667755 comm="apparmor_parser"
+2026-09-02T14:48:23,449066+00:00 audit: type=1400 audit(1788360504.485:51): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.install" pid=667823 comm="apparmor_parser"
+2026-09-02T14:48:23,486391+00:00 audit: type=1400 audit(1788360504.521:52): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.lxc" pid=667833 comm="apparmor_parser"
+2026-09-03T06:18:26,237033+00:00 kauditd_printk_skb: 5 callbacks suppressed
+2026-09-03T06:18:26,237042+00:00 audit: type=1400 audit(1788416307.773:58): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="ubuntu_pro_apt_news" pid=2530781 comm="apparmor_parser"
+2026-09-03T06:18:26,996657+00:00 audit: type=1400 audit(1788416308.533:59): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="ubuntu_pro_esm_cache" pid=2530804 comm="apparmor_parser"
+2026-09-03T06:18:27,145910+00:00 audit: type=1400 audit(1788416308.681:60): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="ubuntu_pro_esm_cache//apt_methods" pid=2530804 comm="apparmor_parser"
+2026-09-03T06:18:27,147688+00:00 audit: type=1400 audit(1788416308.685:61): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="ubuntu_pro_esm_cache//apt_methods_gpgv" pid=2530804 comm="apparmor_parser"
+2026-09-03T06:18:27,149720+00:00 audit: type=1400 audit(1788416308.685:62): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="ubuntu_pro_esm_cache//cloud_id" pid=2530804 comm="apparmor_parser"
+2026-09-03T06:18:27,151106+00:00 audit: type=1400 audit(1788416308.685:63): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="ubuntu_pro_esm_cache//dpkg" pid=2530804 comm="apparmor_parser"
+2026-09-03T06:18:27,153305+00:00 audit: type=1400 audit(1788416308.689:64): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="ubuntu_pro_esm_cache//ps" pid=2530804 comm="apparmor_parser"
+2026-09-03T06:18:27,154697+00:00 audit: type=1400 audit(1788416308.689:65): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="ubuntu_pro_esm_cache//ubuntu_distro_info" pid=2530804 comm="apparmor_parser"
+2026-09-03T06:18:27,156658+00:00 audit: type=1400 audit(1788416308.693:66): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="ubuntu_pro_esm_cache_systemctl" pid=2530804 comm="apparmor_parser"
+2026-09-03T06:18:27,158033+00:00 audit: type=1400 audit(1788416308.693:67): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="ubuntu_pro_esm_cache_systemd_detect_virt" pid=2530804 comm="apparmor_parser"
+2026-09-03T12:23:48,570921+00:00 device tunl0 entered promiscuous mode
+2026-09-03T12:24:10,941015+00:00 device tunl0 left promiscuous mode
+2026-09-03T12:49:05,324819+00:00 device tunl0 entered promiscuous mode
+2026-09-03T12:49:55,042526+00:00 device tunl0 left promiscuous mode
+2026-09-03T12:52:23,119171+00:00 device tunl0 entered promiscuous mode
+2026-09-03T12:52:39,169567+00:00 device tunl0 left promiscuous mode
+2026-09-03T13:01:22,330338+00:00 device vxlan.calico entered promiscuous mode
+2026-09-03T13:01:34,672469+00:00 device vxlan.calico left promiscuous mode
+2026-09-03T13:02:22,713715+00:00 device vxlan.calico entered promiscuous mode
+2026-09-03T13:02:38,085582+00:00 device vxlan.calico left promiscuous mode
+2026-09-03T22:46:59,169744+00:00 audit: type=1400 audit(1788475621.182:68): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/snap/snapd/27710/usr/lib/snapd/snap-confine" pid=2833861 comm="apparmor_parser"
+2026-09-03T22:46:59,234618+00:00 audit: type=1400 audit(1788475621.246:69): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap-update-ns.lxd" pid=2833863 comm="apparmor_parser"
+2026-09-03T22:46:59,237153+00:00 audit: type=1400 audit(1788475621.250:70): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.activate" pid=2833864 comm="apparmor_parser"
+2026-09-03T22:46:59,239407+00:00 audit: type=1400 audit(1788475621.254:71): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.benchmark" pid=2833865 comm="apparmor_parser"
+2026-09-03T22:46:59,239605+00:00 audit: type=1400 audit(1788475621.254:72): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.buginfo" pid=2833866 comm="apparmor_parser"
+2026-09-03T22:46:59,240634+00:00 audit: type=1400 audit(1788475621.254:73): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.check-kernel" pid=2833867 comm="apparmor_parser"
+2026-09-03T22:46:59,243784+00:00 audit: type=1400 audit(1788475621.258:74): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.daemon" pid=2833868 comm="apparmor_parser"
+2026-09-03T22:46:59,244857+00:00 audit: type=1400 audit(1788475621.258:75): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.configure" pid=2833869 comm="apparmor_parser"
+2026-09-03T22:46:59,247483+00:00 audit: type=1400 audit(1788475621.262:76): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.remove" pid=2833871 comm="apparmor_parser"
+2026-09-03T22:46:59,247874+00:00 audit: type=1400 audit(1788475621.262:77): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.lxc" pid=2833872 comm="apparmor_parser"
+2026-09-03T22:47:22,626937+00:00 kauditd_printk_skb: 4 callbacks suppressed
+2026-09-03T22:47:22,626941+00:00 audit: type=1400 audit(1788475644.642:82): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/27710/usr/lib/snapd/snap-confine" pid=2834467 comm="apparmor_parser"
+2026-09-03T22:47:22,679501+00:00 audit: type=1400 audit(1788475644.694:83): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap-update-ns.lxd" pid=2834469 comm="apparmor_parser"
+2026-09-03T22:47:22,861207+00:00 audit: type=1400 audit(1788475644.874:84): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.activate" pid=2834470 comm="apparmor_parser"
+2026-09-03T22:47:22,861352+00:00 audit: type=1400 audit(1788475644.874:85): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.buginfo" pid=2834472 comm="apparmor_parser"
+2026-09-03T22:47:22,864981+00:00 audit: type=1400 audit(1788475644.878:86): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.check-kernel" pid=2834473 comm="apparmor_parser"
+2026-09-03T22:47:22,914838+00:00 audit: type=1400 audit(1788475644.930:87): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.benchmark" pid=2834471 comm="apparmor_parser"
+2026-09-03T22:47:22,920832+00:00 audit: type=1400 audit(1788475644.934:88): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.daemon" pid=2834474 comm="apparmor_parser"
+2026-09-03T22:47:22,937580+00:00 audit: type=1400 audit(1788475644.950:89): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.configure" pid=2834475 comm="apparmor_parser"
+2026-09-03T22:47:23,017509+00:00 audit: type=1400 audit(1788475645.030:90): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.remove" pid=2834483 comm="apparmor_parser"
+2026-09-03T22:47:23,033673+00:00 audit: type=1400 audit(1788475645.046:91): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.install" pid=2834482 comm="apparmor_parser"
+2026-09-03T22:47:31,447106+00:00 kauditd_printk_skb: 4 callbacks suppressed
+2026-09-03T22:47:31,447109+00:00 audit: type=1400 audit(1788475653.462:96): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/27710/usr/lib/snapd/snap-confine" pid=2834690 comm="apparmor_parser"
+2026-09-03T22:47:31,518772+00:00 audit: type=1400 audit(1788475653.534:97): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap-update-ns.lxd" pid=2834692 comm="apparmor_parser"
+2026-09-03T22:47:31,522847+00:00 audit: type=1400 audit(1788475653.538:98): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.activate" pid=2834693 comm="apparmor_parser"
+2026-09-03T22:47:31,523163+00:00 audit: type=1400 audit(1788475653.538:99): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.buginfo" pid=2834695 comm="apparmor_parser"
+2026-09-03T22:47:31,523417+00:00 audit: type=1400 audit(1788475653.538:100): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.benchmark" pid=2834694 comm="apparmor_parser"
+2026-09-03T22:47:31,524992+00:00 audit: type=1400 audit(1788475653.538:101): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.check-kernel" pid=2834696 comm="apparmor_parser"
+2026-09-03T22:47:31,526206+00:00 audit: type=1400 audit(1788475653.538:102): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.daemon" pid=2834697 comm="apparmor_parser"
+2026-09-03T22:47:31,529684+00:00 audit: type=1400 audit(1788475653.542:103): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.configure" pid=2834698 comm="apparmor_parser"
+2026-09-03T22:47:31,530767+00:00 audit: type=1400 audit(1788475653.546:104): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.install" pid=2834699 comm="apparmor_parser"
+2026-09-03T22:47:31,532083+00:00 audit: type=1400 audit(1788475653.546:105): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.remove" pid=2834700 comm="apparmor_parser"
+2026-09-04T06:31:57,416153+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali6060876e370: link becomes ready
+2026-09-04T06:31:58,131654+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali9207e819ac0: link becomes ready
+2026-09-04T06:32:07,445758+00:00 IPv6: ADDRCONF(NETDEV_CHANGE): cali7230d8fa8df: link becomes ready
+2026-09-07T03:50:09,210920+00:00 kauditd_printk_skb: 4 callbacks suppressed
+2026-09-07T03:50:09,210931+00:00 audit: type=1400 audit(1788753013.665:110): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/snap/snapd/27738/usr/lib/snapd/snap-confine" pid=2411379 comm="apparmor_parser"
+2026-09-07T03:50:26,498957+00:00 audit: type=1400 audit(1788753030.953:111): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/27738/usr/lib/snapd/snap-confine" pid=2414595 comm="apparmor_parser"
+2026-09-07T03:50:26,506435+00:00 audit: type=1400 audit(1788753030.961:112): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap-update-ns.lxd" pid=2414598 comm="apparmor_parser"
+2026-09-07T03:50:26,508816+00:00 audit: type=1400 audit(1788753030.965:113): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.buginfo" pid=2414601 comm="apparmor_parser"
+2026-09-07T03:50:26,510782+00:00 audit: type=1400 audit(1788753030.965:114): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.activate" pid=2414599 comm="apparmor_parser"
+2026-09-07T03:50:26,510953+00:00 audit: type=1400 audit(1788753030.965:115): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.benchmark" pid=2414600 comm="apparmor_parser"
+2026-09-07T03:50:26,514270+00:00 audit: type=1400 audit(1788753030.969:116): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.check-kernel" pid=2414602 comm="apparmor_parser"
+2026-09-07T03:50:26,515745+00:00 audit: type=1400 audit(1788753030.973:117): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.lxc" pid=2414610 comm="apparmor_parser"
+2026-09-07T03:50:26,517616+00:00 audit: type=1400 audit(1788753030.973:118): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.daemon" pid=2414603 comm="apparmor_parser"
+2026-09-07T03:50:26,517865+00:00 audit: type=1400 audit(1788753030.973:119): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.install" pid=2414607 comm="apparmor_parser"
+2026-09-07T03:50:26,519413+00:00 audit: type=1400 audit(1788753030.977:120): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.remove" pid=2414609 comm="apparmor_parser"
+2026-09-07T03:50:40,620647+00:00 kauditd_printk_skb: 4 callbacks suppressed
+2026-09-07T03:50:40,620650+00:00 audit: type=1400 audit(1788753045.077:125): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/27738/usr/lib/snapd/snap-confine" pid=2417294 comm="apparmor_parser"
+2026-09-07T03:50:40,683447+00:00 audit: type=1400 audit(1788753045.137:126): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap-update-ns.lxd" pid=2417296 comm="apparmor_parser"
+2026-09-07T03:50:40,685586+00:00 audit: type=1400 audit(1788753045.141:127): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.benchmark" pid=2417298 comm="apparmor_parser"
+2026-09-07T03:50:40,687212+00:00 audit: type=1400 audit(1788753045.141:128): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.activate" pid=2417297 comm="apparmor_parser"
+2026-09-07T03:50:40,687958+00:00 audit: type=1400 audit(1788753045.145:129): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.check-kernel" pid=2417300 comm="apparmor_parser"
+2026-09-07T03:50:40,688135+00:00 audit: type=1400 audit(1788753045.145:130): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.buginfo" pid=2417299 comm="apparmor_parser"
+2026-09-07T03:50:40,689124+00:00 audit: type=1400 audit(1788753045.145:131): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.daemon" pid=2417301 comm="apparmor_parser"
+2026-09-07T03:50:40,693071+00:00 audit: type=1400 audit(1788753045.149:132): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.install" pid=2417303 comm="apparmor_parser"
+2026-09-07T03:50:40,693988+00:00 audit: type=1400 audit(1788753045.149:133): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.configure" pid=2417302 comm="apparmor_parser"
+2026-09-07T03:50:40,694327+00:00 audit: type=1400 audit(1788753045.149:134): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.lxc" pid=2417305 comm="apparmor_parser"
+2026-09-23T15:42:41,069352+00:00 kauditd_printk_skb: 4 callbacks suppressed
+2026-09-23T15:42:41,069362+00:00 audit: type=1400 audit(1790178178.099:139): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/27738/usr/lib/snapd/snap-confine" pid=3619330 comm="apparmor_parser"
+2026-09-23T15:42:41,319277+00:00 audit: type=1400 audit(1790178178.351:140): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.benchmark" pid=3619363 comm="apparmor_parser"
+2026-09-23T15:42:41,323027+00:00 audit: type=1400 audit(1790178178.355:141): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.buginfo" pid=3619365 comm="apparmor_parser"
+2026-09-23T15:42:41,335092+00:00 audit: type=1400 audit(1790178178.367:142): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.check-kernel" pid=3619367 comm="apparmor_parser"
+2026-09-23T15:42:41,342036+00:00 audit: type=1400 audit(1790178178.375:143): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.activate" pid=3619362 comm="apparmor_parser"
+2026-09-23T15:42:41,394442+00:00 audit: type=1400 audit(1790178178.427:144): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.configure" pid=3619369 comm="apparmor_parser"
+2026-09-23T15:42:41,416210+00:00 audit: type=1400 audit(1790178178.447:145): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.daemon" pid=3619368 comm="apparmor_parser"
+2026-09-23T15:42:41,509028+00:00 audit: type=1400 audit(1790178178.539:146): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.install" pid=3619442 comm="apparmor_parser"
+2026-09-23T15:42:41,532579+00:00 audit: type=1400 audit(1790178178.563:147): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.remove" pid=3619444 comm="apparmor_parser"
+2026-09-23T15:42:41,562215+00:00 audit: type=1400 audit(1790178178.595:148): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.lxc" pid=3619448 comm="apparmor_parser"
+2026-09-29T17:47:28,905342+00:00 kauditd_printk_skb: 4 callbacks suppressed
+2026-09-29T17:47:28,905352+00:00 audit: type=1400 audit(1790704070.477:153): apparmor="STATUS" operation="profile_load" profile="unconfined" name="/snap/snapd/28254/usr/lib/snapd/snap-confine" pid=1841857 comm="apparmor_parser"
+2026-09-29T17:47:55,401910+00:00 audit: type=1400 audit(1790704096.973:154): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/28254/usr/lib/snapd/snap-confine" pid=1847028 comm="apparmor_parser"
+2026-09-29T17:47:55,443418+00:00 audit: type=1400 audit(1790704097.017:155): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap-update-ns.lxd" pid=1847032 comm="apparmor_parser"
+2026-09-29T17:47:55,716069+00:00 audit: type=1400 audit(1790704097.289:156): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.buginfo" pid=1847035 comm="apparmor_parser"
+2026-09-29T17:47:55,716073+00:00 audit: type=1400 audit(1790704097.289:157): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.check-kernel" pid=1847036 comm="apparmor_parser"
+2026-09-29T17:47:55,716283+00:00 audit: type=1400 audit(1790704097.289:158): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.benchmark" pid=1847034 comm="apparmor_parser"
+2026-09-29T17:47:55,716696+00:00 audit: type=1400 audit(1790704097.289:159): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.daemon" pid=1847037 comm="apparmor_parser"
+2026-09-29T17:47:55,717231+00:00 audit: type=1400 audit(1790704097.289:160): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.activate" pid=1847033 comm="apparmor_parser"
+2026-09-29T17:47:56,492416+00:00 audit: type=1400 audit(1790704098.065:161): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.configure" pid=1847078 comm="apparmor_parser"
+2026-09-29T17:47:56,717383+00:00 audit: type=1400 audit(1790704098.289:162): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.hook.install" pid=1847117 comm="apparmor_parser"
+2026-09-29T17:47:56,736842+00:00 audit: type=1400 audit(1790704098.309:163): apparmor="STATUS" operation="profile_replace" profile="unconfined" name="snap.lxd.migrate" pid=1847177 comm="apparmor_parser"
+2026-09-29T17:48:07,855532+00:00 kauditd_printk_skb: 4 callbacks suppressed
+2026-09-29T17:48:07,855536+00:00 audit: type=1400 audit(1790704109.430:168): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="/snap/snapd/28254/usr/lib/snapd/snap-confine" pid=1849380 comm="apparmor_parser"
+2026-09-29T17:48:07,934780+00:00 audit: type=1400 audit(1790704109.506:169): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap-update-ns.lxd" pid=1849400 comm="apparmor_parser"
+2026-09-29T17:48:07,940983+00:00 audit: type=1400 audit(1790704109.514:170): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.check-kernel" pid=1849404 comm="apparmor_parser"
+2026-09-29T17:48:07,941276+00:00 audit: type=1400 audit(1790704109.514:171): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.activate" pid=1849401 comm="apparmor_parser"
+2026-09-29T17:48:07,942428+00:00 audit: type=1400 audit(1790704109.514:172): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.daemon" pid=1849405 comm="apparmor_parser"
+2026-09-29T17:48:07,944391+00:00 audit: type=1400 audit(1790704109.518:173): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.benchmark" pid=1849402 comm="apparmor_parser"
+2026-09-29T17:48:07,946152+00:00 audit: type=1400 audit(1790704109.518:174): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.configure" pid=1849408 comm="apparmor_parser"
+2026-09-29T17:48:07,948979+00:00 audit: type=1400 audit(1790704109.522:175): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.hook.install" pid=1849409 comm="apparmor_parser"
+2026-09-29T17:48:07,949520+00:00 audit: type=1400 audit(1790704109.522:176): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.lxc" pid=1849411 comm="apparmor_parser"
+2026-09-29T17:48:07,949699+00:00 audit: type=1400 audit(1790704109.522:177): apparmor="STATUS" operation="profile_replace" info="same as current profile, skipping" profile="unconfined" name="snap.lxd.buginfo" pid=1849403 comm="apparmor_parser"

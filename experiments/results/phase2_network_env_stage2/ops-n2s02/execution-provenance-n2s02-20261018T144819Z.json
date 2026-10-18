@@ -1,0 +1,29 @@
+{
+ "run": "n2s02",
+ "run_id": "guarded_pressure_act-n2s02-cap-p2-net-v1-stage2",
+ "generated_at_utc": "2026-10-18T14:48:19.549045+00:00",
+ "session_wrapper_path": "experiments/guarded_pilot_session.ps1",
+ "session_wrapper_sha256": "68c9349ab27216a3ad5b5b8f63329919bdc3b7994162e3b72343d238b9ba4efe",
+ "runner_path": "experiments/phase2_network_env/n2_run.py",
+ "runner_sha256_lf": "0c2571708709362f567b374fcef1b56081a6eb9aa5f980d2305ace1e8eb3e8f3",
+ "runner_shim_path": "experiments/phase2_network_env/ops/n2_stage2_shim.py",
+ "runner_shim_sha256": "3b784b2f39a6eca8c6a76723f695127d5ca7204bfe911532ebfd3a1b54d20d1d",
+ "implementation_freeze": {
+  "manifest": "experiments/phase2_network_env/phase2-network-env-implementation-freeze-r9.json",
+  "manifest_sha256": "68e3882646e9277f1777e7726acb79391cb1c68b50c47d4a3a106c64a848c7e2",
+  "selection_profile_sha256": "9346e19eee12e1221d72a87b273b68b0724ec8d46024dec3587040c8b6eb787b"
+ },
+ "active_profile_sha256": "c26122172d40fc979ab38ec0ef3bbad186bf7bf62a4ee1538bc143035e675d99",
+ "selection_evidence_sha256": "a48ff69c95e3dcc96451fbb6dc6daebc7a6b614ba2fb1c362df04fc1ad6ba254",
+ "act_switch": {
+  "file": "act-switch-n2s02.json",
+  "sha256": "a5f0ba7f7c506d2f30a6caa2ed996fd75be9cd61e9d90dfedc5b32cb898e788e"
+ },
+ "wrapper_invocation": {
+  "script": "experiments/guarded_pilot_session.ps1",
+  "Run": "n2s02",
+  "Mode": "act",
+  "RunnerScript": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\phase2_network_env\\ops\\n2_stage2_shim.py",
+  "ActApproval": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\phase2_network_env_stage2\\ops-n2s02\\n2s02-act-approval-20261018T144819Z.json"
+ }
+}
