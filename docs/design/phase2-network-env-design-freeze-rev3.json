@@ -1,0 +1,73 @@
+{
+  "status": "design_frozen",
+  "version": "phase2-network-env-design-v1-rev3",
+  "plan_id": "capstone-phase2-network-env-v1",
+  "prereg_path": "docs/design/PHASE2-NETWORK-ENV-PREREG-v1-rev3.md",
+  "prereg_sha256": "ff835c1810b1bf37057b8851e03b65230afb5738cc05e24d6b6ca29328f7848d",
+  "prereg_commit": "2209451585017c32a803949e5f468cf9cff72d40",
+  "hash_basis": "LF-normalized file content (= committed git blob)",
+  "frozen_at_utc": "2026-10-18T05:12:51+00:00",
+  "candidates": {
+    "cpu-threshold-c": 1.6842544293089357,
+    "net-probe-readiness": 0.006401369666666786,
+    "c3-a-if": -0.1948341270493127
+  },
+  "net_probe": {
+    "definition_sha256": "46c95eed9920c8ddd59dc816960fc4a7c1c96b5a61c95cca2d19e27c6c0167a6",
+    "calibration_sha256": "c6ece5885bb97000f5a4df87ef135ad9a21e358e99b621e90f4b875e48c7af96",
+    "threshold": 0.006401369666666786,
+    "calibration_evidence": "experiments/results/network_detector_dev_20261017/probe-metric/result.json"
+  },
+  "counts": {
+    "normal": 4,
+    "pressure": 5,
+    "stage2": 3,
+    "max_attempts": {
+      "normal": 12,
+      "pressure": 7,
+      "stage2": 5
+    }
+  },
+  "stages": [
+    {
+      "name": "stage-1-500ms",
+      "latency": "500ms",
+      "jitter": "50ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-2-1000ms",
+      "latency": "1000ms",
+      "jitter": "100ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-3-2000ms",
+      "latency": "2000ms",
+      "jitter": "200ms",
+      "duration_sec": 90
+    },
+    {
+      "name": "stage-4-4000ms",
+      "latency": "4000ms",
+      "jitter": "400ms",
+      "duration_sec": 90
+    }
+  ],
+  "probe_profile": {
+    "name": "network_tolerant",
+    "readiness_timeout_sec": 11,
+    "liveness_timeout_sec": 11
+  },
+  "phase2_not_modified": {
+    "prereg_path": "docs/design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md",
+    "prereg_sha256": "a6512ff03f33fb96b1d65031ff7c03f84c26fdfd74dd833e1516336110bad7d3",
+    "implementation_freeze": "experiments/phase2_detector_selection/phase2-detector-selection-implementation-freeze-r2.json",
+    "implementation_freeze_sha256": "06c3ecf8135e5a529924689b29518d569165b3aeaa774223516cfbbc24257df0"
+  },
+  "supersedes": {
+    "manifest_path": "docs/design/phase2-network-env-design-freeze-rev2.json",
+    "manifest_sha256": "6466ac4df3da8533f8a2a02209cd735c9d7ff41c9e74bd1415020075c60329de",
+    "reason": "rev2(42a3b46) 동결 뒤 정상 시도 4/6(유효 1)로 유효 정상 4개를 채울 수 없게 되어, 사용자 지시로 유효성 기준·임계값·Gate/선택 규칙은 두고 정상 시도 상한만 6->12로 늘린 rev3로 교체. n2n03 재사용, 무효 시도 전부 기록."
+  }
+}
