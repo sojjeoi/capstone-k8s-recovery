@@ -1,0 +1,196 @@
+{
+ "run_id": "hc-f1-c-b1",
+ "arm": "C",
+ "fault": "f1",
+ "block": 1,
+ "rep": 7219,
+ "check": false,
+ "started_at": "2026-11-03T17:04:06.293870+00:00",
+ "problems": [],
+ "classification": "harness_error",
+ "obs_sec": 600.0,
+ "stand_sec": 300.0,
+ "prom_forward": {
+  "started": true,
+  "pid": 26220
+ },
+ "delay_restored": null,
+ "placement": {
+  "target": "sj-worker",
+  "before": "sj-worker2",
+  "prep": {
+   "ready": true,
+   "t_prep_start": "2026-11-03T17:04:19.077872+00:00",
+   "t_preview_ready": "2026-11-03T17:06:39.782938+00:00",
+   "prep_duration_sec": 140.70477289997507,
+   "created_pod_hash": "856b977989",
+   "rollback_attempted": false,
+   "rollback_ok": null
+  },
+  "after": "sj-worker",
+  "moved": true
+ },
+ "state_before": {
+  "t": "2026-11-03T17:07:20.733530+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "856b977989",
+   "preview": "856b977989",
+   "current_hash": "856b977989",
+   "stable_rs": "856b977989",
+   "generation": 665,
+   "observed": "665",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-03T17:04:19.077899+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-856b977989-rsckq",
+    "uid": "1011e0d1-1d61-47bb-a63b-b299bcb863c7",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-03T17:06:37Z",
+    "created": "2026-11-03T17:04:19Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "856b977989",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "state_after_setup": {
+  "t": "2026-11-03T17:07:28.172694+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "856b977989",
+   "preview": "856b977989",
+   "current_hash": "856b977989",
+   "stable_rs": "856b977989",
+   "generation": 665,
+   "observed": "665",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-03T17:04:19.077899+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-856b977989-rsckq",
+    "uid": "1011e0d1-1d61-47bb-a63b-b299bcb863c7",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-03T17:06:37Z",
+    "created": "2026-11-03T17:04:19Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "856b977989",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "target": {
+  "name": "vllm-serving-856b977989-rsckq",
+  "uid": "1011e0d1-1d61-47bb-a63b-b299bcb863c7"
+ },
+ "state_after_restore": {
+  "t": "2026-11-03T17:15:21.100247+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "856b977989",
+   "preview": "856b977989",
+   "current_hash": "856b977989",
+   "stable_rs": "856b977989",
+   "generation": 665,
+   "observed": "665",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-03T17:04:19.077899+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-856b977989-rsckq",
+    "uid": "1011e0d1-1d61-47bb-a63b-b299bcb863c7",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-03T17:06:37Z",
+    "created": "2026-11-03T17:04:19Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "856b977989",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "trial_error": "CalledProcessError: Command '['kubectl', 'exec', '-n', 'vllm-serving', 'ramp-probe-d91a23ef', '--', 'sh', '-c', \"nohup sh -c 'PYTHONUNBUFFERED=1 python /probe.py --config /probe-config.yaml --run-id hc-f1-c-b1 --scenario hpa_compare_f1 --arm proposed --rep 7219 --out /probe-raw.csv --duration-sec 1200.0 > /probe.log 2>&1; echo $? > /probe.exit' < /dev/null > /probe-wrapper.log 2>&1 &\"]' returned non-zero exit status 124.",
+ "restore_error": null,
+ "sampler_errors": 0,
+ "ended_at": "2026-11-03T17:15:40.701157+00:00",
+ "harness_problems": [
+  "CalledProcessError: Command '['kubectl', 'exec', '-n', 'vllm-serving', 'ramp-probe-d91a23ef', '--', 'sh', '-c', \"nohup sh -c 'PYTHONUNBUFFERED=1 python /probe.py --config /probe-config.yaml --run-id hc-f1-c-b1 --scenario hpa_compare_f1 --arm proposed --rep 7219 --out /probe-raw.csv --duration-sec 1200.0 > /probe.log 2>&1; echo $? > /probe.exit' < /dev/null > /probe-wrapper.log 2>&1 &\"]' returned non-zero exit status 124.",
+  "trial_status=None: None",
+  "slo_not_computable: None"
+ ]
+}

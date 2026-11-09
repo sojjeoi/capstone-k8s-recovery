@@ -1,0 +1,23 @@
+{
+ "run_id": "hc-f3-c-b14-r2",
+ "arm": "C",
+ "fault": "f3",
+ "block": 14,
+ "rep": 7347,
+ "check": false,
+ "started_at": "2026-11-04T09:27:01.616491+00:00",
+ "problems": [],
+ "classification": "harness_error",
+ "obs_sec": 600.0,
+ "stand_sec": 300.0,
+ "trial_error": "TimeoutError: 대기 시간 초과(900s): base 복원(Pod 1개 Ready, Healthy) (마지막: False)",
+ "restore_error": "TimeoutError: 대기 시간 초과(900s): base 복원(Pod 1개 Ready, Healthy) (마지막: False)",
+ "sampler_errors": 0,
+ "ended_at": "2026-11-04T09:57:08.104836+00:00",
+ "harness_problems": [
+  "TimeoutError: 대기 시간 초과(900s): base 복원(Pod 1개 Ready, Healthy) (마지막: False)",
+  "restore_error: TimeoutError: 대기 시간 초과(900s): base 복원(Pod 1개 Ready, Healthy) (마지막: False)",
+  "trial_status=None: None",
+  "slo_not_computable: None"
+ ]
+}

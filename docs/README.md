@@ -3,6 +3,7 @@
 | 폴더 | 성격 | 언제 보나 |
 |---|---|---|
 | [final/](final/) | **현재 최종 결과·정리** | 결과 수치와 해석 범위를 확인할 때 - 여기부터 |
+| [presentation/](presentation/) | 발표 자료. 경진대회·졸업 발표 덱은 `competition-20261024/`(`index.html` HTML 덱, `script.md` 대본). 발표용 PPTX와 2장의 논문 그림(저작권)은 저장소에 넣지 않았다 | 발표 화면·대본을 볼 때 |
 | [demo/](demo/) | 발표 시연 runbook | 시연 절차를 볼 때 |
 | [design/](design/) | 실험 계약·사전등록·freeze manifest·중간 설계 (**frozen / historical**) | 어떤 규칙을 결과 전에 고정했는지 확인할 때. 당시 기준 문서이며 현재 설계 설명이 아니다 |
 | [history/](history/) | 초기 제안서·대체된 요약 (**historical**) | 프로젝트 출발점이 궁금할 때 |
@@ -11,7 +12,9 @@
 
 | 문서 | 내용 |
 |---|---|
-| [PHASE2-FINAL-RESULT-20261012.md](final/PHASE2-FINAL-RESULT-20261012.md) | **최종 결과**: 환경별 detector 선택(CPU 5/5, IF 0/5) → 선택된 detector로 실제 복구 3/3, 말할 수 있는 것/없는 것, caveat |
+| [UNIFIED-COMPARISON-RESULT-20261106.md](final/UNIFIED-COMPARISON-RESULT-20261106.md) | **최종 결과 (최신)**: 장애 3종(CPU 압박·네트워크 지연·요청 폭주) × 4개 방식(무전환·오토스케일링·계속 분산·우리 시스템), 칸마다 유효 10회. 요청 폭주에서는 우리 시스템이 가장 김. 무효·보충·한계 공개 |
+| [NETWORK-ENV-VALIDATION-20261019.md](final/NETWORK-ENV-VALIDATION-20261019.md) | 네트워크 지연 환경 추가 검증: 상태 확인 규칙(`net-probe-readiness`) 선택 → 실제 복구 3/3 |
+| [PHASE2-FINAL-RESULT-20261012.md](final/PHASE2-FINAL-RESULT-20261012.md) | CPU 압박 환경 detector 선택(CPU 5/5, IF 0/5) → 선택된 detector로 실제 복구 3/3, 말할 수 있는 것/없는 것, caveat |
 | [FINAL-RESEARCH-SYNTHESIS-20261011.md](final/FINAL-RESEARCH-SYNTHESIS-20261011.md) | Phase 1 전체 정리(A/B, B/C/K, N1, c3-A, Axis 2)와 무결성 감사 |
 | [FINAL-EVIDENCE-SUMMARY-20261010.md](final/FINAL-EVIDENCE-SUMMARY-20261010.md) | 공식 실험별 증거·주장 판정표 |
 | [PHASE1-AB-ADDITIONAL-REPLICATION-20261013.md](final/PHASE1-AB-ADDITIONAL-REPLICATION-20261013.md) | A/B 사전등록 추가 반복 3쌍(ab06–ab08) - 공식 5쌍과 분리 보고 |
@@ -24,6 +27,8 @@
 - [PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md](design/PHASE2-DETECTOR-SELECTION-PREREG-v1-rev6.md) - Phase 2 detector 선택 사전등록(Gate 규칙)
 - [phase8-v33c1-guarded-ab-comparison-contract-r2-20261007.md](design/phase8-v33c1-guarded-ab-comparison-contract-r2-20261007.md) - Phase 1 A/B 비교 계약(canonical 시작 상태 포함)
 - [slo-definition.md](design/slo-definition.md) - 서비스 품질(SLO) 판정 정의
+- [PHASE2-NETWORK-ENV-PREREG-v1-rev5.md](design/PHASE2-NETWORK-ENV-PREREG-v1-rev5.md) - 네트워크 지연 환경 추가 검증 사전등록
+- [UNIFIED-COMPARISON-PREREG-20261104.md](design/UNIFIED-COMPARISON-PREREG-20261104.md) - 통일 비교 사전등록(4개 방식·칸마다 10회·무효 규칙)
 
 design/의 파일은 freeze 해시·실행기 경로가 참조하므로 이동·수정하지 않는다.
 
@@ -37,6 +42,10 @@ design/의 파일은 freeze 해시·실행기 경로가 참조하므로 이동·
 | c3-A | 정상 범위를 넓혀 다시 학습해 정상 불필요 신호 14 → 1, 사전등록 판정 PROMISING |
 | Axis 2 | LLM 지표를 쓰는 다변량 감지기 NO_GO - 현재 환경에서 LLM 지표가 거의 변하지 않음 |
 | Phase 2 | 사전등록 규칙으로 감지기 선택(CPU 5/5 · IF 0/5) → 선택된 감지기로 실제 복구 3/3, `PHASE2_ARCHITECTURE_VALIDATED` |
+| 네트워크 지연 추가 검증 (10/19) | 상태 확인 규칙 5/5 · CPU 임계값 0/5 · IF 0/5 → `SELECTED:net-probe-readiness`, 실제 복구 3/3 |
+| 오토스케일링 비교 (10/23) | 블록당 1세션 탐색 비교. 네트워크 지연은 전환이 짧고, 요청 폭주는 오토스케일링이 짧음 → 통일 비교로 대체 |
+| 요청 단위 보호·종료 대기 (10/23) | 전환 뒤 새 연결 요청 552건 모두 새 Pod. 진행 중 답변 완료 1/4 → 3/4(`--shutdown-timeout 90`) |
+| 통일 비교 (11/04~11/06) | 장애 3종 × 4개 방식 × 유효 10회. CPU 압박 0초·네트워크 지연 92초로 가장 짧음, 요청 폭주 365.5초로 가장 김 |
 
 모든 공식 실험은 결과를 보기 전에 비교 지표·반복 수·중단 규칙·선택 기준을 사전등록하고 고정했다. 서비스 품질 판정 정의: [design/slo-definition.md](design/slo-definition.md). 실험별 실행기·근거 위치: [../experiments/README.md](../experiments/README.md)
 

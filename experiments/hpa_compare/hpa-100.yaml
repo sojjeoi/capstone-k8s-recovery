@@ -1,0 +1,23 @@
+# H 군 HPA: request 대비 CPU 사용률 100 % 하나(= vLLM Pod 요청 2코어 기준 평균 2.0코어). CPU limit(3코어)의 100 % 가 아니다.
+# 최적·대표 HPA 가 아니며, 설계서 §0·§8 에 따라 결과를 보기 전에 고정한 값이다(변경 금지). 나머지는 클러스터 기본 동작.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vllm-hpa-compare
+  namespace: vllm-serving
+  labels:
+    purpose: hpa-comparison-2026-10-22
+spec:
+  scaleTargetRef:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    name: vllm-serving
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 100

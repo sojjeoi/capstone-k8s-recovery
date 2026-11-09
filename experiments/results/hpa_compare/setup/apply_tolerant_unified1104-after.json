@@ -1,0 +1,67 @@
+{
+ "t": "2026-11-03T15:52:09.880718+00:00",
+ "rollout": {
+  "phase": "Healthy",
+  "replicas_spec": 1,
+  "available": 1,
+  "active": "6fb665bbb9",
+  "preview": "6fb665bbb9",
+  "current_hash": "6fb665bbb9",
+  "stable_rs": "6fb665bbb9",
+  "generation": 655,
+  "observed": "655",
+  "readiness_timeout": 11,
+  "liveness_timeout": 11,
+  "requests": {
+   "cpu": "2",
+   "memory": "4Gi"
+  },
+  "limits": {
+   "cpu": "3",
+   "memory": "6Gi"
+  },
+  "image": "vllm-cpu-env:latest",
+  "scale_down_delay": 30,
+  "preview_replica_count": null,
+  "annotations": {
+   "experiment-prep-ts": "2026-10-29T16:27:17.291599+00:00",
+   "promotion-verify-ts": "2026-09-06T10:14:52Z",
+   "regime-test-ts": "2026-09-06T11:07:08Z",
+   "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+  }
+ },
+ "pods": [
+  {
+   "name": "vllm-serving-6fb665bbb9-6cqcb",
+   "uid": "f4f01e2c-e7eb-40f2-88db-d74c63c7f3c7",
+   "phase": "Running",
+   "ready": true,
+   "ready_since": "2026-11-03T15:51:19Z",
+   "created": "2026-11-03T15:46:47Z",
+   "deleting": null,
+   "node": "sj-worker2",
+   "hash": "6fb665bbb9",
+   "restarts": 0
+  },
+  {
+   "name": "vllm-serving-7644f4f697-qngqq",
+   "uid": "3f37be0f-f039-49e6-b1de-18c8dda8a693",
+   "phase": "Running",
+   "ready": true,
+   "ready_since": "2026-10-29T16:47:43Z",
+   "created": "2026-10-29T16:44:02Z",
+   "deleting": "2026-11-03T15:52:34Z",
+   "node": "sj-worker",
+   "hash": "7644f4f697",
+   "restarts": 0
+  }
+ ],
+ "hpa": null,
+ "chaos": [],
+ "endpoints_active": 1,
+ "template_facts": {
+  "shutdown_timeout_arg": null,
+  "termination_grace_sec": 30,
+  "readiness_timeout": 11
+ }
+}

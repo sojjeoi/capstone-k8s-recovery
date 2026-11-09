@@ -1,0 +1,345 @@
+{
+ "run_id": "hc-f3-c-b23",
+ "arm": "C",
+ "fault": "f3",
+ "block": 23,
+ "rep": 7437,
+ "check": false,
+ "started_at": "2026-11-05T11:54:31.347830+00:00",
+ "problems": [],
+ "classification": "valid",
+ "obs_sec": 600.0,
+ "stand_sec": 300.0,
+ "delay_restored": null,
+ "placement": {
+  "target": "sj-worker",
+  "before": "sj-worker2",
+  "prep": {
+   "ready": true,
+   "t_prep_start": "2026-11-05T11:54:34.762082+00:00",
+   "t_preview_ready": "2026-11-05T11:56:47.914973+00:00",
+   "prep_duration_sec": 133.15291740000066,
+   "created_pod_hash": "d5f9b4fdc",
+   "rollback_attempted": false,
+   "rollback_ok": null
+  },
+  "after": "sj-worker",
+  "moved": true
+ },
+ "state_before": {
+  "t": "2026-11-05T11:57:21.160622+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "d5f9b4fdc",
+   "preview": "d5f9b4fdc",
+   "current_hash": "d5f9b4fdc",
+   "stable_rs": "d5f9b4fdc",
+   "generation": 845,
+   "observed": "845",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-05T11:54:34.762092+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-6d88d9f499-dkfxw",
+    "uid": "b7788c5f-d3ef-4132-a75a-8b4f3cf7155e",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T11:39:03Z",
+    "created": "2026-11-05T11:36:06Z",
+    "deleting": "2026-11-05T11:57:49Z",
+    "node": "sj-worker2",
+    "hash": "6d88d9f499",
+    "restarts": 0
+   },
+   {
+    "name": "vllm-serving-d5f9b4fdc-vwjsn",
+    "uid": "87717b08-b593-4903-96fe-9d0ab1140935",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T11:56:44Z",
+    "created": "2026-11-05T11:54:35Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "d5f9b4fdc",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "state_after_setup": {
+  "t": "2026-11-05T11:57:22.015556+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "d5f9b4fdc",
+   "preview": "d5f9b4fdc",
+   "current_hash": "d5f9b4fdc",
+   "stable_rs": "d5f9b4fdc",
+   "generation": 845,
+   "observed": "845",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-05T11:54:34.762092+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-6d88d9f499-dkfxw",
+    "uid": "b7788c5f-d3ef-4132-a75a-8b4f3cf7155e",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T11:39:03Z",
+    "created": "2026-11-05T11:36:06Z",
+    "deleting": "2026-11-05T11:57:49Z",
+    "node": "sj-worker2",
+    "hash": "6d88d9f499",
+    "restarts": 0
+   },
+   {
+    "name": "vllm-serving-d5f9b4fdc-vwjsn",
+    "uid": "87717b08-b593-4903-96fe-9d0ab1140935",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T11:56:44Z",
+    "created": "2026-11-05T11:54:35Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "d5f9b4fdc",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "target": {
+  "name": "vllm-serving-d5f9b4fdc-vwjsn",
+  "uid": "87717b08-b593-4903-96fe-9d0ab1140935"
+ },
+ "outcome": {
+  "status": "completed",
+  "reason": "전환 없음 대조 관찰 600초 완료",
+  "elapsed_sec": 869.2111461000004,
+  "prober_stop_failed": null,
+  "injector_cleanup_failed": null,
+  "sink_exit": {
+   "pid": 4364,
+   "returncode": 1,
+   "exited_cleanly": true
+  },
+  "score_server_exit": {
+   "returncode": 0,
+   "exited_cleanly": true,
+   "note": "H/W: 감지기 없음"
+  },
+  "injection_valid": true,
+  "t_injection_requested_utc": "2026-11-05T12:05:40.177286+00:00",
+  "t_injection_observed_utc": "2026-11-05T12:05:42.090660+00:00",
+  "observation_ended_at_utc": "2026-11-05T12:15:43.223615+00:00",
+  "probe_last_request_utc": "2026-11-05T12:15:40.827461+00:00",
+  "probe_data_gap_sec": 2.396154,
+  "probe_data_gap_detected": false,
+  "probe_max_internal_gap_sec": 1.010805,
+  "cleanup_status": "complete",
+  "invalidity_reasons": []
+ },
+ "state_after_restore": {
+  "t": "2026-11-05T12:16:52.764171+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "d5f9b4fdc",
+   "preview": "d5f9b4fdc",
+   "current_hash": "d5f9b4fdc",
+   "stable_rs": "d5f9b4fdc",
+   "generation": 845,
+   "observed": "845",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-05T11:54:34.762092+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-d5f9b4fdc-vwjsn",
+    "uid": "87717b08-b593-4903-96fe-9d0ab1140935",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T11:56:44Z",
+    "created": "2026-11-05T11:54:35Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "d5f9b4fdc",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "trial_error": null,
+ "restore_error": null,
+ "sampler_errors": 0,
+ "ended_at": "2026-11-05T12:16:53.737477+00:00",
+ "slo": {
+  "contract": "v2-main-contract-20261003",
+  "analyzer_revision": "r2-20261004",
+  "slo_version": "v3",
+  "computable": true,
+  "reason": null,
+  "evidence_rule": "response_observed_at<=observation_end",
+  "t_injection": "2026-11-05T12:05:42.090660+00:00",
+  "observation_end": "2026-11-05T12:15:43.223615+00:00",
+  "requests_in_window": 599,
+  "max_gap_in_window_sec": 2.396,
+  "episodes": [
+   {
+    "t_slo": "2026-11-05T12:06:15.152539+00:00",
+    "t_recovery": "2026-11-05T12:06:44.058400+00:00",
+    "t_recovery_confirmed_at": "2026-11-05T12:07:15.155936+00:00",
+    "end_counted": "2026-11-05T12:06:44.058400+00:00",
+    "duration_sec": 28.906,
+    "lower_bound": false,
+    "t_slo_rel_sec": 33.1,
+    "end_rel_sec": 62.0
+   },
+   {
+    "t_slo": "2026-11-05T12:09:53.444443+00:00",
+    "t_recovery": "2026-11-05T12:14:03.146747+00:00",
+    "t_recovery_confirmed_at": "2026-11-05T12:14:34.076484+00:00",
+    "end_counted": "2026-11-05T12:14:03.146747+00:00",
+    "duration_sec": 249.702,
+    "lower_bound": false,
+    "t_slo_rel_sec": 251.4,
+    "end_rel_sec": 501.1
+   }
+  ],
+  "cumulative_sec": 278.608,
+  "cumulative_lower_bound": false,
+  "first_episode_sec": 28.906,
+  "first_episode_lower_bound": false,
+  "requests_excluded_response_after_end": 0
+ },
+ "cost": {
+  "window": [
+   "2026-11-05T12:00:42.090660+00:00",
+   "2026-11-05T12:15:43.223615+00:00"
+  ],
+  "pods": {
+   "vllm-serving-6d88d9f499-dkfxw": {
+    "alive_sec": 0.0,
+    "ready_sec": 0.0,
+    "created": "2026-11-05T11:36:06+00:00",
+    "ready_since": "2026-11-05T11:39:03+00:00"
+   },
+   "vllm-serving-d5f9b4fdc-vwjsn": {
+    "alive_sec": 901.1,
+    "ready_sec": 901.1,
+    "created": "2026-11-05T11:54:35+00:00",
+    "ready_since": "2026-11-05T11:56:44+00:00"
+   }
+  },
+  "pod_alive_sec_total": 901.1,
+  "cpu_request_core_sec": 1802.2,
+  "memory_request_gib_sec": 3604.4,
+  "pod_ready_sec_total": 901.1,
+  "note": "예약량(요청량×유지 시간). 실제 사용량은 usage 항목에 따로 기록. 금액 환산 없음"
+ },
+ "usage": {
+  "guarded-recovery-policy-5b977879bc-266rt": {
+   "cpu_mean_cores": 0.003,
+   "cpu_max_cores": 0.004,
+   "mem_mean_mib": 83.5,
+   "n": 81
+  },
+  "vllm-serving-d5f9b4fdc-vwjsn": {
+   "cpu_mean_cores": 1.6,
+   "cpu_max_cores": 3.01,
+   "mem_mean_mib": 3427.0,
+   "n": 81
+  },
+  "ramp-inj-4dc51a8a": {
+   "cpu_mean_cores": 0.014,
+   "cpu_max_cores": 0.027,
+   "mem_mean_mib": 17.4,
+   "n": 70
+  },
+  "ramp-probe-ef3c27d1": {
+   "cpu_mean_cores": 0.021,
+   "cpu_max_cores": 0.029,
+   "mem_mean_mib": 26.0,
+   "n": 65
+  }
+ },
+ "request_increase": {
+  "vllm-serving-d5f9b4fdc-vwjsn": {
+   "before": 56.0,
+   "after": 746.0,
+   "increase": 690.0
+  }
+ },
+ "events": {
+  "hpa_scale_decision": null,
+  "extra_pod_created": null,
+  "extra_pod_ready": null,
+  "extra_pod_first_request": null,
+  "extra_pod": null,
+  "t_injection": "2026-11-05T12:05:42.090660+00:00",
+  "observation_end": "2026-11-05T12:15:43.223615+00:00"
+ },
+ "harness_problems": []
+}

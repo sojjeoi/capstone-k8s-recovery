@@ -1,0 +1,416 @@
+{
+ "run_id": "hc-f2-w-b2",
+ "arm": "W",
+ "fault": "f2",
+ "block": 2,
+ "rep": 7221,
+ "check": false,
+ "started_at": "2026-10-22T14:46:28.166163+00:00",
+ "problems": [],
+ "classification": "valid",
+ "obs_sec": 600.0,
+ "stand_sec": 300.0,
+ "state_before": {
+  "t": "2026-10-22T14:46:30.273802+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "75d8645c57",
+   "preview": "75d8645c57",
+   "current_hash": "75d8645c57",
+   "stable_rs": "75d8645c57",
+   "generation": 527,
+   "observed": "527",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-10-22T14:30:44.716347+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-75d8645c57-qjhtl",
+    "uid": "5e2a54b3-5bf4-4cae-9499-e2cb6bfbcdf2",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-10-22T14:32:31Z",
+    "created": "2026-10-22T14:30:45Z",
+    "deleting": null,
+    "node": "sj-worker2",
+    "hash": "75d8645c57",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "w_setup": {
+  "t": "2026-10-22T14:52:11.209416+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 2,
+   "available": 2,
+   "active": "75d8645c57",
+   "preview": "75d8645c57",
+   "current_hash": "75d8645c57",
+   "stable_rs": "75d8645c57",
+   "generation": 528,
+   "observed": "528",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-10-22T14:30:44.716347+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-75d8645c57-qjhtl",
+    "uid": "5e2a54b3-5bf4-4cae-9499-e2cb6bfbcdf2",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-10-22T14:32:31Z",
+    "created": "2026-10-22T14:30:45Z",
+    "deleting": null,
+    "node": "sj-worker2",
+    "hash": "75d8645c57",
+    "restarts": 0
+   },
+   {
+    "name": "vllm-serving-75d8645c57-xc5c7",
+    "uid": "fc008ef6-4db2-419d-bdf1-94ecab24e570",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-10-22T14:51:55Z",
+    "created": "2026-10-22T14:46:31Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "75d8645c57",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 2
+ },
+ "state_after_setup": {
+  "t": "2026-10-22T14:52:12.106885+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 2,
+   "available": 2,
+   "active": "75d8645c57",
+   "preview": "75d8645c57",
+   "current_hash": "75d8645c57",
+   "stable_rs": "75d8645c57",
+   "generation": 528,
+   "observed": "528",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-10-22T14:30:44.716347+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-75d8645c57-qjhtl",
+    "uid": "5e2a54b3-5bf4-4cae-9499-e2cb6bfbcdf2",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-10-22T14:32:31Z",
+    "created": "2026-10-22T14:30:45Z",
+    "deleting": null,
+    "node": "sj-worker2",
+    "hash": "75d8645c57",
+    "restarts": 0
+   },
+   {
+    "name": "vllm-serving-75d8645c57-xc5c7",
+    "uid": "fc008ef6-4db2-419d-bdf1-94ecab24e570",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-10-22T14:51:55Z",
+    "created": "2026-10-22T14:46:31Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "75d8645c57",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 2
+ },
+ "target": {
+  "name": "vllm-serving-75d8645c57-qjhtl",
+  "uid": "5e2a54b3-5bf4-4cae-9499-e2cb6bfbcdf2"
+ },
+ "outcome": {
+  "status": "completed",
+  "reason": "전환 없음 대조 관찰 600초 완료",
+  "elapsed_sec": 806.6664983999799,
+  "prober_stop_failed": null,
+  "injector_cleanup_failed": null,
+  "sink_exit": {
+   "pid": 32268,
+   "returncode": 1,
+   "exited_cleanly": true
+  },
+  "score_server_exit": {
+   "returncode": 0,
+   "exited_cleanly": true,
+   "note": "H/W: 감지기 없음"
+  },
+  "injection_valid": true,
+  "t_injection_requested_utc": "2026-10-22T14:59:59.476568+00:00",
+  "t_injection_observed_utc": "2026-10-22T15:00:03.616687+00:00",
+  "observation_ended_at_utc": "2026-10-22T15:10:03.972335+00:00",
+  "probe_last_request_utc": "2026-10-22T15:10:03.428154+00:00",
+  "probe_data_gap_sec": 0.544181,
+  "probe_data_gap_detected": false,
+  "probe_max_internal_gap_sec": 1.035709,
+  "cleanup_status": "complete",
+  "invalidity_reasons": []
+ },
+ "state_after_restore": {
+  "t": "2026-10-22T15:10:41.929118+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "75d8645c57",
+   "preview": "75d8645c57",
+   "current_hash": "75d8645c57",
+   "stable_rs": "75d8645c57",
+   "generation": 529,
+   "observed": "529",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-10-22T14:30:44.716347+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-75d8645c57-qjhtl",
+    "uid": "5e2a54b3-5bf4-4cae-9499-e2cb6bfbcdf2",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-10-22T14:32:31Z",
+    "created": "2026-10-22T14:30:45Z",
+    "deleting": null,
+    "node": "sj-worker2",
+    "hash": "75d8645c57",
+    "restarts": 0
+   },
+   {
+    "name": "vllm-serving-75d8645c57-xc5c7",
+    "uid": "fc008ef6-4db2-419d-bdf1-94ecab24e570",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-10-22T14:51:55Z",
+    "created": "2026-10-22T14:46:31Z",
+    "deleting": "2026-10-22T15:11:11Z",
+    "node": "sj-worker",
+    "hash": "75d8645c57",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "trial_error": null,
+ "restore_error": null,
+ "sampler_errors": 0,
+ "ended_at": "2026-10-22T15:10:42.894596+00:00",
+ "slo": {
+  "contract": "v2-main-contract-20261003",
+  "analyzer_revision": "r2-20261004",
+  "slo_version": "v3",
+  "computable": true,
+  "reason": null,
+  "evidence_rule": "response_observed_at<=observation_end",
+  "t_injection": "2026-10-22T15:00:03.616687+00:00",
+  "observation_end": "2026-10-22T15:10:03.972335+00:00",
+  "requests_in_window": 600,
+  "max_gap_in_window_sec": 1.036,
+  "episodes": [
+   {
+    "t_slo": "2026-10-22T15:00:43.697458+00:00",
+    "t_recovery": "2026-10-22T15:06:56.617951+00:00",
+    "t_recovery_confirmed_at": "2026-10-22T15:07:27.650139+00:00",
+    "end_counted": "2026-10-22T15:06:56.617951+00:00",
+    "duration_sec": 372.92,
+    "lower_bound": false,
+    "t_slo_rel_sec": 40.1,
+    "end_rel_sec": 413.0
+   }
+  ],
+  "cumulative_sec": 372.92,
+  "cumulative_lower_bound": false,
+  "first_episode_sec": 372.92,
+  "first_episode_lower_bound": false,
+  "requests_excluded_response_after_end": 0
+ },
+ "cost": {
+  "window": [
+   "2026-10-22T14:55:03.616687+00:00",
+   "2026-10-22T15:10:03.972335+00:00"
+  ],
+  "pods": {
+   "vllm-serving-75d8645c57-qjhtl": {
+    "alive_sec": 900.4,
+    "ready_sec": 900.4,
+    "created": "2026-10-22T14:30:45+00:00",
+    "ready_since": "2026-10-22T14:32:31+00:00"
+   },
+   "vllm-serving-75d8645c57-xc5c7": {
+    "alive_sec": 900.4,
+    "ready_sec": 900.4,
+    "created": "2026-10-22T14:46:31+00:00",
+    "ready_since": "2026-10-22T14:51:55+00:00"
+   }
+  },
+  "pod_alive_sec_total": 1800.8,
+  "cpu_request_core_sec": 3601.6,
+  "memory_request_gib_sec": 7203.2,
+  "pod_ready_sec_total": 1800.8,
+  "note": "예약량(요청량×유지 시간). 실제 사용량은 usage 항목에 따로 기록. 금액 환산 없음"
+ },
+ "usage": {
+  "guarded-recovery-policy-5b977879bc-r5ldr": {
+   "cpu_mean_cores": 0.003,
+   "cpu_max_cores": 0.004,
+   "mem_mean_mib": 82.5,
+   "n": 69
+  },
+  "vllm-serving-75d8645c57-qjhtl": {
+   "cpu_mean_cores": 0.667,
+   "cpu_max_cores": 1.311,
+   "mem_mean_mib": 3356.0,
+   "n": 69
+  },
+  "vllm-serving-75d8645c57-xc5c7": {
+   "cpu_mean_cores": 0.624,
+   "cpu_max_cores": 1.388,
+   "mem_mean_mib": 3453.4,
+   "n": 69
+  },
+  "ramp-probe-01c476d6": {
+   "cpu_mean_cores": 0.019,
+   "cpu_max_cores": 0.042,
+   "mem_mean_mib": 25.2,
+   "n": 55
+  }
+ },
+ "request_increase": {
+  "vllm-serving-75d8645c57-qjhtl": {
+   "before": 593.0,
+   "after": 910.0,
+   "increase": 317.0
+  },
+  "vllm-serving-75d8645c57-xc5c7": {
+   "before": 49.0,
+   "after": 334.0,
+   "increase": 285.0
+  }
+ },
+ "events": {
+  "hpa_scale_decision": null,
+  "extra_pod_created": null,
+  "extra_pod_ready": null,
+  "extra_pod_first_request": null,
+  "extra_pod": null,
+  "t_injection": "2026-10-22T15:00:03.616687+00:00",
+  "observation_end": "2026-10-22T15:10:03.972335+00:00"
+ },
+ "chaos_seen": [
+  [
+   "netdelay-hc-f2-w-b2-s0-ec48f2",
+   "{\"vllm-serving\": [\"vllm-serving-75d8645c57-qjhtl\"]}",
+   [
+    "vllm-serving/vllm-serving-75d8645c57-qjhtl"
+   ]
+  ],
+  [
+   "netdelay-hc-f2-w-b2-s1-71744d",
+   "{\"vllm-serving\": [\"vllm-serving-75d8645c57-qjhtl\"]}",
+   [
+    "vllm-serving/vllm-serving-75d8645c57-qjhtl"
+   ]
+  ],
+  [
+   "netdelay-hc-f2-w-b2-s2-2aa4b9",
+   "{\"vllm-serving\": [\"vllm-serving-75d8645c57-qjhtl\"]}",
+   [
+    "vllm-serving/vllm-serving-75d8645c57-qjhtl"
+   ]
+  ],
+  [
+   "netdelay-hc-f2-w-b2-s3-24ca32",
+   "{\"vllm-serving\": [\"vllm-serving-75d8645c57-qjhtl\"]}",
+   [
+    "vllm-serving/vllm-serving-75d8645c57-qjhtl"
+   ]
+  ]
+ ],
+ "harness_problems": []
+}

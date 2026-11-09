@@ -1,0 +1,1 @@
+{"attempt_number":1,"cleanup_errors":[],"reason":"network_preflight: ['net_probe_already_anomalous:0.0088>0.006401369666666786']","recorded_at_utc":"2026-11-04T22:35:19.735160+00:00","result":null,"run":"n2s64","run_id":"guarded_pressure_act-n2s64-cap-p2-net-v1-stage2","status":"refused_entry"}

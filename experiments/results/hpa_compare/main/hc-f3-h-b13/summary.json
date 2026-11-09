@@ -1,0 +1,259 @@
+{
+ "run_id": "hc-f3-h-b13",
+ "arm": "H",
+ "fault": "f3",
+ "block": 13,
+ "rep": 7335,
+ "check": false,
+ "started_at": "2026-11-04T08:24:24.610695+00:00",
+ "problems": [],
+ "classification": "harness_error",
+ "obs_sec": 600.0,
+ "stand_sec": 300.0,
+ "delay_restored": null,
+ "placement": {
+  "target": "sj-worker",
+  "before": "sj-worker",
+  "moved": false
+ },
+ "state_before": {
+  "t": "2026-11-04T08:24:27.789791+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "76986577d9",
+   "preview": "76986577d9",
+   "current_hash": "76986577d9",
+   "stable_rs": "76986577d9",
+   "generation": 739,
+   "observed": "739",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-04T08:01:29.491779+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-76986577d9-t56w8",
+    "uid": "14570597-32a8-4b93-9b37-b99d3b864bae",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-04T08:03:28Z",
+    "created": "2026-11-04T08:01:29Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "76986577d9",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "hpa_setup": {
+  "current": 1,
+  "desired": 1,
+  "last_scale": null,
+  "metrics": [
+   {
+    "resource": {
+     "current": {
+      "averageUtilization": 1,
+      "averageValue": "21m"
+     },
+     "name": "cpu"
+    },
+    "type": "Resource"
+   }
+  ],
+  "conditions": [
+   {
+    "type": "AbleToScale",
+    "status": "True",
+    "reason": "ReadyForNewScale",
+    "message": "recommended size matches current size"
+   },
+   {
+    "type": "ScalingActive",
+    "status": "True",
+    "reason": "ValidMetricFound",
+    "message": "the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)"
+   },
+   {
+    "type": "ScalingLimited",
+    "status": "False",
+    "reason": "DesiredWithinRange",
+    "message": "the desired count is within the acceptable range"
+   }
+  ],
+  "spec_min": 1,
+  "spec_max": 2
+ },
+ "state_after_setup": {
+  "t": "2026-11-04T08:24:45.072568+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "76986577d9",
+   "preview": "76986577d9",
+   "current_hash": "76986577d9",
+   "stable_rs": "76986577d9",
+   "generation": 739,
+   "observed": "739",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-04T08:01:29.491779+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-76986577d9-t56w8",
+    "uid": "14570597-32a8-4b93-9b37-b99d3b864bae",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-04T08:03:28Z",
+    "created": "2026-11-04T08:01:29Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "76986577d9",
+    "restarts": 0
+   }
+  ],
+  "hpa": {
+   "current": 1,
+   "desired": 1,
+   "last_scale": null,
+   "metrics": [
+    {
+     "resource": {
+      "current": {
+       "averageUtilization": 1,
+       "averageValue": "21m"
+      },
+      "name": "cpu"
+     },
+     "type": "Resource"
+    }
+   ],
+   "conditions": [
+    {
+     "type": "AbleToScale",
+     "status": "True",
+     "reason": "ReadyForNewScale",
+     "message": "recommended size matches current size"
+    },
+    {
+     "type": "ScalingActive",
+     "status": "True",
+     "reason": "ValidMetricFound",
+     "message": "the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)"
+    },
+    {
+     "type": "ScalingLimited",
+     "status": "False",
+     "reason": "DesiredWithinRange",
+     "message": "the desired count is within the acceptable range"
+    }
+   ],
+   "spec_min": 1,
+   "spec_max": 2
+  },
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "target": {
+  "name": "vllm-serving-76986577d9-t56w8",
+  "uid": "14570597-32a8-4b93-9b37-b99d3b864bae"
+ },
+ "state_after_restore": {
+  "t": "2026-11-04T08:31:48.587043+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "76986577d9",
+   "preview": "76986577d9",
+   "current_hash": "76986577d9",
+   "stable_rs": "76986577d9",
+   "generation": 739,
+   "observed": "739",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-04T08:01:29.491779+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-76986577d9-t56w8",
+    "uid": "14570597-32a8-4b93-9b37-b99d3b864bae",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-04T08:03:28Z",
+    "created": "2026-11-04T08:01:29Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "76986577d9",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "trial_error": "CalledProcessError: Command '['kubectl', 'run', 'ramp-probe-1f9d6098', '-n', 'vllm-serving', '--image=loadgen-runner:phase8-v4-forceclose-20261002', '--image-pull-policy=Never', '--restart=Never', '--', 'sleep', '1500']' returned non-zero exit status 1.",
+ "restore_error": null,
+ "sampler_errors": 2,
+ "ended_at": "2026-11-04T08:31:49.714039+00:00",
+ "harness_problems": [
+  "CalledProcessError: Command '['kubectl', 'run', 'ramp-probe-1f9d6098', '-n', 'vllm-serving', '--image=loadgen-runner:phase8-v4-forceclose-20261002', '--image-pull-policy=Never', '--restart=Never', '--', 'sleep', '1500']' returned non-zero exit status 1.",
+  "trial_status=None: None",
+  "slo_not_computable: None"
+ ]
+}

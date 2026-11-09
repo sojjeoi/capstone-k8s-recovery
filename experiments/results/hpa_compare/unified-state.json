@@ -1,0 +1,2736 @@
+{
+ "sessions": {
+  "check-f1-b1-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b1",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\check\\hc-f1-w-b1\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\check-W-f1-b1.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "harness_error",
+   "finished": "2026-11-03T16:08:26.206426+00:00"
+  },
+  "check-f1-b2-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b2",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\check\\hc-f1-w-b2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\check-W-f1-b2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T16:33:55.925249+00:00"
+  },
+  "check-f1-b93-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s93",
+     "run_id": "guarded_pressure_act-n2s93-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker2",
+       "prep": {
+        "ready": true,
+        "t_prep_start": "2026-11-03T16:34:06.334115+00:00",
+        "t_preview_ready": "2026-11-03T16:36:28.026567+00:00",
+        "prep_duration_sec": 141.69201490003616,
+        "created_pod_hash": "7f957ff6bc",
+        "rollback_attempted": false,
+        "rollback_ok": null
+       },
+       "after": "sj-worker",
+       "moved": true
+      },
+      "wrapper_rc": 20,
+      "reverted": true,
+      "validity": "rs\\qkrru\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\pathlib\\__init__.py\", line 771, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'D:\\\\Desktop\\\\졸업작품\\\\capstone-k8s-recovery\\\\experiments\\\\results\\\\hpa_compare\\\\check-g\\\\p2-s2-session-n2s93.json'\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s93.log",
+     "classification": "harness_error"
+    }
+   ],
+   "classification": "harness_error",
+   "finished": "2026-11-03T16:39:04.573409+00:00"
+  },
+  "check-f1-b94-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s94",
+     "run_id": "guarded_pressure_act-n2s94-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s94\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s94.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T17:03:23.903846+00:00"
+  },
+  "f1-b1-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b1",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b1\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b1.log",
+     "restore_error": null
+    },
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b1-r2",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b1-r2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b1-r2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T17:35:27.843681+00:00"
+  },
+  "f1-b1-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b1",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b1\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b1.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T17:54:13.568994+00:00"
+  },
+  "f1-b1-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b1",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b1\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b1.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T18:16:19.219923+00:00"
+  },
+  "f1-b1-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s51",
+     "run_id": "guarded_pressure_act-n2s51-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s51\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s51.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T18:34:12.333769+00:00"
+  },
+  "f1-b2-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b2",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T18:55:17.520105+00:00"
+  },
+  "f1-b2-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b2",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T19:16:36.528935+00:00"
+  },
+  "f1-b2-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s52",
+     "run_id": "guarded_pressure_act-n2s52-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s52\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s52.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T19:34:09.363895+00:00"
+  },
+  "f1-b2-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b2",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T19:55:04.459279+00:00"
+  },
+  "f1-b3-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b3",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b3\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b3.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T20:16:06.026706+00:00"
+  },
+  "f1-b3-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s53",
+     "run_id": "guarded_pressure_act-n2s53-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s53\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s53.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T20:33:43.387347+00:00"
+  },
+  "f1-b3-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b3",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b3\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b3.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T20:54:18.911810+00:00"
+  },
+  "f1-b3-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b3",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b3\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b3.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T21:12:46.060387+00:00"
+  },
+  "f1-b4-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s54",
+     "run_id": "guarded_pressure_act-n2s54-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s54\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s54.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T21:30:39.301994+00:00"
+  },
+  "f1-b4-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b4",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b4\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b4.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T21:51:20.543380+00:00"
+  },
+  "f1-b4-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b4",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b4\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b4.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T22:09:56.356899+00:00"
+  },
+  "f1-b4-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b4",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b4\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b4.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T22:31:20.741741+00:00"
+  },
+  "f1-b5-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b5",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b5\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b5.log",
+     "restore_error": null
+    },
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b5-r2",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b5-r2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b5-r2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T23:07:43.142759+00:00"
+  },
+  "f1-b5-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b5",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b5\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b5.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T23:26:16.431081+00:00"
+  },
+  "f1-b5-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b5",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b5\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b5.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-03T23:47:24.470636+00:00"
+  },
+  "f1-b5-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s55",
+     "run_id": "guarded_pressure_act-n2s55-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s55\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s55.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T00:05:01.061018+00:00"
+  },
+  "f2-b11-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b11",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b11\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b11.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T00:25:59.027588+00:00"
+  },
+  "f2-b11-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-h-b11",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-h-b11\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f2-b11.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T00:44:18.273569+00:00"
+  },
+  "f2-b11-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-w-b11",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-w-b11\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f2-b11.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T01:06:04.465073+00:00"
+  },
+  "f2-b11-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s61",
+     "run_id": "guarded_pressure_act-n2s61-cap-p2-net-v1-stage2",
+     "fault": "f2",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s61\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s61.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T01:24:23.079436+00:00"
+  },
+  "f2-b12-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-h-b12",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-h-b12\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f2-b12.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T01:45:18.166096+00:00"
+  },
+  "f2-b12-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-w-b12",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-w-b12\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f2-b12.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T02:06:18.746013+00:00"
+  },
+  "f2-b12-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s62",
+     "run_id": "guarded_pressure_act-n2s62-cap-p2-net-v1-stage2",
+     "fault": "f2",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s62\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s62.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T02:24:38.476340+00:00"
+  },
+  "f2-b12-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b12",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b12\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b12.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T02:45:20.955869+00:00"
+  },
+  "f2-b13-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b13",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b13\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b13.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T03:03:35.405059+00:00"
+  },
+  "f2-b14-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b14",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b14\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b14.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T03:21:39.178192+00:00"
+  },
+  "f2-b15-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b15",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b15\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b15.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T03:39:47.325517+00:00"
+  },
+  "f3-b11-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b11",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b11\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b11.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T03:59:38.283266+00:00"
+  },
+  "f3-b11-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-h-b11",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-h-b11\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f3-b11.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T04:19:46.544496+00:00"
+  },
+  "f3-b11-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b11",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b11\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b11.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T04:43:42.839116+00:00"
+  },
+  "f3-b11-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s71",
+     "run_id": "guarded_pressure_act-n2s71-cap-p2-net-v1-stage2",
+     "fault": "f3",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s71\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s71.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T05:04:24.096813+00:00"
+  },
+  "f3-b12-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-h-b12",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-h-b12\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f3-b12.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T05:27:39.997767+00:00"
+  },
+  "f3-b12-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b12",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b12\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b12.log",
+     "restore_error": "RuntimeError: kubectl get rollout vllm-serving -n vllm-serving -o json 실패(exit 1): Unable to connect to the server: dial tcp 192.168.30.4:6443: connectex: A socket operation was attempted to an unreachable network."
+    },
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b12-r2",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b12-r2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b12-r2.log",
+     "restore_error": "RuntimeError: kubectl get rollout vllm-serving -n vllm-serving -o json 실패(exit 1): Unable to connect to the server: dial tcp 192.168.30.4:6443: connectex: A socket operation was attempted to an unreachable host."
+    }
+   ],
+   "classification": "harness_error",
+   "finished": "2026-11-04T06:22:14.462169+00:00"
+  },
+  "f3-b12-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s72",
+     "run_id": "guarded_pressure_act-n2s72-cap-p2-net-v1-stage2",
+     "fault": "f3",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s72\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s72.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T06:56:20.027320+00:00"
+  },
+  "f3-b12-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b12",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b12\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b12.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T07:18:47.901091+00:00"
+  },
+  "f3-b13-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b13",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b13\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b13.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T07:41:42.219166+00:00"
+  },
+  "f3-b13-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s73",
+     "run_id": "guarded_pressure_act-n2s73-cap-p2-net-v1-stage2",
+     "fault": "f3",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s73\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s73.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T08:01:24.092581+00:00"
+  },
+  "f3-b13-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b13",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b13\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b13.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T08:24:21.797784+00:00"
+  },
+  "f3-b13-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-h-b13",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-h-b13\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f3-b13.log",
+     "restore_error": null
+    },
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-h-b13-r2",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-h-b13-r2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f3-b13-r2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T08:52:12.429410+00:00"
+  },
+  "f3-b14-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b14",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b14\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b14.log",
+     "restore_error": "TimeoutError: 대기 시간 초과(900s): base 복원(Pod 1개 Ready, Healthy) (마지막: False)"
+    },
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b14-r2",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b14-r2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b14-r2.log",
+     "restore_error": "TimeoutError: 대기 시간 초과(900s): base 복원(Pod 1개 Ready, Healthy) (마지막: False)"
+    }
+   ],
+   "classification": "harness_error",
+   "finished": "2026-11-04T09:57:08.287630+00:00"
+  },
+  "f3-b14-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b14",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b14\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b14.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T11:01:45.243122+00:00"
+  },
+  "f3-b15-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b15",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b15\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b15.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T12:19:41.679859+00:00"
+  },
+  "f3-b15-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b15",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b15\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b15.log",
+     "restore_error": null
+    },
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b15-r2",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b15-r2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b15-r2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T12:59:24.188805+00:00"
+  },
+  "f3-b16-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b16",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b16\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b16.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T13:23:26.765946+00:00"
+  },
+  "f3-b16-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b16",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b16\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b16.log",
+     "restore_error": null
+    },
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b16-r2",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b16-r2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b16-r2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "harness_error",
+   "finished": "2026-11-04T14:04:07.163828+00:00"
+  },
+  "f3-b26-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b26",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b26\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b26.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T14:41:58.767117+00:00"
+  },
+  "f1-b6-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b6",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b6\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b6.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T15:00:44.803332+00:00"
+  },
+  "f1-b6-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b6",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b6\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b6.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T15:22:54.591930+00:00"
+  },
+  "f1-b6-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s56",
+     "run_id": "guarded_pressure_act-n2s56-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s56\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s56.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T15:41:54.999362+00:00"
+  },
+  "f1-b6-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b6",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b6\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b6.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T16:02:45.374489+00:00"
+  },
+  "f1-b7-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b7",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b7\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b7.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T16:24:24.299517+00:00"
+  },
+  "f1-b7-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s57",
+     "run_id": "guarded_pressure_act-n2s57-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s57\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s57.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T16:42:49.050820+00:00"
+  },
+  "f1-b7-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b7",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b7\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b7.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T17:03:32.407620+00:00"
+  },
+  "f1-b7-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b7",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b7\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b7.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T17:21:56.872963+00:00"
+  },
+  "f1-b8-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s58",
+     "run_id": "guarded_pressure_act-n2s58-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s58\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s58.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T17:40:38.453896+00:00"
+  },
+  "f1-b8-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b8",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b8\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b8.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T18:01:42.258557+00:00"
+  },
+  "f1-b8-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b8",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b8\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b8.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T18:20:06.551336+00:00"
+  },
+  "f1-b8-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b8",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b8\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b8.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T18:41:25.538734+00:00"
+  },
+  "f1-b9-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b9",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b9\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b9.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T18:59:21.799398+00:00"
+  },
+  "f1-b9-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b9",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b9\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b9.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T19:17:38.301709+00:00"
+  },
+  "f1-b9-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b9",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b9\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b9.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T19:38:47.798140+00:00"
+  },
+  "f1-b9-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s59",
+     "run_id": "guarded_pressure_act-n2s59-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s59\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s59.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T19:56:27.267631+00:00"
+  },
+  "f1-b10-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-h-b10",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-h-b10\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f1-b10.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T20:17:25.258995+00:00"
+  },
+  "f1-b10-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-w-b10",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-w-b10\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f1-b10.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T20:38:16.265565+00:00"
+  },
+  "f1-b10-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s60",
+     "run_id": "guarded_pressure_act-n2s60-cap-p2-net-v1-stage2",
+     "fault": "f1",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s60\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s60.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T20:55:33.242286+00:00"
+  },
+  "f1-b10-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f1-c-b10",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f1-c-b10\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f1-b10.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T21:16:19.629054+00:00"
+  },
+  "f2-b21-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-w-b21",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-w-b21\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f2-b21.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T21:37:19.600861+00:00"
+  },
+  "f2-b21-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s63",
+     "run_id": "guarded_pressure_act-n2s63-cap-p2-net-v1-stage2",
+     "fault": "f2",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s63\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s63.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T21:55:24.339586+00:00"
+  },
+  "f2-b21-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b21",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b21\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b21.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T22:15:58.718961+00:00"
+  },
+  "f2-b21-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-h-b21",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-h-b21\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f2-b21.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T22:34:16.231459+00:00"
+  },
+  "f2-b22-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s64",
+     "run_id": "guarded_pressure_act-n2s64-cap-p2-net-v1-stage2",
+     "fault": "f2",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 1,
+      "reverted": true,
+      "validity": "^^^^^^^^\n  File \"D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\phase2_network_env\\n2_stage2.py\", line 186, in validate_stage2_net\n    frozen = {**ns2.pressure_frozen(s1, pc.expected_if_hashes()), \"threshold\": nc.FROZEN_DETECTORS[rec[\"selected\"]][\"threshold\"]}\n                                                                                                   ~~~^^^^^^^^^^^^\nKeyError: 'selected'\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s64.log",
+     "session": {
+      "outcome_status": null,
+      "result": null,
+      "cleanup_errors": []
+     },
+     "classification": "harness_error"
+    },
+    {
+     "kind": "G",
+     "run": "n2s65",
+     "run_id": "guarded_pressure_act-n2s65-cap-p2-net-v1-stage2",
+     "fault": "f2",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s65\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s65.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T22:53:29.065645+00:00"
+  },
+  "f2-b22-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b22",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b22\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b22.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T23:13:51.294853+00:00"
+  },
+  "f2-b22-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-h-b22",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-h-b22\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f2-b22.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T23:31:59.749008+00:00"
+  },
+  "f2-b22-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-w-b22",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-w-b22\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f2-b22.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-04T23:53:13.264966+00:00"
+  },
+  "f2-b23-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b23",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b23\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b23.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T00:11:18.602298+00:00"
+  },
+  "f2-b23-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-h-b23",
+     "rc": 2,
+     "classification": "harness_error",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-h-b23\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f2-b23.log",
+     "restore_error": null
+    },
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-h-b23-r2",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-h-b23-r2\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f2-b23-r2.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T00:47:39.382590+00:00"
+  },
+  "f2-b23-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-w-b23",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-w-b23\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f2-b23.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T01:08:57.726420+00:00"
+  },
+  "f2-b23-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s66",
+     "run_id": "guarded_pressure_act-n2s66-cap-p2-net-v1-stage2",
+     "fault": "f2",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s66\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s66.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T01:27:33.888449+00:00"
+  },
+  "f2-b24-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-h-b24",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-h-b24\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f2-b24.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T01:48:27.671094+00:00"
+  },
+  "f2-b24-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-w-b24",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-w-b24\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f2-b24.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T02:10:33.148051+00:00"
+  },
+  "f2-b24-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s67",
+     "run_id": "guarded_pressure_act-n2s67-cap-p2-net-v1-stage2",
+     "fault": "f2",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s67\", \"valid\": false, \"invalid_reasons\": [\"V1_not_completed: aborted injection_valid=True\", \"V2_primary_not_computable: requests_in_window<570\"]}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s67.log",
+     "session": {
+      "outcome_status": "aborted",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "harness_error"
+    },
+    {
+     "kind": "G",
+     "run": "n2s68",
+     "run_id": "guarded_pressure_act-n2s68-cap-p2-net-v1-stage2",
+     "fault": "f2",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker2",
+       "prep": {
+        "ready": true,
+        "t_prep_start": "2026-11-05T02:29:24.472106+00:00",
+        "t_preview_ready": "2026-11-05T02:31:26.840340+00:00",
+        "prep_duration_sec": 122.36826280003879,
+        "created_pod_hash": "6c8bb4d44",
+        "rollback_attempted": false,
+        "rollback_ok": null
+       },
+       "after": "sj-worker",
+       "moved": true
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s68\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s68.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T02:50:34.464852+00:00"
+  },
+  "f2-b24-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b24",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b24\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b24.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T03:11:23.020091+00:00"
+  },
+  "f2-b25-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-w-b25",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-w-b25\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f2-b25.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T03:33:23.767889+00:00"
+  },
+  "f2-b25-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-c-b25",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-c-b25\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f2-b25.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T03:51:26.355812+00:00"
+  },
+  "f2-b25-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f2-h-b25",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f2-h-b25\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f2-b25.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T04:09:38.916776+00:00"
+  },
+  "f3-b21-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s74",
+     "run_id": "guarded_pressure_act-n2s74-cap-p2-net-v1-stage2",
+     "fault": "f3",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s74\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s74.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T04:29:47.500123+00:00"
+  },
+  "f3-b21-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b21",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b21\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b21.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T04:52:14.520480+00:00"
+  },
+  "f3-b21-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-h-b21",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-h-b21\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f3-b21.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T05:12:33.048514+00:00"
+  },
+  "f3-b21-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b21",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b21\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b21.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T06:27:52.165148+00:00"
+  },
+  "f3-b22-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b22",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b22\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b22.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T06:47:33.950049+00:00"
+  },
+  "f3-b22-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-h-b22",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-h-b22\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f3-b22.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T07:07:33.430820+00:00"
+  },
+  "f3-b22-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b22",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b22\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b22.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T07:31:36.710449+00:00"
+  },
+  "f3-b22-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s76",
+     "run_id": "guarded_pressure_act-n2s76-cap-p2-net-v1-stage2",
+     "fault": "f3",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s76\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s76.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T10:48:10.200482+00:00"
+  },
+  "f3-b23-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-h-b23",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-h-b23\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f3-b23.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T11:10:41.544048+00:00"
+  },
+  "f3-b23-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b23",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b23\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b23.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T11:34:30.436739+00:00"
+  },
+  "f3-b23-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s77",
+     "run_id": "guarded_pressure_act-n2s77-cap-p2-net-v1-stage2",
+     "fault": "f3",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s77\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s77.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T11:54:30.185280+00:00"
+  },
+  "f3-b23-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b23",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b23\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b23.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T12:16:53.906315+00:00"
+  },
+  "f3-b24-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b24",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b24\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b24.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T12:39:47.124811+00:00"
+  },
+  "f3-b24-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s78",
+     "run_id": "guarded_pressure_act-n2s78-cap-p2-net-v1-stage2",
+     "fault": "f3",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s78\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s78.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T13:00:09.995393+00:00"
+  },
+  "f3-b24-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b24",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b24\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b24.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T13:23:13.718182+00:00"
+  },
+  "f3-b24-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-h-b24",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-h-b24\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f3-b24.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T13:43:27.198950+00:00"
+  },
+  "f3-b25-G": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "G",
+     "run": "n2s79",
+     "run_id": "guarded_pressure_act-n2s79-cap-p2-net-v1-stage2",
+     "fault": "f3",
+     "steps": {
+      "delay_restored": null,
+      "placement": {
+       "target": "sj-worker",
+       "before": "sj-worker",
+       "moved": false
+      },
+      "wrapper_rc": 0,
+      "reverted": true,
+      "validity": "{\"run\": \"n2s79\", \"valid\": true, \"invalid_reasons\": []}\n",
+      "delay_restored_after": null,
+      "base_restored": true
+     },
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\G-n2s79.log",
+     "session": {
+      "outcome_status": "completed",
+      "result": {
+       "authority_leak": false,
+       "checks": {
+        "context_set": true,
+        "first_send_after_injection": true,
+        "no_shadow_send": true,
+        "policy_audit_read": true,
+        "promoted_verified": true,
+        "signal_sent": true,
+        "traffic_verified": true
+       },
+       "success": true
+      },
+      "cleanup_errors": []
+     },
+     "classification": "valid"
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T14:04:19.316822+00:00"
+  },
+  "f3-b25-C": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-c-b25",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-c-b25\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-C-f3-b25.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T14:26:34.710280+00:00"
+  },
+  "f3-b25-H": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-h-b25",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-h-b25\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-H-f3-b25.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T14:46:42.021530+00:00"
+  },
+  "f3-b25-W": {
+   "final": true,
+   "attempts": [
+    {
+     "kind": "HW",
+     "run_id": "hc-f3-w-b25",
+     "rc": 0,
+     "classification": "valid",
+     "summary": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\main\\hc-f3-w-b25\\summary.json",
+     "log": "D:\\Desktop\\졸업작품\\capstone-k8s-recovery\\experiments\\results\\hpa_compare\\logs\\main-W-f3-b25.log",
+     "restore_error": null
+    }
+   ],
+   "classification": "valid",
+   "finished": "2026-11-05T15:10:14.446266+00:00"
+  }
+ },
+ "g_used": [
+  "n2s93",
+  "n2s94",
+  "n2s51",
+  "n2s52",
+  "n2s53",
+  "n2s54",
+  "n2s55",
+  "n2s61",
+  "n2s62",
+  "n2s71",
+  "n2s72",
+  "n2s73",
+  "n2s56",
+  "n2s57",
+  "n2s58",
+  "n2s59",
+  "n2s60",
+  "n2s63",
+  "n2s64",
+  "n2s65",
+  "n2s66",
+  "n2s67",
+  "n2s68",
+  "n2s74",
+  "n2s75",
+  "n2s76",
+  "n2s77",
+  "n2s78",
+  "n2s79"
+ ]
+}

@@ -1,0 +1,439 @@
+{
+ "run_id": "hc-f3-h-b23",
+ "arm": "H",
+ "fault": "f3",
+ "block": 23,
+ "rep": 7435,
+ "check": false,
+ "started_at": "2026-11-05T10:48:11.877872+00:00",
+ "problems": [],
+ "classification": "valid",
+ "obs_sec": 600.0,
+ "stand_sec": 300.0,
+ "delay_restored": null,
+ "placement": {
+  "target": "sj-worker",
+  "before": "sj-worker2",
+  "prep": {
+   "ready": true,
+   "t_prep_start": "2026-11-05T10:48:14.132212+00:00",
+   "t_preview_ready": "2026-11-05T10:50:17.742415+00:00",
+   "prep_duration_sec": 123.61022000000003,
+   "created_pod_hash": "77b4c5c5c5",
+   "rollback_attempted": false,
+   "rollback_ok": null
+  },
+  "after": "sj-worker",
+  "moved": true
+ },
+ "state_before": {
+  "t": "2026-11-05T10:50:52.302335+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "77b4c5c5c5",
+   "preview": "77b4c5c5c5",
+   "current_hash": "77b4c5c5c5",
+   "stable_rs": "77b4c5c5c5",
+   "generation": 837,
+   "observed": "837",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-05T10:48:14.132224+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-56955b8968-8xdbv",
+    "uid": "72496e73-eff5-4c74-8dba-bcf4a395df9b",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T10:32:11Z",
+    "created": "2026-11-05T10:28:57Z",
+    "deleting": "2026-11-05T10:51:20Z",
+    "node": "sj-worker2",
+    "hash": "56955b8968",
+    "restarts": 0
+   },
+   {
+    "name": "vllm-serving-77b4c5c5c5-hn4pz",
+    "uid": "924bcf3b-2fe8-4c5b-8158-4bf424ff0d82",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T10:50:14Z",
+    "created": "2026-11-05T10:48:14Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "77b4c5c5c5",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "hpa_setup": {
+  "current": 1,
+  "desired": 1,
+  "last_scale": null,
+  "metrics": [
+   {
+    "resource": {
+     "current": {
+      "averageUtilization": 1,
+      "averageValue": "22m"
+     },
+     "name": "cpu"
+    },
+    "type": "Resource"
+   }
+  ],
+  "conditions": [
+   {
+    "type": "AbleToScale",
+    "status": "True",
+    "reason": "ReadyForNewScale",
+    "message": "recommended size matches current size"
+   },
+   {
+    "type": "ScalingActive",
+    "status": "True",
+    "reason": "ValidMetricFound",
+    "message": "the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)"
+   },
+   {
+    "type": "ScalingLimited",
+    "status": "False",
+    "reason": "DesiredWithinRange",
+    "message": "the desired count is within the acceptable range"
+   }
+  ],
+  "spec_min": 1,
+  "spec_max": 2
+ },
+ "state_after_setup": {
+  "t": "2026-11-05T10:51:09.293956+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "77b4c5c5c5",
+   "preview": "77b4c5c5c5",
+   "current_hash": "77b4c5c5c5",
+   "stable_rs": "77b4c5c5c5",
+   "generation": 837,
+   "observed": "837",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-05T10:48:14.132224+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-77b4c5c5c5-hn4pz",
+    "uid": "924bcf3b-2fe8-4c5b-8158-4bf424ff0d82",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T10:50:14Z",
+    "created": "2026-11-05T10:48:14Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "77b4c5c5c5",
+    "restarts": 0
+   }
+  ],
+  "hpa": {
+   "current": 1,
+   "desired": 1,
+   "last_scale": null,
+   "metrics": [
+    {
+     "resource": {
+      "current": {
+       "averageUtilization": 1,
+       "averageValue": "22m"
+      },
+      "name": "cpu"
+     },
+     "type": "Resource"
+    }
+   ],
+   "conditions": [
+    {
+     "type": "AbleToScale",
+     "status": "True",
+     "reason": "ReadyForNewScale",
+     "message": "recommended size matches current size"
+    },
+    {
+     "type": "ScalingActive",
+     "status": "True",
+     "reason": "ValidMetricFound",
+     "message": "the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)"
+    },
+    {
+     "type": "ScalingLimited",
+     "status": "False",
+     "reason": "DesiredWithinRange",
+     "message": "the desired count is within the acceptable range"
+    }
+   ],
+   "spec_min": 1,
+   "spec_max": 2
+  },
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "target": {
+  "name": "vllm-serving-77b4c5c5c5-hn4pz",
+  "uid": "924bcf3b-2fe8-4c5b-8158-4bf424ff0d82"
+ },
+ "outcome": {
+  "status": "completed",
+  "reason": "전환 없음 대조 관찰 600초 완료",
+  "elapsed_sec": 869.1263250000002,
+  "prober_stop_failed": null,
+  "injector_cleanup_failed": null,
+  "sink_exit": {
+   "pid": 9288,
+   "returncode": 1,
+   "exited_cleanly": true
+  },
+  "score_server_exit": {
+   "returncode": 0,
+   "exited_cleanly": true,
+   "note": "H/W: 감지기 없음"
+  },
+  "injection_valid": true,
+  "t_injection_requested_utc": "2026-11-05T10:59:27.814689+00:00",
+  "t_injection_observed_utc": "2026-11-05T10:59:29.671707+00:00",
+  "observation_ended_at_utc": "2026-11-05T11:09:30.865003+00:00",
+  "probe_last_request_utc": "2026-11-05T11:09:26.327459+00:00",
+  "probe_data_gap_sec": 4.537544,
+  "probe_data_gap_detected": false,
+  "probe_max_internal_gap_sec": 2.229789,
+  "cleanup_status": "complete",
+  "invalidity_reasons": []
+ },
+ "state_after_restore": {
+  "t": "2026-11-05T11:10:40.250259+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "77b4c5c5c5",
+   "preview": "77b4c5c5c5",
+   "current_hash": "77b4c5c5c5",
+   "stable_rs": "77b4c5c5c5",
+   "generation": 839,
+   "observed": "839",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-05T10:48:14.132224+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-77b4c5c5c5-56zc4",
+    "uid": "261b5e6a-702b-41c9-94f8-b7ebc6b38fe7",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T11:06:28Z",
+    "created": "2026-11-05T11:03:10Z",
+    "deleting": "2026-11-05T11:11:09Z",
+    "node": "sj-worker2",
+    "hash": "77b4c5c5c5",
+    "restarts": 0
+   },
+   {
+    "name": "vllm-serving-77b4c5c5c5-hn4pz",
+    "uid": "924bcf3b-2fe8-4c5b-8158-4bf424ff0d82",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-05T10:50:14Z",
+    "created": "2026-11-05T10:48:14Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "77b4c5c5c5",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "trial_error": null,
+ "restore_error": null,
+ "sampler_errors": 0,
+ "ended_at": "2026-11-05T11:10:41.276768+00:00",
+ "slo": {
+  "contract": "v2-main-contract-20261003",
+  "analyzer_revision": "r2-20261004",
+  "slo_version": "v3",
+  "computable": true,
+  "reason": null,
+  "evidence_rule": "response_observed_at<=observation_end",
+  "t_injection": "2026-11-05T10:59:29.671707+00:00",
+  "observation_end": "2026-11-05T11:09:30.865003+00:00",
+  "requests_in_window": 597,
+  "max_gap_in_window_sec": 4.538,
+  "episodes": [
+   {
+    "t_slo": "2026-11-05T11:00:01.529783+00:00",
+    "t_recovery": "2026-11-05T11:01:20.830962+00:00",
+    "t_recovery_confirmed_at": "2026-11-05T11:01:51.546399+00:00",
+    "end_counted": "2026-11-05T11:01:20.830962+00:00",
+    "duration_sec": 79.301,
+    "lower_bound": false,
+    "t_slo_rel_sec": 31.9,
+    "end_rel_sec": 111.2
+   },
+   {
+    "t_slo": "2026-11-05T11:03:26.012661+00:00",
+    "t_recovery": "2026-11-05T11:07:46.545589+00:00",
+    "t_recovery_confirmed_at": "2026-11-05T11:08:17.594086+00:00",
+    "end_counted": "2026-11-05T11:07:46.545589+00:00",
+    "duration_sec": 260.533,
+    "lower_bound": false,
+    "t_slo_rel_sec": 236.3,
+    "end_rel_sec": 496.9
+   }
+  ],
+  "cumulative_sec": 339.834,
+  "cumulative_lower_bound": false,
+  "first_episode_sec": 79.301,
+  "first_episode_lower_bound": false,
+  "requests_excluded_response_after_end": 0
+ },
+ "cost": {
+  "window": [
+   "2026-11-05T10:54:29.671707+00:00",
+   "2026-11-05T11:09:30.865003+00:00"
+  ],
+  "pods": {
+   "vllm-serving-56955b8968-8xdbv": {
+    "alive_sec": 0.0,
+    "ready_sec": 0.0,
+    "created": "2026-11-05T10:28:57+00:00",
+    "ready_since": "2026-11-05T10:32:11+00:00"
+   },
+   "vllm-serving-77b4c5c5c5-hn4pz": {
+    "alive_sec": 901.2,
+    "ready_sec": 901.2,
+    "created": "2026-11-05T10:48:14+00:00",
+    "ready_since": "2026-11-05T10:50:14+00:00"
+   },
+   "vllm-serving-77b4c5c5c5-56zc4": {
+    "alive_sec": 380.9,
+    "ready_sec": 182.9,
+    "created": "2026-11-05T11:03:10+00:00",
+    "ready_since": "2026-11-05T11:06:28+00:00"
+   }
+  },
+  "pod_alive_sec_total": 1282.1,
+  "cpu_request_core_sec": 2564.2,
+  "memory_request_gib_sec": 5128.4,
+  "pod_ready_sec_total": 1084.1,
+  "note": "예약량(요청량×유지 시간). 실제 사용량은 usage 항목에 따로 기록. 금액 환산 없음"
+ },
+ "usage": {
+  "guarded-recovery-policy-5b977879bc-czp57": {
+   "cpu_mean_cores": 0.003,
+   "cpu_max_cores": 0.004,
+   "mem_mean_mib": 83.6,
+   "n": 80
+  },
+  "vllm-serving-77b4c5c5c5-hn4pz": {
+   "cpu_mean_cores": 1.413,
+   "cpu_max_cores": 3.002,
+   "mem_mean_mib": 3413.8,
+   "n": 80
+  },
+  "ramp-inj-0d3c3cb1": {
+   "cpu_mean_cores": 0.013,
+   "cpu_max_cores": 0.057,
+   "mem_mean_mib": 17.4,
+   "n": 68
+  },
+  "ramp-probe-70337373": {
+   "cpu_mean_cores": 0.02,
+   "cpu_max_cores": 0.024,
+   "mem_mean_mib": 26.4,
+   "n": 63
+  },
+  "vllm-serving-77b4c5c5c5-56zc4": {
+   "cpu_mean_cores": 0.775,
+   "cpu_max_cores": 1.275,
+   "mem_mean_mib": 2387.1,
+   "n": 31
+  }
+ },
+ "request_increase": {
+  "vllm-serving-77b4c5c5c5-56zc4": {
+   "before": null,
+   "after": 89.0,
+   "increase": 89.0
+  },
+  "vllm-serving-77b4c5c5c5-hn4pz": {
+   "before": 56.0,
+   "after": 659.0,
+   "increase": 603.0
+  }
+ },
+ "events": {
+  "hpa_scale_decision": "2026-11-05T11:03:12.620522+00:00",
+  "extra_pod_created": "2026-11-05T11:03:10Z",
+  "extra_pod_ready": "2026-11-05T11:06:28Z",
+  "extra_pod_first_request": "2026-11-05T11:06:40.877042+00:00",
+  "extra_pod": "vllm-serving-77b4c5c5c5-56zc4",
+  "t_injection": "2026-11-05T10:59:29.671707+00:00",
+  "observation_end": "2026-11-05T11:09:30.865003+00:00"
+ },
+ "harness_problems": []
+}

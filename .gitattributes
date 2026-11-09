@@ -17,3 +17,6 @@ experiments/results/network_detector_dev_20261017/** -text
 experiments/results/phase2_network_env/** -text
 experiments/results/phase2_network_env_stage2/** -text
 experiments/results/phase2_network_env_selection/** -text
+
+# 통일 비교·오토스케일링 비교(2026-10-22~11-06) 결과 - 세션 기록에 다른 파일의 SHA-256이 들어 있어 원래 바이트 그대로 저장한다
+experiments/results/hpa_compare/** -text

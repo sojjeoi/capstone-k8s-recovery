@@ -1,0 +1,400 @@
+{
+ "run_id": "hc-f2-h-b23",
+ "arm": "H",
+ "fault": "f2",
+ "block": 23,
+ "rep": 7430,
+ "check": false,
+ "started_at": "2026-11-05T00:11:19.719466+00:00",
+ "problems": [],
+ "classification": "harness_error",
+ "obs_sec": 600.0,
+ "stand_sec": 300.0,
+ "delay_restored": null,
+ "placement": {
+  "target": "sj-worker",
+  "before": "sj-worker",
+  "moved": false
+ },
+ "state_before": {
+  "t": "2026-11-05T00:11:21.596774+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "6895d6c7bd",
+   "preview": "6895d6c7bd",
+   "current_hash": "6895d6c7bd",
+   "stable_rs": "6895d6c7bd",
+   "generation": 801,
+   "observed": "801",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-04T22:53:32.346680+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-6895d6c7bd-pplhs",
+    "uid": "9a2a0a51-1c6a-4b2b-871d-83ab8e0a350f",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-04T22:55:21Z",
+    "created": "2026-11-04T22:53:32Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "6895d6c7bd",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "hpa_setup": {
+  "current": 1,
+  "desired": 1,
+  "last_scale": null,
+  "metrics": [
+   {
+    "resource": {
+     "current": {
+      "averageUtilization": 31,
+      "averageValue": "635m"
+     },
+     "name": "cpu"
+    },
+    "type": "Resource"
+   }
+  ],
+  "conditions": [
+   {
+    "type": "AbleToScale",
+    "status": "True",
+    "reason": "ReadyForNewScale",
+    "message": "recommended size matches current size"
+   },
+   {
+    "type": "ScalingActive",
+    "status": "True",
+    "reason": "ValidMetricFound",
+    "message": "the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)"
+   },
+   {
+    "type": "ScalingLimited",
+    "status": "False",
+    "reason": "DesiredWithinRange",
+    "message": "the desired count is within the acceptable range"
+   }
+  ],
+  "spec_min": 1,
+  "spec_max": 2
+ },
+ "state_after_setup": {
+  "t": "2026-11-05T00:11:38.345985+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "6895d6c7bd",
+   "preview": "6895d6c7bd",
+   "current_hash": "6895d6c7bd",
+   "stable_rs": "6895d6c7bd",
+   "generation": 801,
+   "observed": "801",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-04T22:53:32.346680+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-6895d6c7bd-pplhs",
+    "uid": "9a2a0a51-1c6a-4b2b-871d-83ab8e0a350f",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-04T22:55:21Z",
+    "created": "2026-11-04T22:53:32Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "6895d6c7bd",
+    "restarts": 0
+   }
+  ],
+  "hpa": {
+   "current": 1,
+   "desired": 1,
+   "last_scale": null,
+   "metrics": [
+    {
+     "resource": {
+      "current": {
+       "averageUtilization": 31,
+       "averageValue": "635m"
+      },
+      "name": "cpu"
+     },
+     "type": "Resource"
+    }
+   ],
+   "conditions": [
+    {
+     "type": "AbleToScale",
+     "status": "True",
+     "reason": "ReadyForNewScale",
+     "message": "recommended size matches current size"
+    },
+    {
+     "type": "ScalingActive",
+     "status": "True",
+     "reason": "ValidMetricFound",
+     "message": "the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)"
+    },
+    {
+     "type": "ScalingLimited",
+     "status": "False",
+     "reason": "DesiredWithinRange",
+     "message": "the desired count is within the acceptable range"
+    }
+   ],
+   "spec_min": 1,
+   "spec_max": 2
+  },
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "target": {
+  "name": "vllm-serving-6895d6c7bd-pplhs",
+  "uid": "9a2a0a51-1c6a-4b2b-871d-83ab8e0a350f"
+ },
+ "outcome": {
+  "status": "invalid",
+  "reason": "전환 없음 대조 관찰 600초 완료 - 무효 사유: probe_clock_inconsistent",
+  "elapsed_sec": 767.888997699949,
+  "prober_stop_failed": null,
+  "injector_cleanup_failed": null,
+  "sink_exit": {
+   "pid": 41104,
+   "returncode": 1,
+   "exited_cleanly": true
+  },
+  "score_server_exit": {
+   "returncode": 0,
+   "exited_cleanly": true,
+   "note": "H/W: 감지기 없음"
+  },
+  "injection_valid": true,
+  "t_injection_requested_utc": "2026-11-05T00:18:49.340773+00:00",
+  "t_injection_observed_utc": "2026-11-05T00:18:50.341273+00:00",
+  "observation_ended_at_utc": "2026-11-05T00:28:51.221977+00:00",
+  "probe_last_request_utc": "2026-11-05T00:28:51.227281+00:00",
+  "probe_data_gap_sec": -0.005304,
+  "probe_data_gap_detected": false,
+  "probe_max_internal_gap_sec": 1.00984,
+  "cleanup_status": "complete",
+  "invalidity_reasons": [
+   "probe_clock_inconsistent"
+  ]
+ },
+ "state_after_restore": {
+  "t": "2026-11-05T00:29:27.860863+00:00",
+  "rollout": {
+   "phase": "Healthy",
+   "replicas_spec": 1,
+   "available": 1,
+   "active": "6895d6c7bd",
+   "preview": "6895d6c7bd",
+   "current_hash": "6895d6c7bd",
+   "stable_rs": "6895d6c7bd",
+   "generation": 801,
+   "observed": "801",
+   "readiness_timeout": 11,
+   "liveness_timeout": 11,
+   "requests": {
+    "cpu": "2",
+    "memory": "4Gi"
+   },
+   "limits": {
+    "cpu": "3",
+    "memory": "6Gi"
+   },
+   "image": "vllm-cpu-env:latest",
+   "scale_down_delay": 30,
+   "preview_replica_count": null,
+   "annotations": {
+    "experiment-prep-ts": "2026-11-04T22:53:32.346680+00:00",
+    "promotion-verify-ts": "2026-09-06T10:14:52Z",
+    "regime-test-ts": "2026-09-06T11:07:08Z",
+    "spike-revision": "HEADROOM-COLDSTART-03-RETRY"
+   }
+  },
+  "pods": [
+   {
+    "name": "vllm-serving-6895d6c7bd-pplhs",
+    "uid": "9a2a0a51-1c6a-4b2b-871d-83ab8e0a350f",
+    "phase": "Running",
+    "ready": true,
+    "ready_since": "2026-11-04T22:55:21Z",
+    "created": "2026-11-04T22:53:32Z",
+    "deleting": null,
+    "node": "sj-worker",
+    "hash": "6895d6c7bd",
+    "restarts": 0
+   }
+  ],
+  "hpa": null,
+  "chaos": [],
+  "endpoints_active": 1
+ },
+ "trial_error": null,
+ "restore_error": null,
+ "sampler_errors": 0,
+ "ended_at": "2026-11-05T00:29:28.785367+00:00",
+ "slo": {
+  "contract": "v2-main-contract-20261003",
+  "analyzer_revision": "r2-20261004",
+  "slo_version": "v3",
+  "computable": true,
+  "reason": null,
+  "evidence_rule": "response_observed_at<=observation_end",
+  "t_injection": "2026-11-05T00:18:50.341273+00:00",
+  "observation_end": "2026-11-05T00:28:51.221977+00:00",
+  "requests_in_window": 600,
+  "max_gap_in_window_sec": 1.01,
+  "episodes": [
+   {
+    "t_slo": "2026-11-05T00:19:23.469351+00:00",
+    "t_recovery": "2026-11-05T00:25:53.476118+00:00",
+    "t_recovery_confirmed_at": "2026-11-05T00:26:24.539778+00:00",
+    "end_counted": "2026-11-05T00:25:53.476118+00:00",
+    "duration_sec": 390.007,
+    "lower_bound": false,
+    "t_slo_rel_sec": 33.1,
+    "end_rel_sec": 423.1
+   }
+  ],
+  "cumulative_sec": 390.007,
+  "cumulative_lower_bound": false,
+  "first_episode_sec": 390.007,
+  "first_episode_lower_bound": false,
+  "requests_excluded_response_after_end": 0
+ },
+ "cost": {
+  "window": [
+   "2026-11-05T00:13:50.341273+00:00",
+   "2026-11-05T00:28:51.221977+00:00"
+  ],
+  "pods": {
+   "vllm-serving-6895d6c7bd-pplhs": {
+    "alive_sec": 900.9,
+    "ready_sec": 900.9,
+    "created": "2026-11-04T22:53:32+00:00",
+    "ready_since": "2026-11-04T22:55:21+00:00"
+   }
+  },
+  "pod_alive_sec_total": 900.9,
+  "cpu_request_core_sec": 1801.8,
+  "memory_request_gib_sec": 3603.6,
+  "pod_ready_sec_total": 900.9,
+  "note": "예약량(요청량×유지 시간). 실제 사용량은 usage 항목에 따로 기록. 금액 환산 없음"
+ },
+ "usage": {
+  "guarded-recovery-policy-5b977879bc-n66v4": {
+   "cpu_mean_cores": 0.003,
+   "cpu_max_cores": 0.004,
+   "mem_mean_mib": 83.3,
+   "n": 71
+  },
+  "vllm-serving-6895d6c7bd-pplhs": {
+   "cpu_mean_cores": 1.06,
+   "cpu_max_cores": 1.687,
+   "mem_mean_mib": 3402.7,
+   "n": 71
+  },
+  "ramp-probe-2ff44603": {
+   "cpu_mean_cores": 0.021,
+   "cpu_max_cores": 0.032,
+   "mem_mean_mib": 25.9,
+   "n": 54
+  }
+ },
+ "request_increase": {
+  "vllm-serving-6895d6c7bd-pplhs": {
+   "before": 2547.0,
+   "after": 3153.0,
+   "increase": 606.0
+  }
+ },
+ "events": {
+  "hpa_scale_decision": null,
+  "extra_pod_created": null,
+  "extra_pod_ready": null,
+  "extra_pod_first_request": null,
+  "extra_pod": null,
+  "t_injection": "2026-11-05T00:18:50.341273+00:00",
+  "observation_end": "2026-11-05T00:28:51.221977+00:00"
+ },
+ "chaos_seen": [
+  [
+   "netdelay-hc-f2-h-b23-s0-9a02e0",
+   "{\"vllm-serving\": [\"vllm-serving-6895d6c7bd-pplhs\"]}",
+   [
+    "vllm-serving/vllm-serving-6895d6c7bd-pplhs"
+   ]
+  ],
+  [
+   "netdelay-hc-f2-h-b23-s1-37e69f",
+   "{\"vllm-serving\": [\"vllm-serving-6895d6c7bd-pplhs\"]}",
+   [
+    "vllm-serving/vllm-serving-6895d6c7bd-pplhs"
+   ]
+  ],
+  [
+   "netdelay-hc-f2-h-b23-s2-cc6fd8",
+   "{\"vllm-serving\": [\"vllm-serving-6895d6c7bd-pplhs\"]}",
+   [
+    "vllm-serving/vllm-serving-6895d6c7bd-pplhs"
+   ]
+  ],
+  [
+   "netdelay-hc-f2-h-b23-s3-a51b42",
+   "{\"vllm-serving\": [\"vllm-serving-6895d6c7bd-pplhs\"]}",
+   [
+    "vllm-serving/vllm-serving-6895d6c7bd-pplhs"
+   ]
+  ]
+ ],
+ "harness_problems": [
+  "trial_status=invalid: 전환 없음 대조 관찰 600초 완료 - 무효 사유: probe_clock_inconsistent"
+ ]
+}

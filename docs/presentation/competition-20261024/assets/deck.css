@@ -1,0 +1,120 @@
+/* 기존 발표(v3, Figma 1안)와 같은 값: 1920×1080, 좌표·글자 크기는 원본 px 그대로 */
+
+/* 글꼴은 assets/fonts에 동봉 (인터넷 없이 같은 모양). 원본: github.com/google/fonts, SIL OFL 1.1 */
+@font-face { font-family: 'Noto Sans KR'; src: url(fonts/NotoSansKR-VF.woff2) format('woff2'); font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'IBM Plex Mono'; src: url(fonts/IBMPlexMono-Regular.woff2) format('woff2'); font-weight: 400; font-display: block; }
+@font-face { font-family: 'IBM Plex Mono'; src: url(fonts/IBMPlexMono-Medium.woff2) format('woff2'); font-weight: 500; font-display: block; }
+@font-face { font-family: 'IBM Plex Mono'; src: url(fonts/IBMPlexMono-Bold.woff2) format('woff2'); font-weight: 700; font-display: block; }
+@font-face { font-family: 'Inter'; src: url(fonts/Inter-400.woff2) format('woff2'); font-weight: 400; font-display: block; }
+:root {
+  --bg: #f7f5f0; --ink: #1a1a1a; --soft: #6e6b66; --faint: #b2ada3; --rule: #d1ccc2;
+  --teal: #0d786e; --mute: #c9c4ba; --card: #fcf9f1; --stage: #22211f;
+  --mono: 'IBM Plex Mono', 'Noto Sans KR', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; background: var(--stage); overflow: hidden; }
+body { font-family: 'Noto Sans KR', sans-serif; color: var(--ink); font-synthesis: none; -webkit-font-smoothing: antialiased; }
+
+#deck { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+.slide { position: absolute; inset: 0; width: 1920px; height: 1080px; background: var(--bg); overflow: hidden; display: none; }
+.slide.active { display: block; }
+.notes { display: none; }
+
+/* 기본 요소 */
+.t { position: absolute; white-space: pre-line; line-height: normal; }
+.r { position: absolute; }
+.m { font-family: var(--mono); }
+.b { font-weight: 700; }
+.c { text-align: center; }
+.rt { text-align: right; }
+.teal { color: var(--teal); }
+.soft { color: var(--soft); }
+.faint { color: var(--faint); }
+svg.ov { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: visible; pointer-events: none; }
+
+/* 공통 틀: 섹션 태그 · 제목 · 페이지 번호 · 부제 · 각주 */
+.tag { left: 120px; top: 96px; font: 500 22px var(--mono); color: var(--soft); white-space: pre; }
+.tagrule { left: 120px; top: 140px; width: 64px; height: 2px; background: var(--ink); }
+.title { left: 120px; top: 150px; width: 1680px; font-size: 70px; font-weight: 700; }
+.pn { left: 1752px; top: 45px; width: 120px; text-align: right; font: 400 20px var(--mono); color: var(--faint); }
+.lede { left: 122px; top: 242px; width: 1680px; font-size: 30px; color: var(--soft); }
+.foot { left: 120px; bottom: 30px; width: 1680px; font-size: 20px; color: var(--soft); line-height: 1.45; }
+
+/* 원본 글자 크기 체계 */
+.bh { font: 500 40px var(--mono); color: var(--soft); white-space: pre; }   /* [구현 핵심] 같은 괄호 소제목 */
+.hr { height: 1px; background: var(--faint); }
+.say { font-size: 48px; font-weight: 700; color: var(--teal); }            /* 청록 강조 문장 */
+.it { font-size: 36px; font-weight: 700; line-height: 1.5; }               /* 목록 제목 */
+.sub { font-size: 27px; color: var(--soft); line-height: 1.5; }            /* 목록 설명 */
+.lab { font-size: 30px; color: var(--soft); }                             /* 큰 숫자 위 이름표 */
+.num { font-family: var(--mono); font-weight: 700; }
+.arrow { font-size: 44px; font-weight: 700; color: var(--faint); }
+
+/* 그래프 */
+.bar { position: absolute; }
+.bar.g { background: var(--faint); }
+.bar.g2 { background: var(--rule); }
+.bar.k { background: var(--teal); }
+.axis { position: absolute; height: 3px; background: var(--ink); }
+.vlab { font: 400 22px var(--mono); color: var(--ink); text-align: center; }
+.vlab.k { font-weight: 700; color: var(--teal); }
+.xlab { font: 500 24px var(--mono); color: var(--soft); text-align: center; }
+.key { position: absolute; width: 32px; height: 24px; }
+
+/* 아이콘 타일 (원본 아키텍처의 72px 타일) */
+.tile { position: absolute; width: 72px; height: 72px; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+.tile.tool { background: #fff; border: 2px solid var(--rule); }
+.tile.ours { background: var(--teal); }
+.tile.mute { background: var(--mute); }
+.tile svg { width: 44px; height: 44px; fill: none; stroke: #fff; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tile.tool svg { stroke: var(--soft); }
+.tile img { width: 46px; height: 46px; }
+.tile.lg { width: 96px; height: 96px; border-radius: 8px; }
+.tile.lg svg { width: 58px; height: 58px; }
+.tile.lg img { width: 62px; height: 62px; }
+
+/* 시연 화면(demo/replay-screen)의 채팅 창을 축소 재현 — 대화 내용은 예시, 숫자는 창 밖에 실측으로 따로 표시 */
+.cw { position: absolute; display: flex; flex-direction: column; background: #fff; border-radius: 12px; overflow: hidden;
+  border: 1px solid #d3d7dd; box-shadow: 0 10px 30px rgba(20,24,32,.12); color: #1d1f23; }
+.cw .tb { flex: none; height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 14px; background: #f4f5f8; border-bottom: 1px solid #eceef1; font-size: 19px; font-weight: 700; white-space: nowrap; }
+.cw .mk { margin-left: auto; font-size: 14px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: #fcefe3; color: #e0782b; }
+.cw .ms { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 14px 14px 8px; min-height: 0; }
+.cw .u { align-self: flex-end; max-width: 88%; background: #f1f2f4; border-radius: 18px; padding: 8px 15px; font-size: 20px; line-height: 1.4; }
+.cw .a { display: flex; gap: 10px; align-items: flex-start; }
+.cw .av { flex: none; width: 28px; height: 28px; border-radius: 50%; background: #1d1f23; color: #fff; display: grid; place-items: center; font-size: 14px; }
+.cw .ab { flex: 1; min-width: 0; }
+.cw .dots { display: flex; gap: 6px; padding-top: 10px; }
+.cw .dots i { width: 9px; height: 9px; border-radius: 50%; background: #b4b8be; }
+.cw .ln { height: 11px; border-radius: 6px; background: #e3e5e8; margin-top: 8px; }
+.cw .st { font-size: 19px; font-weight: 700; margin-top: 6px; color: #9aa0a8; }
+.cw .st.ok { color: #1f9d55; }
+.cw .rt { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 12px 12px; font-size: 18px; color: #6b7078; border-top: 1px solid #eceef1; }
+.cw .pod { padding: 2px 10px; border-radius: 999px; font-weight: 800; font-size: 17px; background: #f1f2f4; color: #6b7078; white-space: nowrap; }
+.cw .pod.slow { background: #fcefe3; color: #e0782b; }
+.cw .pod.ok { background: #e3f4ea; color: #1f9d55; }
+
+/* 실제 시연 화면(demo/replay-screen) 캡처 */
+.shot { position: absolute; border-radius: 12px; border: 1px solid #d3d7dd; box-shadow: 0 10px 30px rgba(20,24,32,.12); background: #fff; }
+
+/* 표지 카드 */
+.card { left: 168px; top: 264px; width: 1584px; height: 552px; border-radius: 15px; background: var(--card); opacity: .5;
+  box-shadow: 0 18px 56px rgba(0,0,0,.152), 0 10px 18px rgba(0,0,0,.076), 0 4px 6px rgba(0,0,0,.061); }
+
+/* 발표자 노트 · 전체 보기 */
+#notes { position: fixed; left: 0; right: 0; bottom: 0; max-height: 34vh; overflow: auto; padding: 14px 22px; background: rgba(20,20,18,.94);
+  color: #e8e6e1; font: 17px/1.6 'Noto Sans KR', sans-serif; display: none; z-index: 10; white-space: pre-line; }
+body.show-notes #notes { display: block; }
+#hint { position: fixed; right: 12px; bottom: 8px; color: #77736c; font: 12px 'Noto Sans KR', sans-serif; z-index: 5; }
+body.overview { overflow: auto; }
+body.overview #deck { position: static; transform: none !important; width: auto; height: auto; display: grid;
+  grid-template-columns: repeat(4, 461px); gap: 20px; padding: 24px; justify-content: center; }
+body.overview .slide { display: block; position: relative; zoom: .24; cursor: pointer; }
+body.overview #hint, body.overview #notes { display: none; }
+
+@media print {
+  @page { size: 1920px 1080px; margin: 0; }
+  html, body { height: auto; overflow: visible; background: none; }
+  #deck { position: static; transform: none !important; }
+  .slide { display: block !important; position: relative; break-after: page; zoom: 1 !important; }
+  #notes, #hint { display: none !important; }
+}
